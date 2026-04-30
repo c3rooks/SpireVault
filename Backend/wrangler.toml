@@ -20,3 +20,8 @@ preview_id = "e015073f0d2147f5b8610116e094402d"
 # IMPORTANT: this MUST match the deployed URL for OpenID round-trips to work.
 PUBLIC_BASE_URL = "https://vault-coop.coreycrooks.workers.dev"
 STS_APP_ID = "2868840"
+# Comma-separated list of extra hosts allowed as sign-in return URLs.
+# `app.spirevault.app` and `thevault://...` and localhost are bundled in code.
+# Add the Cloudflare Pages preview hosts here so sign-in works during testing
+# before the custom domain is attached.
+ALLOWED_RETURN_HOSTS = "vault-web-e90.pages.dev"
