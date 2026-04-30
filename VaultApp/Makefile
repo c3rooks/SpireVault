@@ -63,9 +63,12 @@ release:
 	  tail -40 $(BUILD)/last-release.log; \
 	  exit 1; \
 	fi
-	-xattr -dr com.apple.FinderInfo "$(RELEASE_APP_PATH)" 2>/dev/null
-	-xattr -dr com.apple.provenance "$(RELEASE_APP_PATH)" 2>/dev/null
+	# Strip every extended attribute (FinderInfo, provenance, quarantine, …)
+	# before signing — codesign refuses to sign a bundle that has any leftover.
+	# `xattr -cr` does this recursively and is a hard requirement on macOS 14+.
+	xattr -cr "$(RELEASE_APP_PATH)"
 	codesign --force --deep --sign "$${CODE_SIGN_IDENTITY:--}" "$(RELEASE_APP_PATH)"
+	codesign --verify --verbose=2 "$(RELEASE_APP_PATH)"
 	@echo "→ Release app: $(RELEASE_APP_PATH)"
 	@echo "→ Version:     $(VERSION)"
 
