@@ -78,12 +78,26 @@ function constantTimeEq(a: string, b: string): boolean {
   return diff === 0;
 }
 
-/** Top-level entry. Returns 404 unless the bearer token checks out. */
+/**
+ * Top-level entry.
+ *
+ *  /admin       → always returns the gate HTML. The page is content-free
+ *                 (just a token prompt) so this doesn't reveal anything an
+ *                 attacker couldn't already see in the public source.
+ *                 The HTML carries no real metrics; those only come from
+ *                 the gated /admin/stats endpoint.
+ *
+ *  /admin/stats → 404 to anyone without the right bearer token, byte-
+ *                 indistinguishable from any other unknown route.
+ *                 This is the actual data gate.
+ */
 export async function handleAdmin(req: Request, env: Env): Promise<Response> {
-  if (!tokenIsValid(req, env)) return notFound();
   const url = new URL(req.url);
   if (url.pathname === "/admin") return adminHTML();
-  if (url.pathname === "/admin/stats") return adminStats(env);
+  if (url.pathname === "/admin/stats") {
+    if (!tokenIsValid(req, env)) return notFound();
+    return adminStats(env);
+  }
   return notFound();
 }
 
