@@ -8,7 +8,7 @@ winrate tables, per-character / per-relic / per-archetype breakdowns, and CSV/JS
 exports. It never modifies the game — read-only, no in-game mod required, no DLLs,
 no patching.
 
-It's the data pipeline behind the **Stats** tab in [Ascension Companion](https://apps.apple.com/app/ascension-companion/),
+It's the data pipeline behind the **Stats** tab in [Ascension Companion](https://apps.apple.com/us/app/ascension-companion/id6761977581),
 but the Vault itself is unaffiliated, free, and useful on its own.
 
 > Not affiliated with or endorsed by Mega Crit Games.

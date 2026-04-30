@@ -4,120 +4,295 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>The Vault — Web</title>
-  <meta name="description" content="The Vault co-op companion. Find Slay the Spire 2 partners from any browser." />
+  <meta name="description" content="The Vault for Slay the Spire 2 — co-op finder, run history, stats. Runs in any browser." />
   <meta name="theme-color" content="#0c0a14" />
   <link rel="icon" type="image/svg+xml" href="/assets/vault-mark.svg" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Playfair+Display:wght@700;900&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/styles.css" />
+  <link rel="stylesheet" href="/styles.css?v=2" />
 </head>
 <body>
   <div class="bg-glow" aria-hidden="true"></div>
 
-  <header class="topbar">
+  <!-- ================================================================
+       Signed-out hero: only thing you see if you have no session.
+       Kept simple on purpose — sign-in is the only call to action.
+  ================================================================ -->
+  <header class="topbar topbar-public" id="topbar-public">
     <a class="brand" href="/">
       <img src="/assets/vault-mark.svg" alt="" class="brand-emblem" />
       <span class="brand-mark">THE VAULT · WEB</span>
     </a>
     <div class="topbar-right">
-      <a class="link-muted" href="https://spirevault.app">Get the macOS app →</a>
-      <span id="auth-state-pill" class="auth-pill" hidden></span>
+      <a class="link-muted" href="https://spirevault.app">Marketing site →</a>
     </div>
   </header>
 
-  <main>
-    <!-- Visible only when signed-out -->
+  <main id="main-public" class="main-public">
     <section id="signed-out-view" class="signed-out">
-      <span class="eyebrow">Co-op finder · works in any browser</span>
-      <h1>Find a <span class="grad">Slay&nbsp;the&nbsp;Spire&nbsp;2</span> partner from anywhere.</h1>
+      <span class="eyebrow">Slay the Spire 2 · Vault for the Web</span>
+      <h1>Run history, stats, and co-op — <span class="grad">in&nbsp;your&nbsp;browser</span>.</h1>
       <p class="lede">
-        The full Vault — run history, stats, Share-Run cards — runs natively on macOS.
-        This page is the lightweight version: <strong>just the co-op feed</strong>.
-        Sign in with Steam, see who's online, message them on Steam or Discord, then
-        coordinate the actual game inside Slay the Spire 2.
+        Sign in with Steam to see who's around right now, send canned co-op
+        invites, and launch <strong>Slay the Spire 2</strong> straight from
+        the page. Drop your <code>history.json</code> in to get the same
+        Overview, Characters, Ascensions, Relics, Cards, and Recent Runs tabs
+        the macOS app has — same data, same engine, no install.
       </p>
       <div class="cta-row">
         <button class="btn-primary" id="signin-btn">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M3 5l8-1.1V11H3V5zm0 7h8v7.1L3 18V12zm9 7.2V12h9v8L12 19.2zM12 11V3.9L21 3v8h-9z"/></svg>
           Sign in with Steam
         </button>
-        <a class="btn-ghost" href="https://spirevault.app">Why use the macOS app instead?</a>
+        <a class="btn-ghost" href="https://spirevault.app">macOS app →</a>
       </div>
       <p class="trust-line">
         <span class="dot dot-pulse"></span>
         <span id="presence-text">Checking who's around…</span>
       </p>
       <div class="signin-explainer">
-        <h4>What signing in does</h4>
+        <h4>What signing in actually does</h4>
         <ul>
-          <li>Verifies you actually own the Steam account you're claiming, via Steam OpenID.</li>
-          <li>Mints a 30-day session so you don't have to sign in again.</li>
-          <li>Pulls only your Steam persona name and avatar — never your password.</li>
-          <li>Posts your status to the public feed only while this tab is open and only with what you type.</li>
-          <li>Sign out at any time to drop your row from the feed.</li>
+          <li>Verifies you own the Steam account you claim, via Steam OpenID.</li>
+          <li>Mints a 30-day session — no password ever leaves Steam.</li>
+          <li>Pulls only your persona name and avatar.</li>
+          <li>Posts your status to the public feed only while this tab is open.</li>
+          <li>Sign out at any time to drop your row from everyone's feed.</li>
         </ul>
       </div>
     </section>
+  </main>
 
-    <!-- Visible only when signed-in -->
-    <section id="signed-in-view" class="signed-in" hidden>
-      <header class="page-head">
+  <!-- ================================================================
+       Signed-in app shell: sidebar + tab panels. Mirrors the macOS app.
+       Each panel is hidden until its tab becomes active.
+  ================================================================ -->
+  <div id="app-shell" class="app-shell" hidden>
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <img src="/assets/vault-mark.svg" alt="" />
         <div>
-          <span class="eyebrow">Co-op feed</span>
-          <h1>Who's around right now</h1>
-          <p class="muted" id="online-summary">Loading…</p>
+          <span class="sidebar-wordmark">THE VAULT</span>
+          <span class="sidebar-sub">web · for STS2</span>
         </div>
-        <div class="page-head-actions">
-          <button class="btn-ghost" id="refresh-btn" title="Refresh">↻ Refresh</button>
-          <button class="btn-ghost" id="signout-btn">Sign out</button>
-        </div>
-      </header>
+      </div>
 
-      <!-- Your status card -->
-      <article class="me-card">
-        <div class="me-row">
-          <img id="me-avatar" alt="" class="avatar lg" src="/assets/vault-mark.svg" />
-          <div class="me-id">
-            <strong id="me-persona">…</strong>
-            <span class="muted small" id="me-tier">—</span>
+      <div class="sidebar-divider"></div>
+
+      <nav class="sidebar-nav" aria-label="Sections">
+        <div class="nav-group">
+          <span class="nav-group-label">STATS</span>
+          <button class="nav-row" data-tab="overview">
+            <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M3 3h8v8H3zm10 0h8v5h-8zm0 7h8v11h-8zM3 13h8v8H3z"/></svg></span>
+            <span class="nav-label">Overview</span>
+          </button>
+          <button class="nav-row" data-tab="characters">
+            <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M12 12a4 4 0 100-8 4 4 0 000 8zm-7 8a7 7 0 0114 0z"/></svg></span>
+            <span class="nav-label">Characters</span>
+          </button>
+          <button class="nav-row" data-tab="ascensions">
+            <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M4 20h4V10H4zm6 0h4V4h-4zm6 0h4v-7h-4z"/></svg></span>
+            <span class="nav-label">Ascensions</span>
+          </button>
+          <button class="nav-row" data-tab="relics">
+            <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M12 2l2.4 5.6L20 9l-4 4 1 6-5-3-5 3 1-6-4-4 5.6-1.4z"/></svg></span>
+            <span class="nav-label">Top Relics</span>
+          </button>
+          <button class="nav-row" data-tab="cards">
+            <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M5 3h10a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2zm12 4h2a2 2 0 012 2v10a2 2 0 01-2 2h-2z"/></svg></span>
+            <span class="nav-label">Cards</span>
+          </button>
+          <button class="nav-row" data-tab="runs">
+            <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M12 2a10 10 0 100 20 10 10 0 000-20zm.5 5h-1v6l5 3 .5-.9-4.5-2.7z"/></svg></span>
+            <span class="nav-label">Recent Runs</span>
+          </button>
+        </div>
+
+        <div class="nav-group">
+          <span class="nav-group-label">COMMUNITY</span>
+          <button class="nav-row" data-tab="coop">
+            <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M9 12a3 3 0 100-6 3 3 0 000 6zm6 0a3 3 0 100-6 3 3 0 000 6zm-9 8a5 5 0 0110 0zm9-1a5 5 0 015-5v6h-5z"/></svg></span>
+            <span class="nav-label">Co-op</span>
+            <span class="nav-badge" id="nav-coop-count" hidden></span>
+          </button>
+        </div>
+      </nav>
+
+      <div class="sidebar-spacer"></div>
+
+      <div class="sidebar-footer">
+        <div class="me-pill" id="me-pill">
+          <img class="me-pill-avatar" id="me-pill-avatar" alt="" src="/assets/vault-mark.svg" />
+          <div class="me-pill-meta">
+            <strong id="me-pill-name">…</strong>
+            <span id="me-pill-tier">Steam connected</span>
           </div>
-          <div class="me-status-spacer"></div>
-          <span id="me-pushing-pill" class="auth-pill" hidden>Sending…</span>
         </div>
+        <div class="sidebar-status">
+          <span class="status-dot" id="status-dot"></span>
+          <span id="status-label">Connecting…</span>
+          <button class="status-signout" id="signout-btn" title="Sign out">Sign out</button>
+        </div>
+      </div>
+    </aside>
 
-        <fieldset class="status-pills" id="status-pills" aria-label="Your status">
-          <label><input type="radio" name="status" value="looking"><span class="pill ok">Looking for co-op</span></label>
-          <label><input type="radio" name="status" value="inRun"><span class="pill gold">In a solo run</span></label>
-          <label><input type="radio" name="status" value="inCoop"><span class="pill ember">Already in co-op</span></label>
-          <label><input type="radio" name="status" value="afk"><span class="pill mute">AFK</span></label>
-        </fieldset>
-
-        <div class="me-grid">
-          <label>
-            <span class="field-label">Note (visible to everyone)</span>
-            <input type="text" id="me-note" maxlength="140" placeholder="e.g. A8+, voice optional, 30 min" />
-          </label>
-          <label>
-            <span class="field-label">Discord handle (optional)</span>
-            <input type="text" id="me-discord" maxlength="40" placeholder="@yourname" />
-          </label>
+    <section class="content">
+      <!-- =================== Overview =================== -->
+      <article class="tab-panel" data-tab="overview" hidden>
+        <header class="panel-head">
+          <div>
+            <h1>Overview</h1>
+            <p class="panel-sub" id="overview-sub">Your run history at a glance.</p>
+          </div>
+          <div class="panel-actions">
+            <button class="btn-ghost" data-action="upload">↑ Upload history.json</button>
+          </div>
+        </header>
+        <div class="panel-body" id="overview-body">
+          <!-- Filled by renderer when history is loaded; empty state otherwise -->
         </div>
       </article>
 
-      <!-- Feed -->
-      <h2 class="feed-heading">
-        Players online
-        <span class="count-pill" id="online-count">0</span>
-      </h2>
-      <div id="feed" class="feed">
-        <div class="feed-empty">
-          <p>Loading…</p>
+      <!-- =================== Characters =================== -->
+      <article class="tab-panel" data-tab="characters" hidden>
+        <header class="panel-head">
+          <div><h1>Characters</h1><p class="panel-sub">Win rate by character.</p></div>
+          <div class="panel-actions"><button class="btn-ghost" data-action="upload">↑ Upload history.json</button></div>
+        </header>
+        <div class="panel-body" id="characters-body"></div>
+      </article>
+
+      <!-- =================== Ascensions =================== -->
+      <article class="tab-panel" data-tab="ascensions" hidden>
+        <header class="panel-head">
+          <div><h1>Ascensions</h1><p class="panel-sub">Win rate by ascension level.</p></div>
+          <div class="panel-actions"><button class="btn-ghost" data-action="upload">↑ Upload history.json</button></div>
+        </header>
+        <div class="panel-body" id="ascensions-body"></div>
+      </article>
+
+      <!-- =================== Relics =================== -->
+      <article class="tab-panel" data-tab="relics" hidden>
+        <header class="panel-head">
+          <div><h1>Top Relics</h1><p class="panel-sub">Best relics by win rate (min. 3 runs).</p></div>
+          <div class="panel-actions"><button class="btn-ghost" data-action="upload">↑ Upload history.json</button></div>
+        </header>
+        <div class="panel-body" id="relics-body"></div>
+      </article>
+
+      <!-- =================== Cards =================== -->
+      <article class="tab-panel" data-tab="cards" hidden>
+        <header class="panel-head">
+          <div><h1>Cards</h1><p class="panel-sub">Most picked vs. most skipped.</p></div>
+          <div class="panel-actions"><button class="btn-ghost" data-action="upload">↑ Upload history.json</button></div>
+        </header>
+        <div class="panel-body" id="cards-body"></div>
+      </article>
+
+      <!-- =================== Recent Runs =================== -->
+      <article class="tab-panel" data-tab="runs" hidden>
+        <header class="panel-head">
+          <div><h1>Recent Runs</h1><p class="panel-sub">Latest runs from your history.</p></div>
+          <div class="panel-actions"><button class="btn-ghost" data-action="upload">↑ Upload history.json</button></div>
+        </header>
+        <div class="panel-body" id="runs-body"></div>
+      </article>
+
+      <!-- =================== Co-op =================== -->
+      <article class="tab-panel" data-tab="coop" hidden>
+        <header class="panel-head">
+          <div>
+            <h1>Who's around right now</h1>
+            <p class="panel-sub" id="online-summary">Loading…</p>
+          </div>
+          <div class="panel-actions">
+            <button class="btn-ghost" id="refresh-btn" title="Refresh">↻ Refresh</button>
+          </div>
+        </header>
+        <div class="panel-body">
+          <!-- Inbox banner (invites I've received) -->
+          <section class="inbox" id="inbox" hidden>
+            <h3 class="inbox-title">Invites for you <span class="count-pill" id="inbox-count">0</span></h3>
+            <div class="inbox-list" id="inbox-list"></div>
+          </section>
+
+          <!-- Your status card -->
+          <article class="me-card">
+            <div class="me-row">
+              <img id="me-avatar" alt="" class="avatar lg" src="/assets/vault-mark.svg" />
+              <div class="me-id">
+                <strong id="me-persona">…</strong>
+                <span class="muted small" id="me-tier">—</span>
+              </div>
+              <div class="me-status-spacer"></div>
+              <span id="me-pushing-pill" class="auth-pill" hidden>Sending…</span>
+            </div>
+
+            <fieldset class="status-pills" id="status-pills" aria-label="Your status">
+              <label><input type="radio" name="status" value="looking"><span class="pill ok">Looking for co-op</span></label>
+              <label><input type="radio" name="status" value="inRun"><span class="pill gold">In a solo run</span></label>
+              <label><input type="radio" name="status" value="inCoop"><span class="pill ember">Already in co-op</span></label>
+              <label><input type="radio" name="status" value="afk"><span class="pill mute">AFK</span></label>
+            </fieldset>
+
+            <div class="me-grid">
+              <label>
+                <span class="field-label">Note (preset)</span>
+                <select id="me-note">
+                  <option value="">— Pick a note (optional) —</option>
+                  <!-- Filled at boot from /invites/messages so we never have to ship copy with the binary -->
+                </select>
+              </label>
+              <label>
+                <span class="field-label">Discord handle (optional)</span>
+                <input type="text" id="me-discord" maxlength="40" placeholder="@yourname" />
+              </label>
+            </div>
+          </article>
+
+          <!-- Feed -->
+          <h2 class="feed-heading">
+            Players online
+            <span class="count-pill" id="online-count">0</span>
+          </h2>
+          <div id="feed" class="feed">
+            <div class="feed-empty"><p>Loading…</p></div>
+          </div>
+          <p class="muted small footnote" id="last-updated">—</p>
+        </div>
+      </article>
+    </section>
+  </div>
+
+  <!-- ================================================================
+       Drag-drop overlay + invite modal — singletons, mounted always.
+  ================================================================ -->
+  <div class="drop-overlay" id="drop-overlay" hidden>
+    <div class="drop-overlay-card">
+      <div class="drop-overlay-icon">↑</div>
+      <h2>Drop <code>history.json</code> here</h2>
+      <p>Stays on your device — never uploaded.</p>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="invite-modal" hidden role="dialog" aria-modal="true" aria-labelledby="invite-modal-title">
+    <div class="modal">
+      <header class="modal-head">
+        <h2 id="invite-modal-title">Invite to play</h2>
+        <button class="modal-close" id="invite-modal-close" aria-label="Close">×</button>
+      </header>
+      <div class="modal-body">
+        <p class="modal-sub" id="invite-modal-sub">Pick a preset message — they can accept or decline.</p>
+        <div class="invite-options" id="invite-options">
+          <!-- Buttons inserted at boot from /invites/messages -->
         </div>
       </div>
-      <p class="muted small footnote" id="last-updated">—</p>
-    </section>
-  </main>
+    </div>
+  </div>
+
+  <!-- File input lives in the DOM so we can trigger it programmatically -->
+  <input type="file" id="history-file-input" accept=".json,application/json" hidden />
 
   <footer class="footer">
     <div class="footer-inner">
@@ -128,11 +303,12 @@
       <div class="footer-links">
         <a href="https://spirevault.app">Marketing site</a>
         <a href="https://github.com/c3rooks/SpireVault">GitHub</a>
+        <a href="https://apps.apple.com/us/app/ascension-companion/id6761977581" target="_blank" rel="noopener">iOS · Ascension Companion</a>
         <a href="https://coreycrooks.com" target="_blank" rel="noopener">coreycrooks.com</a>
       </div>
     </div>
   </footer>
 
-  <script src="/script.js" type="module"></script>
+  <script src="/script.js?v=2" type="module"></script>
 </body>
 </html>
