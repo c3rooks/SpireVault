@@ -370,7 +370,7 @@ function renderFeed(list) {
   document.getElementById("online-count").textContent = String(others.length);
   document.getElementById("online-summary").textContent =
     others.length === 0
-      ? "No one else online right now. Hang around — heartbeats land every 12 seconds."
+      ? "No one else online right now. Hang around — heartbeats land every 30 seconds."
       : `${others.length} other player${others.length === 1 ? "" : "s"} online · ` +
         `${looking} looking · ${inGame} in Slay the Spire 2`;
 

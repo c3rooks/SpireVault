@@ -77,7 +77,7 @@ the meta tag already references it.
   first `.dmg` asset, and rewrites the download links to point at it. If the
   API call fails (rate limit, no release yet), the buttons fall back to the
   releases page so users can still reach the binaries.
-* **Live presence count:** every 12 seconds, `script.js` GETs
+* **Live presence count:** every 30 seconds, `script.js` GETs
   `https://vault-coop.coreycrooks.workers.dev/presence` and renders the count
   in two places (the trust line under the hero, and the big card in the Co-op
   section). This is the same public endpoint the macOS app reads. No mock

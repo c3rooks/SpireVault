@@ -165,7 +165,10 @@ async function refreshPresence() {
   }
 }
 refreshPresence();
-setInterval(refreshPresence, 12_000);
+// 30 s matches the web companion's poll cadence and the value we claim in
+// the live-presence card. The /presence endpoint is edge-cached for 15 s on
+// Cloudflare, so most of these polls don't even hit the worker.
+setInterval(refreshPresence, 30_000);
 
 // ─── Latest release auto-link ───────────────────────────────────────────────
 //

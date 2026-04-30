@@ -245,7 +245,7 @@
           </div>
           <div class="coop-card-meta-row">
             <span>Refresh interval</span>
-            <strong>12&nbsp;s</strong>
+            <strong>30&nbsp;s</strong>
           </div>
           <div class="coop-card-meta-row">
             <span>Sign-in</span>
@@ -407,10 +407,24 @@
       </details>
       <details>
         <summary>What does it cost?</summary>
-        <p>$0. Forever. No tier, no premium, no donations gate. The infra
-        runs on Cloudflare's free tier; the only fixed cost is a $14/year
-        domain. It's open source (MIT), so even if I disappear, anyone
-        can fork it and keep it running.</p>
+        <p><strong>$0 to use.</strong> No tier, no premium, no donation
+        gate, no "supporter" perks dangled in front of free features. I
+        cover hosting (Cloudflare costs me a few dollars a month) and the
+        $14/year domain — that's the entire bill. It's MIT licensed, so
+        even if I disappear, anyone can fork the repo and keep it running
+        for themselves and their friends.</p>
+      </details>
+      <details>
+        <summary>Can I self-host my own copy?</summary>
+        <p>Yes, and the entire stack is designed for it. The marketing
+        site is a static page (any host works), the web companion is also
+        static, and the matchmaking server is a single Cloudflare Worker
+        with a KV namespace. The
+        <a href="https://github.com/c3rooks/SpireVault">repo</a>
+        includes a <code>Makefile</code> that deploys all three with
+        <code>wrangler</code>; bring your own Steam Web API key and
+        you're done. There's no hidden binary, no proprietary service,
+        nothing that only works on my domain.</p>
       </details>
       <details>
         <summary>How does the co-op feed actually work?</summary>
@@ -480,6 +494,6 @@
     </div>
   </footer>
 
-  <script src="/script.js?v=5"></script>
+  <script src="/script.js?v=6"></script>
 </body>
 </html>
