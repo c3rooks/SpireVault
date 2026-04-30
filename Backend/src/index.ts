@@ -80,8 +80,13 @@ async function handle(req: Request, env: Env): Promise<Response> {
 
       // ----- Presence feed -----
       // Reads are public so the UI can render the gate before sign-in.
+      //
+      // Edge-cached for 8 s on the worker's CF colo. KV reads are abundant
+      // (100k/day) compared to writes (1k/day), but with multiple browsers
+      // polling the feed every 30 s we'd still rather collapse identical
+      // requests at the edge before they hit KV at all.
       if (method === "GET" && pathname === "/presence") {
-        return json(await listPresence(env));
+        return getPresenceCached(req, env);
       }
       if (method === "POST" && pathname === "/presence") {
         const auth = await requireSession(req, env);
@@ -166,4 +171,37 @@ async function handle(req: Request, env: Env): Promise<Response> {
         { status: 500 }
       );
     }
+}
+
+/**
+ * Cache the public presence feed at the edge for a short window. The Cache API
+ * is keyed by a synthetic URL so we don't have to think about query strings.
+ *
+ * What this saves us:
+ *   - Identical /presence GETs from the same colo within the cache window
+ *     skip the worker handler entirely → 0 KV reads for those.
+ *   - With a 30s client poll + 2 active browsers, we still hit KV ~1-2x per
+ *     poll cycle, instead of once per browser per cycle.
+ */
+async function getPresenceCached(_req: Request, env: Env): Promise<Response> {
+  const cacheKey = new Request("https://presence.cache/feed/v2", { method: "GET" });
+  const cache = caches.default;
+
+  const hit = await cache.match(cacheKey);
+  if (hit) return hit;
+
+  const data = await listPresence(env);
+  const body = JSON.stringify(data);
+  const resp = new Response(body, {
+    headers: {
+      "content-type": "application/json",
+      // 8 s public cache. Browsers ignore (we set no-store on the fetch),
+      // but Cloudflare's edge cache sees this and respects it.
+      "cache-control": "public, max-age=8, s-maxage=8",
+      ...CORS_HEADERS,
+    },
+  });
+  // Best-effort cache write; never fail a user response on a cache miss.
+  try { await cache.put(cacheKey, resp.clone()); } catch {}
+  return resp;
 }

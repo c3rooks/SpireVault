@@ -3,66 +3,90 @@ import type { Env, PresenceEntry, PresenceUpsert, PlayerStats } from "./types";
 /**
  * Presence storage + Steam Web API enrichment.
  *
- * Storage layout in KV:
- *   - `presence:<steamID>` → `PresenceEntry` JSON, TTL = PRESENCE_TTL_SECONDS.
+ * STORAGE SHAPE — single-roster key
+ * ----------------------------------
+ *   `presence:roster` → JSON `{ entries: PresenceEntry[] }`, TTL 7 days.
  *
- * The TTL is the entire lifetime guarantee. Clients heartbeat every ~2 min;
- * if a client disappears (quit, crash, network drop) the entry just expires
- * and falls off the list. There is no separate "online users" index — KV
- * `list({ prefix: "presence:" })` is fast enough at this scale.
+ * Why one big key instead of one key per user:
+ *   The original design used `presence:<sid>` per user and a `KV.list({ prefix })`
+ *   to read the feed. That cost one **list operation** (the smallest free-tier
+ *   bucket — 1,000/day) plus one read per online user, on every poll. With two
+ *   browsers polling every 12 s the list-op quota torched in hours.
  *
- * The persona name + avatar are pulled from the verified Steam profile that
- * the OpenID flow stamped onto the session record (see `auth.ts`). The
- * client doesn't get to pick them — that prevents impersonation by display
- * name. The `inSTS2` flag is computed server-side at list time by batching
- * all visible SteamIDs through `GetPlayerSummaries`.
+ *   Roster math is much friendlier:
+ *
+ *     listPresence    → 1 read
+ *     upsertPresence  → 1 read + 1 write
+ *     deletePresence  → 1 read + 1 write
+ *
+ *   …with zero list operations *ever*. Inline pruning at read time is what lets
+ *   us drop the per-key TTL (we keep `updatedAt` on each entry and discard
+ *   anything older than `PRESENCE_TTL_SECONDS`).
+ *
+ * Concurrency:
+ *   KV is eventually consistent; two simultaneous upserts can race and lose one
+ *   entry's update. For presence that's fine — the next heartbeat refreshes
+ *   from the loser. We don't depend on read-modify-write for anything where
+ *   correctness matters.
  */
 
-const PRESENCE_TTL_SECONDS = 5 * 60; // 5 min — heartbeats every ~2 min
+const PRESENCE_TTL_SECONDS = 5 * 60; // 5 min — heartbeats every ~3 min
 /**
  * Minimum spacing between heartbeats from the same session. Legit clients
- * write every ~90 s; anything faster is either a bug or an abuser. We don't
- * want to bill ourselves into a corner on KV writes either way. Two seconds
- * is small enough that humans clicking radios fast still feel snappy
- * (the change-handler debounces at 600 ms client-side anyway).
+ * write every ~180 s; anything faster is either a bug or an abuser.
  */
-const MIN_HEARTBEAT_INTERVAL_MS = 2000;
-const PRESENCE_PREFIX = "presence:";
+const MIN_HEARTBEAT_INTERVAL_MS = 60_000; // 60 s — was 2 s; we no longer need fast pulses
+const ROSTER_KEY = "presence:roster";
+const ROSTER_TTL_SECONDS = 7 * 86400;
 const SESSION_PROFILE_PREFIX = "session-profile:";
 /** STS2's Steam appid. Hard-coded because that's literally the product. */
 const STS2_APP_ID = "2868840";
 
+interface Roster { entries: PresenceEntry[]; }
+
+// MARK: - Roster I/O ---------------------------------------------------------
+
+async function readRoster(env: Env): Promise<Roster> {
+  const raw = await env.LOBBIES.get(ROSTER_KEY);
+  if (!raw) return { entries: [] };
+  try { return JSON.parse(raw) as Roster; } catch { return { entries: [] }; }
+}
+
+async function writeRoster(env: Env, roster: Roster): Promise<void> {
+  await env.LOBBIES.put(ROSTER_KEY, JSON.stringify(roster), {
+    expirationTtl: ROSTER_TTL_SECONDS,
+  });
+}
+
+/** Drop entries whose `updatedAt` is older than PRESENCE_TTL_SECONDS. */
+function pruneStale(roster: Roster): Roster {
+  const cutoff = Date.now() - PRESENCE_TTL_SECONDS * 1000;
+  return {
+    entries: roster.entries.filter((e) => {
+      const t = Date.parse(e.updatedAt);
+      return Number.isFinite(t) && t >= cutoff;
+    }),
+  };
+}
+
 // MARK: - Public CRUD --------------------------------------------------------
 
-/**
- * Upsert the caller's presence. The verified `steamID` comes from the session
- * (never from the body). Persona/avatar are pulled from the session-profile
- * KV record stamped at OpenID time.
- */
 export async function upsertPresence(
   env: Env,
   steamID: string,
   body: PresenceUpsert
 ): Promise<PresenceEntry> {
-  // Anti-flood: reject heartbeats from the same SteamID closer together than
-  // MIN_HEARTBEAT_INTERVAL_MS. Reads are cheap; this avoids hammering KV
-  // writes if a client gets stuck in a tight loop or someone tries to abuse
-  // the auth-gated endpoint.
-  const existing = await env.LOBBIES.get(`${PRESENCE_PREFIX}${steamID}`);
-  if (existing) {
-    try {
-      const prev = JSON.parse(existing) as PresenceEntry;
-      const last = Date.parse(prev.updatedAt);
-      if (
-        Number.isFinite(last) &&
-        Date.now() - last < MIN_HEARTBEAT_INTERVAL_MS
-      ) {
-        // Treat as success but don't write — the client already had a fresh
-        // record. They get the unchanged entry back for free.
-        return prev;
-      }
-    } catch {
-      // Fall through and write — the old record was unreadable anyway.
+  const roster = pruneStale(await readRoster(env));
+  const idx = roster.entries.findIndex((e) => e.steamID === steamID);
+  const prev = idx >= 0 ? roster.entries[idx] : null;
+
+  // Anti-flood: if we wrote this user's row in the last MIN_HEARTBEAT_INTERVAL_MS,
+  // return the existing record without touching KV. Saves writes on
+  // misbehaving / spam-clicking clients.
+  if (prev) {
+    const last = Date.parse(prev.updatedAt);
+    if (Number.isFinite(last) && Date.now() - last < MIN_HEARTBEAT_INTERVAL_MS) {
+      return prev;
     }
   }
 
@@ -70,8 +94,8 @@ export async function upsertPresence(
 
   const entry: PresenceEntry = {
     steamID,
-    personaName: sessionProfile?.personaName ?? "Steam User",
-    avatarURL: sessionProfile?.avatarURL,
+    personaName: sessionProfile?.personaName ?? prev?.personaName ?? "Steam User",
+    avatarURL: sessionProfile?.avatarURL ?? prev?.avatarURL,
     discordHandle: sanitizeDiscord(body.discordHandle),
     stats: sanitizeStats(body.stats),
     status: validStatus(body.status),
@@ -80,53 +104,43 @@ export async function upsertPresence(
     updatedAt: new Date().toISOString(),
   };
 
-  await env.LOBBIES.put(`${PRESENCE_PREFIX}${steamID}`, JSON.stringify(entry), {
-    expirationTtl: PRESENCE_TTL_SECONDS,
-  });
+  if (idx >= 0) {
+    roster.entries[idx] = entry;
+  } else {
+    roster.entries.push(entry);
+  }
+
+  await writeRoster(env, roster);
   return entry;
 }
 
 export async function deletePresence(env: Env, steamID: string): Promise<void> {
-  await env.LOBBIES.delete(`${PRESENCE_PREFIX}${steamID}`);
+  const roster = pruneStale(await readRoster(env));
+  const next = roster.entries.filter((e) => e.steamID !== steamID);
+  if (next.length === roster.entries.length) {
+    // Nothing to delete and we already paid for the read; skip the write.
+    return;
+  }
+  await writeRoster(env, { entries: next });
 }
 
 /**
- * List everyone currently online. Enriches with Steam Web API in batches so
- * the UI can display "in STS2 right now" badges without each client having to
- * hold a Steam API key.
+ * List everyone currently online. Steam-Web-API enrichment is unchanged but
+ * is now layered on a single-read roster instead of a list+N-gets fan-out.
  */
 export async function listPresence(env: Env): Promise<PresenceEntry[]> {
-  const entries: PresenceEntry[] = [];
-  let cursor: string | undefined;
-  do {
-    const page = await env.LOBBIES.list({ prefix: PRESENCE_PREFIX, cursor });
-    for (const key of page.keys) {
-      const raw = await env.LOBBIES.get(key.name);
-      if (!raw) continue;
-      try {
-        entries.push(JSON.parse(raw) as PresenceEntry);
-      } catch {
-        // Skip malformed entries — KV TTL will clear them eventually.
-      }
-    }
-    cursor = page.list_complete ? undefined : page.cursor;
-  } while (cursor);
+  const roster = pruneStale(await readRoster(env));
+  if (roster.entries.length === 0) return [];
 
-  if (entries.length === 0) return [];
-
-  const inGame = await fetchInGameSet(env, entries.map((e) => e.steamID));
-  for (const e of entries) {
+  const inGame = await fetchInGameSet(env, roster.entries.map((e) => e.steamID));
+  for (const e of roster.entries) {
     e.inSTS2 = inGame.has(e.steamID);
   }
-  return entries;
+  return roster.entries;
 }
 
 // MARK: - Session profile ----------------------------------------------------
 
-/**
- * `auth.ts` writes one of these per successful sign-in so presence-time UI
- * doesn't need to pay for a Steam Web API call to get the persona name.
- */
 export interface SessionProfile {
   personaName: string;
   avatarURL?: string;
@@ -153,11 +167,6 @@ async function getSessionProfile(env: Env, steamID: string): Promise<SessionProf
 
 // MARK: - Steam Web API enrichment ------------------------------------------
 
-/**
- * Returns the subset of `ids` that are currently playing STS2 according to
- * GetPlayerSummaries. Cached at the Cloudflare edge for 30 seconds — adequate
- * since heartbeats are slower than that and presence is inherently fuzzy.
- */
 async function fetchInGameSet(env: Env, ids: string[]): Promise<Set<string>> {
   if (!env.STEAM_WEB_API_KEY) return new Set();
   const filtered = Array.from(new Set(ids.filter((s) => /^\d{17}$/.test(s)))).slice(0, 100);

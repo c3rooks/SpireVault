@@ -135,20 +135,17 @@ async function adminStats(env: Env): Promise<Response> {
   const now = new Date();
 
   // ---- online presence ----
+  // Single-roster read; presence layout switched to `presence:roster` JSON to
+  // stop the per-poll list() bleed on the public endpoint.
   const onlineEntries: PresenceEntry[] = [];
   {
-    let cursor: string | undefined;
-    do {
-      const page = await env.LOBBIES.list({ prefix: "presence:", cursor });
-      for (const k of page.keys) {
-        const raw = await env.LOBBIES.get(k.name);
-        if (!raw) continue;
-        try {
-          onlineEntries.push(JSON.parse(raw) as PresenceEntry);
-        } catch {}
-      }
-      cursor = page.list_complete ? undefined : page.cursor;
-    } while (cursor);
+    const raw = await env.LOBBIES.get("presence:roster");
+    if (raw) {
+      try {
+        const r = JSON.parse(raw) as { entries?: PresenceEntry[] };
+        if (Array.isArray(r.entries)) onlineEntries.push(...r.entries);
+      } catch {}
+    }
   }
 
   // ---- ever-signed-in count (count keys) ----
@@ -310,12 +307,20 @@ export async function recordSignIn(
 }
 
 /**
- * Called on every successful presence heartbeat. Cheaper than recordSignIn:
- * only refreshes the daily-seen marker so DAU stays accurate even for users
- * who came online once today and never re-authed.
+ * Called on every successful presence heartbeat. Touches the daily-seen marker
+ * so DAU stays accurate even for users who came online once today and never
+ * re-authed.
+ *
+ * IMPORTANT: this runs on **every** heartbeat. We read first and only write
+ * if the marker isn't already set today. Reads are abundant (100k/day on free
+ * tier); writes are scarce (1k/day). One write per user per day, max — instead
+ * of one write per heartbeat per user.
  */
 export async function recordHeartbeat(env: Env, steamID: string): Promise<void> {
   const day = ymd(new Date());
+  const key = `seen:${day}:${steamID}`;
+  const existing = await env.LOBBIES.get(key);
+  if (existing) return; // already marked today — save the write
   // KV is eventually consistent; setting the same value keeps the TTL fresh.
   await env.LOBBIES.put(`seen:${day}:${steamID}`, "1", {
     expirationTtl: 10 * 86_400,

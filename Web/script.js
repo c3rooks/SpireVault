@@ -13,9 +13,9 @@
 //   Co-op (presence + canned-message invite system + Steam deep-links)
 // =========================================================================
 
-import * as Stats from "/lib/stats-engine.js?v=2";
-import * as HistoryStore from "/lib/history-store.js?v=2";
-import * as InviteAPI from "/lib/invites.js?v=2";
+import * as Stats from "/lib/stats-engine.js?v=3";
+import * as HistoryStore from "/lib/history-store.js?v=3";
+import * as InviteAPI from "/lib/invites.js?v=3";
 
 // ─── Constants ─────────────────────────────────────────────────────────
 const SERVER_URL  = "https://vault-coop.coreycrooks.workers.dev";
@@ -24,9 +24,14 @@ const STS2_APP_ID = "2868840";
 const STORAGE_SESSION       = "vault.web.session";
 const STORAGE_DRAFT         = "vault.web.presence.draft";
 const STORAGE_LAST_TAB      = "vault.web.last-tab";
-const POLL_FEED_MS          = 12_000;
-const POLL_INBOX_MS         = 10_000;
-const HEARTBEAT_MS          = 90_000;
+// Poll cadences are tuned to keep us well under Cloudflare KV's free-tier
+// daily quotas (1k writes/day, 1k list ops/day, 100k reads/day). A single
+// pair of active browsers used to burn the list-op quota in hours; new
+// roster-style storage on the server eliminated lists entirely, but we
+// also slowed these down because there's no UX win in 12-second polls.
+const POLL_FEED_MS          = 30_000;  // was 12_000
+const POLL_INBOX_MS         = 30_000;  // was 10_000
+const HEARTBEAT_MS          = 180_000; // was 90_000
 
 const TABS_WITH_DATA = ["overview", "characters", "ascensions", "relics", "cards", "runs"];
 
