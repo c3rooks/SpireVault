@@ -27,7 +27,7 @@
 
   <!-- header -->
   <text x="260" y="74" font-family="Playfair Display, serif" font-size="32" font-weight="900" fill="#f4eddc">Co-op</text>
-  <text x="260" y="100" font-family="Inter" font-size="13" fill="#b6abc4">Find someone to play with  message them on Steam or Discord.</text>
+  <text x="260" y="100" font-family="Inter" font-size="13" fill="#b6abc4">Find someone to play with â€” message them on Steam or Discord.</text>
   <g transform="translate(1080, 56)">
     <rect width="120" height="28" rx="14" fill="#6dd97c" opacity="0.14" stroke="#6dd97c" stroke-opacity="0.5"/>
     <circle cx="14" cy="14" r="4" fill="#6dd97c"/>
@@ -39,7 +39,7 @@
   <circle cx="305" cy="180" r="22" fill="#d4af37" opacity="0.2" stroke="#d4af37" stroke-opacity="0.5" stroke-width="1.5"/>
   <text x="305" y="186" text-anchor="middle" font-family="Inter" font-size="16" font-weight="900" fill="#d4af37">C</text>
   <text x="345" y="172" font-family="Inter" font-size="14" font-weight="800" fill="#f4eddc">CoreyVault</text>
-  <text x="345" y="190" font-family="Inter" font-size="11" fill="#6c647a">Master · A13+ · 379 runs</text>
+  <text x="345" y="190" font-family="Inter" font-size="11" fill="#6c647a">Master Â· A13+ Â· 379 runs</text>
 
   <!-- status pills -->
   <g font-family="Inter" font-size="11" font-weight="900">
@@ -82,8 +82,8 @@
     <rect x="633" y="358" width="74" height="18" rx="9" fill="#d4af37" opacity="0.12" stroke="#d4af37" stroke-opacity="0.45"/>
     <text x="670" y="372" text-anchor="middle" font-size="9" font-weight="900" fill="#d4af37">ASCENDANT</text>
 
-    <text x="335" y="396" font-size="12" fill="#b6abc4">In matchmaking  happy to host or join. Voice optional.</text>
-    <text x="335" y="416" font-size="11" fill="#6c647a">A11 max · 38% wr · 142 runs · Silent</text>
+    <text x="335" y="396" font-size="12" fill="#b6abc4">In matchmaking â€” happy to host or join. Voice optional.</text>
+    <text x="335" y="416" font-size="11" fill="#6c647a">A11 max Â· 38% wr Â· 142 runs Â· Silent</text>
 
     <rect x="1080" y="356" width="100" height="22" rx="6" fill="#ff6b1a" opacity="0.10" stroke="#ff6b1a" stroke-opacity="0.55"/>
     <text x="1130" y="371" text-anchor="middle" font-size="10" font-weight="900" fill="#ffa05c">Steam</text>
@@ -97,8 +97,8 @@
     <text x="335" y="468" font-size="14" font-weight="800" fill="#f4eddc">MerchantsBane</text>
     <rect x="465" y="456" width="78" height="18" rx="9" fill="#6dd97c" opacity="0.14" stroke="#6dd97c" stroke-opacity="0.5"/>
     <text x="504" y="470" text-anchor="middle" font-size="9" font-weight="900" fill="#6dd97c">LOOKING</text>
-    <text x="335" y="494" font-size="12" fill="#b6abc4">Pushing A12 this week — looking for a steady duo. DM me.</text>
-    <text x="335" y="510" font-size="11" fill="#6c647a">A8 max · 31% wr · 87 runs · Defect</text>
+    <text x="335" y="494" font-size="12" fill="#b6abc4">Pushing A12 this week â€” looking for a steady duo. DM me.</text>
+    <text x="335" y="510" font-size="11" fill="#6c647a">A8 max Â· 31% wr Â· 87 runs Â· Defect</text>
 
     <!-- row 3: in coop -->
     <rect x="260" y="534" width="940" height="80" rx="12" fill="#14111e" stroke="#ff6b1a" stroke-opacity="0.25"/>
@@ -107,8 +107,8 @@
     <text x="335" y="560" font-size="14" font-weight="800" fill="#f4eddc">AshOfNight</text>
     <rect x="465" y="548" width="80" height="18" rx="9" fill="#ff6b1a" opacity="0.14" stroke="#ff6b1a" stroke-opacity="0.5"/>
     <text x="505" y="562" text-anchor="middle" font-size="9" font-weight="900" fill="#ffa05c">IN CO-OP</text>
-    <text x="335" y="586" font-size="12" fill="#b6abc4">Mid-run with @Spire  wave but don't expect a reply.</text>
-    <text x="335" y="602" font-size="11" fill="#6c647a">A14 max · 45% wr · 312 runs · Ironclad</text>
+    <text x="335" y="586" font-size="12" fill="#b6abc4">Mid-run with @Spire â€” wave but don't expect a reply.</text>
+    <text x="335" y="602" font-size="11" fill="#6c647a">A14 max Â· 45% wr Â· 312 runs Â· Ironclad</text>
 
     <!-- row 4: looking -->
     <rect x="260" y="626" width="940" height="80" rx="12" fill="#14111e" stroke="#6dd97c" stroke-opacity="0.25"/>
@@ -118,7 +118,7 @@
     <rect x="465" y="640" width="78" height="18" rx="9" fill="#6dd97c" opacity="0.14" stroke="#6dd97c" stroke-opacity="0.5"/>
     <text x="504" y="654" text-anchor="middle" font-size="9" font-weight="900" fill="#6dd97c">LOOKING</text>
     <text x="335" y="678" font-size="12" fill="#b6abc4">First time in co-op, low ascensions OK!</text>
-    <text x="335" y="694" font-size="11" fill="#6c647a">A3 max · 12% wr · 24 runs · Regent</text>
+    <text x="335" y="694" font-size="11" fill="#6c647a">A3 max Â· 12% wr Â· 24 runs Â· Regent</text>
 
     <!-- row 5: solo -->
     <rect x="260" y="718" width="940" height="80" rx="12" fill="#14111e" stroke="#d4af37" stroke-opacity="0.20"/>
@@ -127,7 +127,7 @@
     <text x="335" y="744" font-size="14" font-weight="800" fill="#f4eddc">GoldenTongue</text>
     <rect x="465" y="732" width="78" height="18" rx="9" fill="#d4af37" opacity="0.12" stroke="#d4af37" stroke-opacity="0.5"/>
     <text x="504" y="746" text-anchor="middle" font-size="9" font-weight="900" fill="#d4af37">SOLO RUN</text>
-    <text x="335" y="770" font-size="12" fill="#b6abc4">A20H attempt  pls don't ping me</text>
-    <text x="335" y="786" font-size="11" fill="#6c647a">A20 max · 51% wr · 581 runs · Ironclad</text>
+    <text x="335" y="770" font-size="12" fill="#b6abc4">A20H attempt â€” pls don't ping me</text>
+    <text x="335" y="786" font-size="11" fill="#6c647a">A20 max Â· 51% wr Â· 581 runs Â· Ironclad</text>
   </g>
 </svg>
