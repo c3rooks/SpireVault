@@ -2,6 +2,7 @@
  *   1. Sticky-nav border on scroll
  *   2. Live "X players online" count from the matchmaking server
  *   3. Hero + install download buttons resolved to the latest GitHub release
+ *   4. Click-to-zoom lightbox on showcase screenshots
  */
 
 const SERVER_URL = "https://vault-coop.coreycrooks.workers.dev";
@@ -14,6 +15,88 @@ if (nav) {
   document.addEventListener("scroll", onScroll, { passive: true });
   onScroll();
 }
+
+// ─── Lightbox for showcase screenshots ──────────────────────────────────────
+//
+// Click any .screenshot tile → full-screen view of the image with the
+// figcaption underneath. Esc / click-outside / × button all close it.
+// Restores body scroll lock and previously-focused element on close so
+// keyboard users land back where they were.
+(() => {
+  const tiles = document.querySelectorAll("#showcase .screenshot");
+  if (tiles.length === 0) return;
+
+  const lb = document.createElement("div");
+  lb.className = "lightbox";
+  lb.setAttribute("role", "dialog");
+  lb.setAttribute("aria-modal", "true");
+  lb.setAttribute("aria-hidden", "true");
+  lb.innerHTML = `
+    <button class="lightbox-close" type="button" aria-label="Close">&times;</button>
+    <figure class="lightbox-figure">
+      <img alt="" />
+      <figcaption></figcaption>
+    </figure>
+  `;
+  document.body.appendChild(lb);
+
+  const lbImg     = lb.querySelector("img");
+  const lbCap     = lb.querySelector("figcaption");
+  const lbClose   = lb.querySelector(".lightbox-close");
+  const lbFigure  = lb.querySelector(".lightbox-figure");
+
+  let lastFocus = null;
+
+  function open(srcImg, caption) {
+    lastFocus = document.activeElement;
+    lbImg.src = srcImg.currentSrc || srcImg.src;
+    lbImg.alt = srcImg.alt || "";
+    lbCap.innerHTML = caption || "";
+    lb.classList.add("is-open");
+    lb.setAttribute("aria-hidden", "false");
+    document.documentElement.style.overflow = "hidden";
+    requestAnimationFrame(() => lbClose.focus());
+  }
+
+  function close() {
+    lb.classList.remove("is-open");
+    lb.setAttribute("aria-hidden", "true");
+    document.documentElement.style.overflow = "";
+    lbImg.src = "";
+    if (lastFocus && lastFocus.focus) lastFocus.focus();
+  }
+
+  tiles.forEach((tile) => {
+    tile.addEventListener("click", (e) => {
+      // Don't hijack clicks on real anchor links inside captions.
+      if (e.target.closest("a")) return;
+      const img = tile.querySelector("img");
+      const cap = tile.querySelector("figcaption");
+      if (!img) return;
+      open(img, cap ? cap.innerHTML : "");
+    });
+    tile.setAttribute("tabindex", "0");
+    tile.setAttribute("role", "button");
+    tile.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        const img = tile.querySelector("img");
+        const cap = tile.querySelector("figcaption");
+        if (img) open(img, cap ? cap.innerHTML : "");
+      }
+    });
+  });
+
+  // Close on backdrop click (but not when clicking the figure itself)
+  lb.addEventListener("click", (e) => {
+    if (e.target === lb) close();
+  });
+  lbClose.addEventListener("click", close);
+  lbFigure.addEventListener("click", (e) => e.stopPropagation());
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && lb.classList.contains("is-open")) close();
+  });
+})();
 
 // ─── Live presence count ────────────────────────────────────────────────────
 const presenceText      = document.getElementById("presence-text");

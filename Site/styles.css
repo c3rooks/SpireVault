@@ -655,6 +655,61 @@ section {
   overflow: hidden;
   background: var(--card);
   position: relative;
+  cursor: zoom-in;
+  transform: translate3d(0, 0, 0);
+  transition:
+    transform 0.35s cubic-bezier(0.2, 0.8, 0.2, 1),
+    border-color 0.25s ease,
+    box-shadow  0.35s cubic-bezier(0.2, 0.8, 0.2, 1);
+  will-change: transform;
+}
+.screenshot::before {
+  /* Subtle gold-to-ember rim glow that reveals on hover */
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.35s ease;
+  background: linear-gradient(135deg,
+    rgba(212,175,55,0.45) 0%,
+    rgba(255,107,26,0.25) 50%,
+    rgba(212,175,55,0.45) 100%);
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+          mask-composite: exclude;
+  padding: 1px;
+}
+.screenshot:hover {
+  transform: translate3d(0, -10px, 0) scale(1.025);
+  border-color: rgba(212,175,55,0.55);
+  box-shadow:
+    0 40px 90px -22px rgba(0,0,0,0.85),
+    0 14px 34px -8px rgba(255,107,26,0.28);
+}
+.screenshot:hover::before { opacity: 1; }
+.screenshot img {
+  transition: transform 0.6s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.screenshot:hover img {
+  transform: scale(1.06);
+}
+/* Caption stays put while image zooms behind it */
+.screenshot figcaption {
+  background: linear-gradient(180deg, transparent, rgba(12,10,20,0.85) 30%);
+  position: relative;
+  z-index: 1;
+  transition: color 0.25s ease;
+}
+.screenshot:hover figcaption {
+  color: var(--text);
+}
+.screenshot figcaption {
+  position: relative;
+  z-index: 1;
 }
 .screenshot.is-live {
   border-color: rgba(212,175,55,0.32);
@@ -672,8 +727,91 @@ section {
   font-size: 10px;
   font-weight: 800;
   letter-spacing: 1.5px;
+  z-index: 2;
   backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);
+  pointer-events: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .screenshot,
+  .screenshot img { transition: none; }
+  .screenshot:hover { transform: none; }
+  .screenshot:hover img { transform: none; }
+}
+
+/* ── Lightbox ───────────────────────────────────────────────────── */
+.lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(6, 4, 10, 0.90);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.25s ease, visibility 0s linear 0.25s;
+  cursor: zoom-out;
+}
+.lightbox.is-open {
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 0.25s ease, visibility 0s linear 0s;
+}
+.lightbox-figure {
+  position: relative;
+  max-width: min(1200px, 96vw);
+  max-height: 92vh;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  transform: scale(0.96);
+  transition: transform 0.28s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.lightbox.is-open .lightbox-figure { transform: scale(1); }
+.lightbox-figure img {
+  max-width: 100%;
+  max-height: 84vh;
+  width: auto;
+  height: auto;
+  border-radius: 14px;
+  border: 1px solid rgba(212,175,55,0.30);
+  box-shadow: 0 40px 100px -20px rgba(0,0,0,0.85);
+  background: var(--card);
+}
+.lightbox-figure figcaption {
+  font-size: 12px;
+  color: var(--text-2);
+  letter-spacing: 0.2px;
+  text-align: center;
+  max-width: 80ch;
+}
+.lightbox-close {
+  position: absolute;
+  top: 18px;
+  right: 22px;
+  background: rgba(20,17,30,0.85);
+  color: var(--text);
+  border: 1px solid rgba(212,175,55,0.30);
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 18px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.18s, transform 0.18s;
+}
+.lightbox-close:hover {
+  background: rgba(255,107,26,0.18);
+  transform: scale(1.08);
 }
 .screenshot img {
   display: block;
