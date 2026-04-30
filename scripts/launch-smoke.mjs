@@ -131,10 +131,37 @@ async function checkWebCompanionGate(browser) {
   else                                    ok("signed-out gate renders Sign in with Steam");
 
   const html = await page.content();
-  if (!/styles\.css\?v=4/.test(html)) fail("styles.css cache-buster not v=4");
-  else                                ok("styles.css ?v=4 live");
-  if (!/script\.js\?v=4/.test(html))  fail("script.js cache-buster not v=4");
-  else                                ok("script.js ?v=4 live");
+  if (!/styles\.css\?v=5/.test(html)) fail("styles.css cache-buster not v=5");
+  else                                ok("styles.css ?v=5 live");
+  if (!/script\.js\?v=5/.test(html))  fail("script.js cache-buster not v=5");
+  else                                ok("script.js ?v=5 live");
+
+  // Make sure the confusing broadcast-note dropdown isn't lurking in the
+  // shipped HTML anywhere. The id was `me-note`; if it exists on the page,
+  // the old form leaked back in via a bad cache or partial deploy.
+  const noteSelectExists = await page.locator("#me-note").count();
+  if (noteSelectExists !== 0) fail(`stale #me-note dropdown still present (${noteSelectExists})`);
+  else                        ok("broadcast Note dropdown removed");
+
+  // The new How co-op works hint must replace it.
+  const howtoExists = await page.locator(".me-howto").count();
+  // It's hidden until signed-in, so just verify the markup is in the DOM.
+  if (howtoExists !== 1) fail(`How co-op works hint missing or duplicated (count=${howtoExists})`);
+  else                   ok("How co-op works hint shipped");
+
+  // No em-dashes in user-visible prose. We only look at what the user can
+  // actually see: the signed-out hero. The signed-in shell is in the DOM but
+  // `hidden`, and its placeholder cells use "—" as a "no data yet" sentinel,
+  // which is a normal UI convention rather than the AI tell to weed out.
+  const visibleText = await page.evaluate(() =>
+    document.querySelector("main#main-public")?.textContent ?? ""
+  );
+  if (/—/.test(visibleText)) {
+    const sample = visibleText.match(/.{0,40}—.{0,40}/)?.[0]?.trim() ?? "?";
+    fail(`em-dash leaked into visible prose near: "${sample}"`);
+  } else {
+    ok("no em-dashes in visible prose");
+  }
 
   if (errors.length)     fail(`console errors: ${errors.join(" | ")}`);
   else                   ok("zero console errors");
@@ -151,7 +178,7 @@ async function checkStatsEngineParity(browser) {
   await page.goto(APP_URL + "?cb=launch", { waitUntil: "networkidle", timeout: 30000 });
 
   const result = await page.evaluate(async (raw) => {
-    const Stats = await import("/lib/stats-engine.js?v=3");
+    const Stats = await import("/lib/stats-engine.js?v=4");
     const ext = Stats.extractRuns(raw);
     if (!ext.ok) return { ok: false, err: ext.error };
     const summary = Stats.summarize(ext.runs);
@@ -223,8 +250,8 @@ async function checkIndexedDBPersistence(browser) {
   await page.goto(APP_URL + "?cb=idb", { waitUntil: "networkidle", timeout: 30000 });
 
   await page.evaluate(async (raw) => {
-    const HistoryStore = await import("/lib/history-store.js?v=3");
-    const Stats        = await import("/lib/stats-engine.js?v=3");
+    const HistoryStore = await import("/lib/history-store.js?v=4");
+    const Stats        = await import("/lib/stats-engine.js?v=4");
     const ext = Stats.extractRuns(raw);
     if (!ext.ok) throw new Error("seed extract failed: " + ext.error);
     await HistoryStore.saveHistory({ runs: ext.runs, savedAt: Date.now() });
@@ -232,7 +259,7 @@ async function checkIndexedDBPersistence(browser) {
 
   await page.reload({ waitUntil: "networkidle" });
   const survived = await page.evaluate(async () => {
-    const HistoryStore = await import("/lib/history-store.js?v=3");
+    const HistoryStore = await import("/lib/history-store.js?v=4");
     const cached = await HistoryStore.loadHistory();
     return cached?.runs?.length ?? 0;
   });
@@ -241,7 +268,7 @@ async function checkIndexedDBPersistence(browser) {
 
   // And data is gone after we clear it (rules out stale-cache false positives).
   await page.evaluate(async () => {
-    const HistoryStore = await import("/lib/history-store.js?v=3");
+    const HistoryStore = await import("/lib/history-store.js?v=4");
     await HistoryStore.clearHistory();
   });
   await page.reload({ waitUntil: "networkidle" });

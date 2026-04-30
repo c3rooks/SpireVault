@@ -3,14 +3,14 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>The Vault — Web</title>
-  <meta name="description" content="The Vault for Slay the Spire 2 — co-op finder, run history, stats. Runs in any browser." />
+  <title>The Vault · Web</title>
+  <meta name="description" content="The Vault for Slay the Spire 2. Co-op finder, run history, stats. Runs in any browser." />
   <meta name="theme-color" content="#0c0a14" />
   <link rel="icon" type="image/svg+xml" href="/assets/vault-mark.svg" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Playfair+Display:wght@700;900&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/styles.css?v=4" />
+  <link rel="stylesheet" href="/styles.css?v=5" />
 </head>
 <body>
   <div class="bg-glow" aria-hidden="true"></div>
@@ -32,13 +32,13 @@
   <main id="main-public" class="main-public">
     <section id="signed-out-view" class="signed-out">
       <span class="eyebrow">Slay the Spire 2 · Vault for the Web</span>
-      <h1>Run history, stats, and co-op — <span class="grad">in&nbsp;your&nbsp;browser</span>.</h1>
+      <h1>Run history, stats, and co-op, <span class="grad">in&nbsp;your&nbsp;browser</span>.</h1>
       <p class="lede">
         Sign in with Steam to see who's around right now, send canned co-op
         invites, and launch <strong>Slay the Spire 2</strong> straight from
         the page. Drop your <code>history.json</code> in to get the same
         Overview, Characters, Ascensions, Relics, Cards, and Recent Runs tabs
-        the macOS app has — same data, same engine, no install.
+        the macOS app has. Same data, same engine, no install.
       </p>
       <div class="cta-row">
         <button class="btn-primary" id="signin-btn">
@@ -55,7 +55,7 @@
         <h4>What signing in actually does</h4>
         <ul>
           <li>Verifies you own the Steam account you claim, via Steam OpenID.</li>
-          <li>Mints a 30-day session — no password ever leaves Steam.</li>
+          <li>Mints a 30-day session. No password ever leaves Steam.</li>
           <li>Pulls only your persona name and avatar.</li>
           <li>Posts your status to the public feed only while this tab is open.</li>
           <li>Sign out at any time to drop your row from everyone's feed.</li>
@@ -223,7 +223,7 @@
               <img id="me-avatar" alt="" class="avatar lg" src="/assets/vault-mark.svg" />
               <div class="me-id">
                 <strong id="me-persona">…</strong>
-                <span class="muted small" id="me-tier">—</span>
+                <span class="muted small" id="me-tier">…</span>
               </div>
               <div class="me-status-spacer"></div>
               <span id="me-pushing-pill" class="auth-pill" hidden>Sending…</span>
@@ -238,16 +238,17 @@
 
             <div class="me-grid">
               <label>
-                <span class="field-label">Note (preset)</span>
-                <select id="me-note">
-                  <option value="">— Pick a note (optional) —</option>
-                  <!-- Filled at boot from /invites/messages so we never have to ship copy with the binary -->
-                </select>
-              </label>
-              <label>
                 <span class="field-label">Discord handle (optional)</span>
                 <input type="text" id="me-discord" maxlength="40" placeholder="@yourname" />
               </label>
+              <div class="me-howto">
+                <span class="field-label">How co-op works</span>
+                <p class="me-howto-text">
+                  Click <strong>Invite to play</strong> on anyone in the list.
+                  They get a popup with a preset message and either accept or
+                  decline. Nothing fires off until they accept.
+                </p>
+              </div>
             </div>
           </article>
 
@@ -259,7 +260,7 @@
           <div id="feed" class="feed">
             <div class="feed-empty"><p>Loading…</p></div>
           </div>
-          <p class="muted small footnote" id="last-updated">—</p>
+          <p class="muted small footnote" id="last-updated">…</p>
         </div>
       </article>
     </section>
@@ -272,7 +273,7 @@
     <div class="drop-overlay-card">
       <div class="drop-overlay-icon">↑</div>
       <h2>Drop <code>history.json</code> here</h2>
-      <p>Stays on your device — never uploaded.</p>
+      <p>Stays on your device. Never uploaded.</p>
     </div>
   </div>
 
@@ -283,7 +284,7 @@
         <button class="modal-close" id="invite-modal-close" aria-label="Close">×</button>
       </header>
       <div class="modal-body">
-        <p class="modal-sub" id="invite-modal-sub">Pick a preset message — they can accept or decline.</p>
+        <p class="modal-sub" id="invite-modal-sub">Pick a preset message. They can accept or decline.</p>
         <div class="invite-options" id="invite-options">
           <!-- Buttons inserted at boot from /invites/messages -->
         </div>
@@ -309,6 +310,6 @@
     </div>
   </footer>
 
-  <script src="/script.js?v=4" type="module"></script>
+  <script src="/script.js?v=5" type="module"></script>
 </body>
 </html>

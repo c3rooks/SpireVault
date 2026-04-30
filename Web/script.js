@@ -13,9 +13,9 @@
 //   Co-op (presence + canned-message invite system + Steam deep-links)
 // =========================================================================
 
-import * as Stats from "/lib/stats-engine.js?v=3";
-import * as HistoryStore from "/lib/history-store.js?v=3";
-import * as InviteAPI from "/lib/invites.js?v=3";
+import * as Stats from "/lib/stats-engine.js?v=4";
+import * as HistoryStore from "/lib/history-store.js?v=4";
+import * as InviteAPI from "/lib/invites.js?v=4";
 
 // ─── Constants ─────────────────────────────────────────────────────────
 const SERVER_URL  = "https://vault-coop.coreycrooks.workers.dev";
@@ -47,6 +47,14 @@ let pollInboxTimer = null;
 let heartbeatTimer = null;
 let pushTimer      = null;
 
+// IDs of pending invites we've already announced to the user. Lets us tell
+// "this invite just landed for the first time" from "we've been polling and
+// it's been there for two minutes." We only fire the loud notification path
+// once per id; subsequent polls leave the inbox banner alone.
+const ANNOUNCED_INVITE_IDS = new Set();
+const BASE_TAB_TITLE = "The Vault · Web";
+let HAS_PROMPTED_NOTIFICATION = false; // ask permission lazily, once
+
 // ─── Boot ──────────────────────────────────────────────────────────────
 if (session) {
   bootSignedIn();
@@ -76,7 +84,7 @@ async function refreshPublicCount() {
   try {
     const list = await fetchFeed();
     if (list.length === 0) {
-      $text.textContent = "No one online right now — be the first.";
+      $text.textContent = "No one online right now. Be the first.";
     } else {
       const looking = list.filter((p) => p.status === "looking").length;
       $text.textContent =
@@ -150,7 +158,6 @@ async function bootSignedIn() {
   // Load preset message catalog (used by both the Note <select> and the modal)
   try {
     await InviteAPI.loadMessageCatalog(SERVER_URL);
-    populateNoteSelect();
     populateInviteOptions();
   } catch (e) {
     console.warn("could not load invite messages", e);
@@ -218,42 +225,29 @@ function wireCoopForm() {
   document.querySelectorAll('input[name="status"]').forEach((el) =>
     el.addEventListener("change", schedulePush)
   );
-  document.getElementById("me-note").addEventListener("change", schedulePush);
   document.getElementById("me-discord").addEventListener("input", schedulePush);
 
-  // Restore last draft
+  // Restore last draft (status pill + discord handle).
   const draft = readDraft();
   setRadio("status", draft.status ?? "looking");
   document.getElementById("me-discord").value = draft.discordHandle ?? "";
-  // Note dropdown is populated after catalog load — restore there too.
 }
 
-function populateNoteSelect() {
-  const sel = document.getElementById("me-note");
-  if (!sel) return;
-  // Reset (in case of re-init)
-  sel.innerHTML = '<option value="">— No note —</option>';
-  const catalog = InviteAPI.getMessageCatalog();
-  for (const [id, text] of Object.entries(catalog)) {
-    const opt = document.createElement("option");
-    opt.value = id;
-    opt.textContent = text;
-    sel.appendChild(opt);
-  }
-  const draft = readDraft();
-  if (draft.noteId && catalog[draft.noteId]) sel.value = draft.noteId;
-}
-
+/**
+ * Read the only two things on the user's status card that actually go to the
+ * server: their status pill and an optional Discord handle.
+ *
+ * The previous "Note (preset)" dropdown was a passive broadcast that nobody's
+ * mental model expected — looked like a message-send surface but didn't
+ * actually message anyone. Removed entirely. The real send path is the
+ * Invite-to-play modal on each player row in the feed.
+ */
 function readMyForm() {
   const status = (document.querySelector('input[name="status"]:checked') || {}).value || "looking";
-  const noteId = document.getElementById("me-note").value || "";
-  const noteText = noteId ? (InviteAPI.getMessageText(noteId) ?? "") : "";
   const discordHandle = (document.getElementById("me-discord").value || "").trim();
 
   return {
     status,
-    note: noteText,           // server stores the resolved canonical text
-    noteId,                   // we keep the id locally so we can restore it
     discordHandle: discordHandle || undefined,
     stats: undefined,
   };
@@ -277,7 +271,6 @@ async function pushNow(silent) {
       },
       body: JSON.stringify({
         status: body.status,
-        note: body.note,
         discordHandle: body.discordHandle,
       }),
     });
@@ -311,14 +304,99 @@ async function pullFeed() {
 async function pullInbox() {
   try {
     const r = await InviteAPI.fetchInbox(SERVER_URL, session.sessionToken);
-    if (r.ok) {
-      lastInbox = r.invites ?? [];
-      if (activeTab === "coop") renderInbox(lastInbox);
-      updateCoopBadge();
-    }
+    if (!r.ok) return;
+    const previousInbox = lastInbox;
+    lastInbox = r.invites ?? [];
+    if (activeTab === "coop") renderInbox(lastInbox);
+    updateCoopBadge();
+    updateTabTitle();
+    announceNewInvites(previousInbox, lastInbox);
   } catch (e) {
     console.warn("inbox fetch failed", e);
   }
+}
+
+/**
+ * Mirror the pending-invite count into the document.title so the user can see
+ * "(1) The Vault · Web" in the OS tab/window list even when the tab is in
+ * the background. Cheap and effective.
+ */
+function updateTabTitle() {
+  const pending = lastInbox.filter((i) => i.status === "pending").length;
+  document.title = pending > 0 ? `(${pending}) ${BASE_TAB_TITLE}` : BASE_TAB_TITLE;
+}
+
+/**
+ * Loud-arrival path. The first time we see a given pending invite id we:
+ *   1. Flash the inbox banner with a gold pulse so it's impossible to miss.
+ *   2. Fire a real OS-level Notification if the user has granted permission.
+ *      We ask for permission lazily — only on the FIRST inbound invite, never
+ *      on page load — because asking up front gets you "Block, never ask
+ *      again" 99% of the time.
+ *   3. Toast in-page as a fallback.
+ *
+ * Subsequent polls of the same invite are silent. Declining or accepting an
+ * invite removes it from `lastInbox`, which removes its id from
+ * `ANNOUNCED_INVITE_IDS` — meaning if a player re-invites you later (after
+ * the per-pair 60 s dedupe window), it announces again like new.
+ */
+function announceNewInvites(prev, curr) {
+  const prevIds = new Set(prev.map((i) => i.id));
+  const newPending = curr.filter(
+    (i) => i.status === "pending" && !ANNOUNCED_INVITE_IDS.has(i.id) && !prevIds.has(i.id)
+  );
+  if (newPending.length === 0) {
+    // Garbage-collect the announce set so removed invites can re-announce.
+    const live = new Set(curr.map((i) => i.id));
+    for (const id of ANNOUNCED_INVITE_IDS) if (!live.has(id)) ANNOUNCED_INVITE_IDS.delete(id);
+    return;
+  }
+
+  for (const inv of newPending) ANNOUNCED_INVITE_IDS.add(inv.id);
+
+  // 1. Flash the inbox banner.
+  const $inbox = document.getElementById("inbox");
+  if ($inbox) {
+    $inbox.classList.remove("is-flash");
+    void $inbox.offsetWidth; // restart the CSS keyframes
+    $inbox.classList.add("is-flash");
+  }
+
+  // 2. Try the OS-level popup. Permission state machine:
+  //    - "granted":  fire it.
+  //    - "default":  ask once. If they grant, fire it for the next one.
+  //    - "denied":   skip silently; the in-page banner is the fallback.
+  if (typeof Notification !== "undefined") {
+    if (Notification.permission === "granted") {
+      fireOSNotification(newPending[0]);
+    } else if (Notification.permission === "default" && !HAS_PROMPTED_NOTIFICATION) {
+      HAS_PROMPTED_NOTIFICATION = true;
+      Notification.requestPermission().then((p) => {
+        if (p === "granted") fireOSNotification(newPending[0]);
+      }).catch(() => {});
+    }
+  }
+
+  // 3. Always toast in-page; the banner highlight + toast together carry the
+  //    message even when the OS notification is blocked.
+  const first = newPending[0];
+  const who = first.fromPersona || "Someone";
+  toast(
+    newPending.length === 1
+      ? `${who} wants to play. Open Co-op to accept or decline.`
+      : `${newPending.length} new invites. Open Co-op to respond.`
+  );
+}
+
+function fireOSNotification(invite) {
+  try {
+    const text = InviteAPI.getMessageText(invite.messageId) ?? "Wants to play.";
+    new Notification(`${invite.fromPersona || "Someone"} wants to play`, {
+      body: text,
+      icon: invite.fromAvatar || "/assets/vault-mark.svg",
+      tag: `spirevault-invite-${invite.id}`, // coalesces if multiple arrive
+    });
+  } catch { /* notification API quirks vary; never fail the poll */ }
 }
 
 async function fetchFeed() {
@@ -370,13 +448,13 @@ function renderFeed(list) {
   document.getElementById("online-count").textContent = String(others.length);
   document.getElementById("online-summary").textContent =
     others.length === 0
-      ? "No one else online right now. Hang around — heartbeats land every 30 seconds."
+      ? "No one else online right now. Hang around, heartbeats land every 30 seconds."
       : `${others.length} other player${others.length === 1 ? "" : "s"} online · ` +
         `${looking} looking · ${inGame} in Slay the Spire 2`;
 
   const $feed = document.getElementById("feed");
   if (others.length === 0) {
-    $feed.innerHTML = `<div class="feed-empty"><p>You're online — be the first someone bumps into.</p></div>`;
+    $feed.innerHTML = `<div class="feed-empty"><p>You're online. Be the first someone bumps into.</p></div>`;
     return;
   }
 
@@ -434,7 +512,7 @@ function renderRow(p) {
           <span class="tag ${tagClass}">${tagLabel}</span>
           ${p.inSTS2 ? `<span class="tag live">In STS2</span>` : ""}
         </div>
-        ${p.note ? `<p class="note">${esc(p.note)}</p>` : `<p class="note muted">—</p>`}
+        <p class="row-hint muted">Send them an invite to play.</p>
       </div>
       <div class="actions">
         <button class="btn-primary sm" data-act="invite" data-id="${esc(sid)}" data-name="${esc(persona)}">Invite to play</button>
@@ -550,7 +628,7 @@ function openInviteModal(toID, persona) {
   if (!/^\d{17}$/.test(toID)) return;
   pendingInviteToID = toID;
   document.getElementById("invite-modal-sub").textContent =
-    `Send to ${persona}. They can accept or decline — no free-text.`;
+    `Send to ${persona}. They can accept or decline. No free text, just preset messages.`;
   const $modal = document.getElementById("invite-modal");
   $modal.hidden = false;
   document.body.style.overflow = "hidden";
@@ -576,7 +654,7 @@ async function sendInviteFromModal(messageId) {
     }
     return;
   }
-  toast("Invite sent — they'll see it in their inbox.");
+  toast("Invite sent. They'll see it pop up in their inbox.");
 }
 
 // =========================================================================

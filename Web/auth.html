@@ -56,7 +56,7 @@
 
     if (!steamid || !/^\d{17}$/.test(steamid)) fail("Steam ID was missing or invalid.");
     else if (!session || session.length < 16)  fail("Session token was missing.");
-    else if (!nonce || nonce !== expectedNonce) fail("Nonce mismatch — possible replay or stale link. Please sign in again.");
+    else if (!nonce || nonce !== expectedNonce) fail("Nonce mismatch. Possible replay or stale link. Please sign in again.");
     else {
       const profile = {
         steamID: steamid,

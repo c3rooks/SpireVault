@@ -338,10 +338,42 @@ main {
 
 .me-grid {
   display: grid;
-  grid-template-columns: 1.2fr 1fr;
+  grid-template-columns: 1fr 1.4fr;
   gap: 16px;
+  align-items: stretch;
 }
 @media (max-width: 600px) { .me-grid { grid-template-columns: 1fr; } }
+
+/*
+ * Replaces the old "Note (preset)" dropdown with a tiny explainer that lives
+ * exactly where the dropdown used to. The dropdown was a passive broadcast
+ * surface that nobody's mental model expected, so we kill it AND use the
+ * vacated space to make the actual flow ("click Invite to play on someone
+ * below") obvious to first-time visitors.
+ */
+.me-howto {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  padding: 10px 14px;
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  background: var(--card-raised);
+}
+.me-howto-text {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-2);
+}
+.me-howto-text strong { color: var(--gold); font-weight: 700; }
+
+/* Subtle hint below each row in the player feed, replacing the stale broadcast-note slot. */
+.row-hint {
+  margin: 4px 0 0;
+  font-size: 12px;
+  font-style: italic;
+}
 
 .field-label {
   display: block;
@@ -943,6 +975,19 @@ main {
   padding: 18px 20px;
   margin-bottom: 22px;
 }
+
+/*
+ * Played for ~1.6s when a brand-new invite hits the inbox. Gold pulse over
+ * the green resting state so it reads as "this just changed, look here"
+ * regardless of whether the user is on the Co-op tab or staring at stats.
+ */
+@keyframes inboxArrivalFlash {
+  0%   { box-shadow: 0 0 0 0 rgba(212,175,55,0.0); border-color: rgba(212,175,55,0.9); transform: scale(1); }
+  20%  { box-shadow: 0 0 28px 4px rgba(212,175,55,0.55); transform: scale(1.01); }
+  60%  { box-shadow: 0 0 14px 2px rgba(212,175,55,0.30); transform: scale(1); }
+  100% { box-shadow: 0 0 0 0 rgba(212,175,55,0.0); border-color: rgba(109,217,124,0.4); transform: scale(1); }
+}
+.inbox.is-flash { animation: inboxArrivalFlash 1.6s ease-out; }
 .inbox-title {
   margin: 0 0 12px;
   font-family: 'Playfair Display', serif;
