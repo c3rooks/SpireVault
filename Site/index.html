@@ -14,9 +14,9 @@
   <meta property="og:type" content="website" />
   <meta property="og:url" content="https://spirevault.app" />
   <meta name="twitter:card" content="summary" />
-  <meta name="twitter:image" content="/assets/vault-logo.png" />
+  <meta name="twitter:image" content="/assets/og.svg" />
 
-  <link rel="icon" type="image/png" href="/assets/vault-logo.png" />
+  <link rel="icon" type="image/svg+xml" href="/assets/vault-mark.svg" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Playfair+Display:wght@700;900&display=swap" rel="stylesheet" />
@@ -29,7 +29,7 @@
 
   <header class="nav">
     <a class="brand" href="/">
-      <img src="/assets/vault-logo.png" alt="" class="brand-emblem" />
+      <img src="/assets/vault-mark.svg" alt="" class="brand-emblem" />
       <span class="brand-mark">THE VAULT</span>
     </a>
     <nav class="nav-links">
@@ -46,8 +46,8 @@
       <div class="hero-copy">
         <span class="eyebrow">Free · Open source · No signup</span>
         <h1>
-          Find a <span class="grad">Slay&nbsp;the&nbsp;Spire&nbsp;2</span> co-op partner<br />
-          at your skill level.
+          Find a <span class="grad">Slay&nbsp;the&nbsp;Spire&nbsp;2</span><br />
+          <span style="white-space:nowrap">co&#8209;op partner</span> at your skill level.
         </h1>
         <p class="lede">
           STS2 co-op is friend-gated through Steam — which means today, the only
@@ -77,7 +77,7 @@
 
       <div class="hero-art">
         <div class="hero-glow"></div>
-        <img src="/assets/vault-logo.png" alt="The Vault emblem" class="hero-emblem" />
+        <img src="/assets/vault-mark.svg" alt="The Vault emblem" class="hero-emblem" />
       </div>
     </div>
   </section>
@@ -161,19 +161,28 @@
     <div class="section-head">
       <span class="eyebrow">Looks the part</span>
       <h2>Design that doesn't fight you.</h2>
+      <p class="section-sub">
+        macOS app screens are stylized renders for now (real captures replace
+        them at v0.2). The web companion shot below is a live capture from
+        <a href="https://app.spirevault.app">app.spirevault.app</a> just now.
+      </p>
     </div>
     <div class="showcase-rail">
       <figure class="screenshot">
         <img src="/assets/screenshot-overview.svg" alt="Overview screen showing winrate, ascension chart, top relics" loading="lazy" />
-        <figcaption>Overview · stats from your real runs, computed locally</figcaption>
+        <figcaption>macOS · Overview tab (render)</figcaption>
       </figure>
       <figure class="screenshot">
         <img src="/assets/screenshot-coop.svg" alt="Co-op tab with the live presence feed" loading="lazy" />
-        <figcaption>Co-op · who's online and how to reach them</figcaption>
+        <figcaption>macOS · Co-op tab (render)</figcaption>
       </figure>
       <figure class="screenshot">
         <img src="/assets/screenshot-share.svg" alt="Share-run card" loading="lazy" />
-        <figcaption>Share-Run cards · post-ready in two clicks</figcaption>
+        <figcaption>Share-Run card (render)</figcaption>
+      </figure>
+      <figure class="screenshot">
+        <img src="/assets/screenshots/web-coop-live.png" alt="Live capture of the web companion at app.spirevault.app" loading="lazy" />
+        <figcaption>Web companion · <strong>live capture</strong> from app.spirevault.app</figcaption>
       </figure>
     </div>
   </section>
@@ -262,7 +271,7 @@
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 5l7 7-7 7"/></svg>
           <span>Open in browser</span>
         </a>
-        <p class="install-meta">Best path for Windows / Linux today. Native Windows build is on the roadmap.</p>
+        <p class="install-meta">Windows, Linux, ChromeOS — full co-op finder, no install, no .exe to download.</p>
       </article>
     </div>
 
@@ -322,12 +331,30 @@
         they built — we just help players find each other before Steam takes over.</p>
       </details>
       <details>
-        <summary>Why isn't there a native Windows app?</summary>
-        <p>The macOS app is built in SwiftUI, which is Apple-only. A Windows
-        build would be a full rewrite. Instead we shipped the web companion,
-        which delivers the entire co-op finder to Windows and Linux today —
-        same backend, same live feed, no install. Run tracking is the only
-        macOS-only feature, because it needs read access to your local save folder.</p>
+        <summary>Is this a mod? Could it get me banned?</summary>
+        <p><strong>No, it's not a mod.</strong> Spire Vault doesn't modify
+        Slay the Spire 2, doesn't inject into the game process, doesn't load
+        DLLs or use ModTheSpire, and doesn't touch game memory. It only reads
+        the <code>.run</code> JSON files Slay the Spire 2 itself writes to your
+        save folder after each run — the same files you could open in any
+        text editor.</p>
+        <p>Run-history readers like this have existed for the original Slay
+        the Spire for years (Sky Diving, Mintotaur, etc.) and are universally
+        accepted by Mega Crit and the community. The macOS app has read-only
+        access to one folder. The web companion never touches your filesystem
+        at all.</p>
+      </details>
+      <details>
+        <summary>Where's the Windows .exe?</summary>
+        <p>There isn't one, and you don't need one. The web companion at
+        <a href="https://app.spirevault.app">app.spirevault.app</a> gives
+        Windows and Linux users the entire co-op finder — same backend, same
+        live feed, same Steam sign-in — with zero install. The only feature
+        the web version doesn't have is the local run tracker, because that
+        requires reading files off your computer (which the browser, correctly,
+        won't allow). For run tracking on Windows, the data is sitting in your
+        save folder as JSON; you can also use the open-source CLI in the
+        <a href="https://github.com/c3rooks/SpireVault">repo</a>.</p>
       </details>
       <details>
         <summary>Do I need an account?</summary>
@@ -380,10 +407,10 @@
   <footer class="footer">
     <div class="footer-inner">
       <div class="footer-brand">
-        <img src="/assets/vault-logo.png" alt="" />
+        <img src="/assets/vault-mark.svg" alt="" />
         <div>
           <strong>Spire Vault</strong>
-          <p>Free, open source, fan-made. Not affiliated with Mega Crit Games. <em>Slay the Spire</em> is a trademark of Mega Crit Games.</p>
+          <p>Built by <a href="https://coreycrooks.com" target="_blank" rel="noopener">Corey Crooks</a>. Free, open source, fan-made. Not affiliated with Mega Crit Games. <em>Slay the Spire</em> is a trademark of Mega Crit Games.</p>
         </div>
       </div>
       <div class="footer-links">
@@ -392,6 +419,7 @@
         <a href="https://github.com/c3rooks/SpireVault/blob/main/LICENSE">License (MIT)</a>
         <a href="https://github.com/c3rooks/SpireVault/issues/new">Report an issue</a>
         <a href="https://app.spirevault.app">Web companion</a>
+        <a href="https://coreycrooks.com" target="_blank" rel="noopener">coreycrooks.com</a>
       </div>
     </div>
   </footer>

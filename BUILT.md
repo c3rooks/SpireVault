@@ -96,4 +96,4 @@ If you find something that feels off, open an issue. If you want to
 fork it and run your own version, the MIT license is at the top of the
 repo. That's the whole deal.
 
-— c3rooks
+— Corey Crooks · [coreycrooks.com](https://coreycrooks.com) · [@c3rooks](https://github.com/c3rooks)

@@ -277,7 +277,7 @@ function renderRow(p) {
       const u = new URL(p.avatarURL ?? "");
       if (u.protocol === "https:" || u.protocol === "http:") return u.toString();
     } catch {}
-    return "/assets/vault-logo.png";
+    return "/assets/vault-mark.svg";
   })();
 
   // Ensure SteamID is exactly 17 digits before composing URLs against it.

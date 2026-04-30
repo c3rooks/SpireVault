@@ -47,7 +47,7 @@ their nameservers.
 | `index.html`            | The page itself (semantic HTML, accessibility-friendly). |
 | `styles.css`            | Hand-rolled dark theme, mirrors the app palette. |
 | `script.js`             | Sticky nav, **live presence count** from the Worker, **dynamic DMG link** from the latest GitHub Release. |
-| `assets/vault-logo.png` | App emblem. Identical to the bundled icon. |
+| `assets/vault-mark.svg` | Hand-coded brand mark (octagonal vault dial + spire). Used for favicon, nav, hero, footer, social cards. |
 | `assets/screenshot-*.svg` | Pre-rendered SVG mockups for first launch. **Replace with real screenshots before going to launch traffic.** |
 | `_headers`              | Strict CSP + security headers applied by Cloudflare Pages. |
 | `_redirects`            | `/download`, `/coop`, `/github` shortcuts. |

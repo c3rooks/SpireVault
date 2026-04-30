@@ -17,6 +17,13 @@ things:
 > Not affiliated with Mega Crit Games. *Slay the Spire* is a trademark of
 > Mega Crit. This is a fan-made tool that reads files you already have on
 > your own computer.
+>
+> **It is not a mod.** It does not modify the game, inject into the game
+> process, load DLLs, or use ModTheSpire. It only reads the `.run` JSON
+> files Slay the Spire 2 writes to your save folder after each run — the
+> same way you could open them in a text editor. Run-history readers like
+> this have existed for the original Slay the Spire for years and are
+> universally accepted by Mega Crit and the community.
 
 ---
 
@@ -40,20 +47,27 @@ data in a clean UI was a few extra weekends of work.
 
 ## What it looks like
 
+The macOS app screens below are stylized renders. The web companion shot
+underneath is a real screenshot of the live deployment at
+[app.spirevault.app](https://app.spirevault.app).
+
 <p align="center">
-  <img src="Site/assets/screenshot-overview.svg" width="80%" alt="Overview tab — winrate, max ascension, top relics from your real runs" />
+  <img src="Site/assets/screenshot-overview.svg" width="80%" alt="Overview tab — winrate, max ascension, top relics from your real runs (macOS app render)" />
 </p>
 
 <p align="center">
-  <img src="Site/assets/screenshot-coop.svg" width="80%" alt="Co-op tab — live presence feed of other players" />
+  <img src="Site/assets/screenshot-coop.svg" width="80%" alt="Co-op tab — live presence feed of other players (macOS app render)" />
 </p>
 
 <p align="center">
-  <img src="Site/assets/screenshot-share.svg" width="60%" alt="Share-Run card — post-ready PNG of any single run" />
+  <img src="Site/assets/screenshot-share.svg" width="60%" alt="Share-Run card — post-ready PNG of any single run (render)" />
 </p>
 
-<sub>Above: representative screens. Real captures replace these in
-the GitHub Release notes.</sub>
+<p align="center">
+  <img src="Site/assets/screenshots/web-coop-live.png" width="80%" alt="Live capture of the web companion at app.spirevault.app" />
+  <br />
+  <sub><em>Web companion · live capture from <a href="https://app.spirevault.app">app.spirevault.app</a></em></sub>
+</p>
 
 ## Install
 
@@ -191,10 +205,11 @@ issue — that's the whole point of being open source.
 
 ## Who built this
 
-I'm c3rooks. I play STS2 (Silent main, occasional Watcher when I want
-to feel clever), I write code professionally, and I built this because
-I got tired of scrolling Discord trying to find a co-op partner.
+I'm Corey Crooks. I play STS2 (Silent main, occasional Watcher when I
+want to feel clever), I write code professionally, and I built this
+because I got tired of scrolling Discord trying to find a co-op partner.
 
+- Personal site: [coreycrooks.com](https://coreycrooks.com)
 - GitHub: [@c3rooks](https://github.com/c3rooks)
 - Reddit: [u/c3rooks](https://reddit.com/user/c3rooks)
 - For security reports: see [SECURITY.md](SECURITY.md)
