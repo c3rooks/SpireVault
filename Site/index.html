@@ -20,7 +20,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Playfair+Display:wght@700;900&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/styles.css" />
+  <link rel="stylesheet" href="/styles.css?v=4" />
 </head>
 <body>
   <!-- Background ornament -->
@@ -92,12 +92,10 @@
           />
         </div>
         <div class="hero-floating-card" aria-hidden="true">
-          <div class="hfc-row">
-            <div class="hfc-dot"></div>
-            <div class="hfc-text">
-              <strong id="hero-floating-count">— online</strong>
-              <span>signed in via Steam right now</span>
-            </div>
+          <div class="hfc-dot"></div>
+          <div class="hfc-text">
+            <strong id="hero-floating-count">Live presence</strong>
+            <span>refreshes every&nbsp;12&nbsp;s</span>
           </div>
         </div>
       </div>
@@ -128,12 +126,11 @@
       <p class="origin-bona-fides">
         The whole thing is open source. The macOS app reads only files
         already on your computer. Co-op uses Steam OpenID, so your password
-        never touches my server. Every line of code is on
-        <a href="https://github.com/c3rooks/SpireVault" target="_blank" rel="noopener">GitHub</a>;
-        the threat model is in
-        <a href="https://github.com/c3rooks/SpireVault/blob/main/SECURITY.md" target="_blank" rel="noopener">SECURITY.md</a>;
-        the candid "how this was built and what AI helped with" notes are in
-        <a href="https://github.com/c3rooks/SpireVault/blob/main/BUILT.md" target="_blank" rel="noopener">BUILT.md</a>.
+        never touches the server. Every line of code is on
+        <a href="https://github.com/c3rooks/SpireVault" target="_blank" rel="noopener">GitHub</a>,
+        and the full threat model is in
+        <a href="https://github.com/c3rooks/SpireVault/blob/main/SECURITY.md" target="_blank" rel="noopener">SECURITY.md</a>.
+        Audit anything before you install.
       </p>
     </div>
   </section>
@@ -227,16 +224,39 @@
           <li><span class="step-num">4</span><div><strong>Play.</strong> Coordinate over Steam or Discord, host the STS2 multiplayer game, send the in-game invite — the same way you would today.</div></li>
         </ol>
       </div>
-      <aside class="coop-card">
-        <header>
-          <span class="eyebrow">Live</span>
-          <span class="dot dot-pulse"></span>
+      <aside class="coop-card" id="coop-card">
+        <header class="coop-card-head">
+          <div class="coop-card-status">
+            <span class="dot dot-pulse"></span>
+            <span class="coop-card-eyebrow">Live presence</span>
+          </div>
+          <span class="coop-card-tag">no signup</span>
         </header>
-        <div class="coop-card-row" id="presence-card-status">
+
+        <div class="coop-card-body">
           <div class="big-num" id="presence-count">—</div>
-          <div class="big-label">players online right now</div>
+          <div class="big-label" id="presence-label">players online right now</div>
         </div>
-        <p class="coop-card-foot">Updates every 12 seconds from the live matchmaking server. No signup needed to read this number.</p>
+
+        <div class="coop-card-meta">
+          <div class="coop-card-meta-row">
+            <span>In&nbsp;STS2 right now</span>
+            <strong id="presence-ingame">—</strong>
+          </div>
+          <div class="coop-card-meta-row">
+            <span>Refresh interval</span>
+            <strong>12&nbsp;s</strong>
+          </div>
+          <div class="coop-card-meta-row">
+            <span>Sign-in</span>
+            <strong>Steam OpenID</strong>
+          </div>
+        </div>
+
+        <a class="coop-card-cta" href="https://app.spirevault.app">
+          Open the live feed
+          <span aria-hidden="true">→</span>
+        </a>
       </aside>
     </div>
   </section>
@@ -408,20 +428,16 @@
         model details in <a href="https://github.com/c3rooks/SpireVault/blob/main/SECURITY.md">SECURITY.md</a>.</p>
       </details>
       <details>
-        <summary>Is this AI-generated slop?</summary>
-        <p>Honest answer: I used AI to help me ship faster — anyone shipping
-        a side project in 2026 who claims they don't is lying or working too
-        slowly. Specifically, AI helped with first-pass copy, scaffolding
-        Cloudflare Worker boilerplate, and refactoring a couple of Swift
-        views. It did <strong>not</strong> design the architecture, write
-        the threat model, decide what features to ship, or replace the part
-        where I read every diff before it landed.</p>
-        <p>The proof is the repo: read the code, read
-        <a href="https://github.com/c3rooks/SpireVault/blob/main/BUILT.md">BUILT.md</a>
-        for what AI touched and what it didn't, look at the commit history,
-        try the app. If something feels off, open an issue and tell me. The
-        whole point of being open source is that you don't have to take my
-        word for it.</p>
+        <summary>Why should I trust some random tool with my Steam account?</summary>
+        <p>You don't have to. Sign-in is Steam OpenID, which means your
+        password is typed into Steam's login page, not mine — the server
+        only ever sees the verified Steam ID Valve hands back. The
+        <a href="https://github.com/c3rooks/SpireVault" target="_blank" rel="noopener">whole stack is on GitHub</a>;
+        every outbound network call from the app is documented in
+        <a href="https://github.com/c3rooks/SpireVault/blob/main/SECURITY.md" target="_blank" rel="noopener">SECURITY.md</a>.
+        The macOS app makes zero network calls except to the matchmaking
+        server (and only when you're signed in). Read the code, build it
+        yourself if you want, file an issue if something looks wrong.</p>
       </details>
     </div>
   </section>
@@ -446,6 +462,6 @@
     </div>
   </footer>
 
-  <script src="/script.js"></script>
+  <script src="/script.js?v=4"></script>
 </body>
 </html>

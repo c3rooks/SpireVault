@@ -65,7 +65,7 @@ mkdir -p Web/assets
 cp "Site/assets/screenshot-coop.png" "Web/assets/screenshot-coop.png" 2>/dev/null || true
 
 # ── Update the source files to reference .png instead of .svg ────
-bold "→ Rewriting <img> tags in Site/index.html, README.md, BUILT.md"
+bold "→ Rewriting <img> tags in Site/index.html and README.md"
 
 # macOS sed needs LC_ALL=C for files with em-dashes etc.
 LC_ALL=C sed -i '' \
@@ -137,10 +137,9 @@ else
     commit -m "$(cat <<'EOF'
 docs: replace SVG screenshot mockups with real captures
 
-The marketing site, README, and BUILT.md previously used illustrative
-SVG mockups as placeholders. These are the real captures from the
-running v0.1 macOS app and web companion — Overview tab, Co-op feed,
-Share-Run card.
+The marketing site and README previously used illustrative SVG mockups
+as placeholders. These are the real captures from the running v0.1
+macOS app and web companion — Overview tab, Co-op feed, Share-Run card.
 EOF
 )"
   bold "→ Pushing to GitHub"

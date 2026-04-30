@@ -204,7 +204,7 @@ result lands in `HistoryStore`, which dedupes by `id` and writes atomically.
 
 ## Contributing
 
-PRs welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) and [AGENTS.md](AGENTS.md) for
+PRs welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for
 the rules of the road. Please run `swift test` before opening a PR.
 
 ## License

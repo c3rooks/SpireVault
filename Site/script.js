@@ -16,9 +16,12 @@ if (nav) {
 }
 
 // ─── Live presence count ────────────────────────────────────────────────────
-const presenceText        = document.getElementById("presence-text");
-const presenceCount       = document.getElementById("presence-count");
-const heroFloatingCount   = document.getElementById("hero-floating-count");
+const presenceText      = document.getElementById("presence-text");
+const presenceCount     = document.getElementById("presence-count");
+const presenceLabel     = document.getElementById("presence-label");
+const presenceInGame    = document.getElementById("presence-ingame");
+const coopCard          = document.getElementById("coop-card");
+const heroFloatingCount = document.getElementById("hero-floating-count");
 
 async function refreshPresence() {
   try {
@@ -30,7 +33,22 @@ async function refreshPresence() {
       ? list.filter((p) => p && p.inSTS2).length
       : 0;
 
-    if (presenceCount) presenceCount.textContent = String(count);
+    // Co-op card: count + label (with humane empty state)
+    if (presenceCount) presenceCount.textContent = count === 0 ? "—" : String(count);
+    if (presenceLabel) {
+      presenceLabel.textContent =
+        count === 0
+          ? "no one signed in yet · be the first"
+          : count === 1
+            ? "player online right now"
+            : "players online right now";
+    }
+    if (presenceInGame) {
+      presenceInGame.textContent = inGame === 0 && count === 0 ? "—" : String(inGame);
+    }
+    if (coopCard) coopCard.classList.toggle("is-empty", count === 0);
+
+    // Inline trust line under the install CTAs
     if (presenceText) {
       if (count === 0) {
         presenceText.textContent = "Be the first online today.";
@@ -44,18 +62,22 @@ async function refreshPresence() {
             : `${count} players online right now`;
       }
     }
+
+    // Hero floating card
     if (heroFloatingCount) {
       heroFloatingCount.textContent =
         count === 0
-          ? "Be the first"
+          ? "Live presence"
           : count === 1
             ? "1 player online"
             : `${count} players online`;
     }
   } catch {
     if (presenceCount) presenceCount.textContent = "—";
-    if (presenceText) presenceText.textContent =
-      "Live count momentarily unavailable.";
+    if (presenceLabel) presenceLabel.textContent = "live count momentarily unavailable";
+    if (presenceInGame) presenceInGame.textContent = "—";
+    if (coopCard) coopCard.classList.add("is-empty");
+    if (presenceText) presenceText.textContent = "Live count momentarily unavailable.";
     if (heroFloatingCount) heroFloatingCount.textContent = "Live presence";
   }
 }

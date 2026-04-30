@@ -180,7 +180,6 @@ JSON or CSV without launching the full app.
 ├── Site/            Marketing landing page  (spirevault.app)
 ├── Web/             Browser companion         (app.spirevault.app)
 ├── SECURITY.md      Threat model + what's defended-against
-├── BUILT.md         Candid notes on what AI helped with vs what it didn't
 ├── CHANGELOG.md     What shipped when, what broke along the way
 └── RELEASING.md     How to cut a new release
 ```
@@ -198,16 +197,6 @@ Worker, around 1k lines of TypeScript total.
 | Backend Worker  | Cloudflare Workers     | `vault-coop.coreycrooks.workers.dev`             |
 | Marketing site  | Cloudflare Pages       | <https://spirevault.app>                         |
 | Web companion   | Cloudflare Pages       | <https://app.spirevault.app>                     |
-
-## Was this AI-generated?
-
-Yes and no. AI helped me ship faster (anyone solo-shipping in 2026 who
-claims they don't is lying), but the architecture, threat model, and
-product calls are mine. I document exactly what AI touched and what it
-didn't in [BUILT.md](BUILT.md), and the
-[CHANGELOG](CHANGELOG.md) walks through real iteration including the
-parts that broke. If something about the codebase feels off, open an
-issue — that's the whole point of being open source.
 
 ## Who built this
 
