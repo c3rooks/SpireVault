@@ -160,6 +160,8 @@ JSON or CSV without launching the full app.
 ├── Site/            Marketing landing page  (spirevault.app)
 ├── Web/             Browser companion         (app.spirevault.app)
 ├── SECURITY.md      Threat model + what's defended-against
+├── BUILT.md         Candid notes on what AI helped with vs what it didn't
+├── CHANGELOG.md     What shipped when, what broke along the way
 └── RELEASING.md     How to cut a new release
 ```
 
@@ -177,22 +179,48 @@ Worker, around 1k lines of TypeScript total.
 | Marketing site  | Cloudflare Pages       | <https://spirevault.app>                         |
 | Web companion   | Cloudflare Pages       | <https://app.spirevault.app>                     |
 
+## Was this AI-generated?
+
+Yes and no. AI helped me ship faster (anyone solo-shipping in 2026 who
+claims they don't is lying), but the architecture, threat model, and
+product calls are mine. I document exactly what AI touched and what it
+didn't in [BUILT.md](BUILT.md), and the
+[CHANGELOG](CHANGELOG.md) walks through real iteration including the
+parts that broke. If something about the codebase feels off, open an
+issue — that's the whole point of being open source.
+
+## Who built this
+
+I'm c3rooks. I play STS2 (Silent main, occasional Watcher when I want
+to feel clever), I write code professionally, and I built this because
+I got tired of scrolling Discord trying to find a co-op partner.
+
+- GitHub: [@c3rooks](https://github.com/c3rooks)
+- Reddit: [u/c3rooks](https://reddit.com/user/c3rooks)
+- For security reports: see [SECURITY.md](SECURITY.md)
+
+If you want to talk about a feature, a bug, or why you think one of my
+design decisions is wrong, open an issue. If it's a security issue,
+please go through the disclosure process in `SECURITY.md` first.
+
 ## Contributing
 
 Issues and PRs welcome. The project is small enough that "open a PR" is
 the entire workflow — no CLA, no contributor guide novella. If you want
 to add a feature and aren't sure if I'd merge it, open an issue first
-and ask.
-
-If you find a security issue, please email me before opening a public
-issue — instructions in [SECURITY.md](SECURITY.md).
+and ask. I'd rather say "yes, but go this way" than have you spend a
+weekend on something I'd close.
 
 ## License
 
-[MIT](LICENSE). Do whatever you want with it.
+[MIT](LICENSE). Do whatever you want with it. Fork it, run it private,
+sell a paid version with extra features, ship a Linux port — all fine.
+The only thing I ask is keep the privacy posture intact if you fork:
+local run history stays local, co-op stays opt-in, no surprise
+telemetry. The community will notice and it'll reflect on the original.
 
 ## Thanks
 
-To Mega Crit, for making the best card game ever and not getting weird
-about fan tools. To everyone who asked "is anyone else online right now?"
-in the STS2 Discord and didn't get an answer — this is for you.
+To Mega Crit, for making the best card game ever and not being weird
+about fan tools. To the STS2 Discord regulars who answer "anyone want
+to co-op?" at 11pm on a Tuesday — you're the reason this exists.

@@ -82,30 +82,36 @@
     </div>
   </section>
 
-  <!-- Why this exists — addresses the "is this just another companion app?" question head-on -->
+  <!-- Why this exists -->
   <section class="origin">
     <div class="origin-inner">
       <span class="eyebrow">Why this exists</span>
-      <h2>Matching is the gap. This fills it.</h2>
+      <h2>Because finding someone to play with shouldn't take an hour.</h2>
       <p>
-        Mega Crit made the right call gating multiplayer through Steam friends — it
-        keeps the experience tight and abuse-free. But it leaves a missing layer:
-        there's no way to <em>find</em> a partner before you Steam-friend them.
+        Mega Crit's call to gate multiplayer through Steam friends is correct.
+        It stops random griefers and keeps the experience tight. But it
+        creates a chicken-and-egg problem: before you can play with someone,
+        you need to already know them. If you didn't bring an STS2-loving
+        friend to launch night, your only option today is the global Discord,
+        and good luck filtering that for "someone at A12 who's online right
+        now."
       </p>
       <p>
-        Spire Vault doesn't host games, route invites, or replace anything Mega Crit
-        built. It does one job: show you who else is online right now, what skill
-        tier they're at (computed from <strong>your</strong> real save files,
-        privately, on your own machine), and how to reach out. From there, Steam
-        and Discord take over and you play the game the same way you would today.
+        Spire Vault is the missing layer between "I want to play co-op" and
+        "I have a Steam friend to play with." It doesn't host games, route
+        invites, or replace anything Mega Crit built. It just shows you who's
+        around, what tier they're at, and how to reach out. From there, Steam
+        takes over and you play the game like you would today.
       </p>
       <p class="origin-bona-fides">
-        Free forever. Open source under the MIT license. No account required to
-        use the run tracker. Co-op uses official Steam OpenID — your password
-        never touches our server. Every line of code is on
+        The whole thing is open source. The macOS app reads only files
+        already on your computer. Co-op uses Steam OpenID, so your password
+        never touches my server. Every line of code is on
         <a href="https://github.com/c3rooks/SpireVault" target="_blank" rel="noopener">GitHub</a>;
         the threat model is in
-        <a href="https://github.com/c3rooks/SpireVault/blob/main/SECURITY.md" target="_blank" rel="noopener">SECURITY.md</a>.
+        <a href="https://github.com/c3rooks/SpireVault/blob/main/SECURITY.md" target="_blank" rel="noopener">SECURITY.md</a>;
+        the candid "how this was built and what AI helped with" notes are in
+        <a href="https://github.com/c3rooks/SpireVault/blob/main/BUILT.md" target="_blank" rel="noopener">BUILT.md</a>.
       </p>
     </div>
   </section>
@@ -351,6 +357,22 @@
         verification — the server checks the signature with Valve directly.
         Your session token can only be issued after that verification. Threat
         model details in <a href="https://github.com/c3rooks/SpireVault/blob/main/SECURITY.md">SECURITY.md</a>.</p>
+      </details>
+      <details>
+        <summary>Is this AI-generated slop?</summary>
+        <p>Honest answer: I used AI to help me ship faster — anyone shipping
+        a side project in 2026 who claims they don't is lying or working too
+        slowly. Specifically, AI helped with first-pass copy, scaffolding
+        Cloudflare Worker boilerplate, and refactoring a couple of Swift
+        views. It did <strong>not</strong> design the architecture, write
+        the threat model, decide what features to ship, or replace the part
+        where I read every diff before it landed.</p>
+        <p>The proof is the repo: read the code, read
+        <a href="https://github.com/c3rooks/SpireVault/blob/main/BUILT.md">BUILT.md</a>
+        for what AI touched and what it didn't, look at the commit history,
+        try the app. If something feels off, open an issue and tell me. The
+        whole point of being open source is that you don't have to take my
+        word for it.</p>
       </details>
     </div>
   </section>
