@@ -600,13 +600,19 @@ section {
 /* ──────────────────────────────────────────────────────────────────────
    Showcase rail
    ────────────────────────────────────────────────────────────────────── */
+/* 4 figures: 2 hero "live" captures get top billing, 2 renders below.
+   Use a 6-column grid so we can make the live captures span 3 cols
+   each on the top row, and the renders share the bottom row. */
 .showcase-rail {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 16px;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 18px;
 }
+.showcase-rail .screenshot { grid-column: span 3; }
+.showcase-rail .screenshot.is-live img { aspect-ratio: 16 / 10.85; object-fit: cover; }
 @media (max-width: 880px) {
   .showcase-rail { grid-template-columns: 1fr; }
+  .showcase-rail .screenshot { grid-column: auto; }
 }
 
 .screenshot {
@@ -615,6 +621,26 @@ section {
   border-radius: var(--radius);
   overflow: hidden;
   background: var(--card);
+  position: relative;
+}
+.screenshot.is-live {
+  border-color: rgba(212,175,55,0.32);
+  box-shadow: 0 24px 60px -28px rgba(0,0,0,0.7);
+}
+.screenshot.is-live::after {
+  content: "LIVE";
+  position: absolute;
+  top: 12px; right: 12px;
+  background: rgba(109,217,124,0.18);
+  color: var(--win);
+  border: 1px solid rgba(109,217,124,0.45);
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 1.5px;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
 }
 .screenshot img {
   display: block;
