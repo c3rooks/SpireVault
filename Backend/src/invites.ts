@@ -1,4 +1,5 @@
 import type { Env } from "./types";
+import { checkAndConsume } from "./ratelimit";
 
 /**
  * Co-op invite system — preset messages only, accept/decline.
@@ -39,6 +40,16 @@ const INVITE_DEDUPE_SECONDS = 60;           // can't re-invite same person for 6
 const INBOX_TTL_SECONDS = 7 * 86400;        // safety net for the inbox key itself
 const INBOX_PREFIX = "inbox:";
 const OUTBOX_PREFIX = "outbox-key:";        // dedupe-only; payload lives inline in inbox
+
+/**
+ * Per-sender invite cap. Independent of the per-pair dedupe — this caps
+ * how many *different* people one sender can invite per hour. Pitched at
+ * "20 / hour" because a normal player posting "anyone want to co-op?" to
+ * the feed and accepting back-and-forths still fits comfortably, but a
+ * bot blasting every name on the page hits the wall fast.
+ */
+const SENDER_RATE_MAX = 20;
+const SENDER_RATE_WINDOW_S = 60 * 60;
 
 /**
  * The closed set of allowed invite messages. The client renders the human text
@@ -164,6 +175,18 @@ export async function sendInvite(
   if (toID === fromID) return { ok: false, status: 400, error: "cannot invite yourself" };
   if (!isValidMessageId(messageId)) {
     return { ok: false, status: 400, error: "invalid messageId" };
+  }
+
+  // Per-sender cap: the dedupe key only stops re-invites to the same person.
+  // This stops one sender from carpet-bombing the whole roster.
+  const rl = await checkAndConsume(env, {
+    bucket: "invites-sender",
+    id: fromID,
+    max: SENDER_RATE_MAX,
+    windowSeconds: SENDER_RATE_WINDOW_S,
+  });
+  if (!rl.allowed) {
+    return { ok: false, status: 429, error: `rate_limited:retry_after=${rl.retryAfterSec}` };
   }
 
   // Reject if recipient isn't online — keeps random-stranger-spam bounded.

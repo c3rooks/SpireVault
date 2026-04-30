@@ -10,6 +10,7 @@ import {
   withdrawInvite,
   INVITE_MESSAGES,
 } from "./invites";
+import { checkAndConsume, clientIP, hashID } from "./ratelimit";
 
 const CORS_HEADERS: Record<string, string> = {
   "access-control-allow-origin": "*",
@@ -91,6 +92,13 @@ async function handle(req: Request, env: Env): Promise<Response> {
       if (method === "POST" && pathname === "/presence") {
         const auth = await requireSession(req, env);
         if (auth instanceof Response) return auth;
+
+        // Per-IP write throttle. Legit clients heartbeat every 180 s and pulse
+        // a few extra times when the user toggles status / edits a note. 30
+        // writes/min from one IP is ~10x normal; anything more is a script.
+        const ipLimit = await ipWriteLimit(env, req, "presence-write", 30, 60);
+        if (!ipLimit.ok) return ipLimit.resp;
+
         const body = (await req.json()) as PresenceUpsert;
         if (!body || typeof body !== "object") {
           return badRequest("invalid presence body");
@@ -124,6 +132,11 @@ async function handle(req: Request, env: Env): Promise<Response> {
       if (pathname === "/invites" && method === "POST") {
         const auth = await requireSession(req, env);
         if (auth instanceof Response) return auth;
+        // Per-IP cap is independent of the per-sender cap inside sendInvite().
+        // Keeps a single dorm/coffee-shop IP from coordinating spam across
+        // multiple Steam accounts.
+        const ipLimit = await ipWriteLimit(env, req, "invites-send", 40, 60 * 60);
+        if (!ipLimit.ok) return ipLimit.resp;
         const body = await req.json().catch(() => null);
         const result = await sendInvite(env, auth.steamID, body);
         if (!result.ok) return json({ error: result.error }, { status: result.status });
@@ -180,11 +193,21 @@ async function handle(req: Request, env: Env): Promise<Response> {
  * What this saves us:
  *   - Identical /presence GETs from the same colo within the cache window
  *     skip the worker handler entirely → 0 KV reads for those.
- *   - With a 30s client poll + 2 active browsers, we still hit KV ~1-2x per
- *     poll cycle, instead of once per browser per cycle.
+ *   - With a 30 s client poll, even one browser per colo means we serve at
+ *     least one cached response per cycle for free. Two browsers in the same
+ *     colo means we go ~2x → 1 KV read per cycle. With more it's nearly free.
+ *
+ * Why 15 s and not "as long as possible":
+ *   The presence card is the visible heartbeat of the whole landing page.
+ *   At 15 s the worst-case staleness someone sees ("did my friend appear?")
+ *   is barely noticeable, and the cache is long enough to absorb a refresh-
+ *   spam attack from a single tab without it touching KV.
  */
+const PRESENCE_EDGE_CACHE_S = 15;
+
 async function getPresenceCached(_req: Request, env: Env): Promise<Response> {
-  const cacheKey = new Request("https://presence.cache/feed/v2", { method: "GET" });
+  // Bump the cache-key version when the response shape changes. v3 = 15 s TTL.
+  const cacheKey = new Request("https://presence.cache/feed/v3", { method: "GET" });
   const cache = caches.default;
 
   const hit = await cache.match(cacheKey);
@@ -195,13 +218,44 @@ async function getPresenceCached(_req: Request, env: Env): Promise<Response> {
   const resp = new Response(body, {
     headers: {
       "content-type": "application/json",
-      // 8 s public cache. Browsers ignore (we set no-store on the fetch),
-      // but Cloudflare's edge cache sees this and respects it.
-      "cache-control": "public, max-age=8, s-maxage=8",
+      "cache-control": `public, max-age=${PRESENCE_EDGE_CACHE_S}, s-maxage=${PRESENCE_EDGE_CACHE_S}`,
       ...CORS_HEADERS,
     },
   });
   // Best-effort cache write; never fail a user response on a cache miss.
   try { await cache.put(cacheKey, resp.clone()); } catch {}
   return resp;
+}
+
+/**
+ * Helper: per-IP write rate limit. Returns either {ok:true} or a ready-made
+ * 429 Response. Hashes the IP before keying KV so we never store raw client
+ * IPs in our own state.
+ *
+ * `bucket` namespaces the limiter so the presence-write quota is independent
+ * of the invites-send quota; you can hit one ceiling without locking the
+ * other path.
+ */
+async function ipWriteLimit(
+  env: Env,
+  req: Request,
+  bucket: string,
+  max: number,
+  windowSeconds: number
+): Promise<{ ok: true } | { ok: false; resp: Response }> {
+  const ip = clientIP(req);
+  if (!ip) return { ok: true }; // Unknown IP — let the per-user limits handle it.
+  const id = await hashID(ip);
+  const result = await checkAndConsume(env, { bucket, id, max, windowSeconds });
+  if (result.allowed) return { ok: true };
+  return {
+    ok: false,
+    resp: json(
+      { error: "rate_limited", retry_after_sec: result.retryAfterSec },
+      {
+        status: 429,
+        headers: { "retry-after": String(result.retryAfterSec) },
+      }
+    ),
+  };
 }

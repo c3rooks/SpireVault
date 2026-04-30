@@ -38,6 +38,14 @@ const PRESENCE_TTL_SECONDS = 5 * 60; // 5 min — heartbeats every ~3 min
 const MIN_HEARTBEAT_INTERVAL_MS = 60_000; // 60 s — was 2 s; we no longer need fast pulses
 const ROSTER_KEY = "presence:roster";
 const ROSTER_TTL_SECONDS = 7 * 86400;
+/**
+ * Hard ceiling on online-feed size. The wire format gets shipped to every
+ * polling client, so the bigger this is the more bytes we egress and the
+ * more memory each Worker invocation chews. 200 is comfortably above any
+ * realistic concurrency for an STS2 fan tool, and gives us a knob to drop
+ * the worst offender's row first if a flood ever shows up.
+ */
+const MAX_ROSTER_ENTRIES = 200;
 const SESSION_PROFILE_PREFIX = "session-profile:";
 /** STS2's Steam appid. Hard-coded because that's literally the product. */
 const STS2_APP_ID = "2868840";
@@ -108,6 +116,14 @@ export async function upsertPresence(
     roster.entries[idx] = entry;
   } else {
     roster.entries.push(entry);
+  }
+
+  // Bound the roster. If we're past the cap, drop whichever existing entry
+  // hasn't been refreshed in the longest time. New arrivals can still join,
+  // they just push out the most stale row instead of growing forever.
+  if (roster.entries.length > MAX_ROSTER_ENTRIES) {
+    roster.entries.sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
+    roster.entries = roster.entries.slice(0, MAX_ROSTER_ENTRIES);
   }
 
   await writeRoster(env, roster);

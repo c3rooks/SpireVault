@@ -116,7 +116,18 @@ async function bootSignedIn() {
 
   // Co-op form wiring
   wireCoopForm();
-  document.getElementById("refresh-btn").addEventListener("click", () => {
+  // Refresh button. Debounced to once per ~5 s so a frustrated panic-clicker
+  // can't blast our server quotas. The button visually "ticks" each press
+  // even when the request is throttled, so it still feels responsive.
+  const refreshBtn = document.getElementById("refresh-btn");
+  let lastRefreshAt = 0;
+  refreshBtn.addEventListener("click", () => {
+    const now = Date.now();
+    refreshBtn.classList.remove("is-flash");
+    void refreshBtn.offsetWidth; // restart the CSS transition
+    refreshBtn.classList.add("is-flash");
+    if (now - lastRefreshAt < 5000) return;
+    lastRefreshAt = now;
     void pullFeed();
     void pullInbox();
   });

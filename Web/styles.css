@@ -163,6 +163,17 @@ main {
   border-color: rgba(212,175,55,0.4);
 }
 
+/*
+ * Quick visual confirmation for the Refresh button. The click handler is
+ * debounced server-side; the .is-flash animation just makes panic-clicking
+ * still *feel* responsive, so users don't think the button is broken.
+ */
+@keyframes refreshFlash {
+  0%   { background: rgba(212,175,55,0.30); border-color: rgba(212,175,55,0.7); }
+  100% { background: var(--card);            border-color: var(--border); }
+}
+.btn-ghost.is-flash { animation: refreshFlash 380ms ease-out; }
+
 .cta-row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin: 18px 0 26px; }
 
 /* ─── Common bits ─────────────────────────────────────────────── */
