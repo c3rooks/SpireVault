@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Signing in… · The Vault</title>
+  <link rel="icon" type="image/png" href="/assets/vault-logo.png" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="bg-glow" aria-hidden="true"></div>
+  <main class="auth-callback">
+    <img src="/assets/vault-logo.png" alt="" class="auth-emblem" />
+    <h1>Finishing sign-in…</h1>
+    <p class="muted" id="auth-status">Verifying your Steam session.</p>
+    <p class="muted small" id="auth-detail" hidden></p>
+    <a class="btn-ghost" id="auth-retry" href="/" hidden>Back to The Vault</a>
+  </main>
+
+  <script type="module">
+    /**
+     * /auth.html — Steam OpenID return target for the web companion.
+     *
+     * The Worker bounces the user here with:
+     *   ?steamid=...&persona=...&avatar=...&session=...&nonce=...
+     *
+     * We:
+     *   1. Validate the nonce we stored on the way out (replay protection).
+     *   2. Persist the session blob in localStorage so / can read it.
+     *   3. Redirect back to /.
+     *
+     * No tokens are ever logged or sent off-device — they live in localStorage,
+     * the same place a normal web app keeps a session.
+     */
+    const status = document.getElementById("auth-status");
+    const detail = document.getElementById("auth-detail");
+    const retry  = document.getElementById("auth-retry");
+
+    function fail(msg) {
+      status.textContent = "Sign-in didn't complete.";
+      detail.textContent = msg;
+      detail.hidden = false;
+      retry.hidden = false;
+    }
+
+    const params = new URLSearchParams(window.location.search);
+    const steamid  = params.get("steamid")  ?? "";
+    const persona  = params.get("persona")  ?? "Steam User";
+    const avatar   = params.get("avatar")   ?? "";
+    const session  = params.get("session")  ?? "";
+    const nonce    = params.get("nonce")    ?? "";
+
+    const expectedNonce = sessionStorage.getItem("vault.auth.nonce");
+    sessionStorage.removeItem("vault.auth.nonce");
+
+    if (!steamid || !/^\d{17}$/.test(steamid)) fail("Steam ID was missing or invalid.");
+    else if (!session || session.length < 16)  fail("Session token was missing.");
+    else if (!nonce || nonce !== expectedNonce) fail("Nonce mismatch — possible replay or stale link. Please sign in again.");
+    else {
+      const profile = {
+        steamID: steamid,
+        personaName: persona,
+        avatarURL: avatar || undefined,
+        sessionToken: session,
+        signedInAt: new Date().toISOString(),
+      };
+      localStorage.setItem("vault.web.session", JSON.stringify(profile));
+      status.textContent = "Welcome, " + persona + ".";
+      // Small delay so the success message is visible — feels less janky.
+      setTimeout(() => { window.location.replace("/"); }, 350);
+    }
+  </script>
+</body>
+</html>

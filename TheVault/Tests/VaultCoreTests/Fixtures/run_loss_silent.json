@@ -1,0 +1,19 @@
+{
+  "run_id": "test-run-003",
+  "character": "silent",
+  "ascension": 6,
+  "seed": "QQ77",
+  "victory": false,
+  "floor_reached": 8,
+  "play_time_seconds": 540,
+  "ended_at": 1714410000,
+  "deck_at_end": ["Strike", "Strike", "Defend", "Defend", "Survivor", "Acrobatics", "Inflame+"],
+  "relics": ["Snecko Skull", "Pendulum"],
+  "card_choices": [
+    { "floor": 1, "offered": ["Acrobatics", "Bandage Up", "Backflip"], "picked": "Acrobatics", "source": "combat" },
+    { "floor": 2, "offered": ["Inflame", "Pommel Strike", "Heavy Blade"], "picked": null, "source": "combat" }
+  ],
+  "max_hp": 70,
+  "current_hp": 0,
+  "gold": 88
+}

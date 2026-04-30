@@ -1,0 +1,63 @@
+name: Bug report
+description: Vault crashed, didn't parse a save, or otherwise misbehaved.
+labels: [bug]
+body:
+  - type: input
+    id: vault-version
+    attributes:
+      label: Vault version
+      description: Output of `vault version`
+      placeholder: "TheVault 0.1.0"
+    validations:
+      required: true
+
+  - type: input
+    id: os
+    attributes:
+      label: OS / hardware
+      placeholder: "macOS 14.4 (Apple Silicon)"
+    validations:
+      required: true
+
+  - type: textarea
+    id: doctor
+    attributes:
+      label: "`vault doctor` output"
+      description: Paste the full output. Path names of your home folder are fine.
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. ...
+        2. ...
+        3. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: What actually happened?
+    validations:
+      required: true
+
+  - type: textarea
+    id: save-snippet
+    attributes:
+      label: Save file snippet (optional)
+      description: |
+        If a specific save failed to parse, paste an anonymized snippet here
+        (or attach the file). Strip anything you consider sensitive.
+      render: json

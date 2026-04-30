@@ -1,0 +1,26 @@
+{
+  "run_id": "test-run-001",
+  "character": "Ironclad",
+  "ascension": 6,
+  "seed": "ABCD1234",
+  "victory": true,
+  "floor_reached": 17,
+  "play_time_seconds": 1820,
+  "started_at": 1714330000,
+  "ended_at": 1714331820,
+  "deck_at_end": ["Strike", "Strike", "Defend", "Defend", "Bash", "Inflame+", "Demon Form"],
+  "relics": ["Burning Blood", "Pendulum", "Regalite"],
+  "potions": ["Fairy in a Bottle"],
+  "card_choices": [
+    { "floor": 1, "offered": ["Anger", "Iron Wave", "Cleave"], "picked": "Iron Wave", "source": "combat" },
+    { "floor": 3, "offered": ["Inflame", "Pommel Strike", "Heavy Blade"], "picked": "Inflame", "source": "elite" },
+    { "floor": 7, "offered": ["Demon Form", "Brutality", "Spot Weakness"], "picked": "Demon Form", "source": "boss" }
+  ],
+  "relic_choices": [
+    { "floor": 0, "relic": "Burning Blood", "source": "neow" },
+    { "floor": 8, "relic": "Pendulum", "source": "boss" }
+  ],
+  "max_hp": 80,
+  "current_hp": 41,
+  "gold": 312
+}

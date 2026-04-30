@@ -1,0 +1,9 @@
+# Cloudflare Pages config for the web companion (app.spirevault.app).
+#
+# Same idea as Site/wrangler.toml — pure static directory upload.
+#
+#   wrangler pages project create vault-web --production-branch main
+#   wrangler pages deploy . --project-name=vault-web
+name = "vault-web"
+pages_build_output_dir = "."
+compatibility_date = "2026-04-29"

@@ -1,0 +1,379 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Spire Vault — Slay the Spire 2 companion + co-op finder</title>
+  <meta name="description" content="Find a Slay the Spire 2 co-op partner at your skill level. Live presence feed signed in via Steam. Free, open source, no signup." />
+  <meta name="theme-color" content="#0c0a14" />
+
+  <!-- Open Graph -->
+  <meta property="og:title" content="Spire Vault — STS2 co-op partner finder" />
+  <meta property="og:description" content="A live feed of Slay the Spire 2 players looking to play co-op right now. Free, open source, signs in with Steam — no signup." />
+  <meta property="og:image" content="/assets/og.svg" />
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://spirevault.app" />
+  <meta name="twitter:card" content="summary" />
+  <meta name="twitter:image" content="/assets/vault-logo.png" />
+
+  <link rel="icon" type="image/png" href="/assets/vault-logo.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Playfair+Display:wght@700;900&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <!-- Background ornament -->
+  <div class="bg-glow" aria-hidden="true"></div>
+  <div class="bg-grid" aria-hidden="true"></div>
+
+  <header class="nav">
+    <a class="brand" href="/">
+      <img src="/assets/vault-logo.png" alt="" class="brand-emblem" />
+      <span class="brand-mark">THE VAULT</span>
+    </a>
+    <nav class="nav-links">
+      <a href="#features">Features</a>
+      <a href="#coop">Co-op</a>
+      <a href="#install">Install</a>
+      <a href="https://github.com/c3rooks/SpireVault" target="_blank" rel="noopener">GitHub</a>
+    </nav>
+  </header>
+
+  <!-- Hero -->
+  <section class="hero">
+    <div class="hero-inner">
+      <div class="hero-copy">
+        <span class="eyebrow">Free · Open source · No signup</span>
+        <h1>
+          Find a <span class="grad">Slay&nbsp;the&nbsp;Spire&nbsp;2</span> co-op partner<br />
+          at your skill level.
+        </h1>
+        <p class="lede">
+          STS2 co-op is friend-gated through Steam — which means today, the only
+          way to find a partner is scrolling the global Discord for ten minutes.
+          Spire Vault is the missing piece: a live feed of who's around right
+          now, with their tier and a way to reach out. The actual game invite
+          still goes through Steam.
+        </p>
+        <div class="cta-row">
+          <a class="btn-primary" href="#install" id="download-cta">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M17.5 12.5c0-2.6 2.1-3.9 2.2-3.9-1.2-1.7-3-2-3.7-2-1.6-.2-3 .9-3.8.9-.8 0-2-.9-3.3-.9-1.7 0-3.2 1-4.1 2.5-1.7 3-.4 7.5 1.3 10 .8 1.2 1.8 2.6 3.1 2.5 1.2-.1 1.7-.8 3.2-.8s2 .8 3.3.8c1.4 0 2.3-1.2 3.1-2.4.7-1.1 1-1.7 1.6-3-.1 0-3-1.2-3-4.7zm-2.6-8.5c.7-.8 1.1-1.9 1-3-.9 0-2.1.6-2.7 1.4-.7.8-1.1 1.9-1 3 1 .1 2-.5 2.7-1.4z"/></svg>
+            <span>Download for macOS</span>
+            <span class="version" id="hero-version">v0.1</span>
+          </a>
+          <a class="btn-ghost" href="https://app.spirevault.app" id="web-cta">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15 15 0 0 1 4 10 15 15 0 0 1-4 10 15 15 0 0 1-4-10 15 15 0 0 1 4-10z"/></svg>
+            Try in your browser
+          </a>
+        </div>
+        <p class="trust-line" id="presence-line">
+          <span class="dot dot-pulse"></span>
+          <span id="presence-text">Checking who's around…</span>
+          <span class="trust-sep">·</span>
+          <a class="trust-link" href="https://github.com/c3rooks/SpireVault" target="_blank" rel="noopener">Open source on GitHub</a>
+        </p>
+      </div>
+
+      <div class="hero-art">
+        <div class="hero-glow"></div>
+        <img src="/assets/vault-logo.png" alt="The Vault emblem" class="hero-emblem" />
+      </div>
+    </div>
+  </section>
+
+  <!-- Why this exists — addresses the "is this just another companion app?" question head-on -->
+  <section class="origin">
+    <div class="origin-inner">
+      <span class="eyebrow">Why this exists</span>
+      <h2>Matching is the gap. This fills it.</h2>
+      <p>
+        Mega Crit made the right call gating multiplayer through Steam friends — it
+        keeps the experience tight and abuse-free. But it leaves a missing layer:
+        there's no way to <em>find</em> a partner before you Steam-friend them.
+      </p>
+      <p>
+        Spire Vault doesn't host games, route invites, or replace anything Mega Crit
+        built. It does one job: show you who else is online right now, what skill
+        tier they're at (computed from <strong>your</strong> real save files,
+        privately, on your own machine), and how to reach out. From there, Steam
+        and Discord take over and you play the game the same way you would today.
+      </p>
+      <p class="origin-bona-fides">
+        Free forever. Open source under the MIT license. No account required to
+        use the run tracker. Co-op uses official Steam OpenID — your password
+        never touches our server. Every line of code is on
+        <a href="https://github.com/c3rooks/SpireVault" target="_blank" rel="noopener">GitHub</a>;
+        the threat model is in
+        <a href="https://github.com/c3rooks/SpireVault/blob/main/SECURITY.md" target="_blank" rel="noopener">SECURITY.md</a>.
+      </p>
+    </div>
+  </section>
+
+  <!-- Feature grid -->
+  <section id="features" class="features">
+    <div class="section-head">
+      <span class="eyebrow">What it does</span>
+      <h2>One app. Two products. Zero account required.</h2>
+    </div>
+    <div class="feature-grid">
+      <article class="feature-card">
+        <div class="feature-icon" data-color="gold">📜</div>
+        <h3>Local run history</h3>
+        <p>Auto-discovers your STS2 save folder. Parses every <code>.run</code> file. Builds a private history with winrate, max ascension, character and relic stats. Nothing leaves your Mac.</p>
+      </article>
+      <article class="feature-card">
+        <div class="feature-icon" data-color="ember">🎴</div>
+        <h3>Share-Run cards</h3>
+        <p>One-click PNG and Markdown summaries of any run. Drop them straight into Discord, Reddit, or X. Looks polished, takes ten seconds.</p>
+      </article>
+      <article class="feature-card">
+        <div class="feature-icon" data-color="ascend">🤝</div>
+        <h3>Co-op partner finder</h3>
+        <p>Sign in with Steam, see everyone else with The Vault open right now. Their tier, their status, an optional Discord handle. One click opens their Steam profile or copies their handle. STS2 multiplayer takes it from there.</p>
+      </article>
+      <article class="feature-card">
+        <div class="feature-icon" data-color="silent">📊</div>
+        <h3>Real stats, not vibes</h3>
+        <p>Per-character winrate, ascension progression chart, top picked relics and cards across your runs. Filter by date window or outcome. Export to CSV anytime.</p>
+      </article>
+      <article class="feature-card">
+        <div class="feature-icon" data-color="defect">🔒</div>
+        <h3>No account, no telemetry</h3>
+        <p>Run tracking works fully offline — no signup, no analytics, no cloud sync. Co-op is opt-in and uses Steam OpenID; the server only stores public Steam profile data with a 5-minute TTL.</p>
+      </article>
+      <article class="feature-card">
+        <div class="feature-icon" data-color="regent">⚡</div>
+        <h3>Open source</h3>
+        <p>MIT licensed. The macOS app, the CLI, the matchmaking server — all in one repo on GitHub. Audit it, fork it, run your own.</p>
+      </article>
+    </div>
+  </section>
+
+  <!-- Showcase -->
+  <section id="showcase" class="showcase">
+    <div class="section-head">
+      <span class="eyebrow">Looks the part</span>
+      <h2>Design that doesn't fight you.</h2>
+    </div>
+    <div class="showcase-rail">
+      <figure class="screenshot">
+        <img src="/assets/screenshot-overview.svg" alt="Overview screen showing winrate, ascension chart, top relics" loading="lazy" />
+        <figcaption>Overview · stats from your real runs, computed locally</figcaption>
+      </figure>
+      <figure class="screenshot">
+        <img src="/assets/screenshot-coop.svg" alt="Co-op tab with the live presence feed" loading="lazy" />
+        <figcaption>Co-op · who's online and how to reach them</figcaption>
+      </figure>
+      <figure class="screenshot">
+        <img src="/assets/screenshot-share.svg" alt="Share-run card" loading="lazy" />
+        <figcaption>Share-Run cards · post-ready in two clicks</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <!-- Co-op explainer -->
+  <section id="coop" class="coop">
+    <div class="coop-inner">
+      <div class="coop-copy">
+        <span class="eyebrow">Co-op, demystified</span>
+        <h2>Find people. Then play with them.</h2>
+        <p>
+          STS2 multiplayer is friend-gated through Steam — no third-party tool can route those invites,
+          and we don't try. The Vault solves the actual problem: <em>finding someone at your level
+          who's around right now</em>.
+        </p>
+        <ol class="steps">
+          <li><span class="step-num">1</span><div><strong>Sign in with Steam.</strong> Official OpenID. Your password never leaves Valve.</div></li>
+          <li><span class="step-num">2</span><div><strong>See who's online.</strong> Live feed of every Vault user with their tier, status, and reach-out handles.</div></li>
+          <li><span class="step-num">3</span><div><strong>Reach out.</strong> One click opens their Steam profile, copies their Discord, or fires a friend request.</div></li>
+          <li><span class="step-num">4</span><div><strong>Play.</strong> Coordinate over Steam or Discord, host the STS2 multiplayer game, send the in-game invite — the same way you would today.</div></li>
+        </ol>
+      </div>
+      <aside class="coop-card">
+        <header>
+          <span class="eyebrow">Live</span>
+          <span class="dot dot-pulse"></span>
+        </header>
+        <div class="coop-card-row" id="presence-card-status">
+          <div class="big-num" id="presence-count">—</div>
+          <div class="big-label">players online right now</div>
+        </div>
+        <p class="coop-card-foot">Updates every 12 seconds from the live matchmaking server. No signup needed to read this number.</p>
+      </aside>
+    </div>
+  </section>
+
+  <!-- Install -->
+  <section id="install" class="install">
+    <div class="section-head">
+      <span class="eyebrow">Install</span>
+      <h2>Two paths in. Both free.</h2>
+      <p class="section-sub">
+        Most Windows and Linux players start in the browser. Mac users get the
+        full native app with run tracking and Share-Run cards. Both share the
+        same presence feed — sign in with Steam on either and you appear in
+        the same live list.
+      </p>
+    </div>
+    <div class="install-grid two">
+      <article class="install-card primary" id="install-mac">
+        <div class="install-os">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M17.5 12.5c0-2.6 2.1-3.9 2.2-3.9-1.2-1.7-3-2-3.7-2-1.6-.2-3 .9-3.8.9-.8 0-2-.9-3.3-.9-1.7 0-3.2 1-4.1 2.5-1.7 3-.4 7.5 1.3 10 .8 1.2 1.8 2.6 3.1 2.5 1.2-.1 1.7-.8 3.2-.8s2 .8 3.3.8c1.4 0 2.3-1.2 3.1-2.4.7-1.1 1-1.7 1.6-3-.1 0-3-1.2-3-4.7zm-2.6-8.5c.7-.8 1.1-1.9 1-3-.9 0-2.1.6-2.7 1.4-.7.8-1.1 1.9-1 3 1 .1 2-.5 2.7-1.4z"/></svg>
+          <div class="install-os-text">
+            <h3>Native macOS app</h3>
+            <p class="install-sub">Run tracker · co-op feed · Share-Run cards</p>
+          </div>
+        </div>
+        <ul class="feature-list">
+          <li>Reads your STS2 save folder; computes Vault stats locally</li>
+          <li>Live co-op feed with Steam + Discord reach-outs</li>
+          <li>One-click PNG and Markdown share cards for any run</li>
+          <li>macOS 13+, Apple Silicon and Intel</li>
+        </ul>
+        <a class="btn-primary inline full-width" id="dmg-link" href="#">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+          <span>Download .dmg</span>
+          <span class="version" id="install-version">v0.1</span>
+        </a>
+        <p class="install-meta">Ad-hoc signed (no $99/yr Apple fee). First launch: right-click → Open.</p>
+      </article>
+      <article class="install-card" id="install-web">
+        <div class="install-os">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15 15 0 0 1 4 10 15 15 0 0 1-4 10 15 15 0 0 1-4-10 15 15 0 0 1 4-10z"/></svg>
+          <div class="install-os-text">
+            <h3>Web companion</h3>
+            <p class="install-sub">Co-op finder · Windows, Linux, macOS, anywhere</p>
+          </div>
+        </div>
+        <ul class="feature-list">
+          <li>Sign in with Steam — same OpenID flow, same identity</li>
+          <li>Same live feed, same Steam + Discord reach-outs</li>
+          <li>Zero install, zero download, works on Chromebooks</li>
+          <li>Run tracker not here yet (needs local file access)</li>
+        </ul>
+        <a class="btn-primary inline full-width alt" href="https://app.spirevault.app">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 5l7 7-7 7"/></svg>
+          <span>Open in browser</span>
+        </a>
+        <p class="install-meta">Best path for Windows / Linux today. Native Windows build is on the roadmap.</p>
+      </article>
+    </div>
+
+    <p class="install-foot">
+      Power user? <a href="https://github.com/c3rooks/SpireVault#build-it-yourself">Build from source</a>
+      with <code>git clone</code> + <code>make run</code>. The Vault CLI works against any
+      macOS save folder and exposes the same data as the app.
+    </p>
+  </section>
+
+  <!-- Trust -->
+  <section class="trust" id="trust">
+    <div class="section-head">
+      <span class="eyebrow">Privacy &amp; trust</span>
+      <h2>You can audit every line.</h2>
+      <p class="section-sub">
+        Sign-in is Steam OpenID — the same flow Steam uses for every other site.
+        Your password never reaches our server. We store the minimum required
+        for matchmaking, and the entire codebase is on GitHub.
+      </p>
+    </div>
+    <div class="trust-grid">
+      <div>
+        <h4>What goes on the server</h4>
+        <ul>
+          <li>Your verified Steam ID, persona, and avatar URL (from Steam Web API)</li>
+          <li>The status, note, and optional Discord handle <em>you</em> type into the app</li>
+          <li>A session token for 30 days; sign-out drops it instantly</li>
+        </ul>
+      </div>
+      <div>
+        <h4>What never leaves your Mac</h4>
+        <ul>
+          <li>Your run history, decks, deck pickrates, and stats</li>
+          <li>Your STS2 save files (we read them; we never upload them)</li>
+          <li>Anything at all when you haven't signed into co-op</li>
+        </ul>
+      </div>
+    </div>
+    <div class="trust-cta">
+      <a class="btn-ghost" href="https://github.com/c3rooks/SpireVault" target="_blank" rel="noopener">View source on GitHub →</a>
+      <a class="btn-ghost" href="https://github.com/c3rooks/SpireVault/blob/main/SECURITY.md" target="_blank" rel="noopener">Read SECURITY.md →</a>
+    </div>
+  </section>
+
+  <!-- FAQ -->
+  <section class="faq" id="faq">
+    <div class="section-head">
+      <span class="eyebrow">FAQ</span>
+      <h2>Common questions.</h2>
+    </div>
+    <div class="faq-grid">
+      <details>
+        <summary>Is this affiliated with Mega Crit?</summary>
+        <p>No. Spire Vault is an unofficial, fan-made companion. Mega Crit owns
+        Slay the Spire. We don't host games, route invites, or replace anything
+        they built — we just help players find each other before Steam takes over.</p>
+      </details>
+      <details>
+        <summary>Why isn't there a native Windows app?</summary>
+        <p>The macOS app is built in SwiftUI, which is Apple-only. A Windows
+        build would be a full rewrite. Instead we shipped the web companion,
+        which delivers the entire co-op finder to Windows and Linux today —
+        same backend, same live feed, no install. Run tracking is the only
+        macOS-only feature, because it needs read access to your local save folder.</p>
+      </details>
+      <details>
+        <summary>Do I need an account?</summary>
+        <p>For the run tracker, no — it works fully offline. For co-op
+        matchmaking you sign in via Steam OpenID, which is Valve-hosted and
+        never sees your password. You can sign out at any time and your
+        session disappears.</p>
+      </details>
+      <details>
+        <summary>What does it cost?</summary>
+        <p>$0. Forever. No tier, no premium, no donations gate. The infra
+        runs on Cloudflare's free tier; the only fixed cost is a $14/year
+        domain. It's open source (MIT), so even if I disappear, anyone
+        can fork it and keep it running.</p>
+      </details>
+      <details>
+        <summary>How does the co-op feed actually work?</summary>
+        <p>You sign in with Steam, set your status (Looking · Playing · Idle),
+        optionally add a Discord handle. Your client heartbeats your presence
+        every minute. The feed shows everyone heartbeating in the last few
+        minutes, with a button to open their Steam profile or copy their
+        Discord. The actual game session goes through Steam friends like normal.</p>
+      </details>
+      <details>
+        <summary>Can someone impersonate me?</summary>
+        <p>No. Every write to the server requires a signed Steam OpenID
+        verification — the server checks the signature with Valve directly.
+        Your session token can only be issued after that verification. Threat
+        model details in <a href="https://github.com/c3rooks/SpireVault/blob/main/SECURITY.md">SECURITY.md</a>.</p>
+      </details>
+    </div>
+  </section>
+
+  <footer class="footer">
+    <div class="footer-inner">
+      <div class="footer-brand">
+        <img src="/assets/vault-logo.png" alt="" />
+        <div>
+          <strong>Spire Vault</strong>
+          <p>Free, open source, fan-made. Not affiliated with Mega Crit Games. <em>Slay the Spire</em> is a trademark of Mega Crit Games.</p>
+        </div>
+      </div>
+      <div class="footer-links">
+        <a href="https://github.com/c3rooks/SpireVault">GitHub</a>
+        <a href="https://github.com/c3rooks/SpireVault/blob/main/SECURITY.md">Security</a>
+        <a href="https://github.com/c3rooks/SpireVault/blob/main/LICENSE">License (MIT)</a>
+        <a href="https://github.com/c3rooks/SpireVault/issues/new">Report an issue</a>
+        <a href="https://app.spirevault.app">Web companion</a>
+      </div>
+    </div>
+  </footer>
+
+  <script src="/script.js"></script>
+</body>
+</html>

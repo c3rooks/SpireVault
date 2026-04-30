@@ -1,0 +1,61 @@
+{
+  "acts": ["ACT.UNDERDOCKS", "ACT.HIVE"],
+  "ascension": 8,
+  "build_id": "v0.104.0",
+  "game_mode": "standard",
+  "killed_by_encounter": "ENCOUNTER.KNIGHTS_ELITE",
+  "killed_by_event": "NONE.NONE",
+  "schema_version": 9,
+  "seed": "TESTSEED12",
+  "start_time": 1777000000,
+  "run_time": 1200,
+  "was_abandoned": false,
+  "win": true,
+  "modifiers": [],
+  "platform_type": "MAC",
+  "players": [{
+    "id": 1,
+    "character": "CHARACTER.IRONCLAD",
+    "badges": [{ "id": "ELITE", "rarity": "bronze" }],
+    "deck": [
+      { "id": "CARD.STRIKE_RED", "floor_added_to_deck": 1 },
+      { "id": "CARD.DEMON_FORM", "floor_added_to_deck": 17, "current_upgrade_level": 1 }
+    ],
+    "relics": [
+      { "id": "RELIC.BURNING_BLOOD", "floor_added_to_deck": 1 },
+      { "id": "RELIC.PENDULUM",       "floor_added_to_deck": 7 }
+    ],
+    "potions": [
+      { "id": "POTION.FAIRY_IN_A_BOTTLE" }
+    ]
+  }],
+  "map_point_history": [
+    [
+      {
+        "map_point_type": "monster",
+        "rooms": [{ "model_id": "ENCOUNTER.JAW_WORM", "room_type": "monster" }],
+        "player_stats": [{
+          "card_choices": [
+            { "card": { "id": "CARD.INFLAME" }, "was_picked": true },
+            { "card": { "id": "CARD.ANGER" },   "was_picked": false }
+          ],
+          "relic_choices": [],
+          "current_hp": 65, "max_hp": 75, "current_gold": 100
+        }]
+      },
+      {
+        "map_point_type": "elite",
+        "rooms": [{ "model_id": "ENCOUNTER.GREMLIN_NOB", "room_type": "elite" }],
+        "player_stats": [{
+          "card_choices": [
+            { "card": { "id": "CARD.DEMON_FORM" }, "was_picked": true }
+          ],
+          "relic_choices": [
+            { "choice": "RELIC.PENDULUM", "was_picked": true }
+          ],
+          "current_hp": 50, "max_hp": 75, "current_gold": 130
+        }]
+      }
+    ]
+  ]
+}

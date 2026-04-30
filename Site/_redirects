@@ -1,0 +1,4 @@
+# Pretty-path → real file
+/download   /#install   302
+/coop       /#coop      302
+/github     https://github.com/c3rooks/SpireVault   302

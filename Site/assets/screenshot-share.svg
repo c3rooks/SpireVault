@@ -1,0 +1,118 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 900" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <linearGradient id="bg3" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#1a1626"/>
+      <stop offset="100%" stop-color="#06040a"/>
+    </linearGradient>
+    <linearGradient id="card3" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#1a1626"/>
+      <stop offset="100%" stop-color="#0c0a14"/>
+    </linearGradient>
+    <linearGradient id="cardGlow" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#ff6b1a" stop-opacity="0.3"/>
+      <stop offset="100%" stop-color="#d4af37" stop-opacity="0.15"/>
+    </linearGradient>
+  </defs>
+  <rect width="1440" height="900" fill="url(#bg3)"/>
+
+  <!-- side panel -->
+  <rect x="0" y="0" width="220" height="900" fill="#0c0a14" stroke="#28233a"/>
+  <text x="60" y="40" font-family="Playfair Display, serif" font-size="13" font-weight="900" fill="#f4eddc">THE VAULT</text>
+
+  <text x="260" y="74" font-family="Playfair Display, serif" font-size="32" font-weight="900" fill="#f4eddc">Share Run</text>
+  <text x="260" y="100" font-family="Inter" font-size="13" fill="#b6abc4">Run #1772752226 ù Ironclad ù A14 ù Victory</text>
+
+  <!-- run card -->
+  <g transform="translate(380, 160)">
+    <rect width="680" height="640" rx="20" fill="url(#card3)" stroke="rgba(212,175,55,0.4)" stroke-width="2" filter="url(#dropshadow)"/>
+    <rect width="680" height="640" rx="20" fill="url(#cardGlow)" opacity="0.2"/>
+
+    <text x="340" y="56" text-anchor="middle" font-family="Inter" font-size="11" font-weight="900" letter-spacing="3" fill="#d4af37">THE VAULT ù RUN SUMMARY</text>
+
+    <!-- big result -->
+    <rect x="40" y="84" width="600" height="60" rx="10" fill="#6dd97c" opacity="0.10" stroke="#6dd97c" stroke-opacity="0.5"/>
+    <text x="340" y="124" text-anchor="middle" font-family="Playfair Display, serif" font-size="32" font-weight="900" fill="#6dd97c">VICTORY ù ASCENSION 14</text>
+
+    <!-- character -->
+    <text x="40" y="186" font-family="Inter" font-size="11" font-weight="900" letter-spacing="2" fill="#6c647a">CHARACTER</text>
+    <text x="40" y="216" font-family="Playfair Display, serif" font-size="28" font-weight="900" fill="#ff5f6d">IRONCLAD</text>
+
+    <text x="280" y="186" font-family="Inter" font-size="11" font-weight="900" letter-spacing="2" fill="#6c647a">FLOOR</text>
+    <text x="280" y="216" font-family="Playfair Display, serif" font-size="28" font-weight="900" fill="#f4eddc">57</text>
+
+    <text x="380" y="186" font-family="Inter" font-size="11" font-weight="900" letter-spacing="2" fill="#6c647a">DURATION</text>
+    <text x="380" y="216" font-family="Playfair Display, serif" font-size="28" font-weight="900" fill="#f4eddc">1h 18m</text>
+
+    <text x="540" y="186" font-family="Inter" font-size="11" font-weight="900" letter-spacing="2" fill="#6c647a">FINAL HP</text>
+    <text x="540" y="216" font-family="Playfair Display, serif" font-size="28" font-weight="900" fill="#6dd97c">62/96</text>
+
+    <line x1="40" y1="244" x2="640" y2="244" stroke="#28233a"/>
+
+    <!-- relic row -->
+    <text x="40" y="276" font-family="Inter" font-size="11" font-weight="900" letter-spacing="2" fill="#6c647a">KEY RELICS</text>
+    <g transform="translate(40, 290)">
+      <rect width="100" height="50" rx="8" fill="#1a1626" stroke="#28233a"/>
+      <text x="50" y="22" text-anchor="middle" font-size="9" font-weight="800" fill="#d4af37" font-family="Inter">BURN. BLOOD</text>
+      <text x="50" y="38" text-anchor="middle" font-size="10" fill="#b6abc4" font-family="Inter">Heal 6 HP</text>
+
+      <rect x="115" width="100" height="50" rx="8" fill="#1a1626" stroke="#28233a"/>
+      <text x="165" y="22" text-anchor="middle" font-size="9" font-weight="800" fill="#d4af37" font-family="Inter">PRESERVED INSECT</text>
+      <text x="165" y="38" text-anchor="middle" font-size="10" fill="#b6abc4" font-family="Inter">Elites: -25% HP</text>
+
+      <rect x="230" width="100" height="50" rx="8" fill="#1a1626" stroke="#28233a"/>
+      <text x="280" y="22" text-anchor="middle" font-size="9" font-weight="800" fill="#d4af37" font-family="Inter">RUNIC PYRAMID</text>
+      <text x="280" y="38" text-anchor="middle" font-size="10" fill="#b6abc4" font-family="Inter">Keep hand</text>
+
+      <rect x="345" width="100" height="50" rx="8" fill="#1a1626" stroke="#28233a"/>
+      <text x="395" y="22" text-anchor="middle" font-size="9" font-weight="800" fill="#ff6b1a" font-family="Inter">CALIPERS</text>
+      <text x="395" y="38" text-anchor="middle" font-size="10" fill="#b6abc4" font-family="Inter">Block lasts 1t</text>
+
+      <rect x="460" width="100" height="50" rx="8" fill="#1a1626" stroke="#28233a"/>
+      <text x="510" y="22" text-anchor="middle" font-size="9" font-weight="800" fill="#ff6b1a" font-family="Inter">CHAR. CORE</text>
+      <text x="510" y="38" text-anchor="middle" font-size="10" fill="#b6abc4" font-family="Inter">+1 Energy</text>
+    </g>
+
+    <!-- deck row -->
+    <text x="40" y="376" font-family="Inter" font-size="11" font-weight="900" letter-spacing="2" fill="#6c647a">FINAL DECK ù 32 CARDS</text>
+    <g transform="translate(40, 392)" font-family="Inter">
+      <rect width="600" height="22" rx="6" fill="#1a1626" stroke="#28233a"/>
+      <text x="12" y="16" font-size="11" fill="#b6abc4">3ù Strike+ ù 3ù Defend+ ù 2ù Bash+ ù 1ù Body Slam+ ù 2ù Inflame+ ù 1ù Demon Form+</text>
+      <rect y="28" width="600" height="22" rx="6" fill="#1a1626" stroke="#28233a"/>
+      <text x="12" y="44" font-size="11" fill="#b6abc4">2ù Heavy Blade ù 1ù Reaper ù 2ù Pummel+ ù 1ù Limit Break+ ù 1ù Offering+</text>
+      <rect y="56" width="600" height="22" rx="6" fill="#1a1626" stroke="#28233a"/>
+      <text x="12" y="72" font-size="11" fill="#b6abc4">& +14 more</text>
+    </g>
+
+    <line x1="40" y1="496" x2="640" y2="496" stroke="#28233a"/>
+
+    <!-- bosses -->
+    <text x="40" y="528" font-family="Inter" font-size="11" font-weight="900" letter-spacing="2" fill="#6c647a">BOSSES SLAIN</text>
+    <g font-family="Inter">
+      <rect x="40" y="540" width="190" height="34" rx="8" fill="#0c0a14" stroke="#ff5f6d" stroke-opacity="0.45"/>
+      <text x="135" y="562" text-anchor="middle" font-size="12" font-weight="800" fill="#ff5f6d">SLIME BOSS</text>
+
+      <rect x="240" y="540" width="190" height="34" rx="8" fill="#0c0a14" stroke="#ff5f6d" stroke-opacity="0.45"/>
+      <text x="335" y="562" text-anchor="middle" font-size="12" font-weight="800" fill="#ff5f6d">CHAMP</text>
+
+      <rect x="440" y="540" width="200" height="34" rx="8" fill="#0c0a14" stroke="#d4af37" stroke-opacity="0.55"/>
+      <text x="540" y="562" text-anchor="middle" font-size="12" font-weight="800" fill="#d4af37"> AWAKENED ONE</text>
+    </g>
+
+    <text x="340" y="608" text-anchor="middle" font-family="Inter" font-size="10" font-weight="700" letter-spacing="2" fill="#6c647a">GENERATED BY THE VAULT ù spirevault.app</text>
+  </g>
+
+  <!-- sidebar action buttons -->
+  <g transform="translate(1100, 200)" font-family="Inter">
+    <rect width="240" height="60" rx="12" fill="url(#card3)" stroke="#ff6b1a" stroke-opacity="0.5"/>
+    <text x="20" y="26" font-size="11" font-weight="900" letter-spacing="2" fill="#ffa05c">EXPORT</text>
+    <text x="20" y="48" font-size="14" font-weight="800" fill="#f4eddc">Save PNG</text>
+
+    <rect y="76" width="240" height="60" rx="12" fill="url(#card3)" stroke="#28233a"/>
+    <text x="20" y="102" font-size="11" font-weight="900" letter-spacing="2" fill="#6c647a">EXPORT</text>
+    <text x="20" y="124" font-size="14" font-weight="800" fill="#f4eddc">Copy Markdown</text>
+
+    <rect y="152" width="240" height="60" rx="12" fill="url(#card3)" stroke="#28233a"/>
+    <text x="20" y="178" font-size="11" font-weight="900" letter-spacing="2" fill="#6c647a">SHARE</text>
+    <text x="20" y="200" font-size="14" font-weight="800" fill="#f4eddc">Reddit / Discord</text>
+  </g>
+</svg>

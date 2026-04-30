@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>The Vault — Web</title>
+  <meta name="description" content="The Vault co-op companion. Find Slay the Spire 2 partners from any browser." />
+  <meta name="theme-color" content="#0c0a14" />
+  <link rel="icon" type="image/png" href="/assets/vault-logo.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Playfair+Display:wght@700;900&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="bg-glow" aria-hidden="true"></div>
+
+  <header class="topbar">
+    <a class="brand" href="/">
+      <img src="/assets/vault-logo.png" alt="" class="brand-emblem" />
+      <span class="brand-mark">THE VAULT · WEB</span>
+    </a>
+    <div class="topbar-right">
+      <a class="link-muted" href="https://spirevault.app">Get the macOS app →</a>
+      <span id="auth-state-pill" class="auth-pill" hidden></span>
+    </div>
+  </header>
+
+  <main>
+    <!-- Visible only when signed-out -->
+    <section id="signed-out-view" class="signed-out">
+      <span class="eyebrow">Co-op finder · works in any browser</span>
+      <h1>Find a <span class="grad">Slay&nbsp;the&nbsp;Spire&nbsp;2</span> partner from anywhere.</h1>
+      <p class="lede">
+        The full Vault — run history, stats, Share-Run cards — runs natively on macOS.
+        This page is the lightweight version: <strong>just the co-op feed</strong>.
+        Sign in with Steam, see who's online, message them on Steam or Discord, then
+        coordinate the actual game inside Slay the Spire 2.
+      </p>
+      <div class="cta-row">
+        <button class="btn-primary" id="signin-btn">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M3 5l8-1.1V11H3V5zm0 7h8v7.1L3 18V12zm9 7.2V12h9v8L12 19.2zM12 11V3.9L21 3v8h-9z"/></svg>
+          Sign in with Steam
+        </button>
+        <a class="btn-ghost" href="https://spirevault.app">Why use the macOS app instead?</a>
+      </div>
+      <p class="trust-line">
+        <span class="dot dot-pulse"></span>
+        <span id="presence-text">Checking who's around…</span>
+      </p>
+      <div class="signin-explainer">
+        <h4>What signing in does</h4>
+        <ul>
+          <li>Verifies you actually own the Steam account you're claiming, via Steam OpenID.</li>
+          <li>Mints a 30-day session so you don't have to sign in again.</li>
+          <li>Pulls only your Steam persona name and avatar — never your password.</li>
+          <li>Posts your status to the public feed only while this tab is open and only with what you type.</li>
+          <li>Sign out at any time to drop your row from the feed.</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- Visible only when signed-in -->
+    <section id="signed-in-view" class="signed-in" hidden>
+      <header class="page-head">
+        <div>
+          <span class="eyebrow">Co-op feed</span>
+          <h1>Who's around right now</h1>
+          <p class="muted" id="online-summary">Loading…</p>
+        </div>
+        <div class="page-head-actions">
+          <button class="btn-ghost" id="refresh-btn" title="Refresh">↻ Refresh</button>
+          <button class="btn-ghost" id="signout-btn">Sign out</button>
+        </div>
+      </header>
+
+      <!-- Your status card -->
+      <article class="me-card">
+        <div class="me-row">
+          <img id="me-avatar" alt="" class="avatar lg" src="/assets/vault-logo.png" />
+          <div class="me-id">
+            <strong id="me-persona">…</strong>
+            <span class="muted small" id="me-tier">—</span>
+          </div>
+          <div class="me-status-spacer"></div>
+          <span id="me-pushing-pill" class="auth-pill" hidden>Sending…</span>
+        </div>
+
+        <fieldset class="status-pills" id="status-pills" aria-label="Your status">
+          <label><input type="radio" name="status" value="looking"><span class="pill ok">Looking for co-op</span></label>
+          <label><input type="radio" name="status" value="inRun"><span class="pill gold">In a solo run</span></label>
+          <label><input type="radio" name="status" value="inCoop"><span class="pill ember">Already in co-op</span></label>
+          <label><input type="radio" name="status" value="afk"><span class="pill mute">AFK</span></label>
+        </fieldset>
+
+        <div class="me-grid">
+          <label>
+            <span class="field-label">Note (visible to everyone)</span>
+            <input type="text" id="me-note" maxlength="140" placeholder="e.g. A8+, voice optional, 30 min" />
+          </label>
+          <label>
+            <span class="field-label">Discord handle (optional)</span>
+            <input type="text" id="me-discord" maxlength="40" placeholder="@yourname" />
+          </label>
+        </div>
+      </article>
+
+      <!-- Feed -->
+      <h2 class="feed-heading">
+        Players online
+        <span class="count-pill" id="online-count">0</span>
+      </h2>
+      <div id="feed" class="feed">
+        <div class="feed-empty">
+          <p>Loading…</p>
+        </div>
+      </div>
+      <p class="muted small footnote" id="last-updated">—</p>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+      <div>
+        <strong>The Vault · Web</strong>
+        <p>Free, open source, fan-made. Not affiliated with Mega Crit Games.</p>
+      </div>
+      <div class="footer-links">
+        <a href="https://spirevault.app">Marketing site</a>
+        <a href="https://github.com/c3rooks/SpireVault">GitHub</a>
+      </div>
+    </div>
+  </footer>
+
+  <script src="/script.js" type="module"></script>
+</body>
+</html>

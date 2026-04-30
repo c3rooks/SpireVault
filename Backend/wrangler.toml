@@ -1,0 +1,22 @@
+name = "vault-coop"
+main = "src/index.ts"
+compatibility_date = "2026-04-01"
+compatibility_flags = ["nodejs_compat"]
+
+# KV namespace stores three short-TTL'd record families — see Backend/README.md
+# for the exact layout. Binding name kept as `LOBBIES` for backward compat
+# with earlier deployments; today it's a generic presence/session store.
+#
+# Create with:
+#   make kv-create
+# then paste the IDs here.
+[[kv_namespaces]]
+binding = "LOBBIES"
+id = "050406109a854de7b516c057cdbf75f6"
+preview_id = "e015073f0d2147f5b8610116e094402d"
+
+# Worker secrets — set via `make secrets`. Never commit them.
+[vars]
+# IMPORTANT: this MUST match the deployed URL for OpenID round-trips to work.
+PUBLIC_BASE_URL = "https://vault-coop.coreycrooks.workers.dev"
+STS_APP_ID = "2868840"

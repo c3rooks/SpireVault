@@ -1,0 +1,32 @@
+name: Feature request
+description: Suggest a new command, statistic, or parser.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What's the problem you'd like Vault to solve?
+      description: One paragraph. The "why" matters more than the "how".
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Concrete proposal
+      description: A flag, a command, a new parser, a new stats column…
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you've considered
+      description: Optional, but the more thought up front, the faster a PR.
+
+  - type: checkboxes
+    id: contribute
+    attributes:
+      label: Would you be willing to contribute the change?
+      options:
+        - label: I'm happy to send a PR.

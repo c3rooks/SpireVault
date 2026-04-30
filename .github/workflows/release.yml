@@ -1,0 +1,102 @@
+name: Release
+
+# Triggers on tag push (v*) — produces a draft GitHub release with the DMG
+# attached. Build is ad-hoc signed; if you want notarization, set the secrets
+# documented under "Notarization (optional)" below and the corresponding
+# steps will activate.
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  dmg:
+    name: Build & package DMG
+    runs-on: macos-14
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install xcodegen
+        run: brew install xcodegen
+
+      - name: Resolve version from tag
+        id: ver
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      # ---------------------------------------------------------------------
+      # Notarization (optional). Provide the following repository secrets to
+      # ship a fully notarized DMG; otherwise the workflow falls back to
+      # ad-hoc signing automatically.
+      #
+      #   APPLE_DEVELOPER_ID_CERT_P12_BASE64  — base64'd .p12 cert
+      #   APPLE_DEVELOPER_ID_CERT_PASSWORD    — .p12 password
+      #   APPLE_DEVELOPER_ID                  — "Developer ID Application: Name (TEAMID)"
+      #   APPLE_NOTARY_APPLE_ID               — Apple ID email
+      #   APPLE_NOTARY_TEAM_ID                — Apple Team ID
+      #   APPLE_NOTARY_PASSWORD               — app-specific password
+      # ---------------------------------------------------------------------
+      - name: Import signing certificate
+        if: ${{ env.APPLE_DEVELOPER_ID_CERT_P12_BASE64 != '' }}
+        env:
+          APPLE_DEVELOPER_ID_CERT_P12_BASE64: ${{ secrets.APPLE_DEVELOPER_ID_CERT_P12_BASE64 }}
+          APPLE_DEVELOPER_ID_CERT_PASSWORD: ${{ secrets.APPLE_DEVELOPER_ID_CERT_PASSWORD }}
+        run: |
+          echo "$APPLE_DEVELOPER_ID_CERT_P12_BASE64" | base64 -d > /tmp/cert.p12
+          security create-keychain -p tmppass build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p tmppass build.keychain
+          security import /tmp/cert.p12 -k build.keychain \
+            -P "$APPLE_DEVELOPER_ID_CERT_PASSWORD" \
+            -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k tmppass build.keychain
+
+      - name: Build DMG
+        working-directory: VaultApp
+        env:
+          CODE_SIGN_IDENTITY: ${{ secrets.APPLE_DEVELOPER_ID || '-' }}
+        run: make dmg
+
+      - name: Notarize & staple
+        if: ${{ secrets.APPLE_NOTARY_PASSWORD != '' }}
+        env:
+          APPLE_NOTARY_APPLE_ID: ${{ secrets.APPLE_NOTARY_APPLE_ID }}
+          APPLE_NOTARY_TEAM_ID: ${{ secrets.APPLE_NOTARY_TEAM_ID }}
+          APPLE_NOTARY_PASSWORD: ${{ secrets.APPLE_NOTARY_PASSWORD }}
+        run: |
+          DMG="VaultApp/build/The-Vault-${{ steps.ver.outputs.VERSION }}.dmg"
+          xcrun notarytool submit "$DMG" \
+            --apple-id "$APPLE_NOTARY_APPLE_ID" \
+            --team-id "$APPLE_NOTARY_TEAM_ID" \
+            --password "$APPLE_NOTARY_PASSWORD" \
+            --wait
+          xcrun stapler staple "$DMG"
+
+      - name: Compute SHA-256
+        id: sha
+        run: |
+          DMG="VaultApp/build/The-Vault-${{ steps.ver.outputs.VERSION }}.dmg"
+          echo "SHA=$(shasum -a 256 "$DMG" | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+
+      - name: Create draft release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          name: The Vault v${{ steps.ver.outputs.VERSION }}
+          files: VaultApp/build/The-Vault-${{ steps.ver.outputs.VERSION }}.dmg
+          body: |
+            ## The Vault v${{ steps.ver.outputs.VERSION }}
+
+            macOS 13+ universal build. Drag **The Vault** to **Applications**.
+            First launch is unsigned: right-click → Open once, after that it
+            launches normally.
+
+            **SHA-256:** `${{ steps.sha.outputs.SHA }}`
+
+            See [`TheVault/CHANGELOG.md`](TheVault/CHANGELOG.md) for full
+            details.

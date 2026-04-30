@@ -1,0 +1,109 @@
+# ───────────────────────────────────────────────────────────────────
+# OS / editor noise
+# ───────────────────────────────────────────────────────────────────
+.DS_Store
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+*.iml
+
+# ───────────────────────────────────────────────────────────────────
+# Xcode + Swift
+# ───────────────────────────────────────────────────────────────────
+**/build/
+**/DerivedData/
+**/*.xcuserstate
+**/*.xcuserdatad/
+*.xcodeproj/xcuserdata/
+xcuserdata/
+*.pbxproj.bak
+
+# XcodeGen output (regenerated from project.yml — don't commit the generated project)
+VaultApp/TheVault.xcodeproj/
+
+# Swift Package Manager
+.build/
+.swiftpm/
+Package.resolved
+
+# ───────────────────────────────────────────────────────────────────
+# Backend (Cloudflare Worker)
+# ───────────────────────────────────────────────────────────────────
+Backend/node_modules/
+Backend/dist/
+Backend/.wrangler/
+Backend/.dev.vars
+Backend/.dev.vars.*
+Backend/.env
+Backend/.env.*
+Backend/wrangler.local.toml
+
+# ───────────────────────────────────────────────────────────────────
+# Pages deploy state (Site / Web) — these caches contain the
+# Cloudflare account name (= operator email). NEVER commit them.
+# ───────────────────────────────────────────────────────────────────
+Site/.wrangler/
+Site/node_modules/
+Site/.env
+Site/.env.*
+Web/.wrangler/
+Web/node_modules/
+Web/.env
+Web/.env.*
+
+# ───────────────────────────────────────────────────────────────────
+# Generic secret patterns — defence in depth
+# ───────────────────────────────────────────────────────────────────
+*.pem
+*.key
+*.cer
+*.p12
+*.mobileprovision
+.netrc
+secrets.json
+secrets.yml
+credentials.json
+.env
+.env.*
+!.env.example
+
+# ───────────────────────────────────────────────────────────────────
+# Release artifacts (built locally, attached to GitHub Releases instead)
+# ───────────────────────────────────────────────────────────────────
+*.dmg
+*.pkg
+*.app.zip
+*.zip
+artifacts/
+dist/
+out/
+
+# ───────────────────────────────────────────────────────────────────
+# Logs
+# ───────────────────────────────────────────────────────────────────
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ───────────────────────────────────────────────────────────────────
+# Local user state (must never be committed)
+# ───────────────────────────────────────────────────────────────────
+**/Library/Application Support/AscensionCompanion/
+**/Library/Application Support/SpireVault/
+
+# ───────────────────────────────────────────────────────────────────
+# Old / unrelated content explicitly NOT in this repo
+# (separate iOS project + previous iterations)
+# ───────────────────────────────────────────────────────────────────
+SlayTheSpire2Companion/
+Slay_The_Spire2_Companion_github/
+AppStoreAssets/
+AppStoreScreenshots/
+generate_screenshots.py
+
+# Internal launch playbook — keep local, not on the public repo
+LAUNCH_POSTS.md
+GOLIVE.md
