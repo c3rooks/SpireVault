@@ -16,8 +16,9 @@ if (nav) {
 }
 
 // ─── Live presence count ────────────────────────────────────────────────────
-const presenceText  = document.getElementById("presence-text");
-const presenceCount = document.getElementById("presence-count");
+const presenceText        = document.getElementById("presence-text");
+const presenceCount       = document.getElementById("presence-count");
+const heroFloatingCount   = document.getElementById("hero-floating-count");
 
 async function refreshPresence() {
   try {
@@ -32,7 +33,7 @@ async function refreshPresence() {
     if (presenceCount) presenceCount.textContent = String(count);
     if (presenceText) {
       if (count === 0) {
-        presenceText.textContent = "No one online right now — be the first.";
+        presenceText.textContent = "Be the first online today.";
       } else if (inGame > 0) {
         presenceText.textContent =
           `${count} online · ${inGame} currently in Slay the Spire 2`;
@@ -43,10 +44,19 @@ async function refreshPresence() {
             : `${count} players online right now`;
       }
     }
+    if (heroFloatingCount) {
+      heroFloatingCount.textContent =
+        count === 0
+          ? "Be the first"
+          : count === 1
+            ? "1 player online"
+            : `${count} players online`;
+    }
   } catch {
     if (presenceCount) presenceCount.textContent = "—";
     if (presenceText) presenceText.textContent =
       "Live count momentarily unavailable.";
+    if (heroFloatingCount) heroFloatingCount.textContent = "Live presence";
   }
 }
 refreshPresence();

@@ -44,11 +44,11 @@ Backend/wrangler.local.toml
 # Pages deploy state (Site / Web) — these caches contain the
 # Cloudflare account name (= operator email). NEVER commit them.
 # ───────────────────────────────────────────────────────────────────
-Site/.wrangler/
+.wrangler/
+**/.wrangler/
 Site/node_modules/
 Site/.env
 Site/.env.*
-Web/.wrangler/
 Web/node_modules/
 Web/.env
 Web/.env.*

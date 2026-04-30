@@ -57,4 +57,17 @@ export interface Env {
    * if you self-host the web companion on a different domain.
    */
   ALLOWED_RETURN_HOSTS?: string;
+
+  /**
+   * Optional bearer token that unlocks the operator-only `/admin` and
+   * `/admin/stats` endpoints. Set with `wrangler secret put ADMIN_TOKEN` so
+   * it never lands in the repo. When unset (or any request supplies the
+   * wrong value), those endpoints respond with the same JSON 404 as any
+   * other unknown route — indistinguishable from "endpoint doesn't exist".
+   *
+   * This is intentional opaqueness, not security through obscurity: the
+   * endpoint is also strictly bearer-gated. The 404 simply doesn't
+   * advertise that an admin surface exists at all.
+   */
+  ADMIN_TOKEN?: string;
 }

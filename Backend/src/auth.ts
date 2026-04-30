@@ -1,5 +1,6 @@
 import type { Env } from "./types";
 import { putSessionProfile } from "./presence";
+import { recordSignIn } from "./admin";
 
 /**
  * Steam OpenID 2.0 sign-in + session minting.
@@ -158,6 +159,10 @@ export async function steamAuthCallback(req: Request, env: Env): Promise<Respons
     { personaName: persona, avatarURL: avatar || undefined },
     SESSION_TTL_SECONDS
   );
+
+  // Record this sign-in for the operator dashboard. Best-effort — never
+  // fail the auth callback if KV writes hiccup.
+  recordSignIn(env, steamID, persona, avatar || undefined).catch(() => {});
 
   const final = new URL(ret);
   final.searchParams.set("steamid", steamID);

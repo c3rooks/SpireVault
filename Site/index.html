@@ -45,9 +45,9 @@
     <div class="hero-inner">
       <div class="hero-copy">
         <span class="eyebrow">Free · Open source · No signup</span>
-        <h1>
-          Find a <span class="grad">Slay&nbsp;the&nbsp;Spire&nbsp;2</span><br />
-          <span style="white-space:nowrap">co&#8209;op partner</span> at your skill level.
+        <h1 class="hero-h1">
+          Find a <span class="grad">Slay&nbsp;the&nbsp;Spire&nbsp;2</span><br class="hero-break" />
+          <span class="hero-noun">co&#8209;op&nbsp;partner</span> at your skill level.
         </h1>
         <p class="lede">
           STS2 co-op is friend-gated through Steam — which means today, the only
@@ -76,8 +76,30 @@
       </div>
 
       <div class="hero-art">
-        <div class="hero-glow"></div>
-        <img src="/assets/vault-mark.svg" alt="The Vault emblem" class="hero-emblem" />
+        <div class="hero-glow" aria-hidden="true"></div>
+        <div class="hero-window" aria-hidden="false">
+          <div class="hero-window-chrome">
+            <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
+            <span class="hero-window-title">The Vault</span>
+          </div>
+          <img
+            src="/assets/screenshots/mac-overview.png?v=2"
+            alt="The Vault running on macOS — Overview tab with real run history, winrate, and per-character stats"
+            class="hero-window-shot"
+            loading="eager"
+            decoding="async"
+            fetchpriority="high"
+          />
+        </div>
+        <div class="hero-floating-card" aria-hidden="true">
+          <div class="hfc-row">
+            <div class="hfc-dot"></div>
+            <div class="hfc-text">
+              <strong id="hero-floating-count">— online</strong>
+              <span>signed in via Steam right now</span>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   </section>
@@ -162,27 +184,27 @@
       <span class="eyebrow">Looks the part</span>
       <h2>Design that doesn't fight you.</h2>
       <p class="section-sub">
-        macOS app screens are stylized renders for now (real captures replace
-        them at v0.2). The web companion shot below is a live capture from
-        <a href="https://app.spirevault.app">app.spirevault.app</a> just now.
+        Real captures from the Vault running on macOS and the web companion at
+        <a href="https://app.spirevault.app">app.spirevault.app</a>. The
+        Overview shot below is from a real save with 388 runs of history.
       </p>
     </div>
     <div class="showcase-rail">
       <figure class="screenshot">
-        <img src="/assets/screenshot-overview.svg?v=2" alt="Overview screen showing winrate, ascension chart, top relics" loading="lazy" />
-        <figcaption>macOS · Overview tab (render)</figcaption>
-      </figure>
-      <figure class="screenshot">
-        <img src="/assets/screenshot-coop.svg?v=2" alt="Co-op tab with the live presence feed" loading="lazy" />
-        <figcaption>macOS · Co-op tab (render)</figcaption>
-      </figure>
-      <figure class="screenshot">
-        <img src="/assets/screenshot-share.svg?v=2" alt="Share-run card" loading="lazy" />
-        <figcaption>Share-Run card (render)</figcaption>
+        <img src="/assets/screenshots/mac-overview.png?v=2" alt="The Vault Overview tab — 5.7% winrate over 388 runs, per-character breakdown for Ironclad, Defect, Silent, Regent, Necrobinder" loading="lazy" />
+        <figcaption>macOS · Overview · <strong>live capture</strong></figcaption>
       </figure>
       <figure class="screenshot">
         <img src="/assets/screenshots/web-coop-live.png" alt="Live capture of the web companion at app.spirevault.app" loading="lazy" />
         <figcaption>Web companion · <strong>live capture</strong> from app.spirevault.app</figcaption>
+      </figure>
+      <figure class="screenshot">
+        <img src="/assets/screenshot-coop.svg?v=2" alt="Co-op tab with the live presence feed" loading="lazy" />
+        <figcaption>macOS · Co-op tab (render — live capture coming with v0.2)</figcaption>
+      </figure>
+      <figure class="screenshot">
+        <img src="/assets/screenshot-share.svg?v=2" alt="Share-run card" loading="lazy" />
+        <figcaption>Share-Run card (render — live capture coming with v0.2)</figcaption>
       </figure>
     </div>
   </section>

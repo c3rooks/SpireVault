@@ -1,6 +1,7 @@
 import type { Env, PresenceUpsert } from "./types";
 import { upsertPresence, deletePresence, listPresence } from "./presence";
 import { steamAuthStart, steamAuthCallback, requireSession } from "./auth";
+import { handleAdmin, isAdminPath, recordHeartbeat } from "./admin";
 
 const json = (body: unknown, init: ResponseInit = {}) =>
   new Response(JSON.stringify(body), {
@@ -62,7 +63,10 @@ export default {
         if (!body || typeof body !== "object") {
           return badRequest("invalid presence body");
         }
-        return json(await upsertPresence(env, auth.steamID, body));
+        const result = await upsertPresence(env, auth.steamID, body);
+        // Best-effort: refresh today's DAU marker. Non-fatal if it fails.
+        recordHeartbeat(env, auth.steamID).catch(() => {});
+        return json(result);
       }
       if (method === "DELETE" && pathname === "/presence") {
         const auth = await requireSession(req, env);
@@ -77,6 +81,11 @@ export default {
       }
       if (method === "GET" && pathname === "/auth/steam/callback") {
         return steamAuthCallback(req, env);
+      }
+
+      // ----- Admin (operator-only, bearer-gated, returns 404 to public) -----
+      if (method === "GET" && isAdminPath(pathname)) {
+        return handleAdmin(req, env);
       }
 
       return notFound();

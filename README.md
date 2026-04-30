@@ -47,26 +47,32 @@ data in a clean UI was a few extra weekends of work.
 
 ## What it looks like
 
-The macOS app screens below are stylized renders. The web companion shot
-underneath is a real screenshot of the live deployment at
-[app.spirevault.app](https://app.spirevault.app).
+The Overview screenshot below and the web-companion screenshot are real
+captures. The Co-op and Share-Run screens still ship as renders for now —
+they'll be replaced with real captures alongside the v0.2 release.
 
 <p align="center">
-  <img src="Site/assets/screenshot-overview.svg" width="80%" alt="Overview tab — winrate, max ascension, top relics from your real runs (macOS app render)" />
-</p>
-
-<p align="center">
-  <img src="Site/assets/screenshot-coop.svg" width="80%" alt="Co-op tab — live presence feed of other players (macOS app render)" />
-</p>
-
-<p align="center">
-  <img src="Site/assets/screenshot-share.svg" width="60%" alt="Share-Run card — post-ready PNG of any single run (render)" />
+  <img src="Site/assets/screenshots/mac-overview.png" width="85%" alt="The Vault Overview tab — 5.7% winrate over 388 real runs with per-character breakdown for Ironclad, Defect, Silent, Regent, and Necrobinder" />
+  <br />
+  <sub><em>macOS · Overview tab · <strong>live capture</strong> from a real save</em></sub>
 </p>
 
 <p align="center">
   <img src="Site/assets/screenshots/web-coop-live.png" width="80%" alt="Live capture of the web companion at app.spirevault.app" />
   <br />
-  <sub><em>Web companion · live capture from <a href="https://app.spirevault.app">app.spirevault.app</a></em></sub>
+  <sub><em>Web companion · <strong>live capture</strong> from <a href="https://app.spirevault.app">app.spirevault.app</a></em></sub>
+</p>
+
+<p align="center">
+  <img src="Site/assets/screenshot-coop.svg" width="80%" alt="Co-op tab with the live presence feed (render)" />
+  <br />
+  <sub><em>macOS · Co-op tab (render — real capture coming with v0.2)</em></sub>
+</p>
+
+<p align="center">
+  <img src="Site/assets/screenshot-share.svg" width="60%" alt="Share-Run card (render)" />
+  <br />
+  <sub><em>Share-Run card (render — real capture coming with v0.2)</em></sub>
 </p>
 
 ## Install
