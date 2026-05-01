@@ -7,7 +7,13 @@ import {
   refreshSessionTTL,
   bearerTokenFromRequest,
 } from "./auth";
-import { handleAdmin, isAdminPath, recordHeartbeat } from "./admin";
+import {
+  handleAdmin,
+  isAdminPath,
+  recordHeartbeat,
+  recordClientDiagnostic,
+  recordRosterFirstSeen,
+} from "./admin";
 import {
   sendInvite,
   listInbox,
@@ -18,30 +24,66 @@ import {
 } from "./invites";
 import { checkAndConsume, clientIP, hashID } from "./ratelimit";
 
-const CORS_HEADERS: Record<string, string> = {
-  "access-control-allow-origin": "*",
-  "access-control-allow-methods": "GET, POST, PUT, DELETE, OPTIONS",
-  "access-control-allow-headers": "content-type, authorization",
-};
+/**
+ * Origins allowed to make credentialed cross-origin requests to the worker.
+ *
+ * Why this matters: `navigator.sendBeacon` always sends credentials. A
+ * wildcard ACAO (`*`) is rejected by browsers when credentials are
+ * included, which silently kills every diagnostic beacon from the real
+ * web app — exactly the kind of dead funnel-logging that hides bugs from
+ * the operator. We have to echo a SPECIFIC origin and pair it with
+ * `access-control-allow-credentials: true`.
+ *
+ * Anything not in this list falls back to wildcard ACAO without
+ * credentials, which is fine for the public read endpoints.
+ */
+const ALLOWED_ORIGINS = new Set([
+  "https://app.spirevault.app",
+  "https://spirevault.app",
+  "http://localhost:8788",
+  "http://127.0.0.1:8788",
+  "http://localhost:3000",
+  "http://127.0.0.1:3000",
+]);
+
+function corsHeadersFor(req: Request): Record<string, string> {
+  const origin = req.headers.get("origin") ?? "";
+  const reqHeaders = req.headers.get("access-control-request-headers") ?? "content-type, authorization";
+  if (ALLOWED_ORIGINS.has(origin)) {
+    return {
+      "access-control-allow-origin": origin,
+      "access-control-allow-methods": "GET, POST, PUT, DELETE, OPTIONS",
+      "access-control-allow-headers": reqHeaders,
+      "access-control-allow-credentials": "true",
+      "access-control-max-age": "86400",
+      "vary": "origin",
+    };
+  }
+  return {
+    "access-control-allow-origin": "*",
+    "access-control-allow-methods": "GET, POST, PUT, DELETE, OPTIONS",
+    "access-control-allow-headers": reqHeaders,
+  };
+}
 
 const json = (body: unknown, init: ResponseInit = {}) =>
   new Response(JSON.stringify(body), {
     ...init,
     headers: {
       "content-type": "application/json",
-      ...CORS_HEADERS,
       ...init.headers,
     },
   });
 
 /**
- * Decorate any response with CORS headers. Critical for error paths like
- * `requireSession`'s 401, which otherwise bypass our `json()` helper and
- * return CORS-naked responses that the browser can't even read the status of.
+ * Decorate any response with the request-scoped CORS headers. Critical for
+ * error paths like `requireSession`'s 401, which otherwise bypass our
+ * `json()` helper and return CORS-naked responses that the browser can't
+ * even read the status of.
  */
-function withCORS(resp: Response): Response {
+function withCORS(resp: Response, cors: Record<string, string>): Response {
   const headers = new Headers(resp.headers);
-  for (const [k, v] of Object.entries(CORS_HEADERS)) {
+  for (const [k, v] of Object.entries(cors)) {
     if (!headers.has(k)) headers.set(k, v);
   }
   return new Response(resp.body, {
@@ -65,18 +107,41 @@ const badRequest = (msg: string) =>
   json({ error: "bad_request", message: msg }, { status: 400 });
 
 export default {
-  async fetch(req: Request, env: Env): Promise<Response> {
-    return withCORS(await handle(req, env));
+  async fetch(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+    const cors = corsHeadersFor(req);
+    return withCORS(await handle(req, env, ctx, cors), cors);
   },
 } satisfies ExportedHandler<Env>;
 
-async function handle(req: Request, env: Env): Promise<Response> {
+/**
+ * Run a fire-and-forget side effect (KV counter bumps, funnel logging, etc)
+ * without blocking the response. Wraps `ctx.waitUntil` so the Workers
+ * runtime keeps the promise alive past the response — without `waitUntil`,
+ * unawaited promises spawned inside a request handler get *terminated* the
+ * moment the handler returns its Response. This is exactly the bug that was
+ * silently zeroing out our funnel logging in production.
+ */
+function bg(ctx: ExecutionContext, p: Promise<unknown>): void {
+  try {
+    ctx.waitUntil(p.catch(() => {}));
+  } catch {
+    // Defensive: if waitUntil itself throws (it shouldn't), don't crash
+    // the request — the side effect is best-effort by definition.
+  }
+}
+
+async function handle(
+  req: Request,
+  env: Env,
+  ctx: ExecutionContext,
+  cors: Record<string, string>
+): Promise<Response> {
     const url = new URL(req.url);
     const { pathname } = url;
     const method = req.method;
 
     if (method === "OPTIONS") {
-      return new Response(null, { status: 204, headers: CORS_HEADERS });
+      return new Response(null, { status: 204, headers: cors });
     }
 
     try {
@@ -93,7 +158,7 @@ async function handle(req: Request, env: Env): Promise<Response> {
       // polling the feed every 30 s we'd still rather collapse identical
       // requests at the edge before they hit KV at all.
       if (method === "GET" && pathname === "/presence") {
-        return getPresenceCached(req, env);
+        return getPresenceCached(req, env, ctx);
       }
       if (method === "POST" && pathname === "/presence") {
         const auth = await requireSession(req, env);
@@ -111,13 +176,16 @@ async function handle(req: Request, env: Env): Promise<Response> {
         }
         const result = await upsertPresence(env, auth.steamID, body);
         // Best-effort: refresh today's DAU marker. Non-fatal if it fails.
-        recordHeartbeat(env, auth.steamID).catch(() => {});
+        bg(ctx, recordHeartbeat(env, auth.steamID));
+        // Mark roster-first-seen for funnel attribution. Idempotent (read-
+        // first-skip), so a frequent heartbeater only pays the read cost.
+        bg(ctx, recordRosterFirstSeen(env, auth.steamID));
         // Sliding-window session refresh. An active user heartbeating every
         // 3 minutes never gets logged out for stale-session reasons; only an
         // explicit sign-out, or a true 30-day absence, can expire them.
         const token = bearerTokenFromRequest(req);
         if (token) {
-          refreshSessionTTL(env, token, auth.steamID).catch(() => {});
+          bg(ctx, refreshSessionTTL(env, token, auth.steamID));
         }
         // So the next GET /presence from anyone sees this user immediately
         // instead of waiting out the edge-cache window (up to 15 s).
@@ -134,10 +202,30 @@ async function handle(req: Request, env: Env): Promise<Response> {
 
       // ----- Steam OpenID auth -----
       if (method === "GET" && pathname === "/auth/steam/start") {
-        return steamAuthStart(req, env);
+        return steamAuthStart(req, env, ctx);
       }
       if (method === "GET" && pathname === "/auth/steam/callback") {
-        return steamAuthCallback(req, env);
+        return steamAuthCallback(req, env, ctx);
+      }
+
+      // Client-side diagnostic beacon. Public POST. The browser reaches this
+      // when it can see something the server can't: nonce missing after the
+      // OpenID round-trip (in-app browsers strip sessionStorage), session
+      // token missing or malformed in the redirect URL, etc. Used purely for
+      // funnel attribution — no PII beyond the user agent string and an
+      // operator-defined "reason" code. Hard rate-limited per IP because
+      // this is the one truly public write surface.
+      if (method === "POST" && pathname === "/auth/diag") {
+        const ipLimit = await ipWriteLimit(env, req, "auth-diag", 10, 60);
+        if (!ipLimit.ok) return ipLimit.resp;
+        const body = (await req.json().catch(() => null)) as
+          | { reason?: string; detail?: string }
+          | null;
+        if (!body || typeof body.reason !== "string") {
+          return badRequest("invalid diag body");
+        }
+        await recordClientDiagnostic(env, body.reason, String(body.detail ?? ""));
+        return json({ ok: true });
       }
 
       // ----- Co-op invites -----
@@ -241,19 +329,32 @@ async function purgePresenceFeedCache(): Promise<void> {
   }
 }
 
-async function getPresenceCached(_req: Request, env: Env): Promise<Response> {
+async function getPresenceCached(_req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
   const cache = caches.default;
 
   const hit = await cache.match(PRESENCE_FEED_CACHE_KEY);
   if (hit) return hit;
 
-  const data = await listPresence(env);
+  let data: Awaited<ReturnType<typeof listPresence>>;
+  try {
+    data = await listPresence(env);
+  } catch (err) {
+    // KV outage on the read side — the most user-visible failure mode
+    // (everyone sees an empty feed even though the roster is fine).
+    // Record it so we can correlate "no users showing up" complaints
+    // with actual KV health, and return an empty array rather than 500
+    // so the client fails open.
+    bg(ctx, recordClientDiagnostic(env, "presence-read-failed", String((err as Error)?.message ?? err)));
+    data = [];
+  }
   const body = JSON.stringify(data);
+  // Don't bake CORS into the cached body — outer withCORS layer adds the
+  // request-scoped CORS on every response, including cache hits served by
+  // the next request from a different origin.
   const resp = new Response(body, {
     headers: {
       "content-type": "application/json",
       "cache-control": `public, max-age=${PRESENCE_EDGE_CACHE_S}, s-maxage=${PRESENCE_EDGE_CACHE_S}`,
-      ...CORS_HEADERS,
     },
   });
   // Best-effort cache write; never fail a user response on a cache miss.

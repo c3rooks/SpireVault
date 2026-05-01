@@ -121,6 +121,23 @@ function bucket(runs, keyFn, wonFn) {
   return out.sort((a, b) => (b.runs - a.runs) || (b.wins - a.wins));
 }
 
+/**
+ * Wilson lower-bound at 95% confidence. Penalizes small samples so a
+ * 3-run / 2-win relic (66.7% raw) doesn't out-rank a 30-run / 17-win
+ * relic (56.7% raw) just because the small sample lucked out. Used for
+ * both ranking and color-tone in the relic and card panels — keeps the
+ * "top winrate" lists honest when total runs are low.
+ */
+function wilsonLowerBound(wins, runs) {
+  if (runs <= 0) return 0;
+  const z = 1.96;
+  const p = wins / runs;
+  const denom = 1 + (z * z) / runs;
+  const center = p + (z * z) / (2 * runs);
+  const margin = z * Math.sqrt((p * (1 - p) + (z * z) / (4 * runs)) / runs);
+  return Math.max(0, (center - margin) / denom);
+}
+
 function relicBuckets(runs, minSample, topN) {
   const seen = new Map();
   for (const r of runs) {
@@ -136,16 +153,18 @@ function relicBuckets(runs, minSample, topN) {
   const out = [];
   for (const [key, c] of seen) {
     if (c.runs < minSample) continue;
+    const winrate = c.runs === 0 ? 0 : c.wins / c.runs;
     out.push({
       key,
       runs: c.runs,
       wins: c.wins,
-      winrate: c.runs === 0 ? 0 : c.wins / c.runs,
+      winrate,
+      lb: wilsonLowerBound(c.wins, c.runs),
       pickedRate: c.runs / total,
     });
   }
   return out
-    .sort((a, b) => b.winrate - a.winrate || b.runs - a.runs)
+    .sort((a, b) => (b.lb - a.lb) || (b.winrate - a.winrate) || (b.runs - a.runs))
     .slice(0, topN);
 }
 
@@ -179,6 +198,7 @@ function cardPickStats(runs, minSample, topN) {
       runs: n,
       wins: w,
       winrate: n === 0 ? 0 : w / n,
+      lb: wilsonLowerBound(w, n),
       pickedRate: n / Math.max(off, 1),
     });
   }

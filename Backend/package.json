@@ -8,7 +8,8 @@
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "tail": "wrangler tail",
-    "types": "wrangler types"
+    "types": "wrangler types",
+    "verify": "node scripts/verify-roster.mjs"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20240320.0",

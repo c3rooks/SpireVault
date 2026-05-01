@@ -126,6 +126,10 @@ main {
   margin: 0 auto;
   padding: 32px 28px 64px;
 }
+@media (max-width: 600px) {
+  main { padding: 20px 16px 40px; }
+  .topbar { padding: 14px 16px; }
+}
 
 /* ─── Buttons ─────────────────────────────────────────────────── */
 .btn-primary, .btn-ghost {
@@ -175,6 +179,21 @@ main {
 .btn-ghost.is-flash { animation: refreshFlash 380ms ease-out; }
 
 .cta-row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin: 18px 0 26px; }
+@media (max-width: 480px) {
+  .cta-row { gap: 10px; margin: 14px 0 20px; }
+  /* On a phone, the primary CTA wants to span the column so the
+     touch target is unambiguous, while the secondary stays inline. */
+  .cta-row .btn-primary {
+    flex: 1 1 100%;
+    justify-content: center;
+    min-height: 48px;
+    font-size: 15px;
+  }
+  .cta-row .btn-ghost {
+    flex: 0 0 auto;
+    min-height: 44px;
+  }
+}
 
 /* ─── Common bits ─────────────────────────────────────────────── */
 .eyebrow {
@@ -225,6 +244,20 @@ main {
   align-items: center;
   gap: 8px;
 }
+
+.inapp-warn {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-1, #f4eddc);
+  background: rgba(255, 107, 26, 0.12);
+  border: 1px solid rgba(255, 107, 26, 0.42);
+  max-width: 640px;
+}
+.inapp-warn strong { color: #ffa05c; }
+.inapp-warn em { font-style: normal; font-weight: 700; color: #ffd28a; }
 
 /* ─── Signed-out hero ─────────────────────────────────────────── */
 .signed-out h1 {
@@ -286,6 +319,21 @@ main {
   padding: 20px;
   margin-bottom: 28px;
   box-shadow: 0 12px 36px -22px rgba(255,107,26,0.5);
+}
+@media (max-width: 600px) {
+  .me-card { padding: 14px; margin-bottom: 18px; }
+  .me-row { gap: 10px; margin-bottom: 12px; }
+  .me-row .me-id strong { font-size: 14px; }
+  .avatar { width: 32px; height: 32px; }
+  .avatar.lg { width: 40px; height: 40px; }
+  .status-pills { gap: 6px; margin-bottom: 12px; }
+  .status-pills .pill {
+    padding: 8px 12px;
+    font-size: 11.5px;
+    /* Apple HIG and Material both call out 44 px as the minimum touch
+       target. Pills below this are visually fine but easy to mis-tap. */
+    min-height: 36px;
+  }
 }
 .me-row {
   display: flex;
@@ -590,8 +638,11 @@ main {
   align-self: start;
   height: 100vh;
 }
-@media (max-width: 880px) {
-  .sidebar { position: static; height: auto; }
+/* Hide the mobile-only account row on tablet+ (it's a duplicate of
+   the desktop sidebar-footer markup). The actual mobile-on rules live
+   at the bottom of this file (see "Mobile shell").  */
+@media (min-width: 881px) {
+  .mobile-account-row { display: none; }
 }
 
 .sidebar-brand {
@@ -801,9 +852,45 @@ main {
 .panel-actions { display: flex; gap: 8px; }
 .panel-body { padding: 24px 32px 60px; }
 
-@media (max-width: 600px) {
-  .panel-head, .panel-body { padding-left: 18px; padding-right: 18px; }
-  .panel-head { flex-wrap: wrap; }
+/* Tighten panel chrome on mobile. The desktop padding (24/32 px) eats
+   too much horizontal real estate on a 375 px iPhone SE; the page
+   header h1 size also halves to keep the panel-head from dominating
+   the viewport on initial load. */
+@media (max-width: 880px) {
+  .panel-head {
+    padding: 14px 16px 12px;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+    /* Defeat sticky header chaining: with the sidebar already sticky
+       at the top, a second sticky element behind it stacks the colors
+       and looks like a UI seam. */
+    position: relative;
+    background: transparent;
+    backdrop-filter: none;
+  }
+  .panel-head h1 {
+    font-size: 20px;
+    line-height: 1.2;
+    margin: 0 0 2px;
+  }
+  .panel-sub {
+    font-size: 12px;
+    line-height: 1.4;
+  }
+  .panel-actions {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .panel-body {
+    padding: 14px 14px 40px;
+  }
+}
+
+@media (max-width: 480px) {
+  .panel-head { padding: 12px 12px 10px; }
+  .panel-body { padding: 12px 12px 32px; }
+  .panel-head h1 { font-size: 18px; }
 }
 
 /* ─── Buttons (small variants) ──────────────────────────── */
@@ -842,9 +929,37 @@ main {
 }
 .row .actions .btn-primary.sm { width: 100%; justify-content: center; }
 @media (max-width: 600px) {
-  .row { grid-template-columns: auto 1fr; }
-  .row .actions { grid-column: 1 / -1; flex-direction: row; flex-wrap: wrap; }
-  .row .actions .btn-primary.sm { width: auto; }
+  .row {
+    grid-template-columns: auto 1fr;
+    gap: 12px;
+    padding: 12px 14px;
+  }
+  .row .actions {
+    grid-column: 1 / -1;
+    flex-direction: row;
+    flex-wrap: wrap;
+    min-width: 0;
+    gap: 8px;
+  }
+  /* Primary "Invite to play" gets the full row on its own — it's the
+     star action of the feed, and at <=375px width sharing a flex line
+     with two other buttons left it cramped. The two secondary actions
+     (Profile, Steam) split the second row. */
+  .row .actions .btn-primary.sm {
+    flex: 1 1 100%;
+    min-width: 0;
+    padding: 10px 14px;
+    font-size: 13px;
+    min-height: 42px;
+    justify-content: center;
+  }
+  .row .actions .action-link {
+    flex: 1 1 0;
+    min-width: 0;
+    padding: 10px 8px;
+    font-size: 12px;
+    min-height: 40px;
+  }
 }
 
 /* ─── Empty state (stat tabs without data) ────────────── */
@@ -1214,8 +1329,15 @@ main {
   display: flex;
   align-items: center;
   justify-content: center;
+  overflow: hidden;
 }
 .char-card-icon .char-icon { width: 22px; height: 22px; }
+.char-card-icon .char-portrait {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
 .char-card-runs {
   font-size: 11px;
   font-weight: 700;
@@ -1299,6 +1421,11 @@ main {
   letter-spacing: 0.04em;
   text-transform: none;
 }
+.pill-small-sample {
+  border-style: dashed;
+  cursor: help;
+  opacity: 0.85;
+}
 .pill-win {
   color: var(--win);
   background: rgba(109, 217, 124, 0.14);
@@ -1346,6 +1473,32 @@ main {
 .card-row-icon svg { width: 12px; height: 12px; }
 .card-row-icon-picked  { color: var(--accent);  background: rgba(255, 107, 26, 0.18); }
 .card-row-icon-skipped { color: var(--loss);    background: rgba(255, 95, 109, 0.18); }
+
+/* When real card art is available, swap the small icon dot for a
+   thumbnail-sized strip that mimics a card peek. Aspect-ratio mirrors
+   the source PNGs (roughly 5:6). */
+.card-row-art {
+  width: 32px;
+  height: 40px;
+  border-radius: 4px;
+  overflow: hidden;
+  flex-shrink: 0;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.card-row-art img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  /* Cards have transparent rounded corners; cropping with object-fit
+     gives us a clean rectangle without showing the void around them. */
+}
+.card-row-art-picked  { box-shadow: inset 0 0 0 1px rgba(255, 107, 26, 0.35); }
+.card-row-art-skipped { box-shadow: inset 0 0 0 1px rgba(255, 95, 109, 0.30); filter: saturate(0.7) brightness(0.85); }
 .card-row-name {
   flex: 1;
   font-size: 13px;
@@ -1373,6 +1526,7 @@ main {
   letter-spacing: -0.01em;
 }
 .card-row-pct-win    { color: var(--win); }
+.card-row-pct-gold   { color: var(--gold); }
 .card-row-pct-accent { color: var(--accent); }
 .card-row-pct-loss   { color: var(--loss); }
 
@@ -1418,6 +1572,13 @@ main {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  overflow: hidden;
+}
+.run-icon .char-portrait {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
 }
 .run-icon svg { width: 18px; height: 18px; }
 .run-meta {
@@ -1485,6 +1646,74 @@ main {
   border-color: rgba(255, 95, 109, 0.5);
 }
 
+/* ─── Share button on run rows ────────────────────────────────────
+   Sized to sit beside the outcome badge without crowding it. Subtle
+   until hover, where it picks up the row's character color. */
+.run-share-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 10px;
+  margin-left: 8px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--text-secondary, #9aa3b2);
+  font-family: 'Inter', sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease, transform 0.1s ease;
+}
+.run-share-btn:hover,
+.run-share-btn:focus-visible {
+  color: var(--text, #f4f6fa);
+  border-color: var(--char-color, var(--accent));
+  background: rgba(255, 255, 255, 0.05);
+  outline: none;
+}
+.run-share-btn:active { transform: scale(0.97); }
+.run-share-btn svg { flex-shrink: 0; }
+
+/* ─── Share modal (per-run preview + export) ──────────────────────
+   Wider than the invite modal so the 880x540 share card preview can
+   render at a sensible scale without horizontal scrolling. */
+.modal.modal-share { max-width: 720px; width: calc(100% - 48px); }
+.share-body { display: flex; flex-direction: column; gap: 16px; }
+.share-preview-wrap {
+  width: 100%;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #0a0d12;
+  border: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.share-preview-wrap canvas {
+  width: 100%;
+  height: auto;
+  display: block;
+  /* Keep the 880x540 aspect ratio when the modal is narrow. */
+  aspect-ratio: 880 / 540;
+}
+.share-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+.share-actions button { font-size: 12px; }
+.share-hint {
+  margin: 0;
+  font-size: 11px;
+  color: var(--text-secondary, #8a93a3);
+  letter-spacing: 0.02em;
+}
+.share-hint.is-success { color: #8eef9b; }
+.share-hint.is-error { color: #ff8e98; }
+
 /* ─── Top Relics: card grid (matches desktop app's RelicCard) ──── */
 .relic-grid {
   display: grid;
@@ -1518,6 +1747,20 @@ main {
   justify-content: center;
   flex-shrink: 0;
 }
+/* Relic art tiles: when the manifest knows this slug, we swap the gold
+   sparkle for the actual relic PNG. The circle clip keeps STS2's
+   transparent corners aligned with the card's circular icon socket. */
+.relic-card-icon-art {
+  background: radial-gradient(circle at 30% 30%, rgba(212, 175, 55, 0.20), rgba(212, 175, 55, 0.04));
+  overflow: hidden;
+  padding: 3px;
+}
+.relic-card-icon-art img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
 .relic-card-icon svg { width: 20px; height: 20px; }
 .relic-card-meta { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
 .relic-card-name {
@@ -1550,8 +1793,9 @@ main {
   color: var(--text-3);
   margin-top: 4px;
 }
-.relic-card-pct-win strong  { color: var(--win); }
-.relic-card-pct-gold strong { color: var(--gold); }
+.relic-card-pct-win strong    { color: var(--win); }
+.relic-card-pct-gold strong   { color: var(--gold); }
+.relic-card-pct-accent strong { color: var(--text-2); }
 
 /* ─── Ascensions: bar chart + detail rows (matches desktop app) ── */
 .asc-chart-panel {
@@ -1916,6 +2160,25 @@ main {
   box-shadow: 0 24px 60px -20px rgba(0,0,0,0.7);
   overflow: hidden;
 }
+
+@media (max-width: 600px) {
+  .modal-backdrop {
+    padding: 12px;
+    /* Stick to the bottom of the screen on phones — easier on the
+       thumb than dead-center, and matches native iOS sheet behavior. */
+    align-items: flex-end;
+  }
+  .modal {
+    border-radius: 14px 14px 0 0;
+    /* Allow tall modals (e.g. share preview) to scroll inside the
+       sheet rather than overflow the viewport. */
+    max-height: 90vh;
+    overflow-y: auto;
+  }
+  .modal-head { padding: 14px 16px; }
+  .modal-head h2 { font-size: 16px; }
+  .modal-body { padding: 16px; }
+}
 .modal-head {
   display: flex;
   align-items: center;
@@ -2062,3 +2325,170 @@ select#me-note option { background: var(--bg-deep); color: var(--text); }
 .modal-backdrop[hidden],
 .drop-overlay[hidden],
 #app-shell[hidden] { display: none !important; }
+
+/* =============================================================
+   Mobile shell (≤880px) — sidebar collapses to a sticky horizontal
+   tab strip pinned to the top.
+
+   Lives at the END of the file on purpose: CSS resolves equal-
+   specificity rules in source order, and we need these mobile
+   overrides to beat the desktop sidebar styles defined earlier
+   (e.g. .sidebar-brand { display: flex }).
+
+   Why this product needs a real mobile layout: most of our
+   inbound traffic is Reddit / X / iMessage shares, all of which
+   open in mobile webviews. The original design stacked the
+   entire 248px sidebar above the content on mobile, which meant
+   users scrolled past 7 nav rows + brand + footer before
+   reaching anything actionable. The horizontal tab strip
+   pattern matches what Reddit, Discord, and Twitter do
+   natively, which is what the user has already opted into.
+   ============================================================= */
+@media (max-width: 880px) {
+  /* Defeat horizontal overflow at the grid level. Without min-width:0
+     the sidebar grid track grows to fit its widest descendant — and
+     the sidebar-nav (a flex strip with `flex: 0 0 auto` children)
+     happily reports its full intrinsic width. That bleeds out past
+     the viewport and gives us a horizontally scrollable page. */
+  .app-shell {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .sidebar, .content { min-width: 0; }
+
+  .sidebar {
+    position: sticky;
+    top: 0;
+    height: auto;
+    z-index: 10;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+    background: rgba(10, 8, 18, 0.96);
+    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(12px);
+    /* Ensure the strip's overflow:auto stays inside the viewport. */
+    width: 100%;
+    max-width: 100vw;
+  }
+
+  /* Hide the desktop sidebar chrome — the brand block, divider, and
+     account footer would gobble too much vertical space on a phone.
+     The persona+status info reappears in the mobile-account-row below
+     the tab strip. */
+  .sidebar-brand,
+  .sidebar-divider,
+  .sidebar-spacer,
+  .sidebar-footer {
+    display: none !important;
+  }
+
+  /* Nav becomes a horizontal scroll strip. Both groups (Stats / Community)
+     are lifted into a single flex line so users can sweep across them in
+     one gesture instead of seeing a vertical column of 7 buttons. */
+  .sidebar-nav {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 8px 12px;
+    gap: 6px;
+    scroll-snap-type: x proximity;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+    /* Critical: the strip itself must not grow past the sidebar's box.
+       Without min-width:0 here, flex children expand the strip which
+       in turn expands the .sidebar (its grid parent already has
+       min-width:0 above). */
+    min-width: 0;
+    width: 100%;
+  }
+  .sidebar-nav::-webkit-scrollbar { display: none; }
+
+  .nav-group {
+    display: contents;
+    margin: 0;
+  }
+  .nav-group-label { display: none; }
+
+  .nav-row {
+    flex: 0 0 auto;
+    width: auto;
+    padding: 9px 14px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--border);
+    font-size: 12.5px;
+    font-weight: 600;
+    scroll-snap-align: center;
+    min-height: 38px;
+    white-space: nowrap;
+  }
+  .nav-row:hover { background: rgba(255, 255, 255, 0.06); }
+  .nav-row.is-active {
+    background: rgba(255, 107, 26, 0.15);
+    border-color: rgba(255, 107, 26, 0.55);
+    color: var(--text);
+  }
+  .nav-row.is-active::after { display: none; }
+  .nav-icon { width: 16px; height: 16px; }
+  .nav-icon svg { width: 16px; height: 16px; }
+  .nav-label { flex: 0 0 auto; }
+
+  /* Mobile-only account row — persona avatar, name, connection status,
+     sign out. Lives just under the tab strip. */
+  .mobile-account-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 14px 10px;
+    border-top: 1px solid var(--border);
+    font-size: 12px;
+    color: var(--text-2);
+    flex-wrap: wrap;
+  }
+  .mobile-account-row .me-pill-mini {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+  }
+  .mobile-account-row .me-pill-mini img {
+    width: 22px; height: 22px;
+    border-radius: 50%;
+    border: 1px solid var(--border-strong);
+  }
+  .mobile-account-row .me-pill-mini strong {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 120px;
+  }
+  .mobile-account-row .status-dot {
+    width: 7px; height: 7px;
+  }
+  .mobile-account-row .muted-status {
+    color: var(--text-3);
+    font-size: 11px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 100px;
+  }
+  .mobile-account-row .status-signout {
+    margin-left: auto;
+    padding: 6px 12px;
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid var(--border);
+    color: var(--text-2);
+    font-size: 11px;
+    font-weight: 700;
+  }
+  .mobile-account-row .status-signout:hover {
+    color: var(--text);
+    text-decoration: none;
+  }
+}

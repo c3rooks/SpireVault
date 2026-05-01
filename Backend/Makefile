@@ -1,4 +1,4 @@
-.PHONY: install dev deploy tail logs kv-create secrets
+.PHONY: install dev deploy tail logs kv-create secrets funnel verify
 
 # Install once after cloning.
 install:
@@ -27,3 +27,12 @@ kv-create:
 secrets:
 	@echo "Get a Steam Web API key at https://steamcommunity.com/dev/apikey"
 	npx wrangler secret put STEAM_WEB_API_KEY
+
+# Print the live sign-in funnel (start → cb-attempt → cb-ok → roster).
+# Reads KV directly so no admin token needed. Pass YYYYMMDD for a past day.
+funnel:
+	@./scripts/funnel.sh $(filter-out $@,$(MAKECMDGOALS))
+
+# End-to-end roster persistence + visibility check against production.
+verify:
+	@node scripts/verify-roster.mjs

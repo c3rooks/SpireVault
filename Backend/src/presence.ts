@@ -83,14 +83,66 @@ interface Roster { entries: PresenceEntry[]; }
 
 // MARK: - Roster I/O ---------------------------------------------------------
 
+/**
+ * Read the roster blob and normalize whatever shape we find on disk.
+ *
+ * Defensive parsing because this key has historically been written by:
+ *   - the worker itself                  (correct: `{ entries: [...] }`)
+ *   - manual operator cleanup scripts    (sometimes: bare array `[...]`)
+ *   - older worker versions              (correct, but worth tolerating)
+ *
+ * Before this function was hardened, a bare-array blob made `roster.entries`
+ * undefined; `listPresence` then crashed on `roster.entries.length` and the
+ * outer `getPresenceCached` swallowed the error and served an empty roster
+ * to every client — silently hiding every signed-in user. That bug cost us
+ * a launch's worth of credibility before we caught it. This function now:
+ *
+ *   1. Accepts both the canonical and bare-array shapes.
+ *   2. Discards entries that don't look like real PresenceEntry objects.
+ *   3. Never returns `entries: undefined` — only ever `[]` on failure.
+ */
 async function readRoster(env: Env): Promise<Roster> {
   const raw = await env.LOBBIES.get(ROSTER_KEY);
   if (!raw) return { entries: [] };
-  try { return JSON.parse(raw) as Roster; } catch { return { entries: [] }; }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return { entries: [] };
+  }
+  let arr: unknown;
+  if (Array.isArray(parsed)) {
+    arr = parsed;
+  } else if (parsed && typeof parsed === "object" && Array.isArray((parsed as any).entries)) {
+    arr = (parsed as any).entries;
+  } else {
+    return { entries: [] };
+  }
+  // Filter to entries that have the bare minimum shape we render. Anything
+  // missing a 17-digit Steam ID or a string updatedAt is junk we don't want
+  // surfaced to the public feed.
+  const entries: PresenceEntry[] = (arr as any[]).filter(
+    (e) =>
+      e &&
+      typeof e === "object" &&
+      typeof e.steamID === "string" &&
+      /^\d{17}$/.test(e.steamID) &&
+      typeof e.updatedAt === "string"
+  );
+  return { entries };
 }
 
+/**
+ * Persist the roster. Always serializes the canonical `{ entries: [...] }`
+ * shape — never a bare array — so future readers don't have to guess.
+ * Any caller that passes us a malformed object gets coerced into an empty
+ * roster rather than letting half-typed data hit production.
+ */
 async function writeRoster(env: Env, roster: Roster): Promise<void> {
-  await env.LOBBIES.put(ROSTER_KEY, JSON.stringify(roster), {
+  const safe: Roster = {
+    entries: Array.isArray(roster?.entries) ? roster.entries : [],
+  };
+  await env.LOBBIES.put(ROSTER_KEY, JSON.stringify(safe), {
     expirationTtl: ROSTER_TTL_SECONDS,
   });
 }

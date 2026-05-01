@@ -33,11 +33,52 @@
      * No tokens are ever logged or sent off-device — they live in localStorage,
      * the same place a normal web app keeps a session.
      */
+    const SERVER_URL = "https://vault-coop.coreycrooks.workers.dev";
     const status = document.getElementById("auth-status");
     const detail = document.getElementById("auth-detail");
     const retry  = document.getElementById("auth-retry");
 
-    function fail(msg) {
+    /**
+     * Best-effort funnel beacon. The server can't see why the browser
+     * decided sign-in didn't complete (it only sees the redirect succeed),
+     * so we tell it. Common reasons we want logged:
+     *
+     *   - "nonce-missing"   → browser had no stored nonce when callback
+     *                          fired. Almost always an in-app browser
+     *                          (Reddit, Twitter, Facebook, Discord) that
+     *                          strips sessionStorage across redirects.
+     *   - "nonce-mismatch"  → stored nonce didn't match callback nonce
+     *                          (rare; typically a stale tab).
+     *   - "missing-steamid" → Steam returned no SteamID (Steam outage or
+     *                          someone hand-crafting the URL).
+     *   - "missing-session" → server didn't mint a session token.
+     *
+     * Detail string carries the user agent so we can spot the in-app-
+     * browser pattern without storing identifying info.
+     */
+    function beacon(reason, extra = "") {
+      try {
+        const payload = JSON.stringify({
+          reason,
+          detail: (extra + " | " + (navigator.userAgent || "")).slice(0, 280),
+        });
+        // sendBeacon is ideal here — it survives the page navigating away.
+        if (navigator.sendBeacon) {
+          const blob = new Blob([payload], { type: "application/json" });
+          navigator.sendBeacon(`${SERVER_URL}/auth/diag`, blob);
+        } else {
+          fetch(`${SERVER_URL}/auth/diag`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: payload,
+            keepalive: true,
+          }).catch(() => {});
+        }
+      } catch { /* never let diagnostics break sign-in */ }
+    }
+
+    function fail(reason, msg, extra) {
+      beacon(reason, extra ?? "");
       status.textContent = "Sign-in didn't complete.";
       detail.textContent = msg;
       detail.hidden = false;
@@ -54,10 +95,27 @@
     const expectedNonce = sessionStorage.getItem("vault.auth.nonce");
     sessionStorage.removeItem("vault.auth.nonce");
 
-    if (!steamid || !/^\d{17}$/.test(steamid)) fail("Steam ID was missing or invalid.");
-    else if (!session || session.length < 16)  fail("Session token was missing.");
-    else if (!nonce || nonce !== expectedNonce) fail("Nonce mismatch. Possible replay or stale link. Please sign in again.");
-    else {
+    if (!steamid || !/^\d{17}$/.test(steamid)) {
+      fail("missing-steamid", "Steam ID was missing or invalid.", `sid=${steamid}`);
+    } else if (!session || session.length < 16) {
+      fail("missing-session", "Session token was missing.", `sidLen=${steamid.length}`);
+    } else if (!expectedNonce) {
+      // Most common in-app-browser failure: sessionStorage didn't survive
+      // the round-trip to Steam. This is the one most likely to explain
+      // "I have 2k Reddit views and only one user". Suggest opening in
+      // the system browser instead.
+      fail(
+        "nonce-missing",
+        "Looks like you signed in from an in-app browser. Open The Vault in Safari, Chrome, or Firefox and try again.",
+        "expected stored nonce, got nothing"
+      );
+    } else if (!nonce || nonce !== expectedNonce) {
+      fail(
+        "nonce-mismatch",
+        "Nonce mismatch. Possible replay or stale link. Please sign in again.",
+        `expected=${expectedNonce.slice(0,8)} got=${nonce.slice(0,8)}`
+      );
+    } else {
       const profile = {
         steamID: steamid,
         personaName: persona,
@@ -66,8 +124,10 @@
         signedInAt: new Date().toISOString(),
       };
       localStorage.setItem("vault.web.session", JSON.stringify(profile));
+      // Success beacon too, so the funnel can show "client confirmed
+      // landing" vs "server thinks they auth'd but they never made it".
+      beacon("client-landed", `persona=${persona.slice(0,32)}`);
       status.textContent = "Welcome, " + persona + ".";
-      // Small delay so the success message is visible — feels less janky.
       setTimeout(() => { window.location.replace("/"); }, 350);
     }
   </script>

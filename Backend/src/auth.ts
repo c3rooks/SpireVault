@@ -1,6 +1,13 @@
 import type { Env } from "./types";
-import { putSessionProfile } from "./presence";
-import { recordSignIn } from "./admin";
+import { putSessionProfile, upsertPresence } from "./presence";
+import {
+  recordSignIn,
+  recordAuthStart,
+  recordAuthCallbackAttempt,
+  recordAuthCallbackOK,
+  recordAuthCallbackFail,
+  recordRosterFirstSeen,
+} from "./admin";
 
 /**
  * Steam OpenID 2.0 sign-in + session minting.
@@ -71,7 +78,7 @@ function safeReturnURL(raw: string | null, env: Env): string {
   return fallback;
 }
 
-export function steamAuthStart(req: Request, env: Env): Response {
+export function steamAuthStart(req: Request, env: Env, ctx: ExecutionContext): Response {
   const url = new URL(req.url);
   const ret = safeReturnURL(url.searchParams.get("return"), env);
   const nonce = url.searchParams.get("nonce") ?? "";
@@ -80,6 +87,17 @@ export function steamAuthStart(req: Request, env: Env): Response {
     `?ret=${encodeURIComponent(ret)}` +
     `&nonce=${encodeURIComponent(nonce)}`;
   const realm = env.PUBLIC_BASE_URL;
+
+  // Funnel: every click on "Sign in with Steam" hits this route. Counting
+  // here lets us see how many people got far enough to bounce to Steam at
+  // all vs. how many dropped off before the OpenID round-trip.
+  //
+  // CRITICAL: must be wrapped in ctx.waitUntil because this handler is
+  // synchronous — it returns a 302 immediately. Without waitUntil, the
+  // Workers runtime terminates the unawaited KV write the instant the
+  // Response is returned, and the funnel counter never increments. (This
+  // is exactly the bug that gave us 211 visitors / 0 funnel:start events.)
+  ctx.waitUntil(recordAuthStart(env).catch(() => {}));
 
   const params = new URLSearchParams({
     "openid.ns": "http://specs.openid.net/auth/2.0",
@@ -93,8 +111,13 @@ export function steamAuthStart(req: Request, env: Env): Response {
   return Response.redirect(`${STEAM_OPENID}?${params.toString()}`, 302);
 }
 
-export async function steamAuthCallback(req: Request, env: Env): Promise<Response> {
+export async function steamAuthCallback(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
   const url = new URL(req.url);
+  // Funnel: every callback hit, regardless of outcome. The delta between
+  // start and callback-attempt is "people Steam never sent back" (closed
+  // the tab, bailed at the Steam page, blocked by content rules, etc).
+  ctx.waitUntil(recordAuthCallbackAttempt(env).catch(() => {}));
+
   // Re-validate `ret` on the way back too — it travelled through Steam in a
   // round-tripped query string, so don't trust it implicitly.
   const ret = safeReturnURL(url.searchParams.get("ret"), env);
@@ -114,12 +137,14 @@ export async function steamAuthCallback(req: Request, env: Env): Promise<Respons
   });
   const verifyBody = await verifyResp.text();
   if (!/is_valid:\s*true/.test(verifyBody)) {
+    ctx.waitUntil(recordAuthCallbackFail(env, "verify-rejected").catch(() => {}));
     return new Response("Steam auth verification failed.", { status: 400 });
   }
 
   const claimedID = url.searchParams.get("openid.claimed_id") ?? "";
   const m = claimedID.match(/\/openid\/id\/(\d{17})$/);
   if (!m) {
+    ctx.waitUntil(recordAuthCallbackFail(env, "no-claimed-id").catch(() => {}));
     return new Response("Could not extract SteamID from response.", { status: 400 });
   }
   const steamID = m[1]!;
@@ -162,7 +187,45 @@ export async function steamAuthCallback(req: Request, env: Env): Promise<Respons
 
   // Record this sign-in for the operator dashboard. Best-effort — never
   // fail the auth callback if KV writes hiccup.
-  recordSignIn(env, steamID, persona, avatar || undefined).catch(() => {});
+  ctx.waitUntil(recordSignIn(env, steamID, persona, avatar || undefined).catch(() => {}));
+  ctx.waitUntil(recordAuthCallbackOK(env).catch(() => {}));
+
+  // Auto-roster every verified user. Pre-fix flow:
+  //   1. callback verifies → session minted
+  //   2. browser bounces to /auth.html
+  //   3. /auth.html validates nonce + writes localStorage
+  //   4. browser bounces to /
+  //   5. / boots → POSTs /presence → user appears on roster
+  //
+  // If anything between 2 and 5 fails (in-app browser strips storage,
+  // user closes the tab, JS errors out, network blip on the heartbeat,
+  // browser back-button after auth, etc) the user is *authenticated*
+  // but never lands on the public roster — invisible to everyone else
+  // even though they did the work to sign in.
+  //
+  // Fix: the moment we mint a session, drop the user on the roster
+  // server-side with sane defaults ("looking", no note). The client
+  // overwrites this on its first heartbeat with the real status. If
+  // the client never heartbeats, the user is still visible to others
+  // — which is the whole point of the co-op feed.
+  try {
+    await upsertPresence(env, steamID, {
+      status: "looking",
+      note: "",
+      discordHandle: undefined,
+      stats: undefined,
+    });
+    ctx.waitUntil(recordRosterFirstSeen(env, steamID).catch(() => {}));
+  } catch (err) {
+    // Roster write failures must not block the auth redirect. The user
+    // can still heartbeat from the client and recover.
+    //
+    // BUT — record the failure as a funnel event so the operator can
+    // tell "auth'd but never made it to roster" from "auth'd and chose
+    // not to look at the feed yet". Without this counter, KV write
+    // outages during a launch surge would be entirely invisible.
+    ctx.waitUntil(recordAuthCallbackFail(env, "auto-roster-failed").catch(() => {}));
+  }
 
   const final = new URL(ret);
   final.searchParams.set("steamid", steamID);

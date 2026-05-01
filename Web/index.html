@@ -23,7 +23,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Playfair+Display:wght@700;900&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/styles.css?v=14" />
+  <link rel="stylesheet" href="/styles.css?v=21" />
 </head>
 <body>
   <div class="bg-glow" aria-hidden="true"></div>
@@ -64,6 +64,19 @@
         <span class="dot dot-pulse"></span>
         <span id="presence-text">Checking who's around…</span>
       </p>
+      <!-- In-app browser warning. Hidden by default; script.js shows it
+           when navigator.userAgent matches Reddit/X/Facebook/Instagram/
+           Threads/Discord webviews. Those browsers strip sessionStorage
+           across the Steam OpenID redirect, which means a non-trivial
+           share of mobile sign-in attempts fail silently. We tell users
+           up front so they don't waste a round-trip. -->
+      <div class="inapp-warn" id="inapp-warn" hidden>
+        <strong>Heads up:</strong> you're in an in-app browser
+        (<span id="inapp-name">app</span>) that may break Steam sign-in.
+        Tap the share / menu button and choose
+        <em>Open in Safari</em> (iOS) or <em>Open in Chrome</em> (Android)
+        first.
+      </div>
       <div class="signin-explainer">
         <h4>What signing in actually does</h4>
         <ul>
@@ -148,6 +161,20 @@
           <button class="status-signout" id="signout-btn" title="Sign out">Sign out</button>
         </div>
       </div>
+
+      <!-- Mobile-only account row. Lives below the horizontal tab strip
+           and surfaces the same persona + status + sign-out controls
+           that the desktop sidebar-footer has, but in a thin horizontal
+           bar that doesn't push content offscreen. Hidden ≥881px via CSS. -->
+      <div class="mobile-account-row" aria-hidden="false">
+        <div class="me-pill-mini">
+          <img id="me-pill-avatar-mobile" alt="" src="/assets/vault-mark.svg" />
+          <strong id="me-pill-name-mobile">…</strong>
+        </div>
+        <span class="status-dot" id="status-dot-mobile"></span>
+        <span id="status-label-mobile" class="muted-status">Connecting…</span>
+        <button class="status-signout" id="signout-btn-mobile" title="Sign out">Sign out</button>
+      </div>
     </aside>
 
     <section class="content">
@@ -159,7 +186,6 @@
             <p class="panel-sub" id="overview-sub">Your run history at a glance.</p>
           </div>
           <div class="panel-actions">
-            <button class="btn-ghost" data-action="scan">Find</button>
             <button class="btn-ghost" data-action="upload">Import</button>
           </div>
         </header>
@@ -172,7 +198,7 @@
       <article class="tab-panel" data-tab="characters" hidden>
         <header class="panel-head">
           <div><h1>Characters</h1><p class="panel-sub">Win rate by character.</p></div>
-          <div class="panel-actions"><button class="btn-ghost" data-action="scan">Find</button><button class="btn-ghost" data-action="upload">Import</button></div>
+          <div class="panel-actions"><button class="btn-ghost" data-action="upload">Import</button></div>
         </header>
         <div class="panel-body" id="characters-body"></div>
       </article>
@@ -181,7 +207,7 @@
       <article class="tab-panel" data-tab="ascensions" hidden>
         <header class="panel-head">
           <div><h1>Ascensions</h1><p class="panel-sub">Win rate by ascension level.</p></div>
-          <div class="panel-actions"><button class="btn-ghost" data-action="scan">Find</button><button class="btn-ghost" data-action="upload">Import</button></div>
+          <div class="panel-actions"><button class="btn-ghost" data-action="upload">Import</button></div>
         </header>
         <div class="panel-body" id="ascensions-body"></div>
       </article>
@@ -190,7 +216,7 @@
       <article class="tab-panel" data-tab="relics" hidden>
         <header class="panel-head">
           <div><h1>Top Relics</h1><p class="panel-sub">Best relics by win rate (min. 3 runs).</p></div>
-          <div class="panel-actions"><button class="btn-ghost" data-action="scan">Find</button><button class="btn-ghost" data-action="upload">Import</button></div>
+          <div class="panel-actions"><button class="btn-ghost" data-action="upload">Import</button></div>
         </header>
         <div class="panel-body" id="relics-body"></div>
       </article>
@@ -199,7 +225,7 @@
       <article class="tab-panel" data-tab="cards" hidden>
         <header class="panel-head">
           <div><h1>Cards</h1><p class="panel-sub">Most picked vs. most skipped.</p></div>
-          <div class="panel-actions"><button class="btn-ghost" data-action="scan">Find</button><button class="btn-ghost" data-action="upload">Import</button></div>
+          <div class="panel-actions"><button class="btn-ghost" data-action="upload">Import</button></div>
         </header>
         <div class="panel-body" id="cards-body"></div>
       </article>
@@ -207,8 +233,12 @@
       <!-- =================== Recent Runs =================== -->
       <article class="tab-panel" data-tab="runs" hidden>
         <header class="panel-head">
-          <div><h1>Recent Runs</h1><p class="panel-sub">Latest runs from your history.</p></div>
-          <div class="panel-actions"><button class="btn-ghost" data-action="scan">Find</button><button class="btn-ghost" data-action="upload">Import</button></div>
+          <div><h1>Recent Runs</h1><p class="panel-sub">Latest runs from your history. Auto-refreshes from disk.</p></div>
+          <div class="panel-actions">
+            <button class="btn-ghost" data-action="export-json" title="Download all runs as JSON">Export JSON</button>
+            <button class="btn-ghost" data-action="export-csv" title="Download all runs as CSV">Export CSV</button>
+            <button class="btn-ghost" data-action="upload">Import</button>
+          </div>
         </header>
         <div class="panel-body" id="runs-body"></div>
       </article>
@@ -306,6 +336,30 @@
     </div>
   </div>
 
+  <!-- Per-run share modal. Shown when the user clicks the Share icon on
+       any row in Recent Runs. Renders a polished card preview and offers
+       three export paths (Download PNG, Copy Image, Copy Markdown), each
+       of which targets the offscreen canvas built from the run data. -->
+  <div class="modal-backdrop" id="share-modal" hidden role="dialog" aria-modal="true" aria-labelledby="share-modal-title">
+    <div class="modal modal-share">
+      <header class="modal-head">
+        <h2 id="share-modal-title">Share run</h2>
+        <button class="modal-close" id="share-modal-close" aria-label="Close">×</button>
+      </header>
+      <div class="modal-body share-body">
+        <div class="share-preview-wrap">
+          <canvas id="share-canvas" width="880" height="540" aria-label="Run share card preview"></canvas>
+        </div>
+        <div class="share-actions">
+          <button class="btn-primary" id="share-download" type="button">Download PNG</button>
+          <button class="btn-ghost" id="share-copy-image" type="button">Copy image</button>
+          <button class="btn-ghost" id="share-copy-md" type="button">Copy as markdown</button>
+        </div>
+        <p class="share-hint" id="share-hint">Drop the image straight into Discord, Reddit, or X.</p>
+      </div>
+    </div>
+  </div>
+
   <!-- File input lives in the DOM so we can trigger it programmatically -->
   <input type="file" id="history-file-input" accept=".json,application/json" hidden />
 
@@ -324,6 +378,6 @@
     </div>
   </footer>
 
-  <script src="/script.js?v=20" type="module"></script>
+  <script src="/script.js?v=31" type="module"></script>
 </body>
 </html>

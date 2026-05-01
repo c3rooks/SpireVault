@@ -36,6 +36,22 @@ import type { Env, PresenceEntry } from "./types";
  *                               analytics service.
  *   signin:<ISO>:<steamID>      sign-in event, TTL 30 days. Powers the
  *                               "recent sign-ins" list.
+ *
+ * SIGN-IN FUNNEL — added so we can see exactly where users drop off
+ * between "click Sign in with Steam" and "show up on the co-op feed".
+ * Without this, every failure between Steam and our site is silent.
+ *
+ *   funnel:start:<YYYYMMDD>           counter, TTL 90d. Every /auth/steam/start hit.
+ *   funnel:cb-attempt:<YYYYMMDD>      counter, TTL 90d. Every /auth/steam/callback hit.
+ *   funnel:cb-ok:<YYYYMMDD>           counter, TTL 90d. Successful Steam verifications.
+ *   funnel:cb-fail:<reason>:<YYYYMMDD> counter, TTL 90d. Failed callbacks by reason.
+ *   funnel:diag:<reason>:<YYYYMMDD>   counter, TTL 90d. Client-side beacons
+ *                                     (nonce mismatch, redirect lost session, etc).
+ *   funnel:diag-ev:<ISO>:<reason>     event row, TTL 30d. Recent diagnostic events
+ *                                     with detail (mobile in-app browser, etc).
+ *   funnel:roster-first:<steamID>     marker, no TTL. Set the first time a user
+ *                                     appears in the presence roster after auth.
+ *                                     Lets us spot "auth'd but never heartbeated".
  */
 
 const ADMIN_PATHS = new Set(["/admin", "/admin/stats"]);
@@ -50,12 +66,11 @@ export function isAdminPath(pathname: string): boolean {
  * so admin paths are byte-indistinguishable from any other miss.
  */
 function notFound(): Response {
+  // CORS headers are added by the outer withCORS layer in index.ts so admin
+  // paths are byte-indistinguishable from public 404s.
   return new Response(JSON.stringify({ error: "not_found" }), {
     status: 404,
-    headers: {
-      "content-type": "application/json",
-      "access-control-allow-origin": "*",
-    },
+    headers: { "content-type": "application/json" },
   });
 }
 
@@ -129,6 +144,45 @@ interface AdminStats {
     steamID: string;
     personaName: string;
   }>;
+
+  // Sign-in funnel: per-day breakdown of "click Sign in" → "land on roster".
+  // Lets us see in one glance if traffic is even reaching the auth surface.
+  funnel: {
+    today: FunnelDay;
+    last7Days: FunnelDay[];
+  };
+
+  // Why people are bouncing. Aggregated reasons across the last 30 days
+  // so we can tell mobile-in-app-browser nonce loss from Steam rejection.
+  failures: {
+    callbackFailures: Record<string, number>;
+    clientDiagnostics: Record<string, number>;
+    recentEvents: Array<{
+      when: string;
+      reason: string;
+      detail: string;
+    }>;
+  };
+
+  // Every user who has ever auth'd, with whether they made it to the roster.
+  // Sorted by lastSeen desc so the top of the list is "people who tried
+  // most recently". This is what answers "did anyone besides my friend try?"
+  allUsers: Array<{
+    steamID: string;
+    personaName: string;
+    firstSeen: string;
+    lastSeen: string;
+    onRoster: boolean;
+  }>;
+}
+
+interface FunnelDay {
+  date: string;
+  authStart: number;
+  callbackHit: number;
+  callbackOk: number;
+  callbackFail: number;
+  clientDiag: number;
 }
 
 async function adminStats(env: Env): Promise<Response> {
@@ -224,6 +278,143 @@ async function adminStats(env: Env): Promise<Response> {
     } while (cursor);
   }
 
+  // ---- sign-in funnel (last 7 days, per-day) ----
+  const funnelDays: FunnelDay[] = [];
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(now.getTime() - i * 86_400_000);
+    const tag = ymd(d);
+    const [authStart, callbackHit, callbackOk, callbackFail, clientDiag] =
+      await Promise.all([
+        readCounter(env, `funnel:start:${tag}`),
+        readCounter(env, `funnel:cb-attempt:${tag}`),
+        readCounter(env, `funnel:cb-ok:${tag}`),
+        readCounterPrefix(env, `funnel:cb-fail:`, `:${tag}`),
+        readCounterPrefix(env, `funnel:diag:`, `:${tag}`),
+      ]);
+    funnelDays.push({
+      date: tag,
+      authStart,
+      callbackHit,
+      callbackOk,
+      callbackFail,
+      clientDiag,
+    });
+  }
+  const today = funnelDays[0]!;
+
+  // ---- callback failure reasons (aggregate over 30 days for stability) ----
+  const callbackFailures: Record<string, number> = {};
+  const clientDiagnostics: Record<string, number> = {};
+  for (let i = 0; i < 30; i++) {
+    const d = new Date(now.getTime() - i * 86_400_000);
+    const tag = ymd(d);
+    let cursor: string | undefined;
+    do {
+      const page = await env.LOBBIES.list({
+        prefix: `funnel:cb-fail:`,
+        cursor,
+        limit: 1000,
+      });
+      for (const k of page.keys) {
+        if (!k.name.endsWith(`:${tag}`)) continue;
+        const reason = k.name.slice("funnel:cb-fail:".length, -tag.length - 1);
+        const v = await env.LOBBIES.get(k.name);
+        callbackFailures[reason] =
+          (callbackFailures[reason] ?? 0) + Number(v ?? 0);
+      }
+      cursor = page.list_complete ? undefined : page.cursor;
+    } while (cursor);
+
+    let cursor2: string | undefined;
+    do {
+      const diagPage = await env.LOBBIES.list({
+        prefix: `funnel:diag:`,
+        cursor: cursor2,
+        limit: 1000,
+      });
+      for (const k of diagPage.keys) {
+        if (!k.name.endsWith(`:${tag}`)) continue;
+        const reason = k.name.slice("funnel:diag:".length, -tag.length - 1);
+        const v = await env.LOBBIES.get(k.name);
+        clientDiagnostics[reason] =
+          (clientDiagnostics[reason] ?? 0) + Number(v ?? 0);
+      }
+      cursor2 = diagPage.list_complete ? undefined : diagPage.cursor;
+    } while (cursor2);
+  }
+
+  // ---- recent diagnostic events (last 50, with detail) ----
+  const recentEvents: AdminStats["failures"]["recentEvents"] = [];
+  {
+    let cursor: string | undefined;
+    const all: Array<{ when: string; reason: string; key: string }> = [];
+    do {
+      const page = await env.LOBBIES.list({
+        prefix: "funnel:diag-ev:",
+        cursor,
+        limit: 1000,
+      });
+      for (const k of page.keys) {
+        // key form: funnel:diag-ev:<ISO>:<reason>
+        const rest = k.name.slice("funnel:diag-ev:".length);
+        const splitAt = rest.lastIndexOf(":");
+        if (splitAt < 0) continue;
+        all.push({
+          when: rest.slice(0, splitAt),
+          reason: rest.slice(splitAt + 1),
+          key: k.name,
+        });
+      }
+      cursor = page.list_complete ? undefined : page.cursor;
+    } while (cursor);
+    all.sort((a, b) => (a.when < b.when ? 1 : a.when > b.when ? -1 : 0));
+    for (const e of all.slice(0, 50)) {
+      const detail = (await env.LOBBIES.get(e.key)) ?? "";
+      recentEvents.push({ when: e.when, reason: e.reason, detail });
+    }
+  }
+
+  // ---- every user ever signed in (with on-roster flag) ----
+  // Capped at 500 to keep the JSON small. If you ever go past 500 unique users
+  // you'll want pagination, but at that point the funnel is *working*.
+  const rosterIDs = new Set(onlineEntries.map((e) => e.steamID));
+  const allUsers: AdminStats["allUsers"] = [];
+  {
+    let cursor: string | undefined;
+    const userIDs: string[] = [];
+    do {
+      const page = await env.LOBBIES.list({ prefix: "user:", cursor, limit: 1000 });
+      for (const k of page.keys) {
+        const sid = k.name.slice("user:".length);
+        if (/^\d{17}$/.test(sid)) userIDs.push(sid);
+      }
+      cursor = page.list_complete ? undefined : page.cursor;
+    } while (cursor && userIDs.length < 500);
+
+    // Pull metadata in parallel batches so this scales gracefully.
+    const metas = await Promise.all(
+      userIDs.map(async (sid) => {
+        const raw = await env.LOBBIES.get(`user-meta:${sid}`);
+        if (!raw) return { steamID: sid, meta: null as any };
+        try {
+          return { steamID: sid, meta: JSON.parse(raw) };
+        } catch {
+          return { steamID: sid, meta: null as any };
+        }
+      })
+    );
+    for (const { steamID, meta } of metas) {
+      allUsers.push({
+        steamID,
+        personaName: meta?.personaName ?? "Steam User",
+        firstSeen: meta?.firstSeen ?? "",
+        lastSeen: meta?.lastSeen ?? "",
+        onRoster: rosterIDs.has(steamID),
+      });
+    }
+    allUsers.sort((a, b) => (a.lastSeen < b.lastSeen ? 1 : -1));
+  }
+
   const stats: AdminStats = {
     generatedAt: now.toISOString(),
     online: {
@@ -243,6 +434,16 @@ async function adminStats(env: Env): Promise<Response> {
     totals: { everSignedIn, activeLast24h, activeLast7d, sessionsActive },
     daily: days.reverse(),
     recentSignIns: signIns,
+    funnel: {
+      today,
+      last7Days: funnelDays.slice().reverse(),
+    },
+    failures: {
+      callbackFailures,
+      clientDiagnostics,
+      recentEvents,
+    },
+    allUsers,
   };
 
   return new Response(JSON.stringify(stats), {
@@ -327,6 +528,146 @@ export async function recordHeartbeat(env: Env, steamID: string): Promise<void> 
   });
 }
 
+// MARK: - Funnel tracking ---------------------------------------------------
+
+/**
+ * Atomic-ish counter increment. KV doesn't have a real atomic increment, so
+ * this is read-modify-write: two simultaneous bumps from different colos can
+ * collide and lose one tick. That's fine for a funnel — we're trying to
+ * spot orders of magnitude (0 vs 5 vs 50), not bill anyone for sub-tick
+ * accuracy.
+ *
+ * `ttlSeconds` is renewed on every write so an active counter never expires.
+ */
+/**
+ * Increment a daily KV counter. KV does not support atomic increments, so
+ * this is a best-effort read-modify-write. Two concurrent bumps on the
+ * same edge cache window can both read the same value and undercount by 1.
+ *
+ * For a hobby-scale funnel that peaks at a few sign-ins per minute, the
+ * shape (start vs cb-attempt vs cb-ok vs roster-first) is what matters
+ * to the operator. Absolute counts will be slightly low under bursty
+ * load — that's acceptable given there's no Durable Object overhead.
+ *
+ * (Earlier versions tried `cacheTtl: 0` to dodge the read cache, but KV
+ * rejects any cacheTtl below 60s and the rejection threw silently inside
+ * `.catch(() => {})`, zeroing out every callback funnel write. Don't
+ * bring it back without using a real atomic primitive.)
+ */
+async function bumpCounter(
+  env: Env,
+  key: string,
+  ttlSeconds: number
+): Promise<void> {
+  const existing = await env.LOBBIES.get(key);
+  const next = (Number(existing ?? 0) || 0) + 1;
+  await env.LOBBIES.put(key, String(next), { expirationTtl: ttlSeconds });
+}
+
+async function readCounter(env: Env, key: string): Promise<number> {
+  const v = await env.LOBBIES.get(key);
+  return Number(v ?? 0) || 0;
+}
+
+/**
+ * Sum every counter that matches `<prefix>...<suffix>`. Used to roll up
+ * `funnel:cb-fail:*:<day>` and `funnel:diag:*:<day>` without pre-knowing
+ * which reason codes have been recorded.
+ *
+ * One list-op per call, plus one read per matching key. We only invoke it
+ * inside the admin endpoint, which is operator-only and not on a hot path.
+ */
+async function readCounterPrefix(
+  env: Env,
+  prefix: string,
+  suffix: string
+): Promise<number> {
+  let total = 0;
+  let cursor: string | undefined;
+  do {
+    const page = await env.LOBBIES.list({ prefix, cursor, limit: 1000 });
+    for (const k of page.keys) {
+      if (!k.name.endsWith(suffix)) continue;
+      const v = await env.LOBBIES.get(k.name);
+      total += Number(v ?? 0) || 0;
+    }
+    cursor = page.list_complete ? undefined : page.cursor;
+  } while (cursor);
+  return total;
+}
+
+const FUNNEL_TTL = 90 * 86_400;
+
+/** Bumped on every /auth/steam/start. */
+export async function recordAuthStart(env: Env): Promise<void> {
+  await bumpCounter(env, `funnel:start:${ymd(new Date())}`, FUNNEL_TTL);
+}
+
+/** Bumped on every /auth/steam/callback hit, regardless of outcome. */
+export async function recordAuthCallbackAttempt(env: Env): Promise<void> {
+  await bumpCounter(env, `funnel:cb-attempt:${ymd(new Date())}`, FUNNEL_TTL);
+}
+
+/** Bumped only when Steam OpenID verifies + we extract a SteamID. */
+export async function recordAuthCallbackOK(env: Env): Promise<void> {
+  await bumpCounter(env, `funnel:cb-ok:${ymd(new Date())}`, FUNNEL_TTL);
+}
+
+/**
+ * Bumped when the callback fails for a known reason. `reason` should be a
+ * short, slug-safe string ("verify-rejected", "no-claimed-id", etc) so the
+ * dashboard can show a meaningful breakdown.
+ */
+export async function recordAuthCallbackFail(
+  env: Env,
+  reason: string
+): Promise<void> {
+  const safe = (reason || "unknown").replace(/[^a-z0-9_-]/gi, "-").slice(0, 40);
+  await bumpCounter(env, `funnel:cb-fail:${safe}:${ymd(new Date())}`, FUNNEL_TTL);
+}
+
+/**
+ * Client-side diagnostic beacon. Used when the browser knows something the
+ * server can't possibly know — e.g. "we landed on /auth.html but the nonce
+ * we stored before redirecting is gone, this is almost certainly an
+ * in-app browser stripping sessionStorage across the OpenID redirect".
+ */
+export async function recordClientDiagnostic(
+  env: Env,
+  reason: string,
+  detail: string
+): Promise<void> {
+  const day = ymd(new Date());
+  const safeReason = (reason || "unknown").replace(/[^a-z0-9_-]/gi, "-").slice(0, 40);
+  const safeDetail = (detail || "").replace(/[\u0000-\u001F\u007F]/g, "").slice(0, 280);
+  // Counter — for the funnel rollup.
+  await bumpCounter(env, `funnel:diag:${safeReason}:${day}`, FUNNEL_TTL);
+  // Event row — keeps a sample of *what* the user saw.
+  // 30 day TTL, ISO-keyed for natural sort order.
+  await env.LOBBIES.put(
+    `funnel:diag-ev:${new Date().toISOString()}:${safeReason}`,
+    safeDetail,
+    { expirationTtl: 30 * 86_400 }
+  );
+}
+
+/**
+ * Marks a user as having reached the live presence roster at least once.
+ * Lives forever (no TTL) so the admin dashboard can compute the
+ * "auth'd but never on roster" gap retrospectively.
+ *
+ * Idempotent: read-first-skip so we don't burn a write per heartbeat.
+ */
+export async function recordRosterFirstSeen(
+  env: Env,
+  steamID: string
+): Promise<void> {
+  const key = `funnel:roster-first:${steamID}`;
+  const existing = await env.LOBBIES.get(key);
+  if (existing) return;
+  await env.LOBBIES.put(key, new Date().toISOString());
+}
+
 // MARK: - Dashboard HTML -----------------------------------------------------
 
 function adminHTML(): Response {
@@ -387,6 +728,18 @@ function adminHTML(): Response {
   .spark .bar .n { position:absolute; top:-18px; left:50%; transform:translateX(-50%);
     font-size:10px; color: var(--t3); }
   .spark .lbl { font-size:9px; color:var(--t3); text-align:center; letter-spacing:1px; }
+  .funnel-row { display: flex; align-items: stretch; gap: 6px; flex-wrap: wrap; }
+  .funnel-step { flex: 1 1 140px; padding: 12px 14px; background: var(--card2);
+    border-radius: 10px; min-width: 120px; }
+  .funnel-step .funnel-label { font-size: 10px; color: var(--t3);
+    letter-spacing: 1.5px; text-transform: uppercase; font-weight: 700; }
+  .funnel-step .funnel-value { font-size: 30px; font-weight: 800; color: var(--gold);
+    letter-spacing: -0.02em; margin-top: 4px; }
+  .funnel-step .funnel-sub { font-size: 11px; color: var(--t3); margin-top: 2px; }
+  .funnel-arrow { display: flex; align-items: center; color: var(--ember);
+    font-size: 18px; padding: 0 2px; }
+  .funnel-foot { font-size: 11px; color: var(--t3); margin-top: 14px;
+    padding-top: 12px; border-top: 1px solid var(--bd); }
   .gate { max-width: 380px; margin: 80px auto; padding: 28px;
     background: var(--card); border:1px solid var(--bd); border-radius:14px; }
   .gate h2 { margin: 0 0 6px; font-size:16px; color: var(--gold); letter-spacing:1px; }
@@ -490,6 +843,62 @@ function adminHTML(): Response {
           <td class="muted"><a href="https://steamcommunity.com/profiles/\${e.steamID}" target="_blank" rel="noopener">\${e.steamID}</a></td>
         </tr>\`).join("");
 
+    const funnelRows = s.funnel.last7Days.map(d => \`
+      <tr>
+        <td>\${fmtDay(d.date)}</td>
+        <td><strong>\${d.authStart}</strong></td>
+        <td>\${d.callbackHit}</td>
+        <td>\${d.callbackOk}</td>
+        <td class="muted">\${d.callbackFail}</td>
+        <td class="muted">\${d.clientDiag}</td>
+      </tr>\`).join("");
+
+    const allUserRows = s.allUsers.length === 0
+      ? \`<tr><td colspan="5" class="muted">nobody has signed in yet.</td></tr>\`
+      : s.allUsers.map(u => \`
+        <tr>
+          <td>\${escape(u.personaName)}</td>
+          <td class="muted"><a href="https://steamcommunity.com/profiles/\${u.steamID}" target="_blank" rel="noopener">\${u.steamID}</a></td>
+          <td class="muted">\${u.firstSeen ? timeAgo(u.firstSeen) : "—"}</td>
+          <td class="muted">\${u.lastSeen ? timeAgo(u.lastSeen) : "—"}</td>
+          <td>\${u.onRoster ? \`<span class="pill looking">on roster</span>\` : \`<span class="pill afk">off roster</span>\`}</td>
+        </tr>\`).join("");
+
+    const failureKeys = Object.keys(s.failures.callbackFailures);
+    const diagKeys = Object.keys(s.failures.clientDiagnostics);
+    const recentFailureRows = s.failures.recentEvents.length === 0
+      ? \`<tr><td colspan="3" class="muted">no client-side bounces logged.</td></tr>\`
+      : s.failures.recentEvents.map(e => \`
+        <tr>
+          <td><span class="pill afk">\${escape(e.reason)}</span></td>
+          <td class="muted">\${timeAgo(e.when)}</td>
+          <td class="muted">\${escape(e.detail || "—")}</td>
+        </tr>\`).join("");
+
+    const failureSection = (failureKeys.length === 0 && diagKeys.length === 0 && s.failures.recentEvents.length === 0)
+      ? ""
+      : \`
+        <section>
+          <h2>Where people are getting stuck (last 30 days)</h2>
+          <div class="grid">
+            \${failureKeys.map(k => \`
+              <div class="card"><h3>\${escape(k)}</h3>
+                <div class="v">\${s.failures.callbackFailures[k]}</div>
+                <div class="sub">server rejected</div>
+              </div>\`).join("")}
+            \${diagKeys.map(k => \`
+              <div class="card"><h3>\${escape(k)}</h3>
+                <div class="v">\${s.failures.clientDiagnostics[k]}</div>
+                <div class="sub">client bounced</div>
+              </div>\`).join("")}
+          </div>
+          <div style="height: 18px"></div>
+          <table>
+            <thead><tr><th>reason</th><th>when</th><th>detail</th></tr></thead>
+            <tbody>\${recentFailureRows}</tbody>
+          </table>
+        </section>\`;
+
     root.innerHTML = \`
       <div class="wrap">
         <header>
@@ -539,13 +948,76 @@ function adminHTML(): Response {
         </section>
 
         <section>
+          <h2>Sign-in funnel · today</h2>
+          <div class="card funnel">
+            <div class="funnel-row">
+              <div class="funnel-step">
+                <div class="funnel-label">Clicked sign in</div>
+                <div class="funnel-value">\${s.funnel.today.authStart}</div>
+              </div>
+              <div class="funnel-arrow">→</div>
+              <div class="funnel-step">
+                <div class="funnel-label">Returned from Steam</div>
+                <div class="funnel-value">\${s.funnel.today.callbackHit}</div>
+                <div class="funnel-sub">\${pct(s.funnel.today.callbackHit, s.funnel.today.authStart)}</div>
+              </div>
+              <div class="funnel-arrow">→</div>
+              <div class="funnel-step">
+                <div class="funnel-label">Verified by Steam</div>
+                <div class="funnel-value">\${s.funnel.today.callbackOk}</div>
+                <div class="funnel-sub">\${pct(s.funnel.today.callbackOk, s.funnel.today.callbackHit)}</div>
+              </div>
+              <div class="funnel-arrow">→</div>
+              <div class="funnel-step">
+                <div class="funnel-label">Online now</div>
+                <div class="funnel-value">\${s.online.count}</div>
+              </div>
+            </div>
+            <div class="funnel-foot">
+              \${s.funnel.today.callbackFail} server-side failures ·
+              \${s.funnel.today.clientDiag} client-side bounces
+            </div>
+          </div>
+        </section>
+
+        <section>
+          <h2>Funnel · last 7 days</h2>
+          <table>
+            <thead><tr>
+              <th>day</th><th>clicked sign in</th><th>back from steam</th>
+              <th>verified</th><th>cb fails</th><th>client bounces</th>
+            </tr></thead>
+            <tbody>\${funnelRows}</tbody>
+          </table>
+        </section>
+
+        \${failureSection}
+
+        <section>
           <h2>Recent sign-ins</h2>
           <table>
             <thead><tr><th>persona</th><th>when</th><th>steam id</th></tr></thead>
             <tbody>\${signinRows}</tbody>
           </table>
         </section>
+
+        <section>
+          <h2>Every Steam user who has signed in (\${s.allUsers.length})</h2>
+          <table>
+            <thead><tr>
+              <th>persona</th><th>steam id</th>
+              <th>first seen</th><th>last seen</th><th>on roster</th>
+            </tr></thead>
+            <tbody>\${allUserRows}</tbody>
+          </table>
+        </section>
       </div>\`;
+  }
+
+  function pct(numerator, denominator) {
+    if (!denominator) return "—";
+    const p = Math.round((numerator / denominator) * 100);
+    return p + "%";
   }
 
   function escape(s) {
