@@ -976,18 +976,25 @@ main {
 }
 
 /* ─── Stats: hero overview (matches macOS app Overview) ──
- * Donut ring + colored stat numbers + best-character callout.
- * Sized so it sits in the same visual slot as the desktop app. */
+ * Three-column grid that fills the panel: ring | run history | side stats.
+ * The third column carries Highest Ascension, recent form, and average
+ * ascension so we don't leave a sad empty band on the right of widescreens. */
 .hero-overview {
   display: grid;
-  grid-template-columns: 200px 1fr;
-  gap: 28px;
+  grid-template-columns: 200px minmax(0, 1fr) minmax(220px, 320px);
+  gap: 32px;
   align-items: center;
-  padding: 24px 28px;
+  padding: 26px 30px;
   background: linear-gradient(180deg, #1a1626 0%, #14111e 100%);
   border: 1px solid var(--border);
   border-radius: 14px;
   margin-bottom: 28px;
+}
+@media (max-width: 1100px) {
+  .hero-overview {
+    grid-template-columns: 200px 1fr;
+  }
+  .hero-side { grid-column: 1 / -1; border-top: 1px solid var(--border); padding-top: 18px; margin-top: 6px; }
 }
 @media (max-width: 720px) {
   .hero-overview {
@@ -995,7 +1002,62 @@ main {
     text-align: center;
     padding: 22px 20px;
   }
+  .hero-side { text-align: left; }
 }
+
+/* Side panel: three small stat tiles stacked vertically. */
+.hero-side {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.hero-side-tile {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 10px;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.hero-side-tile:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+.hero-side-icon {
+  width: 28px; height: 28px;
+  border-radius: 7px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background: rgba(212, 175, 55, 0.14);
+  color: var(--gold);
+}
+.hero-side-icon svg { width: 16px; height: 16px; }
+.hero-side-tile.tone-win .hero-side-icon { background: rgba(109, 217, 124, 0.14); color: var(--win); }
+.hero-side-tile.tone-loss .hero-side-icon { background: rgba(255, 95, 109, 0.14); color: var(--loss); }
+.hero-side-tile.tone-accent .hero-side-icon { background: rgba(255, 107, 26, 0.14); color: var(--accent-hi); }
+.hero-side-meta { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.hero-side-label {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  color: var(--text-3);
+  text-transform: uppercase;
+}
+.hero-side-value {
+  font-family: 'Inter', sans-serif;
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-variant-numeric: tabular-nums;
+}
+.hero-side-sub { font-size: 11px; color: var(--text-3); }
 .hero-ring-wrap {
   position: relative;
   width: 180px;
@@ -1025,12 +1087,13 @@ main {
   pointer-events: none;
 }
 .ring-pct {
-  font-family: 'Playfair Display', serif;
+  font-family: 'Inter', sans-serif;
   font-size: 38px;
   font-weight: 900;
   color: var(--accent);
   line-height: 1;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
 }
 .ring-label {
   font-size: 10px;
@@ -1041,11 +1104,12 @@ main {
   margin-top: 6px;
 }
 .hero-numbers-head {
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.18em;
+  font-family: 'Inter', sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0;
   color: var(--text-2);
-  text-transform: uppercase;
+  text-transform: none;
   margin-bottom: 14px;
 }
 .hero-numbers-row {
@@ -1067,11 +1131,12 @@ main {
   .hero-num { align-items: center; }
 }
 .hero-num .num {
-  font-family: 'Playfair Display', serif;
-  font-size: 40px;
+  font-family: 'Inter', sans-serif;
+  font-size: 44px;
   font-weight: 900;
   line-height: 1;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
 }
 .num-neutral { color: var(--text); }
 .num-win     { color: var(--win); }
@@ -1114,6 +1179,17 @@ main {
   border-radius: 14px;
   padding: 16px;
   overflow: hidden;
+  cursor: pointer;
+  transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.char-card:hover {
+  transform: translateY(-2px);
+  border-color: color-mix(in srgb, var(--char-color) 50%, transparent);
+  box-shadow: 0 8px 24px -8px color-mix(in srgb, var(--char-color) 40%, transparent);
+}
+.char-card:focus-visible {
+  outline: 2px solid var(--char-color);
+  outline-offset: 2px;
 }
 .char-card::before {
   content: "";
@@ -1150,12 +1226,13 @@ main {
   letter-spacing: 0.04em;
 }
 .char-card-name {
-  font-family: 'Playfair Display', serif;
-  font-size: 22px;
+  font-family: 'Inter', sans-serif;
+  font-size: 20px;
   font-weight: 800;
   color: var(--text);
   margin-bottom: 2px;
   position: relative;
+  letter-spacing: -0.01em;
 }
 .char-card-record {
   font-size: 12px;
@@ -1171,12 +1248,13 @@ main {
   position: relative;
 }
 .char-card-pct {
-  font-family: 'Playfair Display', serif;
-  font-size: 32px;
+  font-family: 'Inter', sans-serif;
+  font-size: 28px;
   font-weight: 900;
   color: var(--char-color);
-  letter-spacing: -0.01em;
+  letter-spacing: -0.02em;
   line-height: 1;
+  font-variant-numeric: tabular-nums;
 }
 .char-card-pct-label {
   font-size: 10px;
@@ -1245,6 +1323,12 @@ main {
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: 12px;
+  transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.relic-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(212, 175, 55, 0.45);
+  box-shadow: 0 8px 24px -8px rgba(212, 175, 55, 0.3);
 }
 .relic-card-icon {
   width: 40px;
@@ -1314,12 +1398,37 @@ main {
   align-items: center;
   gap: 8px;
   min-width: 0;
+  cursor: default;
 }
 .asc-bar-stack {
   position: relative;
   width: 36px;
   height: 130px;
+  transition: transform 0.15s ease;
 }
+.asc-bar-col:hover .asc-bar-stack { transform: scaleY(1.04); transform-origin: bottom; }
+.asc-bar-col:hover .asc-bar-wins { box-shadow: 0 0 18px rgba(109, 217, 124, 0.55); }
+.asc-bar-col:hover .asc-bar-tooltip { opacity: 1; transform: translate(-50%, -8px); }
+.asc-bar-tooltip {
+  position: absolute;
+  left: 50%;
+  bottom: 100%;
+  transform: translate(-50%, 4px);
+  background: var(--bg-deep);
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text);
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+  pointer-events: none;
+  z-index: 5;
+  font-variant-numeric: tabular-nums;
+}
+.asc-bar-tooltip strong { color: var(--win); }
 .asc-bar-bg, .asc-bar-total, .asc-bar-wins {
   position: absolute;
   bottom: 0;

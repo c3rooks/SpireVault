@@ -1258,6 +1258,22 @@ function renderStatsTab(tab) {
     case "cards":      $body.innerHTML = renderCards(report);         break;
     case "runs":       $body.innerHTML = renderRecentRuns(parsedRuns); break;
   }
+  // Delegated handler for any element marked with data-action="goto-tab".
+  // Lets character cards, side stat tiles, and any future "click here to
+  // see more" affordance route to a sibling tab without per-card wiring.
+  $body.querySelectorAll('[data-action="goto-tab"]').forEach((el) => {
+    el.addEventListener("click", () => {
+      const next = el.dataset.tab;
+      if (next) switchTab(next);
+    });
+    el.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        const next = el.dataset.tab;
+        if (next) switchTab(next);
+      }
+    });
+  });
   // Update Overview sub-text
   if (tab === "overview") {
     document.getElementById("overview-sub").textContent =
@@ -1424,6 +1440,30 @@ function renderOverview(report) {
               transform="rotate(-90 80 80)"/>
     </svg>`;
 
+  // Side stats: Highest ascension reached, recent form (last 10 runs),
+  // and avg ascension played. Cheap to compute, high information density,
+  // and they fill the right side of the hero so the panel doesn't look
+  // half-empty on widescreens.
+  const highestAsc = report.byAscension
+    .slice()
+    .sort((a, b) => parseAsc(b.key) - parseAsc(a.key))
+    .find((b) => b.runs > 0);
+  // "Recent form" wants the chronologically latest 10 runs, not whatever
+  // order extractRuns happens to return. Sort defensively here so Mac users
+  // and Windows-export users see the same thing.
+  const sortedByDate = parsedRuns
+    .slice()
+    .sort((a, b) => {
+      const ta = a.endedAt ? a.endedAt.getTime() : 0;
+      const tb = b.endedAt ? b.endedAt.getTime() : 0;
+      return tb - ta;
+    });
+  const recent10 = sortedByDate.slice(0, 10);
+  const recentWins = recent10.filter((r) => r.won).length;
+  const recentForm = recent10.length > 0 ? `${recentWins}W · ${recent10.length - recentWins}L` : "no runs yet";
+  const ascNums = parsedRuns.map((r) => Number(r.ascension)).filter((n) => Number.isFinite(n));
+  const avgAsc = ascNums.length > 0 ? (ascNums.reduce((a, b) => a + b, 0) / ascNums.length).toFixed(1) : "—";
+
   const heroPanel = `
     <div class="hero-overview">
       <div class="hero-ring-wrap">
@@ -1458,6 +1498,35 @@ function renderOverview(report) {
             </span>
           </div>
         ` : ""}
+      </div>
+      <div class="hero-side">
+        <div class="hero-side-tile" data-action="goto-tab" data-tab="ascensions" title="Open Ascensions">
+          <div class="hero-side-icon">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 8l4 4 5-7 5 7 4-4-1 11H4L3 8z"/></svg>
+          </div>
+          <div class="hero-side-meta">
+            <span class="hero-side-label">Highest Ascension</span>
+            <span class="hero-side-value">${highestAsc ? esc(highestAsc.key) : "—"}${highestAsc ? ` <span class="hero-side-sub">· ${highestAsc.runs} run${highestAsc.runs === 1 ? "" : "s"}</span>` : ""}</span>
+          </div>
+        </div>
+        <div class="hero-side-tile ${recentWins >= recent10.length / 2 ? "tone-win" : "tone-accent"}">
+          <div class="hero-side-icon">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 17l6-6 4 4 7-9 1.5 1L13 18l-4-4-4.5 5z"/></svg>
+          </div>
+          <div class="hero-side-meta">
+            <span class="hero-side-label">Recent Form</span>
+            <span class="hero-side-value">${esc(recentForm)} <span class="hero-side-sub">· last ${recent10.length}</span></span>
+          </div>
+        </div>
+        <div class="hero-side-tile" data-action="goto-tab" data-tab="ascensions" title="Open Ascensions">
+          <div class="hero-side-icon">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M4 20h4V10H4zm6 0h4V4h-4zm6 0h4v-7h-4z"/></svg>
+          </div>
+          <div class="hero-side-meta">
+            <span class="hero-side-label">Avg Ascension</span>
+            <span class="hero-side-value">A${avgAsc}</span>
+          </div>
+        </div>
       </div>
     </div>`;
 
@@ -1498,7 +1567,9 @@ function renderOverview(report) {
 }
 
 /** Render the per-character grid card. Shared between Overview and the
- *  dedicated Characters tab so both surfaces feel like one product. */
+ *  dedicated Characters tab so both surfaces feel like one product. Each
+ *  card is keyboard-focusable and routes to the Characters tab on click,
+ *  so the cards behave like the desktop app's clickable tiles. */
 function renderCharCards(buckets) {
   if (!buckets || !buckets.length) {
     return `<p class="muted">No character data yet.</p>`;
@@ -1510,7 +1581,10 @@ function renderCharCards(buckets) {
         const wr = (c.winrate * 100).toFixed(1);
         const lossCount = c.runs - c.wins;
         return `
-          <div class="char-card" style="--char-color:${theme.color}">
+          <div class="char-card" style="--char-color:${theme.color}"
+               role="button" tabindex="0"
+               data-action="goto-tab" data-tab="characters"
+               aria-label="${esc(capitalize(c.key))}: ${wr}% winrate over ${c.runs} runs">
             <div class="char-card-head">
               <div class="char-card-icon">${charIcon(theme.icon)}</div>
               <span class="char-card-runs">${c.runs} runs</span>
@@ -1550,12 +1624,16 @@ function renderAscensionsTab(report) {
         ${buckets.map((b) => {
           const totalH = Math.max(8, (b.runs / maxRuns) * 130);
           const winsH = b.runs > 0 ? totalH * (b.wins / b.runs) : 0;
+          const wrPct = (b.winrate * 100).toFixed(1);
           return `
-            <div class="asc-bar-col" title="${esc(b.key)}: ${b.wins}/${b.runs} (${(b.winrate*100).toFixed(0)}%)">
+            <div class="asc-bar-col">
               <div class="asc-bar-stack">
                 <div class="asc-bar-bg"></div>
                 <div class="asc-bar-total" style="height:${totalH}px"></div>
                 <div class="asc-bar-wins" style="height:${winsH}px"></div>
+                <div class="asc-bar-tooltip">
+                  <strong>${wrPct}%</strong> · ${b.wins}w / ${b.runs}r
+                </div>
               </div>
               <span class="asc-bar-label">${esc(b.key)}</span>
             </div>`;
