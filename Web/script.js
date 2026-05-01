@@ -1095,42 +1095,90 @@ async function autoReloadHistoryIfPermitted() {
 }
 
 async function ingestHistoryFile(file) {
+  // Always announce that we got the file. The previous flow relied on a
+  // single end-of-pipeline toast, which meant any silent failure (or any
+  // sub-3-second fail-too-fast toast) made the picker look totally dead.
+  // Now the user sees feedback the moment we begin and the moment we end.
+  console.info("[Vault] ingest start", { name: file?.name, size: file?.size, type: file?.type });
+  toast(`Reading ${file?.name ?? "history.json"}...`);
+
+  if (!file || typeof file.size !== "number") {
+    console.error("[Vault] ingest aborted: invalid file object", file);
+    toast("Couldn't read that file. The browser handed us nothing.");
+    return false;
+  }
+  if (file.size === 0) {
+    console.error("[Vault] ingest aborted: file is 0 bytes");
+    toast("That file is empty (0 bytes). Pick a real history.json.");
+    return false;
+  }
   if (file.size > 50 * 1024 * 1024) {
+    console.error("[Vault] ingest aborted: file too large", file.size);
     toast("That file is huge (>50 MB). Are you sure it's history.json?");
     return false;
   }
+
   let text;
   try {
     text = await file.text();
-  } catch {
-    toast("Couldn't read that file.");
+  } catch (e) {
+    console.error("[Vault] ingest aborted: file.text() failed", e);
+    toast("Couldn't read that file. " + (e?.message ?? ""));
     return false;
   }
+  if (!text || !text.trim()) {
+    console.error("[Vault] ingest aborted: file body is empty/whitespace");
+    toast("That file is empty. Pick a real history.json.");
+    return false;
+  }
+
   let parsed;
   try {
     parsed = JSON.parse(text);
-  } catch {
-    toast("That file isn't valid JSON.");
+  } catch (e) {
+    console.error("[Vault] ingest aborted: JSON.parse failed", e, "first 200 chars:", text.slice(0, 200));
+    toast("That file isn't valid JSON. " + (e?.message ?? ""));
     return false;
   }
+
   const result = Stats.extractRuns(parsed);
   if (!result.ok) {
-    toast(result.error);
+    // Surface what we DID see, so the user (or a tester) can tell whether
+    // they accidentally picked a .run file, the wrong export, etc.
+    const keys = parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? Object.keys(parsed).slice(0, 6).join(", ")
+      : Array.isArray(parsed) ? "array" : typeof parsed;
+    console.error("[Vault] extractRuns rejected file. Top-level keys:", keys, "result:", result);
+    toast(`${result.error} Top-level keys: ${keys || "(none)"}.`);
     return false;
   }
   if (result.runs.length === 0) {
-    toast("File parsed, but it had zero runs in it.");
+    console.error("[Vault] extractRuns returned zero runs.", parsed);
+    toast("File parsed, but it had zero runs in it. Wrong file?");
     return false;
   }
+
   parsedRuns = result.runs;
-  // Persist (serialized form, Date objects round-trip via ISO)
-  await HistoryStore.saveHistory({
-    savedAt: new Date().toISOString(),
-    sourceFilename: file.name,
-    runs: result.runs.map(serializeRun),
-  });
+  console.info(`[Vault] loaded ${result.runs.length} runs`);
+
+  // Persist. We swallow IDB errors so a flaky storage layer never blocks
+  // the in-memory render — the user still sees their stats this session.
+  try {
+    await HistoryStore.saveHistory({
+      savedAt: new Date().toISOString(),
+      sourceFilename: file.name,
+      runs: result.runs.map(serializeRun),
+    });
+  } catch (e) {
+    console.error("[Vault] saveHistory to IndexedDB failed (continuing in-memory)", e);
+    toast("Loaded runs but couldn't cache them locally. Stats will work this visit.");
+  }
+
   toast(`Loaded ${result.runs.length} run${result.runs.length === 1 ? "" : "s"}.`);
-  // If user is on a stat tab, re-render. Otherwise hop them to Overview.
+
+  // Force-render so the empty state vanishes and stats appear, no matter
+  // which stat tab is active. If the user was on a non-stat tab (co-op),
+  // hop them to Overview so they actually see the result of their click.
   if (TABS_WITH_DATA.includes(activeTab)) {
     renderStatsTab(activeTab);
   } else {
