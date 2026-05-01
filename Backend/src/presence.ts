@@ -30,13 +30,19 @@ import type { Env, PresenceEntry, PresenceUpsert, PlayerStats } from "./types";
  *   correctness matters.
  */
 
-// 10 min, with heartbeats every ~3 min on the client. We need the headroom
-// because background-tab throttling on Chrome/Firefox can stretch a 180s
-// setInterval out to 60s+ of jitter, and a single missed heartbeat at the
-// old 5min TTL would silently drop the user off the feed even though they
-// were still signed in. 10 min tolerates two missed heartbeats, which is
-// almost always enough to outlast a backgrounded tab regaining focus.
-const PRESENCE_TTL_SECONDS = 10 * 60;
+// 4 hours. The earlier "online right now" semantics (5-10 min) were too
+// strict for a low-traffic launch period. If a user signs in, sets their
+// status to "looking," and then closes the tab to alt-tab into the actual
+// game, we want them to stay visible to other players for a long while —
+// they're still genuinely available to co-op. Anything older than 4 hours
+// is almost certainly someone who closed the tab and moved on, so we
+// prune.
+//
+// Each row carries `updatedAt`, which the client surfaces as a relative
+// "last active 12 min ago" badge. So the feed stays honest even with the
+// generous TTL: fresh heartbeats stand out, and players can decide for
+// themselves whether to invite someone who hasn't pinged in a while.
+const PRESENCE_TTL_SECONDS = 4 * 60 * 60;
 /**
  * Minimum spacing between heartbeats from the same session. Legit clients
  * write every ~180 s; anything faster is either a bug or an abuser.

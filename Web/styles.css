@@ -469,6 +469,35 @@ main {
 .tag.mute  { color: var(--text-3); }
 .tag.live  { color: var(--win); background: rgba(109,217,124,0.10); }
 
+/*
+ * Freshness badge on each feed row. Sits next to the status tag so the user
+ * can see at a glance whether someone is actively heartbeating right now or
+ * was active hours ago. Three-tier color: bright green when fresh (<5min),
+ * gold when warm (<30min), muted otherwise. The text itself comes from
+ * formatRelativeActive() in script.js.
+ */
+.last-active {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 2px 7px;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+  opacity: 0.85;
+}
+.last-active.is-fresh {
+  color: var(--win);
+  background: rgba(109,217,124,0.10);
+}
+.last-active.is-warm {
+  color: var(--gold);
+  background: rgba(212,175,55,0.10);
+}
+.last-active.is-stale {
+  color: var(--text-3);
+  background: rgba(255,255,255,0.04);
+}
+
 .row .actions {
   display: flex;
   flex-direction: column;

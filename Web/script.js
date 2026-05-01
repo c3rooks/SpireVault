@@ -535,13 +535,13 @@ function renderFeed(list) {
   document.getElementById("online-count").textContent = String(others.length);
   document.getElementById("online-summary").textContent =
     others.length === 0
-      ? "No one else online right now. Hang around, heartbeats land every 30 seconds."
-      : `${others.length} other player${others.length === 1 ? "" : "s"} online · ` +
+      ? "No one else around right now. Hang around, heartbeats land every 30 seconds."
+      : `${others.length} other player${others.length === 1 ? "" : "s"} active recently · ` +
         `${looking} looking · ${inGame} in Slay the Spire 2`;
 
   const $feed = document.getElementById("feed");
   if (others.length === 0) {
-    $feed.innerHTML = `<div class="feed-empty"><p>You're online. Be the first someone bumps into.</p></div>`;
+    $feed.innerHTML = `<div class="feed-empty"><p>You're on the feed. Be the first someone bumps into.</p></div>`;
     return;
   }
 
@@ -570,6 +570,49 @@ function renderFeed(list) {
   });
 }
 
+/**
+ * "Last active 12 min ago" formatter for feed rows.
+ *
+ * The presence TTL is generous (4 hours) so the feed shows everyone who's
+ * been around recently, not just people heartbeating in this exact second.
+ * That means each row needs a freshness badge so the user can tell "this
+ * person is online RIGHT NOW" from "this person was looking earlier today
+ * and might or might not be reachable."
+ *
+ * Returns a short relative string. Anything within ~2 minutes is collapsed
+ * to "just now" because the heartbeat cadence is 180s and we don't want
+ * the badge to flicker between "just now" and "2 min ago."
+ */
+function formatRelativeActive(iso) {
+  if (!iso) return "";
+  const t = Date.parse(iso);
+  if (!Number.isFinite(t)) return "";
+  const seconds = Math.max(0, (Date.now() - t) / 1000);
+  if (seconds < 120) return "just now";
+  if (seconds < 60 * 60) return `${Math.round(seconds / 60)} min ago`;
+  const hours = seconds / 3600;
+  if (hours < 24) {
+    const h = hours < 1.5 ? 1 : Math.round(hours);
+    return `${h}h ago`;
+  }
+  return `${Math.round(hours / 24)}d ago`;
+}
+
+/**
+ * Active-recently classifier. Decides whether the row's freshness badge
+ * gets the green "live" treatment or the muted "stale" one. Uses the same
+ * thresholds as `formatRelativeActive` so there's no daylight between
+ * what the badge shows and what color it shows in.
+ */
+function activeFreshnessClass(iso) {
+  if (!iso) return "stale";
+  const seconds = (Date.now() - Date.parse(iso)) / 1000;
+  if (!Number.isFinite(seconds)) return "stale";
+  if (seconds < 5 * 60) return "fresh";
+  if (seconds < 30 * 60) return "warm";
+  return "stale";
+}
+
 function renderRow(p) {
   const status = p.status ?? "looking";
   const tagClass = { looking: "ok", inRun: "gold", inCoop: "ember", afk: "mute" }[status];
@@ -589,6 +632,8 @@ function renderRow(p) {
   const steamProfileDeep = sid ? `steam://url/SteamIDPage/${sid}` : "#";
 
   const persona = p.personaName || "Steam User";
+  const lastActive = formatRelativeActive(p.updatedAt);
+  const freshness = activeFreshnessClass(p.updatedAt);
 
   return `
     <article class="row ${status}" data-sid="${esc(sid)}">
@@ -598,6 +643,7 @@ function renderRow(p) {
           <span class="name">${esc(persona)}</span>
           <span class="tag ${tagClass}">${tagLabel}</span>
           ${p.inSTS2 ? `<span class="tag live">In STS2</span>` : ""}
+          ${lastActive ? `<span class="last-active is-${freshness}" title="Last heartbeat ${esc(p.updatedAt ?? "")}">${esc(lastActive)}</span>` : ""}
         </div>
         <p class="row-hint muted">Send them an invite to play.</p>
       </div>
