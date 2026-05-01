@@ -2492,3 +2492,295 @@ select#me-note option { background: var(--bg-deep); color: var(--text); }
     text-decoration: none;
   }
 }
+
+/* =====================================================================
+ * No-auth landing experience
+ * ---------------------------------------------------------------------
+ * Demo banner above stats, guest co-op tab, sidebar CTA, and full-screen
+ * in-app browser overlay. Same visual vocabulary as the rest of the app
+ * so the unauthenticated view doesn't feel like a different product.
+ * =================================================================== */
+
+/* ── Demo data banner ── */
+.demo-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 0 0 18px;
+  padding: 12px 16px;
+  background: linear-gradient(135deg, rgba(255, 198, 92, 0.08), rgba(255, 107, 26, 0.05));
+  border: 1px solid rgba(255, 198, 92, 0.32);
+  border-radius: 12px;
+  font-size: 13px;
+  flex-wrap: wrap;
+}
+.demo-banner-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.demo-banner-text strong {
+  color: var(--gold, #ffc65c);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.demo-banner-text span { color: var(--text-2); }
+.demo-banner-text code {
+  background: rgba(255, 255, 255, 0.06);
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-family: 'SF Mono', 'Menlo', Consolas, monospace;
+  font-size: 12px;
+}
+.demo-banner-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.demo-banner-actions .btn-primary,
+.demo-banner-actions .btn-ghost {
+  padding: 7px 14px;
+  font-size: 12px;
+}
+@media (max-width: 600px) {
+  .demo-banner { flex-direction: column; align-items: stretch; }
+  .demo-banner-actions { width: 100%; }
+  .demo-banner-actions .btn-primary,
+  .demo-banner-actions .btn-ghost { flex: 1; justify-content: center; }
+}
+
+/* ── Sidebar guest pill (replaces persona pill when no session) ── */
+.me-pill-guest {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px;
+  background: linear-gradient(135deg, rgba(255, 198, 92, 0.06), rgba(255, 107, 26, 0.04));
+  border: 1px solid rgba(255, 198, 92, 0.24);
+  border-radius: 12px;
+}
+.me-pill-signin {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 9px 14px;
+  font-size: 13px;
+  font-weight: 700;
+  border-radius: 8px;
+  width: 100%;
+}
+.me-pill-guest-note {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text-3);
+}
+
+/* ── Guest co-op tab body ── */
+.guest-coop {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  max-width: 720px;
+}
+.guest-coop-card {
+  padding: 28px 28px 24px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.guest-coop-card h2 {
+  font-family: 'Playfair Display', serif;
+  font-size: 26px;
+  font-weight: 900;
+  letter-spacing: -0.01em;
+  margin: 0 0 8px;
+}
+.guest-coop-card .muted {
+  color: var(--text-2);
+  font-size: 14px;
+  line-height: 1.55;
+  margin: 0 0 18px;
+}
+.guest-coop-card .muted strong { color: var(--text-1); }
+.guest-coop-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  margin: 0 0 16px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 13px;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+.guest-coop-count .dot.dot-pulse {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #4ade80;
+  box-shadow: 0 0 10px rgba(74, 222, 128, 0.6);
+  animation: pulse-dot 2s ease-in-out infinite;
+}
+@keyframes pulse-dot {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.25); opacity: 0.7; }
+}
+.btn-block {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding: 12px 20px;
+  font-size: 14px;
+  font-weight: 700;
+}
+.guest-coop-explainer {
+  margin-top: 18px;
+  padding: 14px 16px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.guest-coop-explainer summary {
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--gold);
+  list-style: none;
+}
+.guest-coop-explainer summary::-webkit-details-marker { display: none; }
+.guest-coop-explainer summary::before {
+  content: '▸ ';
+  display: inline-block;
+  transition: transform 0.15s ease;
+}
+.guest-coop-explainer[open] summary::before { transform: rotate(90deg); }
+.guest-coop-explainer ul {
+  margin: 12px 0 0;
+  padding: 0 0 0 20px;
+  color: var(--text-2);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+/* ── Guest read-only roster preview ── */
+.guest-coop-roster h3 {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  margin: 0 0 12px;
+}
+.guest-coop-roster-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.guest-roster-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.guest-roster-row .avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+.guest-roster-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+.guest-roster-meta strong {
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.guest-roster-meta .small { font-size: 11px; }
+.guest-roster-row .pill.ember {
+  background: rgba(255, 107, 26, 0.16);
+  color: #ffa05c;
+  border: 1px solid rgba(255, 107, 26, 0.42);
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+/* ── Full-screen in-app browser overlay ── */
+.inapp-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(12, 10, 20, 0.92);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+.inapp-overlay-card {
+  max-width: 480px;
+  width: 100%;
+  padding: 28px 26px 22px;
+  background: var(--card);
+  border: 1px solid rgba(255, 107, 26, 0.42);
+  border-radius: 16px;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.5);
+}
+.inapp-overlay-card h2 {
+  font-family: 'Playfair Display', serif;
+  font-size: 22px;
+  font-weight: 900;
+  margin: 0 0 10px;
+  color: #ffa05c;
+}
+.inapp-overlay-card p {
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--text-2);
+  margin: 0 0 14px;
+}
+.inapp-overlay-card p strong { color: var(--text-1); }
+.inapp-overlay-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 16px;
+}
+.inapp-overlay-actions .btn-primary {
+  width: 100%;
+  justify-content: center;
+}
+.inapp-overlay-actions .btn-ghost {
+  width: 100%;
+  justify-content: center;
+  padding: 10px 14px;
+  font-size: 13px;
+}
+.inapp-overlay-dismiss {
+  margin-top: 8px;
+  background: transparent;
+  border: 0;
+  color: var(--text-3);
+  font-size: 12px;
+  cursor: pointer;
+}
+.inapp-overlay-dismiss:hover { color: var(--text-2); text-decoration: underline; }
+

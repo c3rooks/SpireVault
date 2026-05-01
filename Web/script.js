@@ -270,47 +270,60 @@ function resetAuthFailures() {
  */
 function clearSessionAndReload() {
   localStorage.removeItem(STORAGE_SESSION);
+  // Reload into guest mode (no session) — user keeps seeing their stats,
+  // they just lose the co-op tab privileges. Much less jarring than the
+  // old hero-wall reload.
   window.location.replace("/");
 }
 
+// True only while the parsed runs in memory came from `getDemoRuns()` —
+// flips to false the moment a real history.json is ingested. Renderers
+// read this flag to overlay the "Sample data" banner.
+let isDemoMode = false;
+
 // ─── Boot ──────────────────────────────────────────────────────────────
-if (session) {
-  bootSignedIn();
-} else {
-  bootSignedOut();
-}
+//
+// Single boot path now. The signed-out wall is gone — every visitor lands
+// on the full app shell with stats already populated (their cached
+// history.json if they've been here before, or curated demo data
+// otherwise). Steam sign-in is reserved for the Co-op tab as the only
+// auth-gated feature.
+//
+// Why: the single biggest conversion cost was forcing strangers to grant
+// Steam OAuth before they could see what the tool even does. With demo
+// data on the landing, value is visible in <1 second and Steam becomes
+// an opt-in once they've decided they like the tool.
+boot();
 
 // =========================================================================
-// SIGNED-OUT
+// Sign-in click handler. Used by every "Sign in with Steam" CTA in the
+// app shell (Co-op tab, signed-out hero block, full-screen in-app browser
+// overlay, mobile bottom action). Single source of truth so the nonce
+// generation + sessionStorage smoke-test stays in one place.
 // =========================================================================
-function bootSignedOut() {
-  document.getElementById("signin-btn").addEventListener("click", () => {
-    const nonce = randomNonce();
-    sessionStorage.setItem("vault.auth.nonce", nonce);
-    // Smoke test: write+read sessionStorage and beacon if it's broken.
-    // In-app browsers (Reddit, FB, IG, etc) sometimes silently stub
-    // sessionStorage to a no-op, so the user clicks "Sign in", we set
-    // the nonce, and Steam's redirect arrives with no nonce in storage
-    // → fail("nonce-missing"). If we can detect that BEFORE leaving the
-    // page we can warn instead of round-tripping for nothing.
-    const echo = sessionStorage.getItem("vault.auth.nonce");
-    if (echo !== nonce) {
-      maybeBeaconDiagnostic("storage-broken-pre-redirect", `ua=${navigator.userAgent}`);
-      alert(
-        "Your browser blocked sign-in storage. " +
-        "Open The Vault in Safari, Chrome, or Firefox " +
-        "and try again from there."
-      );
-      return;
-    }
-    const u = new URL(`${SERVER_URL}/auth/steam/start`);
-    u.searchParams.set("return", RETURN_URL);
-    u.searchParams.set("nonce", nonce);
-    window.location.assign(u.toString());
-  });
-  detectInAppBrowserAndWarn();
-  void refreshPublicCount();
-  setInterval(refreshPublicCount, POLL_FEED_MS);
+function startSteamSignIn() {
+  const nonce = randomNonce();
+  sessionStorage.setItem("vault.auth.nonce", nonce);
+  // Smoke test: write+read sessionStorage and beacon if it's broken.
+  // In-app browsers (Reddit, FB, IG, etc) sometimes silently stub
+  // sessionStorage to a no-op, so the user clicks "Sign in", we set
+  // the nonce, and Steam's redirect arrives with no nonce in storage
+  // → fail("nonce-missing"). If we can detect that BEFORE leaving the
+  // page we can warn instead of round-tripping for nothing.
+  const echo = sessionStorage.getItem("vault.auth.nonce");
+  if (echo !== nonce) {
+    maybeBeaconDiagnostic("storage-broken-pre-redirect", `ua=${navigator.userAgent}`);
+    alert(
+      "Your browser blocked sign-in storage. " +
+      "Open The Vault in Safari, Chrome, or Firefox " +
+      "and try again from there."
+    );
+    return;
+  }
+  const u = new URL(`${SERVER_URL}/auth/steam/start`);
+  u.searchParams.set("return", RETURN_URL);
+  u.searchParams.set("nonce", nonce);
+  window.location.assign(u.toString());
 }
 
 /**
@@ -346,16 +359,58 @@ function detectInAppBrowser() {
 function detectInAppBrowserAndWarn() {
   const name = detectInAppBrowser();
   if (!name) return;
-  const $warn = document.getElementById("inapp-warn");
-  const $name = document.getElementById("inapp-name");
-  if ($warn) {
-    $warn.hidden = false;
-    if ($name) $name.textContent = name;
-  }
   // Fire-and-forget beacon so the operator dashboard sees the share of
   // mobile traffic that's hitting an in-app browser. This is the single
   // strongest signal for "you have lots of views but few sign-ups".
   maybeBeaconDiagnostic("inapp-browser-detected", `app=${name}`);
+
+  // If the user has dismissed this overlay before in the current tab,
+  // respect that — they might be browsing stats and not trying to sign in.
+  if (sessionStorage.getItem("vault.inapp.dismissed") === "1") return;
+
+  // Build a full-screen modal overlay. Stats are still browseable behind
+  // it (the user can dismiss), but the sign-in path gets short-circuited
+  // until they switch browsers. Much more visible than the old small
+  // banner buried in the dead signed-out hero.
+  const overlay = document.createElement("div");
+  overlay.className = "inapp-overlay";
+  overlay.innerHTML = `
+    <div class="inapp-overlay-card" role="dialog" aria-modal="true" aria-labelledby="inapp-overlay-title">
+      <h2 id="inapp-overlay-title">Heads up — you're in ${escapeHtml(name)}'s in-app browser</h2>
+      <p>${escapeHtml(name)} opens links in a webview that <strong>blocks Steam sign-in storage</strong>. Your sign-in will silently fail without telling you why. This is a known issue across Reddit, X, Facebook, Instagram, Threads, Discord, Snapchat, TikTok, and LinkedIn.</p>
+      <p>Tap the share or menu button in ${escapeHtml(name)} and choose <strong>Open in Safari</strong> (iOS) or <strong>Open in Chrome</strong> (Android). Stats in this tab work fine without sign-in — sign-in is only required for the co-op feed.</p>
+      <div class="inapp-overlay-actions">
+        <button class="btn-primary" type="button" data-action="copy-link">Copy link to open elsewhere</button>
+        <button class="btn-ghost" type="button" data-action="dismiss-overlay">Continue browsing as guest</button>
+      </div>
+      <button class="inapp-overlay-dismiss" type="button" data-action="dismiss-overlay">Dismiss for this session</button>
+    </div>`;
+  document.body.appendChild(overlay);
+
+  overlay.querySelector('[data-action="copy-link"]').addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(window.location.href);
+      const btn = overlay.querySelector('[data-action="copy-link"]');
+      const orig = btn.textContent;
+      btn.textContent = "Copied — paste in Safari/Chrome";
+      setTimeout(() => (btn.textContent = orig), 2500);
+    } catch {
+      // No clipboard (rare in webviews) — show the URL for manual copy.
+      const a = document.createElement("a");
+      a.href = window.location.href;
+      a.textContent = window.location.href;
+      a.style.color = "#ffa05c";
+      a.style.wordBreak = "break-all";
+      overlay.querySelector("p:last-of-type").appendChild(document.createElement("br"));
+      overlay.querySelector("p:last-of-type").appendChild(a);
+    }
+  });
+  overlay.querySelectorAll('[data-action="dismiss-overlay"]').forEach((btn) => {
+    btn.addEventListener("click", () => {
+      sessionStorage.setItem("vault.inapp.dismissed", "1");
+      overlay.remove();
+    });
+  });
 }
 
 /**
@@ -406,57 +461,109 @@ async function refreshPublicCount() {
 }
 
 // =========================================================================
-// SIGNED-IN: shell setup
+// Unified boot path — runs for both signed-in and guest visitors.
+// Stats UI is universal; only the Co-op tab differs based on session.
 // =========================================================================
-async function bootSignedIn() {
-  document.getElementById("topbar-public").hidden = true;
-  document.getElementById("main-public").hidden = true;
+async function boot() {
+  // Always show the app shell. The signed-out hero is gone; the only thing
+  // a visitor sees is the real product — pre-populated with demo data
+  // until they drop their own history.json.
+  const $publicTopbar = document.getElementById("topbar-public");
+  const $publicMain = document.getElementById("main-public");
+  if ($publicTopbar) $publicTopbar.hidden = true;
+  if ($publicMain) $publicMain.hidden = true;
   document.getElementById("app-shell").hidden = false;
 
-  // Header / footer of the sidebar — both desktop pill and the mobile
-  // mirror need the persona, avatar, and Steam tier.
-  document.getElementById("me-pill-name").textContent = session.personaName;
-  const $mePillNameMobile = document.getElementById("me-pill-name-mobile");
-  if ($mePillNameMobile) $mePillNameMobile.textContent = session.personaName;
-  if (session.avatarURL) {
-    document.getElementById("me-pill-avatar").src = session.avatarURL;
-    document.getElementById("me-avatar").src = session.avatarURL;
-    const $mobileAvatar = document.getElementById("me-pill-avatar-mobile");
-    if ($mobileAvatar) $mobileAvatar.src = session.avatarURL;
-  }
-  document.getElementById("me-persona").textContent = session.personaName;
-  document.getElementById("me-tier").textContent =
-    "Signed in with Steam · " + session.steamID.slice(0,4) + "…" + session.steamID.slice(-4);
-  setStatus("connecting", "Connecting…");
+  // Detect in-app browsers EARLY so the full-screen warning can intercept
+  // sign-in before the user gets to a broken Steam round-trip. Stats
+  // browsing still works fine — only the auth flow is affected.
+  detectInAppBrowserAndWarn();
 
-  // Tab navigation — sidebar buttons + content panels
+  if (session) {
+    // Header / footer of the sidebar — both desktop pill and the mobile
+    // mirror need the persona, avatar, and Steam tier.
+    document.getElementById("me-pill-name").textContent = session.personaName;
+    const $mePillNameMobile = document.getElementById("me-pill-name-mobile");
+    if ($mePillNameMobile) $mePillNameMobile.textContent = session.personaName;
+    if (session.avatarURL) {
+      document.getElementById("me-pill-avatar").src = session.avatarURL;
+      const $meAvatar = document.getElementById("me-avatar");
+      if ($meAvatar) $meAvatar.src = session.avatarURL;
+      const $mobileAvatar = document.getElementById("me-pill-avatar-mobile");
+      if ($mobileAvatar) $mobileAvatar.src = session.avatarURL;
+    }
+    const $mePersona = document.getElementById("me-persona");
+    if ($mePersona) $mePersona.textContent = session.personaName;
+    const $meTier = document.getElementById("me-tier");
+    if ($meTier) {
+      $meTier.textContent = "Signed in with Steam · " + session.steamID.slice(0,4) + "…" + session.steamID.slice(-4);
+    }
+    setStatus("connecting", "Connecting…");
+  } else {
+    // Guest sidebar pill: invite to sign in instead of the persona block.
+    const $mePill = document.getElementById("me-pill");
+    if ($mePill) {
+      $mePill.classList.add("me-pill-guest");
+      $mePill.innerHTML = `
+        <button class="btn-primary me-pill-signin" type="button" data-action="signin-cta">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3 5l8-1.1V11H3V5zm0 7h8v7.1L3 18V12zm9 7.2V12h9v8L12 19.2zM12 11V3.9L21 3v8h-9z"/></svg>
+          <span>Sign in with Steam</span>
+        </button>
+        <p class="me-pill-guest-note">Optional — only needed for the co-op feed.</p>`;
+    }
+    const $mobileSign = document.getElementById("me-pill-name-mobile");
+    if ($mobileSign) $mobileSign.textContent = "Guest";
+    setStatus("offline", "Browsing as guest");
+  }
+
+  // Tab navigation — sidebar buttons + content panels.
+  // Default tab is now "overview" so a fresh visitor lands on stats, not
+  // co-op (which would force the auth wall they came here to avoid).
   document.querySelectorAll(".nav-row").forEach((btn) => {
     btn.addEventListener("click", () => switchTab(btn.dataset.tab));
   });
-  switchTab(localStorage.getItem(STORAGE_LAST_TAB) || "coop");
+  const lastTab = localStorage.getItem(STORAGE_LAST_TAB);
+  // First-time visitors with no real session land on overview by default.
+  // Returning signed-in users go back to whichever tab they last used.
+  switchTab(lastTab || (session ? "coop" : "overview"));
 
-  // Co-op form wiring
-  wireCoopForm();
-  // Refresh button. Debounced to once per ~5 s so a frustrated panic-clicker
-  // can't blast our server quotas. The button visually "ticks" each press
-  // even when the request is throttled, so it still feels responsive.
-  const refreshBtn = document.getElementById("refresh-btn");
-  let lastRefreshAt = 0;
-  refreshBtn.addEventListener("click", () => {
-    const now = Date.now();
-    refreshBtn.classList.remove("is-flash");
-    void refreshBtn.offsetWidth; // restart the CSS transition
-    refreshBtn.classList.add("is-flash");
-    if (now - lastRefreshAt < 5000) return;
-    lastRefreshAt = now;
-    void pullFeed();
-    void pullInbox();
-  });
-  document.getElementById("signout-btn").addEventListener("click", () => void signOut());
-  const $mobileSignout = document.getElementById("signout-btn-mobile");
-  if ($mobileSignout) {
-    $mobileSignout.addEventListener("click", () => void signOut());
+  // Wire the Co-op tab. Authenticated path is the normal experience;
+  // guest path swaps in a sign-in prompt + read-only roster.
+  if (session) {
+    wireCoopForm();
+    // Refresh button. Debounced to once per ~5 s so a frustrated panic-clicker
+    // can't blast our server quotas. The button visually "ticks" each press
+    // even when the request is throttled, so it still feels responsive.
+    const refreshBtn = document.getElementById("refresh-btn");
+    if (refreshBtn) {
+      let lastRefreshAt = 0;
+      refreshBtn.addEventListener("click", () => {
+        const now = Date.now();
+        refreshBtn.classList.remove("is-flash");
+        void refreshBtn.offsetWidth;
+        refreshBtn.classList.add("is-flash");
+        if (now - lastRefreshAt < 5000) return;
+        lastRefreshAt = now;
+        void pullFeed();
+        void pullInbox();
+      });
+    }
+    document.getElementById("signout-btn")?.addEventListener("click", () => void signOut());
+    const $mobileSignout = document.getElementById("signout-btn-mobile");
+    if ($mobileSignout) {
+      $mobileSignout.addEventListener("click", () => void signOut());
+    }
+  } else {
+    wireGuestCoop();
   }
+  // Every "Sign in with Steam" CTA across the page funnels here. Event
+  // delegation so dynamically-rendered guest CTAs all work.
+  document.addEventListener("click", (e) => {
+    const btn = e.target.closest('[data-action="signin-cta"]');
+    if (!btn) return;
+    e.preventDefault();
+    startSteamSignIn();
+  });
 
   // Drag-drop history.json
   wireDropOverlay();
@@ -489,8 +596,11 @@ async function bootSignedIn() {
     e.target.value = ""; // allow re-selecting same file
   });
 
-  // Invite modal scaffolding
-  wireInviteModal();
+  // Invite modal scaffolding (auth-only — guests don't see invites)
+  if (session) {
+    wireInviteModal();
+  }
+  // Share modal works for everyone (export single run image / markdown).
   wireShareModal();
 
   // Load asset manifest in parallel with the message catalog. Both are
@@ -498,30 +608,43 @@ async function bootSignedIn() {
   // notes) without blocking the rest of the boot sequence.
   void loadAssetManifest();
 
-  // Load preset message catalog (used by both the Note <select> and the modal)
-  try {
-    await InviteAPI.loadMessageCatalog(SERVER_URL);
-    populateInviteOptions();
-  } catch (e) {
-    console.warn("could not load invite messages", e);
+  // Load preset message catalog (auth-only — only signed-in users send invites).
+  if (session) {
+    try {
+      await InviteAPI.loadMessageCatalog(SERVER_URL);
+      populateInviteOptions();
+    } catch (e) {
+      console.warn("could not load invite messages", e);
+    }
   }
 
   // Try to restore a previously uploaded history. We render whatever's in
   // IndexedDB FIRST so the UI lights up instantly with last-known stats,
   // then optionally re-pull from disk a few moments later if the user has
-  // a saved file handle.
+  // a saved file handle. If nothing's cached, fall through to demo data
+  // so the dashboard isn't empty on first visit.
   try {
     const cached = await HistoryStore.loadHistory();
     if (cached?.runs?.length) {
       parsedRuns = cached.runs.map(reviveRun);
-      renderActiveTab();
+      isDemoMode = false;
     } else {
-      renderActiveTab(); // shows empty states for stat tabs
+      const { getDemoRuns } = await import("./lib/demo-runs.js");
+      parsedRuns = getDemoRuns();
+      isDemoMode = true;
     }
   } catch (e) {
-    console.warn("could not load cached history", e);
-    renderActiveTab();
+    console.warn("could not load cached history; falling back to demo data", e);
+    try {
+      const { getDemoRuns } = await import("./lib/demo-runs.js");
+      parsedRuns = getDemoRuns();
+      isDemoMode = true;
+    } catch {
+      parsedRuns = [];
+      isDemoMode = false;
+    }
   }
+  renderActiveTab();
 
 
   // Silent auto-reload from disk. If the user previously picked their
@@ -530,82 +653,161 @@ async function bootSignedIn() {
   // the closest thing to true "auto-scan" the web platform allows: the
   // first pick is unavoidable (browser security), but every subsequent
   // visit is one transparent disk-read away from being fully fresh.
-  //
-  // Behavior matrix:
-  //   - No handle saved  →  no-op, user has to click "Find history.json"
-  //   - Handle + perm "granted"  →  silently re-reads, stats refresh
-  //   - Handle + perm "prompt"   →  no-op, the visible "Reload" button
-  //                                  in the toolbar handles the gesture
-  //   - Handle + perm "denied"   →  no-op, button stays for re-grant
-  //
-  // Manual file picker is therefore truly the last resort: only on Safari
-  // / Firefox (no FSA support) or on a brand-new browser visit where the
-  // user has never picked the file from this origin before.
   void autoReloadHistoryIfPermitted();
   // Background loop: every 60s, silently re-read the saved history.json
-  // from disk and refresh stats if STS2 wrote new runs. The user can
-  // play, alt-tab back, and see updated numbers without lifting a finger.
+  // from disk and refresh stats if STS2 wrote new runs.
   startHistoryAutoRefresh();
 
-  // Push presence + start polling
-  schedulePush(0);
-  pollFeedTimer  = setInterval(pullFeed,  POLL_FEED_MS);
-  pollInboxTimer = setInterval(pullInbox, POLL_INBOX_MS);
-  heartbeatTimer = setInterval(() => pushNow(true), HEARTBEAT_MS);
+  // Authenticated-only: push presence and start polling. Guests can see
+  // the public roster (read-only) but don't write to it themselves —
+  // that requires Steam verification.
+  if (session) {
+    schedulePush(0);
+    pollFeedTimer  = setInterval(pullFeed,  POLL_FEED_MS);
+    pollInboxTimer = setInterval(pullInbox, POLL_INBOX_MS);
+    heartbeatTimer = setInterval(() => pushNow(true), HEARTBEAT_MS);
 
-  // Watchdog. The setInterval above is the *primary* heartbeat scheduler,
-  // but a heartbeat can fail to fire for many reasons that are out of our
-  // control: the OS suspended the tab to save memory, the laptop slept and
-  // woke up, the network blipped on the actual fetch, the browser threw
-  // out our timer entirely. The watchdog runs an independent check every
-  // 60 seconds against wall-clock time. If we've gone more than 1.5x the
-  // heartbeat interval without a successful push, we force one. This is
-  // what makes "tab open but you're elsewhere" *iron-clad*: even if every
-  // primary mechanism fails, the watchdog will catch it within a minute.
-  heartbeatWatchdog = setInterval(() => {
-    const since = Date.now() - lastSuccessfulHeartbeatAt;
-    if (since > HEARTBEAT_MS * 1.5) {
-      console.info(`heartbeat watchdog firing (${Math.round(since / 1000)}s since last success)`);
-      pushNow(true);
-    }
-  }, 60_000);
+    // Watchdog: forces a heartbeat if the primary scheduler stalled.
+    heartbeatWatchdog = setInterval(() => {
+      const since = Date.now() - lastSuccessfulHeartbeatAt;
+      if (since > HEARTBEAT_MS * 1.5) {
+        console.info(`heartbeat watchdog firing (${Math.round(since / 1000)}s since last success)`);
+        pushNow(true);
+      }
+    }, 60_000);
 
-  await Promise.all([pullFeed(), pullInbox()]);
+    await Promise.all([pullFeed(), pullInbox()]);
+  } else {
+    // Guests still see the live presence count update on the Co-op tab.
+    void refreshGuestRoster();
+    setInterval(refreshGuestRoster, POLL_FEED_MS);
+  }
 
-  // When the tab regains focus after being hidden (background tab, locked
-  // screen, sleeping laptop), browsers throttle setInterval enough that a
-  // 180s heartbeat can stretch past the 10min presence TTL. Force an
-  // immediate heartbeat + feed refresh on visibility-change so the user
-  // pops back onto the feed instantly instead of waiting up to 3 more
-  // minutes for the next scheduled heartbeat.
+  // When the tab regains focus after being hidden, force an immediate
+  // refresh. For signed-in users that's a heartbeat + feed pull; for
+  // guests it's just a stats reload from disk if a saved file handle
+  // exists. Either way, returning from STS2 should snap stats fresh.
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible") {
+    if (document.visibilityState !== "visible") return;
+    if (session) {
       pushNow(true);
       pullFeed();
       pullInbox();
-      // Coming back from STS2 / another app is the single most useful
-      // moment to check disk for new runs. Snap stats fresh immediately.
-      void autoReloadHistoryIfPermitted({ silent: true });
+    } else {
+      void refreshGuestRoster();
     }
+    void autoReloadHistoryIfPermitted({ silent: true });
   });
 
   // bfcache restores (back/forward navigation) don't fire visibilitychange
   // on every browser. pageshow with persisted=true is the catch-all.
   window.addEventListener("pageshow", (e) => {
-    if (e.persisted) {
+    if (!e.persisted) return;
+    if (session) {
       pushNow(true);
       pullFeed();
       pullInbox();
-      void autoReloadHistoryIfPermitted({ silent: true });
+    } else {
+      void refreshGuestRoster();
     }
+    void autoReloadHistoryIfPermitted({ silent: true });
   });
 
-  window.addEventListener("beforeunload", () => {
-    try {
-      const blob = new Blob([], { type: "text/plain" });
-      navigator.sendBeacon && navigator.sendBeacon(`${SERVER_URL}/presence`, blob);
-    } catch {}
-  });
+  // Auth-only: tell the server we're going away so the roster decays.
+  // Guests aren't on the roster, so nothing to clean up.
+  if (session) {
+    window.addEventListener("beforeunload", () => {
+      try {
+        const blob = new Blob([], { type: "text/plain" });
+        navigator.sendBeacon && navigator.sendBeacon(`${SERVER_URL}/presence`, blob);
+      } catch {}
+    });
+  }
+}
+
+// =========================================================================
+// Guest co-op tab — read-only roster + sign-in CTA
+// =========================================================================
+//
+// Without a session we can't write to /presence, but the GET endpoint is
+// public (cached at the edge). Show signed-in users a live "X players
+// signed up · Y looking for co-op" line so the value is concrete: "if
+// you sign in too, those are the people you'd be matchmaking with."
+function wireGuestCoop() {
+  const $body = document.querySelector('.tab-panel[data-tab="coop"] .panel-body');
+  if (!$body) return;
+  $body.innerHTML = `
+    <div class="guest-coop">
+      <div class="guest-coop-card">
+        <h2>Find a co-op partner for Slay the Spire 2</h2>
+        <p class="muted">Sign in with Steam to appear on the live feed and send a canned invite to anyone else looking right now. <strong>Stats and run history don't require sign-in</strong> — only the co-op feed does.</p>
+        <p class="guest-coop-count" id="guest-coop-count">Checking who's around…</p>
+        <button class="btn-primary btn-block" type="button" data-action="signin-cta">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3 5l8-1.1V11H3V5zm0 7h8v7.1L3 18V12zm9 7.2V12h9v8L12 19.2zM12 11V3.9L21 3v8h-9z"/></svg>
+          <span>Sign in with Steam</span>
+        </button>
+        <details class="guest-coop-explainer">
+          <summary>What signing in actually does</summary>
+          <ul>
+            <li>Verifies you own the Steam account you claim, via Steam OpenID. Standard, no password ever leaves Steam.</li>
+            <li>Mints a 30-day session. You stay signed in across visits.</li>
+            <li>Posts your persona name + avatar to the public feed so others can find you. Sign out to drop your row.</li>
+            <li>Lets you send and receive canned co-op invites between sessions. Free-form text isn't allowed — invites are picked from a fixed list to prevent spam.</li>
+          </ul>
+        </details>
+      </div>
+      <div class="guest-coop-roster" id="guest-coop-roster" hidden>
+        <h3>Currently signed up</h3>
+        <div class="guest-coop-roster-list" id="guest-coop-roster-list"></div>
+      </div>
+    </div>`;
+}
+
+async function refreshGuestRoster() {
+  const $count = document.getElementById("guest-coop-count");
+  const $rosterWrap = document.getElementById("guest-coop-roster");
+  const $list = document.getElementById("guest-coop-roster-list");
+  if (!$count) return;
+  try {
+    const list = await fetchFeed();
+    if (!list || list.length === 0) {
+      $count.textContent = "Nobody signed up yet — be the first.";
+      if ($rosterWrap) $rosterWrap.hidden = true;
+      return;
+    }
+    const looking = list.filter((p) => p.status === "looking").length;
+    const inGame = list.filter((p) => p.inSTS2).length;
+    const total = list.length;
+    const head = total === 1 ? "1 player signed up" : `${total} players signed up`;
+    $count.innerHTML = `<span class="dot dot-pulse" aria-hidden="true"></span>${head} · ${looking} looking for co-op · ${inGame} in STS2 right now`;
+    if ($rosterWrap && $list) {
+      $rosterWrap.hidden = total === 0;
+      $list.innerHTML = list.slice(0, 12).map((p) => `
+        <div class="guest-roster-row">
+          <img class="avatar" src="${p.avatarURL || '/assets/vault-mark.svg'}" alt="" />
+          <div class="guest-roster-meta">
+            <strong>${escapeHtml(p.personaName || "Steam User")}</strong>
+            <span class="muted small">${guestStatusLabel(p)}</span>
+          </div>
+          ${p.inSTS2 ? '<span class="pill ember">In STS2</span>' : ''}
+        </div>`).join("");
+    }
+  } catch {
+    $count.textContent = "Live count momentarily unavailable.";
+  }
+}
+
+function guestStatusLabel(p) {
+  if (p.inSTS2) return "In Slay the Spire 2 · " + (p.status === "looking" ? "looking for co-op" : p.status);
+  if (p.status === "looking") return "Looking for co-op";
+  if (p.status === "inRun") return "In a solo run";
+  if (p.status === "inCoop") return "Already in co-op";
+  if (p.status === "afk") return "AFK";
+  return "Signed up";
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 
 // =========================================================================
@@ -629,6 +831,9 @@ function renderActiveTab() {
     renderStatsTab(activeTab);
   } else if (activeTab === "coop") {
     // Co-op view is reactive on its own pulls; just make sure feed shows once.
+    // Guests don't have inbox/feed elements (the panel body is replaced
+    // with a guest CTA), so skip the auth-only renderers.
+    if (!session) return;
     if (lastFeed.length) renderFeed(lastFeed);
     renderInbox(lastInbox);
   }
@@ -1494,12 +1699,17 @@ async function ingestHistoryFile(file, { silent = false } = {}) {
   // Diff against the previously loaded set so a silent auto-refresh that
   // pulls in new runs from disk can speak up *just enough* — a single
   // "X new run(s) detected" toast — without spamming the user with reads
-  // that found nothing new.
-  const previousIds = new Set(parsedRuns.map((r) => r.id));
+  // that found nothing new. Demo data is excluded from the diff so the
+  // first real ingest doesn't surface "47 new runs!" — we suppress new-
+  // count reporting on the demo→real transition.
+  const wasDemo = isDemoMode;
+  const previousIds = wasDemo ? new Set() : new Set(parsedRuns.map((r) => r.id));
   const newCount = result.runs.filter((r) => !previousIds.has(r.id)).length;
 
   parsedRuns = result.runs;
-  console.info(`[Vault] loaded ${result.runs.length} runs (${newCount} new)`);
+  // Real data has arrived — flip out of demo mode so the banner disappears.
+  isDemoMode = false;
+  console.info(`[Vault] loaded ${result.runs.length} runs (${newCount} new${wasDemo ? ", first real load" : ""})`);
 
   // Persist. We swallow IDB errors so a flaky storage layer never blocks
   // the in-memory render — the user still sees their stats this session.
@@ -1515,11 +1725,14 @@ async function ingestHistoryFile(file, { silent = false } = {}) {
   }
 
   if (silent) {
-    if (newCount > 0) {
+    // Suppress the "N new runs" toast when transitioning from demo to
+    // real data — the diff would always say "everything is new" and
+    // that's noise, not signal.
+    if (newCount > 0 && !wasDemo) {
       toast(`${newCount} new run${newCount === 1 ? "" : "s"} from disk.`);
     }
-    // else: stay silent, file changed but no new runs (e.g. STS2 rewrote
-    // the file with the same content). User notices nothing.
+  } else if (wasDemo) {
+    toast(`Loaded ${result.runs.length} run${result.runs.length === 1 ? "" : "s"} from your save.`);
   } else {
     toast(`Loaded ${result.runs.length} run${result.runs.length === 1 ? "" : "s"}.`);
   }
@@ -1684,13 +1897,28 @@ function renderStatsTab(tab) {
     return;
   }
   const report = Stats.summarize(parsedRuns);
+  // When the runs in memory came from getDemoRuns(), prefix every panel
+  // body with a clearly-labeled "Sample data" banner so visitors don't
+  // confuse the curated demo numbers with their own runs. The banner has
+  // a primary CTA that fires the same drag-drop / file-picker the empty
+  // state uses, so swapping in real data is one click away.
+  const banner = isDemoMode ? renderDemoBanner() : "";
   switch (tab) {
-    case "overview":   $body.innerHTML = renderOverview(report);     break;
-    case "characters": $body.innerHTML = renderCharactersTab(report); break;
-    case "ascensions": $body.innerHTML = renderAscensionsTab(report); break;
-    case "relics":     $body.innerHTML = renderRelicsTab(report);     break;
-    case "cards":      $body.innerHTML = renderCards(report);         break;
-    case "runs":       $body.innerHTML = renderRecentRuns(parsedRuns); break;
+    case "overview":   $body.innerHTML = banner + renderOverview(report);     break;
+    case "characters": $body.innerHTML = banner + renderCharactersTab(report); break;
+    case "ascensions": $body.innerHTML = banner + renderAscensionsTab(report); break;
+    case "relics":     $body.innerHTML = banner + renderRelicsTab(report);     break;
+    case "cards":      $body.innerHTML = banner + renderCards(report);         break;
+    case "runs":       $body.innerHTML = banner + renderRecentRuns(parsedRuns); break;
+  }
+  // Demo banner CTAs route to the existing scan/upload flow.
+  if (isDemoMode) {
+    $body.querySelectorAll('[data-action="scan"]').forEach((btn) => {
+      btn.addEventListener("click", () => void scanForHistory());
+    });
+    $body.querySelectorAll('[data-action="upload"]').forEach((btn) => {
+      btn.addEventListener("click", () => triggerFilePicker());
+    });
   }
   // Delegated handler for any element marked with data-action="goto-tab".
   // Lets character cards, side stat tiles, and any future "click here to
@@ -1713,6 +1941,26 @@ function renderStatsTab(tab) {
     document.getElementById("overview-sub").textContent =
       `${report.totalRuns} run${report.totalRuns === 1 ? "" : "s"} · ${(report.overallWinrate * 100).toFixed(0)}% win rate`;
   }
+}
+
+/**
+ * "Sample data" banner shown above every stats tab when isDemoMode is true.
+ * Two CTAs: the primary one opens the file picker (works everywhere); the
+ * secondary one triggers the smarter scan flow (Chromium with FSA support).
+ * Clicking either replaces demo data with the user's real history.json.
+ */
+function renderDemoBanner() {
+  return `
+    <div class="demo-banner" role="region" aria-label="Sample data notice">
+      <div class="demo-banner-text">
+        <strong>Sample data</strong>
+        <span>Drop your <code>history.json</code> to see your own runs.</span>
+      </div>
+      <div class="demo-banner-actions">
+        <button class="btn-primary" data-action="upload">Import history.json</button>
+        <button class="btn-ghost" data-action="scan">Find it for me</button>
+      </div>
+    </div>`;
 }
 
 function renderEmptyState() {
