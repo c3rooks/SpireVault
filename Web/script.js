@@ -198,11 +198,15 @@ async function bootSignedIn() {
   // On Chromium browsers we use the File System Access API so we can remember
   // the file handle and reload with one click on subsequent visits. On Safari
   // and Firefox we fall back to the standard <input type="file">.
-  document.querySelectorAll('[data-action="upload"], [data-action="scan"]').forEach((btn) => {
+  // "scan" = primary action (Find history.json). "upload" = fallback Import
+  // path that always opens the legacy <input type="file"> picker. The
+  // distinction matters in the panel headers where we want both options
+  // available without sliding into the smarter saved-handle path.
+  document.querySelectorAll('[data-action="scan"]').forEach((btn) => {
     btn.addEventListener("click", () => void scanForHistory());
   });
-  document.querySelectorAll('[data-action="reload"]').forEach((btn) => {
-    btn.addEventListener("click", () => void reloadFromSavedHandle());
+  document.querySelectorAll('[data-action="upload"]').forEach((btn) => {
+    btn.addEventListener("click", () => triggerFilePicker());
   });
   document.getElementById("history-file-input").addEventListener("change", (e) => {
     const file = e.target.files?.[0];
@@ -238,8 +242,6 @@ async function bootSignedIn() {
     renderActiveTab();
   }
 
-  // Reveal the "Reload from saved file" button if a handle is stashed.
-  void renderHistoryToolbar();
 
   // Silent auto-reload from disk. If the user previously picked their
   // history.json AND the browser remembers granting read access for this
@@ -900,64 +902,128 @@ function triggerFilePicker() {
 }
 
 /**
+ * Default location of `history.json` on macOS, written by the Ascension
+ * Companion / desktop Vault app. Surfaced to the user in the empty state
+ * and copied to the clipboard right before the file picker opens, so the
+ * user can paste it with Cmd+Shift+G inside the picker and skip every bit
+ * of folder navigation. Hidden `~/Library` is the entire reason this UX
+ * needs hand-holding.
+ */
+const HISTORY_PATH_MAC = "~/Library/Application Support/AscensionCompanion/vault/history.json";
+
+/**
  * "Find history.json" entry point.
  *
- * On Chromium (Chrome / Edge / Brave / Opera / Arc):
- *   - Calls showOpenFilePicker with a startIn hint so the picker opens at
- *     a sensible default, accepting only .json files.
- *   - Stashes the returned FileSystemFileHandle in IndexedDB so future
- *     visits can reload the same file with one click via reloadFromSavedHandle.
+ * Browser security forbids true filesystem scanning, so the most this can
+ * honestly do is:
  *
- * On Safari / Firefox:
- *   - showOpenFilePicker is undefined, so we fall back to the legacy
- *     <input type="file"> picker. No handle persistence is possible on those
- *     browsers, but the rest of the flow (parse, store, render) is identical.
+ *   1. SILENT RE-READ — if the user previously pointed at a file on this
+ *      origin, the browser remembers the FileSystemFileHandle. Try to
+ *      requestPermission; on Chromium this often returns "granted" with
+ *      no UI at all. If it does, re-read silently and we're done.
+ *
+ *   2. CLIPBOARD HELPER — if we have to fall back to the picker, copy the
+ *      exact macOS path to the clipboard first. The user hits Cmd+Shift+G
+ *      inside the picker, pastes, hits Enter, and they're at the right
+ *      file with no Finder navigation through hidden ~/Library.
+ *
+ *   3. SAFARI / FIREFOX — no File System Access API, so silent reload is
+ *      impossible. Always falls through to a plain <input type="file">.
  */
 async function scanForHistory() {
-  if (HistoryStore.supportsFSA()) {
-    let handle;
+  if (!HistoryStore.supportsFSA()) {
+    triggerFilePicker();
+    return;
+  }
+
+  // STEP 1 — try the saved handle silently.
+  let handle = null;
+  try {
+    handle = await HistoryStore.loadHandle();
+  } catch (e) {
+    console.warn("scanForHistory: loadHandle failed", e);
+  }
+  if (handle) {
+    let perm = "prompt";
     try {
-      const [picked] = await window.showOpenFilePicker({
-        types: [
-          {
-            description: "Vault history",
-            accept: { "application/json": [".json"] },
-          },
-        ],
-        multiple: false,
-        excludeAcceptAllOption: false,
-        startIn: "documents",
-      });
-      handle = picked;
+      perm = await handle.requestPermission({ mode: "read" });
     } catch (e) {
-      // User cancelled the picker. Don't toast on AbortError.
-      if (e?.name !== "AbortError") {
-        console.warn("file picker failed", e);
-        toast("Couldn't open the file picker. Use the manual upload button.");
-      }
-      return;
+      console.warn("scanForHistory: requestPermission failed", e);
     }
-    let file;
-    try {
-      file = await handle.getFile();
-    } catch {
-      toast("Picked the file but couldn't read it. Try again.");
-      return;
-    }
-    const ok = await ingestHistoryFile(file);
-    if (ok) {
-      // Only persist the handle once we've confirmed the file is valid.
+    if (perm === "granted") {
+      let file = null;
       try {
-        await HistoryStore.saveHandle(handle);
-        renderHistoryToolbar();
+        file = await handle.getFile();
       } catch (e) {
-        console.warn("could not persist file handle", e);
+        // File was renamed / deleted / moved since last visit.
+        console.warn("saved handle no longer resolves", e);
+        await HistoryStore.clearHandle().catch(() => {});
       }
+      if (file) {
+        const ok = await ingestHistoryFile(file);
+        if (ok) toast("Auto-scanned history.json from disk.");
+        return;
+      }
+    }
+  }
+
+  // STEP 2 — no usable saved handle. Open the picker exactly once. After
+  // this succeeds, every subsequent visit is silent (step 1 covers it).
+  //
+  // First-time UX shortcut: copy the macOS path to the clipboard so the
+  // user can press Cmd+Shift+G inside the picker, paste, and land on the
+  // file without navigating hidden ~/Library through Finder. If the
+  // clipboard write fails for any reason (permission, non-secure context,
+  // older browser) we just skip it silently — the picker still opens.
+  let copied = false;
+  try {
+    if (isMacUserAgent() && navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(HISTORY_PATH_MAC);
+      copied = true;
+    }
+  } catch {
+    // Clipboard permission can be flaky; not worth blocking the picker.
+  }
+  if (copied) {
+    toast("Path copied. In the picker, press Cmd+Shift+G and paste.");
+  }
+
+  let picked;
+  try {
+    [picked] = await window.showOpenFilePicker({
+      types: [
+        {
+          description: "Vault history",
+          accept: { "application/json": [".json"] },
+        },
+      ],
+      multiple: false,
+      excludeAcceptAllOption: false,
+      startIn: "documents",
+    });
+  } catch (e) {
+    if (e?.name !== "AbortError") {
+      console.warn("file picker failed", e);
+      toast("Couldn't open the file picker. Try Import as a fallback.");
     }
     return;
   }
-  // Safari / Firefox path: standard <input type="file">.
-  triggerFilePicker();
+
+  let file;
+  try {
+    file = await picked.getFile();
+  } catch {
+    toast("Picked the file but couldn't read it. Try again.");
+    return;
+  }
+  const ok = await ingestHistoryFile(file);
+  if (ok) {
+    try {
+      await HistoryStore.saveHandle(picked);
+    } catch (e) {
+      console.warn("could not persist file handle", e);
+    }
+  }
 }
 
 /**
@@ -1001,45 +1067,6 @@ async function autoReloadHistoryIfPermitted() {
   } catch (e) {
     // File was renamed, deleted, or moved since last visit.
     console.warn("autoReloadHistoryIfPermitted: getFile failed", e);
-    return;
-  }
-  await ingestHistoryFile(file);
-}
-
-/**
- * One-click reload using a previously persisted FileSystemFileHandle.
- * Only callable after the user has scanned at least once on a Chromium
- * browser. Re-prompts for permission silently when needed.
- */
-async function reloadFromSavedHandle() {
-  if (!HistoryStore.supportsFSA()) return;
-  const handle = await HistoryStore.loadHandle();
-  if (!handle) {
-    toast("No saved file. Click 'Find history.json' to pick one.");
-    return;
-  }
-  // Permission state is per-session. Browsers re-prompt on each new tab,
-  // so we always go through requestPermission rather than queryPermission.
-  let perm;
-  try {
-    perm = await handle.requestPermission({ mode: "read" });
-  } catch (e) {
-    console.warn("permission request failed", e);
-    toast("Browser denied access to the saved file. Pick it again.");
-    return;
-  }
-  if (perm !== "granted") {
-    toast("Permission denied. Pick the file again to reload.");
-    return;
-  }
-  let file;
-  try {
-    file = await handle.getFile();
-  } catch (e) {
-    console.warn("could not read saved handle", e);
-    toast("That file moved or got deleted. Pick it again.");
-    await HistoryStore.clearHandle();
-    renderHistoryToolbar();
     return;
   }
   await ingestHistoryFile(file);
@@ -1090,22 +1117,6 @@ async function ingestHistoryFile(file) {
   return true;
 }
 
-/**
- * Refresh any "Reload from history.json" buttons in the UI based on whether
- * we currently have a persisted file handle. Called after sign-in, after a
- * successful scan, and after clearHandle. Cheap, idempotent.
- */
-async function renderHistoryToolbar() {
-  if (!HistoryStore.supportsFSA()) return;
-  let hasHandle = false;
-  try {
-    hasHandle = !!(await HistoryStore.loadHandle());
-  } catch { /* IDB error: treat as no handle */ }
-  document.querySelectorAll('[data-reload-toolbar]').forEach((el) => {
-    el.hidden = !hasHandle;
-  });
-}
-
 function serializeRun(r) {
   return {
     ...r,
@@ -1130,13 +1141,24 @@ function renderStatsTab(tab) {
   if (!$body) return;
   if (parsedRuns.length === 0) {
     $body.innerHTML = renderEmptyState();
-    $body.querySelectorAll("[data-action='scan'], [data-action='upload']").forEach((btn) => {
+    $body.querySelectorAll("[data-action='scan']").forEach((btn) => {
       btn.addEventListener("click", () => void scanForHistory());
     });
-    $body.querySelectorAll("[data-action='reload']").forEach((btn) => {
-      btn.addEventListener("click", () => void reloadFromSavedHandle());
+    $body.querySelectorAll("[data-action='upload']").forEach((btn) => {
+      btn.addEventListener("click", () => triggerFilePicker());
     });
-    void renderHistoryToolbar();
+    $body.querySelectorAll("[data-action='copy-path']").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        try {
+          await navigator.clipboard.writeText(HISTORY_PATH_MAC);
+          const original = btn.textContent;
+          btn.textContent = "Copied";
+          setTimeout(() => (btn.textContent = original), 1500);
+        } catch {
+          toast("Couldn't copy. Select the path and copy manually.");
+        }
+      });
+    });
     return;
   }
   const report = Stats.summarize(parsedRuns);
@@ -1156,27 +1178,36 @@ function renderStatsTab(tab) {
 }
 
 function renderEmptyState() {
-  // Reload button is rendered hidden by default. renderHistoryToolbar()
-  // un-hides it on Chromium browsers where we have a saved handle.
+  const isMac = isMacUserAgent();
   return `
     <div class="empty-state">
       <div class="empty-state-icon">📂</div>
-      <h2>Load your <code>history.json</code></h2>
-      <p>One click finds the file, parses every run, and renders the same Overview, Characters, Ascensions, Relics, Cards, and Recent Runs tabs the macOS app has. Stays on your device.</p>
+      <h2>Connect your <code>history.json</code></h2>
+      <p>Browsers can't read your disk without permission, so this is a one-time pick. After that, every visit auto-loads silently — no picker, no clicks.</p>
       <div class="empty-state-actions">
         <button class="btn-primary" data-action="scan">Find history.json</button>
-        <button class="btn-ghost" data-action="reload" data-reload-toolbar hidden>Reload from saved file</button>
       </div>
       <p class="empty-state-tip">
-        Tip: drag <code>history.json</code> anywhere on this page to load it instantly.
+        Or drag <code>history.json</code> anywhere on this page to load it now.
       </p>
+      ${isMac ? `
+      <div class="empty-state-path">
+        <span class="path-label">Default macOS location</span>
+        <code class="path-value">${esc(HISTORY_PATH_MAC)}</code>
+        <button class="btn-ghost btn-sm" data-action="copy-path" title="Copy path. Then paste with Cmd+Shift+G inside the picker.">Copy path</button>
+      </div>
+      <p class="empty-state-tip muted">
+        Tip: clicking <strong>Find history.json</strong> copies the path automatically. In the picker, press <kbd>Cmd</kbd>+<kbd>Shift</kbd>+<kbd>G</kbd> and paste.
+      </p>
+      ` : ""}
       <details class="empty-state-hints">
-        <summary>Where is <code>history.json</code> on my machine?</summary>
+        <summary>Why isn't this fully automatic?</summary>
         <ul>
-          <li><strong>macOS:</strong> <code>~/Library/Application Support/AscensionCompanion/vault/history.json</code></li>
-          <li><strong>Tip on macOS:</strong> in the file picker, press <kbd>Cmd</kbd>+<kbd>Shift</kbd>+<kbd>G</kbd> and paste the path above.</li>
-          <li><strong>Windows:</strong> run the macOS app once to generate it (a Windows scanner is on the roadmap), or load a <code>history.json</code> a friend exported.</li>
-          <li>Stays on your device. We persist it in your browser locally and never upload it.</li>
+          <li>Web browsers physically forbid websites from scanning the filesystem. There is no JavaScript API that lets us walk your drives — by design, since the 90s.</li>
+          <li><strong>Want true zero-click auto-detect?</strong> Use the <a href="https://github.com/c3rooks/SpireVault/releases">macOS desktop app</a>. It finds the file on launch with no setup.</li>
+          <li><strong>Windows:</strong> a desktop scanner is on the roadmap. For now, the web companion works if you import a history.json from another device.</li>
+          <li>Once connected, the browser remembers the file. Future visits silently re-read it on load. No re-pick required.</li>
+          <li>Your file stays on your device. Persisted locally; never uploaded.</li>
         </ul>
       </details>
     </div>`;
@@ -1377,6 +1408,18 @@ function toast(msg) {
 function capitalize(s) {
   if (!s) return s;
   return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+/**
+ * Best-effort macOS detection. Used only to pick the right copy-to-clipboard
+ * path hint in the file picker UX. Wrong answers are harmless: a Windows
+ * user who somehow looks like macOS just gets a path they can ignore.
+ */
+function isMacUserAgent() {
+  const ua = (navigator.userAgent || "").toLowerCase();
+  if (ua.includes("mac os x") || ua.includes("macintosh")) return true;
+  // Modern Chromium reports navigator.platform = "MacIntel"
+  return (navigator.platform || "").toLowerCase().includes("mac");
 }
 
 function esc(s) {
