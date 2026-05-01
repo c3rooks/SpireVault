@@ -42,10 +42,17 @@ let lastFeed   = [];          // last feed snapshot
 let lastInbox  = [];          // last inbox snapshot
 let activeTab  = "overview";  // which tab panel is showing
 let pendingInviteToID = null; // who the modal is targeting
-let pollFeedTimer  = null;
-let pollInboxTimer = null;
-let heartbeatTimer = null;
-let pushTimer      = null;
+let pollFeedTimer       = null;
+let pollInboxTimer      = null;
+let heartbeatTimer      = null;
+let heartbeatWatchdog   = null;
+let pushTimer           = null;
+
+// Wall-clock timestamp of the last successful presence push. The watchdog
+// uses this to detect "the setInterval fired but the request failed" or
+// "the setInterval hasn't fired in a long time because the OS suspended us"
+// and force a heartbeat without waiting for the next scheduled tick.
+let lastSuccessfulHeartbeatAt = 0;
 
 // IDs of pending invites we've already announced to the user. Lets us tell
 // "this invite just landed for the first time" from "we've been polling and
@@ -214,7 +221,10 @@ async function bootSignedIn() {
     console.warn("could not load invite messages", e);
   }
 
-  // Try to restore a previously uploaded history
+  // Try to restore a previously uploaded history. We render whatever's in
+  // IndexedDB FIRST so the UI lights up instantly with last-known stats,
+  // then optionally re-pull from disk a few moments later if the user has
+  // a saved file handle.
   try {
     const cached = await HistoryStore.loadHistory();
     if (cached?.runs?.length) {
@@ -231,11 +241,48 @@ async function bootSignedIn() {
   // Reveal the "Reload from saved file" button if a handle is stashed.
   void renderHistoryToolbar();
 
+  // Silent auto-reload from disk. If the user previously picked their
+  // history.json AND the browser remembers granting read access for this
+  // origin, we can quietly re-read the file with no user click. This is
+  // the closest thing to true "auto-scan" the web platform allows: the
+  // first pick is unavoidable (browser security), but every subsequent
+  // visit is one transparent disk-read away from being fully fresh.
+  //
+  // Behavior matrix:
+  //   - No handle saved  →  no-op, user has to click "Find history.json"
+  //   - Handle + perm "granted"  →  silently re-reads, stats refresh
+  //   - Handle + perm "prompt"   →  no-op, the visible "Reload" button
+  //                                  in the toolbar handles the gesture
+  //   - Handle + perm "denied"   →  no-op, button stays for re-grant
+  //
+  // Manual file picker is therefore truly the last resort: only on Safari
+  // / Firefox (no FSA support) or on a brand-new browser visit where the
+  // user has never picked the file from this origin before.
+  void autoReloadHistoryIfPermitted();
+
   // Push presence + start polling
   schedulePush(0);
   pollFeedTimer  = setInterval(pullFeed,  POLL_FEED_MS);
   pollInboxTimer = setInterval(pullInbox, POLL_INBOX_MS);
   heartbeatTimer = setInterval(() => pushNow(true), HEARTBEAT_MS);
+
+  // Watchdog. The setInterval above is the *primary* heartbeat scheduler,
+  // but a heartbeat can fail to fire for many reasons that are out of our
+  // control: the OS suspended the tab to save memory, the laptop slept and
+  // woke up, the network blipped on the actual fetch, the browser threw
+  // out our timer entirely. The watchdog runs an independent check every
+  // 60 seconds against wall-clock time. If we've gone more than 1.5x the
+  // heartbeat interval without a successful push, we force one. This is
+  // what makes "tab open but you're elsewhere" *iron-clad*: even if every
+  // primary mechanism fails, the watchdog will catch it within a minute.
+  heartbeatWatchdog = setInterval(() => {
+    const since = Date.now() - lastSuccessfulHeartbeatAt;
+    if (since > HEARTBEAT_MS * 1.5) {
+      console.info(`heartbeat watchdog firing (${Math.round(since / 1000)}s since last success)`);
+      pushNow(true);
+    }
+  }, 60_000);
+
   await Promise.all([pullFeed(), pullInbox()]);
 
   // When the tab regains focus after being hidden (background tab, locked
@@ -366,7 +413,10 @@ async function pushNow(silent) {
       setStatus("trouble", "Trouble reaching server, retrying…");
       return;
     }
-    if (resp.ok) resetAuthFailures();
+    if (resp.ok) {
+      resetAuthFailures();
+      lastSuccessfulHeartbeatAt = Date.now();
+    }
     setStatus(resp.ok ? "online" : "trouble", resp.ok ? "Live on the feed" : "Trouble reaching server");
   } catch (e) {
     console.warn("presence push error", e);
@@ -887,6 +937,52 @@ async function scanForHistory() {
   }
   // Safari / Firefox path: standard <input type="file">.
   triggerFilePicker();
+}
+
+/**
+ * Boot-time auto-reload. Runs immediately after sign-in if a saved handle
+ * exists AND the browser already considers read permission granted for
+ * this origin/handle. Silent: no toast, no permission prompt, no gesture.
+ *
+ * If permission is "prompt" (the default for new tabs in Chrome), this is
+ * a no-op and the user will need to click the visible "Reload from saved
+ * file" toolbar button once to grant — that grant typically lasts the rest
+ * of the tab's session.
+ *
+ * Designed to never throw to the boot path. Any failure is logged and
+ * swallowed so a flaky filesystem can't break the rest of the app.
+ */
+async function autoReloadHistoryIfPermitted() {
+  if (!HistoryStore.supportsFSA()) return;
+  let handle;
+  try {
+    handle = await HistoryStore.loadHandle();
+  } catch (e) {
+    console.warn("autoReloadHistoryIfPermitted: loadHandle failed", e);
+    return;
+  }
+  if (!handle) return;
+
+  // queryPermission is the silent variant; requestPermission would prompt.
+  // We want truly invisible auto-reload, so we only proceed on "granted".
+  let perm = "prompt";
+  try {
+    perm = await handle.queryPermission({ mode: "read" });
+  } catch (e) {
+    console.warn("autoReloadHistoryIfPermitted: queryPermission failed", e);
+    return;
+  }
+  if (perm !== "granted") return;
+
+  let file;
+  try {
+    file = await handle.getFile();
+  } catch (e) {
+    // File was renamed, deleted, or moved since last visit.
+    console.warn("autoReloadHistoryIfPermitted: getFile failed", e);
+    return;
+  }
+  await ingestHistoryFile(file);
 }
 
 /**
