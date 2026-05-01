@@ -35,6 +35,17 @@ const HEARTBEAT_MS          = 180_000; // was 90_000
 
 const TABS_WITH_DATA = ["overview", "characters", "ascensions", "relics", "cards", "runs"];
 
+// Where the desktop app keeps history.json on each platform. These are
+// declared at the top of the module because boot code (switchTab → empty
+// state) runs synchronously and pulls them in BEFORE any function-scope
+// declaration further down in the file would be reached. Hoisting them
+// up here avoids a Temporal Dead Zone ReferenceError on cold load that
+// would otherwise wipe out the entire boot path (and silently kill
+// IndexedDB persistence, presence heartbeats, and the live feed).
+const HISTORY_PATH_MAC = "~/Library/Application Support/AscensionCompanion/vault/history.json";
+const HISTORY_PATH_WIN = "%APPDATA%\\AscensionCompanion\\vault\\history.json";
+const HISTORY_PATH_LINUX = "~/.local/share/AscensionCompanion/vault/history.json";
+
 // ─── Module state ──────────────────────────────────────────────────────
 const session = readSession();
 let parsedRuns = [];          // current normalized history runs (in memory)
@@ -917,10 +928,12 @@ function triggerFilePicker() {
  *
  * Linux — same story as Windows; the Vault desktop app is macOS-only
  * today. We surface the XDG path that the eventual Linux build will use.
+ *
+ * NOTE: the actual path constants (HISTORY_PATH_MAC / WIN / LINUX) live at
+ * the very top of the file. They have to: boot code synchronously hits
+ * renderEmptyState, and a `const` declared lower in the file would still
+ * be in the Temporal Dead Zone at that moment.
  */
-const HISTORY_PATH_MAC = "~/Library/Application Support/AscensionCompanion/vault/history.json";
-const HISTORY_PATH_WIN = "%APPDATA%\\AscensionCompanion\\vault\\history.json";
-const HISTORY_PATH_LINUX = "~/.local/share/AscensionCompanion/vault/history.json";
 
 /**
  * "Find history.json" entry point.
@@ -1327,24 +1340,134 @@ function renderEmptyState() {
     </div>`;
 }
 
+/**
+ * Character → theme color. Mirrors the macOS app's per-character accents
+ * so the web Overview reads as the same product, not a stripped-down twin.
+ * Keys are normalized to lowercase before lookup.
+ */
+const CHAR_THEME = {
+  ironclad:    { color: "#ff5f6d", icon: "shield" },
+  silent:      { color: "#6dd97c", icon: "leaf"   },
+  defect:      { color: "#5dc1ff", icon: "bolt"   },
+  watcher:     { color: "#9b83ff", icon: "eye"    },
+  regent:      { color: "#d4af37", icon: "crown"  },
+  necrobinder: { color: "#b27dff", icon: "skull"  },
+};
+
+function charTheme(name) {
+  return CHAR_THEME[String(name || "").toLowerCase()] || { color: "#8a7cb8", icon: "shield" };
+}
+
+/** Tiny inline SVG icons keyed off CHAR_THEME.icon. Stroke-based so they
+ *  pick up the character color via `currentColor`. */
+function charIcon(key) {
+  const map = {
+    shield: '<path d="M12 3l8 3v6c0 5-3.5 8.5-8 9-4.5-.5-8-4-8-9V6l8-3z"/>',
+    leaf:   '<path d="M5 19c4-9 9-13 16-14-1 8-5 13-13 16-1 0-2 0-3-2zM5 19l4-4"/>',
+    bolt:   '<path d="M13 2L4 14h7l-1 8 9-12h-7l1-8z" fill="currentColor" stroke="none"/>',
+    eye:    '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/>',
+    crown:  '<path d="M3 8l4 4 5-7 5 7 4-4-1 11H4L3 8z"/>',
+    skull:  '<path d="M12 3a8 8 0 0 0-8 8v3l2 2v4h12v-4l2-2v-3a8 8 0 0 0-8-8z"/><circle cx="9" cy="12" r="1.5" fill="currentColor"/><circle cx="15" cy="12" r="1.5" fill="currentColor"/>',
+  };
+  return `<svg class="char-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${map[key] || map.shield}</svg>`;
+}
+
 function renderOverview(report) {
-  const stat = (label, value, sub) => `
-    <div class="stat-card">
-      <span class="stat-label">${esc(label)}</span>
-      <strong class="stat-value">${esc(value)}</strong>
-      ${sub ? `<span class="stat-sub">${esc(sub)}</span>` : ""}
+  const total = report.totalRuns;
+  const wins  = report.totalWins;
+  const losses = total - wins;
+  const wrPct = report.overallWinrate * 100;
+  const wrLabel = `${wrPct.toFixed(1)}%`;
+
+  // Best-character callout: highest win rate among characters with at least
+  // a few runs (otherwise a 1-run 100% winrate steals the spot).
+  const bestChar = report.byCharacter
+    .filter((b) => b.runs >= 3)
+    .slice()
+    .sort((a, b) => b.winrate - a.winrate)[0] || report.byCharacter[0];
+
+  // Donut ring: stroke-based progress on a 60-radius circle.
+  const radius = 60;
+  const circumference = 2 * Math.PI * radius;
+  const dash = (Math.max(0, Math.min(100, wrPct)) / 100) * circumference;
+  const ring = `
+    <svg class="hero-ring" viewBox="0 0 160 160" aria-hidden="true">
+      <circle cx="80" cy="80" r="${radius}" class="ring-track"/>
+      <circle cx="80" cy="80" r="${radius}" class="ring-fill"
+              stroke-dasharray="${dash} ${circumference}"
+              stroke-linecap="round"
+              transform="rotate(-90 80 80)"/>
+    </svg>`;
+
+  const heroPanel = `
+    <div class="hero-overview">
+      <div class="hero-ring-wrap">
+        ${ring}
+        <div class="hero-ring-text">
+          <strong class="ring-pct">${wrLabel}</strong>
+          <span class="ring-label">Winrate</span>
+        </div>
+      </div>
+      <div class="hero-numbers">
+        <div class="hero-numbers-head">Run history</div>
+        <div class="hero-numbers-row">
+          <div class="hero-num">
+            <strong class="num num-neutral">${total}</strong>
+            <span class="num-label">Runs</span>
+          </div>
+          <div class="hero-num">
+            <strong class="num num-win">${wins}</strong>
+            <span class="num-label">Wins</span>
+          </div>
+          <div class="hero-num">
+            <strong class="num num-loss">${losses}</strong>
+            <span class="num-label">Losses</span>
+          </div>
+        </div>
+        ${bestChar ? `
+          <div class="hero-best">
+            <span class="hero-best-icon" style="color:${charTheme(bestChar.key).color}">${charIcon(charTheme(bestChar.key).icon)}</span>
+            <span class="hero-best-text">
+              Best: <strong style="color:${charTheme(bestChar.key).color}">${esc(capitalize(bestChar.key))}</strong>
+              <span class="muted"> · ${(bestChar.winrate * 100).toFixed(1)}% over ${bestChar.runs} run${bestChar.runs === 1 ? "" : "s"}</span>
+            </span>
+          </div>
+        ` : ""}
+      </div>
     </div>`;
-  const topChar = report.byCharacter[0];
-  const topAsc  = report.byAscension.slice().sort((a, b) => parseAsc(b.key) - parseAsc(a.key))[0];
+
+  // Per-character cards. The desktop app shows these as colored tiles with
+  // an icon, run count badge, big winrate %, and a thin progress bar. We
+  // mirror that layout exactly so the web reads as the same product.
+  const charCards = report.byCharacter.length === 0
+    ? `<p class="muted">No character data yet.</p>`
+    : `
+    <div class="char-grid">
+      ${report.byCharacter.map((c) => {
+        const theme = charTheme(c.key);
+        const wr = (c.winrate * 100).toFixed(1);
+        const lossCount = c.runs - c.wins;
+        return `
+          <div class="char-card" style="--char-color:${theme.color}">
+            <div class="char-card-head">
+              <div class="char-card-icon">${charIcon(theme.icon)}</div>
+              <span class="char-card-runs">${c.runs} runs</span>
+            </div>
+            <div class="char-card-name">${esc(capitalize(c.key))}</div>
+            <div class="char-card-record">${c.wins} win${c.wins === 1 ? "" : "s"} · ${lossCount} loss${lossCount === 1 ? "" : "es"}</div>
+            <div class="char-card-wr">
+              <strong class="char-card-pct">${wr}%</strong>
+              <span class="char-card-pct-label">Winrate</span>
+            </div>
+            <div class="char-card-bar"><span style="width:${Math.min(100, c.winrate * 100)}%"></span></div>
+          </div>`;
+      }).join("")}
+    </div>`;
 
   return `
-    <div class="stat-grid">
-      ${stat("Total runs",  String(report.totalRuns))}
-      ${stat("Wins",        String(report.totalWins))}
-      ${stat("Win rate",    `${(report.overallWinrate * 100).toFixed(1)}%`)}
-      ${stat("Top character", topChar ? capitalize(topChar.key) : "—", topChar ? `${topChar.runs} runs · ${(topChar.winrate * 100).toFixed(0)}%` : "")}
-      ${stat("Highest ascension", topAsc ? topAsc.key : "—", topAsc ? `${topAsc.runs} runs · ${(topAsc.winrate * 100).toFixed(0)}%` : "")}
-    </div>
+    ${heroPanel}
+    <h3 class="section-title">Per character</h3>
+    ${charCards}
     <h3 class="section-title">Win rate by character</h3>
     ${renderBucketTable(report.byCharacter, { keyLabel: "Character", capitalize: true })}
     <h3 class="section-title">Top relics</h3>
