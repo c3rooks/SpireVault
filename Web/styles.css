@@ -597,30 +597,31 @@ main {
 .sidebar-brand {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 14px;
   padding: 22px 18px 14px;
 }
 .sidebar-brand img {
-  width: 38px; height: 38px;
-  border-radius: 8px;
-  border: 1px solid rgba(212,175,55,0.4);
+  width: 44px; height: 44px;
+  border-radius: 10px;
+  border: 1px solid rgba(212,175,55,0.45);
+  box-shadow: 0 2px 14px rgba(255, 107, 26, 0.22);
 }
-.sidebar-brand > div { display: flex; flex-direction: column; gap: 1px; }
+.sidebar-brand > div { display: flex; flex-direction: column; gap: 2px; }
 .sidebar-wordmark {
   font-family: 'Playfair Display', serif;
-  font-size: 14px;
+  font-size: 17px;
   font-weight: 900;
-  letter-spacing: 0.18em;
+  letter-spacing: 0.16em;
   background: linear-gradient(120deg, var(--accent-hi), var(--gold));
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
 }
 .sidebar-sub {
-  font-size: 9.5px;
-  font-weight: 700;
+  font-size: 10.5px;
+  font-weight: 800;
   color: var(--text-3);
-  letter-spacing: 0.16em;
+  letter-spacing: 0.18em;
   text-transform: uppercase;
 }
 .sidebar-divider {
@@ -635,41 +636,59 @@ main {
 .nav-group:last-child { margin-bottom: 0; }
 .nav-group-label {
   display: block;
-  font-size: 9.5px;
+  font-size: 10.5px;
   font-weight: 800;
-  letter-spacing: 0.18em;
+  letter-spacing: 0.2em;
   color: var(--text-3);
-  padding: 0 10px 6px;
+  padding: 0 14px 8px;
+  text-transform: uppercase;
 }
 .nav-row {
   width: 100%;
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 8px 10px;
+  gap: 12px;
+  padding: 10px 14px;
   border: 0;
   background: transparent;
   color: var(--text-2);
+  font-size: 14px;
+  font-weight: 600;
+  border-radius: 8px;
   border-radius: 8px;
   text-align: left;
   font-size: 13px;
   font-weight: 500;
   transition: background 0.12s, color 0.12s;
 }
-.nav-row:hover { background: rgba(255,255,255,0.03); color: var(--text); }
+.nav-row:hover { background: rgba(255,255,255,0.04); color: var(--text); }
 .nav-row.is-active {
-  background: rgba(212,175,55,0.10);
+  background: rgba(255, 107, 26, 0.12);
   color: var(--text);
-  font-weight: 700;
+  font-weight: 800;
+  position: relative;
 }
-.nav-row.is-active .nav-icon { color: var(--accent-hi); }
+.nav-row.is-active::after {
+  content: "";
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 22px;
+  background: var(--accent);
+  border-radius: 2px;
+}
+.nav-row.is-active .nav-icon { color: var(--accent); }
 .nav-icon {
   width: 18px; height: 18px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   color: var(--text-3);
+  flex-shrink: 0;
 }
+.nav-icon svg { width: 18px; height: 18px; }
 .nav-label { flex: 1; }
 .nav-badge {
   font-size: 10px;
@@ -780,7 +799,7 @@ main {
 }
 .panel-sub { margin: 0; color: var(--text-2); font-size: 13px; }
 .panel-actions { display: flex; gap: 8px; }
-.panel-body { padding: 24px 32px 60px; max-width: 1080px; }
+.panel-body { padding: 24px 32px 60px; }
 
 @media (max-width: 600px) {
   .panel-head, .panel-body { padding-left: 18px; padding-right: 18px; }
@@ -1181,6 +1200,198 @@ main {
   box-shadow: 0 0 8px color-mix(in srgb, var(--char-color) 50%, transparent);
 }
 
+/* ─── Pills (matches desktop app's Pill component) ────── */
+.pill {
+  display: inline-flex;
+  align-items: center;
+  font-family: 'Inter', sans-serif;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  text-transform: uppercase;
+}
+.pill-muted {
+  color: var(--text-2);
+  background: rgba(255,255,255,0.06);
+  border-color: rgba(255,255,255,0.08);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: none;
+}
+.pill-win {
+  color: var(--win);
+  background: rgba(109, 217, 124, 0.14);
+  border-color: rgba(109, 217, 124, 0.32);
+  text-transform: none;
+  letter-spacing: 0.04em;
+  font-weight: 800;
+}
+
+/* ─── Top Relics: card grid (matches desktop app's RelicCard) ──── */
+.relic-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 12px;
+  margin-bottom: 24px;
+}
+.relic-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.relic-card-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: rgba(212, 175, 55, 0.14);
+  color: var(--gold);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.relic-card-icon svg { width: 20px; height: 20px; }
+.relic-card-meta { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.relic-card-name {
+  font-family: 'Inter', sans-serif;
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.relic-card-pills { display: flex; gap: 6px; flex-wrap: wrap; }
+.relic-card-pct {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  flex-shrink: 0;
+}
+.relic-card-pct strong {
+  font-family: 'Inter', sans-serif;
+  font-size: 22px;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+.relic-card-pct span {
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  color: var(--text-3);
+  margin-top: 4px;
+}
+.relic-card-pct-win strong  { color: var(--win); }
+.relic-card-pct-gold strong { color: var(--gold); }
+
+/* ─── Ascensions: bar chart + detail rows (matches desktop app) ── */
+.asc-chart-panel {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 22px 18px 16px;
+  margin-bottom: 28px;
+}
+.asc-chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 14px;
+  height: 180px;
+  padding: 0 4px;
+}
+.asc-bar-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.asc-bar-stack {
+  position: relative;
+  width: 36px;
+  height: 130px;
+}
+.asc-bar-bg, .asc-bar-total, .asc-bar-wins {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  border-radius: 6px;
+}
+.asc-bar-bg {
+  top: 0;
+  background: rgba(255,255,255,0.04);
+}
+.asc-bar-total {
+  background: linear-gradient(180deg, rgba(155, 131, 255, 0.42) 0%, rgba(40, 35, 58, 0.6) 100%);
+}
+.asc-bar-wins {
+  background: linear-gradient(180deg, #8eef9b 0%, var(--win) 100%);
+  box-shadow: 0 0 12px rgba(109, 217, 124, 0.28);
+}
+.asc-bar-label {
+  font-size: 10px;
+  font-weight: 800;
+  color: var(--text-2);
+  letter-spacing: 0.05em;
+}
+
+.asc-detail-panel {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.asc-detail-row {
+  display: grid;
+  grid-template-columns: 40px 1fr 60px 90px;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 18px;
+}
+.asc-detail-row.has-divider { border-bottom: 1px solid rgba(40, 35, 58, 0.5); }
+.asc-detail-key {
+  font-family: 'Inter', sans-serif;
+  font-size: 13px;
+  font-weight: 900;
+  color: var(--gold);
+}
+.asc-detail-bar {
+  height: 6px;
+  background: rgba(255,255,255,0.06);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.asc-detail-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: 4px;
+}
+.asc-detail-pct {
+  font-family: 'Inter', sans-serif;
+  font-size: 12px;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  color: var(--text);
+}
+.asc-detail-record {
+  font-size: 11px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-2);
+  text-align: right;
+}
+
 /* ─── Stats: grid + tables ────────────────────────────── */
 .stat-grid {
   display: grid;
@@ -1215,13 +1426,60 @@ main {
   color: var(--text-3);
 }
 
+/* Desktop-app-style section header: tiny accented icon, tracked uppercase
+ * label, and a short fade-out underline. Mirrors SectionTitle in
+ * VaultApp/App/Theme.swift so the two products read as one. */
+.sec-title {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 28px 0 14px;
+}
+.sec-title-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.sec-title-icon {
+  width: 14px;
+  height: 14px;
+  color: var(--accent);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.sec-title-icon svg { width: 14px; height: 14px; }
+.sec-title-text {
+  font-family: 'Inter', sans-serif;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.2em;
+  color: var(--text-2);
+  text-transform: uppercase;
+}
+.sec-title-rule {
+  height: 1.5px;
+  width: 80px;
+  background: linear-gradient(to right, var(--accent), transparent);
+  border-radius: 1px;
+}
+.sec-title.gold .sec-title-icon { color: var(--gold); }
+.sec-title.gold .sec-title-rule { background: linear-gradient(to right, var(--gold), transparent); }
+.sec-title.loss .sec-title-icon { color: var(--loss); }
+.sec-title.loss .sec-title-rule { background: linear-gradient(to right, var(--loss), transparent); }
+.sec-title.win  .sec-title-icon { color: var(--win); }
+.sec-title.win  .sec-title-rule { background: linear-gradient(to right, var(--win), transparent); }
+
+/* Backwards-compat for any inline calls still using .section-title */
 .section-title {
-  font-family: 'Playfair Display', serif;
-  font-size: 16px;
-  font-weight: 800;
-  letter-spacing: 0.02em;
-  margin: 28px 0 12px;
-  color: var(--text);
+  font-family: 'Inter', sans-serif;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--text-2);
+  margin: 28px 0 14px;
 }
 
 .bucket-table {

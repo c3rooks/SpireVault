@@ -1251,11 +1251,11 @@ function renderStatsTab(tab) {
   }
   const report = Stats.summarize(parsedRuns);
   switch (tab) {
-    case "overview":   $body.innerHTML = renderOverview(report);   break;
-    case "characters": $body.innerHTML = renderBucketTable(report.byCharacter, { keyLabel: "Character", capitalize: true }); break;
-    case "ascensions": $body.innerHTML = renderBucketTable(report.byAscension, { keyLabel: "Ascension" }); break;
-    case "relics":     $body.innerHTML = renderBucketTable(report.byRelic,     { keyLabel: "Relic", showPickedRate: true }); break;
-    case "cards":      $body.innerHTML = renderCards(report);     break;
+    case "overview":   $body.innerHTML = renderOverview(report);     break;
+    case "characters": $body.innerHTML = renderCharactersTab(report); break;
+    case "ascensions": $body.innerHTML = renderAscensionsTab(report); break;
+    case "relics":     $body.innerHTML = renderRelicsTab(report);     break;
+    case "cards":      $body.innerHTML = renderCards(report);         break;
     case "runs":       $body.innerHTML = renderRecentRuns(parsedRuns); break;
   }
   // Update Overview sub-text
@@ -1372,6 +1372,31 @@ function charIcon(key) {
   return `<svg class="char-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${map[key] || map.shield}</svg>`;
 }
 
+/** SVG icons used for section headers. Match the desktop app's SF Symbols. */
+const SEC_ICONS = {
+  people:    '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M9 11a3 3 0 100-6 3 3 0 000 6zm6 0a3 3 0 100-6 3 3 0 000 6zm-9 8a5 5 0 0110 0zm9-1a5 5 0 015-5v6h-5z"/></svg>',
+  bars:      '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M4 20h4V10H4zm6 0h4V4h-4zm6 0h4v-7h-4z"/></svg>',
+  list:      '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 5h18v2H3zm0 6h18v2H3zm0 6h18v2H3z"/></svg>',
+  sparkles:  '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l1.5 5L18.5 8 14 11l1.5 5L12 13l-3.5 3L10 11 5.5 8l5-1.5zM5 16l.7 2.3L8 19l-2.3.7L5 22l-.7-2.3L2 19l2.3-.7zm14-2l1 3 3 1-3 1-1 3-1-3-3-1 3-1z"/></svg>',
+  bolt:      '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M13 2L4 14h7l-1 8 9-12h-7l1-8z"/></svg>',
+  cards:     '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M5 3h10a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2zm12 4h2a2 2 0 012 2v10a2 2 0 01-2 2h-2z"/></svg>',
+  clock:     '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 100 20 10 10 0 000-20zm.5 5h-1.5v6.4l5.4 3.2.8-1.3-4.7-2.8z"/></svg>',
+};
+
+/** Renders a desktop-app-style section header: small accent icon, tracked
+ *  uppercase label, and a fading horizontal underline. */
+function secTitle(text, icon = "list", tone = "") {
+  const cls = tone ? `sec-title ${tone}` : "sec-title";
+  return `
+    <div class="${cls}">
+      <div class="sec-title-row">
+        <span class="sec-title-icon">${SEC_ICONS[icon] || SEC_ICONS.list}</span>
+        <span class="sec-title-text">${esc(text)}</span>
+      </div>
+      <div class="sec-title-rule"></div>
+    </div>`;
+}
+
 function renderOverview(report) {
   const total = report.totalRuns;
   const wins  = report.totalWins;
@@ -1426,7 +1451,7 @@ function renderOverview(report) {
         </div>
         ${bestChar ? `
           <div class="hero-best">
-            <span class="hero-best-icon" style="color:${charTheme(bestChar.key).color}">${charIcon(charTheme(bestChar.key).icon)}</span>
+            <span class="hero-best-icon"><svg viewBox="0 0 24 24" fill="#5dc1ff"><path d="M13 2L4 14h7l-1 8 9-12h-7l1-8z"/></svg></span>
             <span class="hero-best-text">
               Best: <strong style="color:${charTheme(bestChar.key).color}">${esc(capitalize(bestChar.key))}</strong>
               <span class="muted"> · ${(bestChar.winrate * 100).toFixed(1)}% over ${bestChar.runs} run${bestChar.runs === 1 ? "" : "s"}</span>
@@ -1466,12 +1491,153 @@ function renderOverview(report) {
 
   return `
     ${heroPanel}
-    <h3 class="section-title">Per character</h3>
+    ${secTitle("Per character", "people")}
     ${charCards}
-    <h3 class="section-title">Win rate by character</h3>
-    ${renderBucketTable(report.byCharacter, { keyLabel: "Character", capitalize: true })}
-    <h3 class="section-title">Top relics</h3>
-    ${renderBucketTable(report.byRelic.slice(0, 6), { keyLabel: "Relic", showPickedRate: true })}`;
+    ${secTitle("Top relics", "sparkles", "gold")}
+    ${renderRelicCards(report.byRelic.slice(0, 6))}`;
+}
+
+/** Render the per-character grid card. Shared between Overview and the
+ *  dedicated Characters tab so both surfaces feel like one product. */
+function renderCharCards(buckets) {
+  if (!buckets || !buckets.length) {
+    return `<p class="muted">No character data yet.</p>`;
+  }
+  return `
+    <div class="char-grid">
+      ${buckets.map((c) => {
+        const theme = charTheme(c.key);
+        const wr = (c.winrate * 100).toFixed(1);
+        const lossCount = c.runs - c.wins;
+        return `
+          <div class="char-card" style="--char-color:${theme.color}">
+            <div class="char-card-head">
+              <div class="char-card-icon">${charIcon(theme.icon)}</div>
+              <span class="char-card-runs">${c.runs} runs</span>
+            </div>
+            <div class="char-card-name">${esc(capitalize(c.key))}</div>
+            <div class="char-card-record">${c.wins} win${c.wins === 1 ? "" : "s"} · ${lossCount} loss${lossCount === 1 ? "" : "es"}</div>
+            <div class="char-card-wr">
+              <strong class="char-card-pct">${wr}%</strong>
+              <span class="char-card-pct-label">Winrate</span>
+            </div>
+            <div class="char-card-bar"><span style="width:${Math.min(100, c.winrate * 100)}%"></span></div>
+          </div>`;
+      }).join("")}
+    </div>`;
+}
+
+function renderCharactersTab(report) {
+  return `
+    ${secTitle("Winrate by character", "people")}
+    ${renderCharCards(report.byCharacter)}`;
+}
+
+/** Bar chart matching the desktop app's "Per ascension" panel.
+ *  Each bar shows total runs (height proportional to max) with the wins
+ *  portion painted in green from the bottom up. */
+function renderAscensionsTab(report) {
+  const buckets = report.byAscension
+    .slice()
+    .sort((a, b) => parseAsc(a.key) - parseAsc(b.key));
+  if (!buckets.length) {
+    return `<p class="muted">No ascension data yet.</p>`;
+  }
+  const maxRuns = Math.max(...buckets.map((b) => b.runs), 1);
+  const barChart = `
+    <div class="asc-chart-panel">
+      <div class="asc-chart">
+        ${buckets.map((b) => {
+          const totalH = Math.max(8, (b.runs / maxRuns) * 130);
+          const winsH = b.runs > 0 ? totalH * (b.wins / b.runs) : 0;
+          return `
+            <div class="asc-bar-col" title="${esc(b.key)}: ${b.wins}/${b.runs} (${(b.winrate*100).toFixed(0)}%)">
+              <div class="asc-bar-stack">
+                <div class="asc-bar-bg"></div>
+                <div class="asc-bar-total" style="height:${totalH}px"></div>
+                <div class="asc-bar-wins" style="height:${winsH}px"></div>
+              </div>
+              <span class="asc-bar-label">${esc(b.key)}</span>
+            </div>`;
+        }).join("")}
+      </div>
+    </div>`;
+
+  const detailRows = `
+    <div class="asc-detail-panel">
+      ${buckets.map((b, i) => {
+        const wr = (b.winrate * 100).toFixed(1);
+        const tint = b.winrate >= 0.10 ? "var(--win)" : "var(--accent)";
+        return `
+          <div class="asc-detail-row${i === buckets.length - 1 ? "" : " has-divider"}">
+            <span class="asc-detail-key">${esc(b.key)}</span>
+            <div class="asc-detail-bar"><span style="width:${Math.min(100, b.winrate*100)}%; background:${tint}"></span></div>
+            <span class="asc-detail-pct">${wr}%</span>
+            <span class="asc-detail-record">${b.wins}w / ${b.runs}r</span>
+          </div>`;
+      }).join("")}
+    </div>`;
+
+  return `
+    ${secTitle("Per ascension", "bars")}
+    ${barChart}
+    ${secTitle("Detailed breakdown", "list")}
+    ${detailRows}`;
+}
+
+/** Top Relics — 2-column card grid matching the desktop app's RelicCard.
+ *  Gold sparkle in a circle, name, "X seen" + "Yw" pills, big colored % on
+ *  the right. Suppresses one-run flukes by filtering to runs >= 3. */
+function renderRelicsTab(report) {
+  const buckets = report.byRelic.filter((b) => b.runs >= 3);
+  if (!buckets.length) {
+    return `
+      ${secTitle("Top relics by winrate", "sparkles", "gold")}
+      <p class="muted">Not enough data yet — pick a relic at least 3 times to see a winrate here.</p>`;
+  }
+  return `
+    ${secTitle("Top relics by winrate", "sparkles", "gold")}
+    <p class="muted small" style="margin: -6px 0 14px;">
+      Sorted by winrate, with a minimum-sample filter applied to suppress one-run flukes.
+    </p>
+    ${renderRelicCards(buckets)}`;
+}
+
+function renderRelicCards(buckets) {
+  if (!buckets || !buckets.length) return `<p class="muted">No relic data yet.</p>`;
+  return `
+    <div class="relic-grid">
+      ${buckets.map((b) => {
+        const wr = (b.winrate * 100).toFixed(1);
+        const tone = b.winrate >= 0.5 ? "win" : "gold";
+        return `
+          <div class="relic-card">
+            <div class="relic-card-icon">
+              <svg viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12 1.5l1.5 5L18.5 8 14 11l1.5 5L12 13l-3.5 3L10 11 5.5 8l5-1.5z"/>
+              </svg>
+            </div>
+            <div class="relic-card-meta">
+              <div class="relic-card-name">${esc(prettifyId(b.key))}</div>
+              <div class="relic-card-pills">
+                <span class="pill pill-muted">${b.runs} seen</span>
+                <span class="pill pill-win">${b.wins}w</span>
+              </div>
+            </div>
+            <div class="relic-card-pct relic-card-pct-${tone}">
+              <strong>${wr}%</strong>
+              <span>WINRATE</span>
+            </div>
+          </div>`;
+      }).join("")}
+    </div>`;
+}
+
+/** Title-case-ish prettifier for ids like "sword_of_jade" -> "Sword Of Jade". */
+function prettifyId(id) {
+  return String(id || "")
+    .replace(/[_-]+/g, " ")
+    .replace(/\b\w/g, (m) => m.toUpperCase());
 }
 
 function renderBucketTable(buckets, opts = {}) {
