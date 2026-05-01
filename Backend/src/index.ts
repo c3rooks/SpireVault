@@ -1,6 +1,12 @@
 import type { Env, PresenceUpsert } from "./types";
 import { upsertPresence, deletePresence, listPresence } from "./presence";
-import { steamAuthStart, steamAuthCallback, requireSession } from "./auth";
+import {
+  steamAuthStart,
+  steamAuthCallback,
+  requireSession,
+  refreshSessionTTL,
+  bearerTokenFromRequest,
+} from "./auth";
 import { handleAdmin, isAdminPath, recordHeartbeat } from "./admin";
 import {
   sendInvite,
@@ -106,6 +112,13 @@ async function handle(req: Request, env: Env): Promise<Response> {
         const result = await upsertPresence(env, auth.steamID, body);
         // Best-effort: refresh today's DAU marker. Non-fatal if it fails.
         recordHeartbeat(env, auth.steamID).catch(() => {});
+        // Sliding-window session refresh. An active user heartbeating every
+        // 3 minutes never gets logged out for stale-session reasons; only an
+        // explicit sign-out, or a true 30-day absence, can expire them.
+        const token = bearerTokenFromRequest(req);
+        if (token) {
+          refreshSessionTTL(env, token, auth.steamID).catch(() => {});
+        }
         return json(result);
       }
       if (method === "DELETE" && pathname === "/presence") {

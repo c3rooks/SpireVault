@@ -30,7 +30,13 @@ import type { Env, PresenceEntry, PresenceUpsert, PlayerStats } from "./types";
  *   correctness matters.
  */
 
-const PRESENCE_TTL_SECONDS = 5 * 60; // 5 min — heartbeats every ~3 min
+// 10 min, with heartbeats every ~3 min on the client. We need the headroom
+// because background-tab throttling on Chrome/Firefox can stretch a 180s
+// setInterval out to 60s+ of jitter, and a single missed heartbeat at the
+// old 5min TTL would silently drop the user off the feed even though they
+// were still signed in. 10 min tolerates two missed heartbeats, which is
+// almost always enough to outlast a backgrounded tab regaining focus.
+const PRESENCE_TTL_SECONDS = 10 * 60;
 /**
  * Minimum spacing between heartbeats from the same session. Legit clients
  * write every ~180 s; anything faster is either a bug or an abuser.

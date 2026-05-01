@@ -22,7 +22,7 @@ import { recordSignIn } from "./admin";
  */
 
 const STEAM_OPENID = "https://steamcommunity.com/openid/login";
-const SESSION_TTL_SECONDS = 60 * 60 * 24 * 30; // 30 days
+export const SESSION_TTL_SECONDS = 60 * 60 * 24 * 30; // 30 days
 
 /**
  * Validate the caller-supplied `return` URL against an allowlist. If we
@@ -212,4 +212,56 @@ function newSessionToken(): string {
   const bytes = new Uint8Array(24);
   crypto.getRandomValues(bytes);
   return [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+/**
+ * Sliding-window session refresh.
+ *
+ * Active users should never be signed out just because the clock ticked past
+ * the original 30-day TTL. Every authenticated heartbeat re-writes both
+ * `session:<token>` and `session-profile:<steamID>` with a fresh TTL, so an
+ * actively-heartbeating session lives forever (within the 30-day window from
+ * the most recent heartbeat) and only an explicit sign-out (or a 30-day
+ * absence) actually expires it.
+ *
+ * We do this only on the heartbeat path, not on every read-only authenticated
+ * request, so the cost is bounded by the heartbeat cadence (~1 per 3 minutes
+ * per active user) instead of the inbox-poll cadence (~1 per 30 seconds).
+ *
+ * Best-effort: KV write failures are swallowed by the caller. Worst case the
+ * session expires at the original deadline, which matches pre-fix behavior.
+ */
+export async function refreshSessionTTL(
+  env: Env,
+  token: string,
+  steamID: string
+): Promise<void> {
+  const sessionKey = `session:${token}`;
+  const profileKey = `session-profile:${steamID}`;
+
+  // Read the existing profile in parallel with the session re-put. We need
+  // the profile body because KV.put doesn't have a "just bump TTL" verb,
+  // it has to re-write the whole value.
+  const [, existingProfile] = await Promise.all([
+    env.LOBBIES.put(sessionKey, steamID, { expirationTtl: SESSION_TTL_SECONDS }),
+    env.LOBBIES.get(profileKey),
+  ]);
+
+  if (existingProfile) {
+    await env.LOBBIES.put(profileKey, existingProfile, {
+      expirationTtl: SESSION_TTL_SECONDS,
+    });
+  }
+}
+
+/**
+ * Pull the bearer token out of the Authorization header. Returns null on
+ * malformed or missing headers. Lives next to `steamIDForRequest` so callers
+ * that need the token explicitly (e.g. for `refreshSessionTTL`) don't have
+ * to re-implement the same regex.
+ */
+export function bearerTokenFromRequest(req: Request): string | null {
+  const auth = req.headers.get("authorization") ?? "";
+  const m = auth.match(/^Bearer\s+([A-Za-z0-9_-]{16,128})$/i);
+  return m ? m[1]! : null;
 }

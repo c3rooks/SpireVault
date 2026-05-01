@@ -55,6 +55,50 @@ const ANNOUNCED_INVITE_IDS = new Set();
 const BASE_TAB_TITLE = "The Vault · Web";
 let HAS_PROMPTED_NOTIFICATION = false; // ask permission lazily, once
 
+// 401 tolerance. A single 401 used to vaporize the user's session and reload
+// the page, which meant any transient blip on the backend (KV consistency
+// window, momentary worker error, network corruption) silently signed users
+// out. Now we count consecutive 401s from authenticated requests and only
+// give up when we've seen 3 in a row inside a short window. Anything that
+// returns 200/2xx/3xx anywhere in between resets the counter.
+const AUTH_FAIL_THRESHOLD = 3;
+const AUTH_FAIL_WINDOW_MS = 5 * 60_000; // 5 min: outside this window, reset
+let consecutiveAuthFails = 0;
+let firstAuthFailAt = 0;
+
+/**
+ * Should we *actually* sign the user out? Called whenever we see a 401 from
+ * an authenticated request. Returns true only if 3 consecutive 401s have
+ * been observed within AUTH_FAIL_WINDOW_MS. Otherwise increments the counter
+ * and returns false so the caller can keep going.
+ */
+function recordAuthFailureAndShouldGiveUp() {
+  const now = Date.now();
+  if (firstAuthFailAt === 0 || now - firstAuthFailAt > AUTH_FAIL_WINDOW_MS) {
+    firstAuthFailAt = now;
+    consecutiveAuthFails = 1;
+    return false;
+  }
+  consecutiveAuthFails++;
+  return consecutiveAuthFails >= AUTH_FAIL_THRESHOLD;
+}
+
+function resetAuthFailures() {
+  consecutiveAuthFails = 0;
+  firstAuthFailAt = 0;
+}
+
+/**
+ * Final teardown when we're truly sure the session is gone. Pulled out so
+ * both the explicit Sign Out button and the 401-storm path call the same
+ * code. Does NOT clear the locally cached history.json (that's the user's
+ * data; sign-out does not nuke their stats).
+ */
+function clearSessionAndReload() {
+  localStorage.removeItem(STORAGE_SESSION);
+  window.location.replace("/");
+}
+
 // ─── Boot ──────────────────────────────────────────────────────────────
 if (session) {
   bootSignedIn();
@@ -194,6 +238,30 @@ async function bootSignedIn() {
   heartbeatTimer = setInterval(() => pushNow(true), HEARTBEAT_MS);
   await Promise.all([pullFeed(), pullInbox()]);
 
+  // When the tab regains focus after being hidden (background tab, locked
+  // screen, sleeping laptop), browsers throttle setInterval enough that a
+  // 180s heartbeat can stretch past the 10min presence TTL. Force an
+  // immediate heartbeat + feed refresh on visibility-change so the user
+  // pops back onto the feed instantly instead of waiting up to 3 more
+  // minutes for the next scheduled heartbeat.
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") {
+      pushNow(true);
+      pullFeed();
+      pullInbox();
+    }
+  });
+
+  // bfcache restores (back/forward navigation) don't fire visibilitychange
+  // on every browser. pageshow with persisted=true is the catch-all.
+  window.addEventListener("pageshow", (e) => {
+    if (e.persisted) {
+      pushNow(true);
+      pullFeed();
+      pullInbox();
+    }
+  });
+
   window.addEventListener("beforeunload", () => {
     try {
       const blob = new Blob([], { type: "text/plain" });
@@ -285,10 +353,20 @@ async function pushNow(silent) {
       }),
     });
     if (resp.status === 401) {
-      localStorage.removeItem(STORAGE_SESSION);
-      window.location.reload();
+      // Don't immediately nuke the session. Many transient causes (KV blip,
+      // network corruption, brief worker hiccup) return 401. Only give up
+      // after AUTH_FAIL_THRESHOLD consecutive 401s inside a short window.
+      const giveUp = recordAuthFailureAndShouldGiveUp();
+      if (giveUp) {
+        console.warn("session looks dead after 3 consecutive 401s, signing out");
+        clearSessionAndReload();
+        return;
+      }
+      console.warn(`presence 401 (${consecutiveAuthFails}/${AUTH_FAIL_THRESHOLD}), keeping session`);
+      setStatus("trouble", "Trouble reaching server, retrying…");
       return;
     }
+    if (resp.ok) resetAuthFailures();
     setStatus(resp.ok ? "online" : "trouble", resp.ok ? "Live on the feed" : "Trouble reaching server");
   } catch (e) {
     console.warn("presence push error", e);
@@ -441,10 +519,9 @@ async function signOut() {
       headers: { authorization: `Bearer ${session.sessionToken}` },
     });
   } catch {}
-  localStorage.removeItem(STORAGE_SESSION);
   localStorage.removeItem(STORAGE_DRAFT);
-  // Keep cached history.json — that's the user's data, sign-out shouldn't nuke it.
-  window.location.replace("/");
+  // Keep cached history.json. That's the user's data, sign-out shouldn't nuke it.
+  clearSessionAndReload();
 }
 
 // =========================================================================
