@@ -250,7 +250,7 @@ async function checkIndexedDBPersistence(browser) {
   await page.goto(APP_URL + "?cb=idb", { waitUntil: "networkidle", timeout: 30000 });
 
   await page.evaluate(async (raw) => {
-    const HistoryStore = await import("/lib/history-store.js?v=4");
+    const HistoryStore = await import("/lib/history-store.js?v=5");
     const Stats        = await import("/lib/stats-engine.js?v=4");
     const ext = Stats.extractRuns(raw);
     if (!ext.ok) throw new Error("seed extract failed: " + ext.error);
@@ -259,7 +259,7 @@ async function checkIndexedDBPersistence(browser) {
 
   await page.reload({ waitUntil: "networkidle" });
   const survived = await page.evaluate(async () => {
-    const HistoryStore = await import("/lib/history-store.js?v=4");
+    const HistoryStore = await import("/lib/history-store.js?v=5");
     const cached = await HistoryStore.loadHistory();
     return cached?.runs?.length ?? 0;
   });
@@ -268,12 +268,12 @@ async function checkIndexedDBPersistence(browser) {
 
   // And data is gone after we clear it (rules out stale-cache false positives).
   await page.evaluate(async () => {
-    const HistoryStore = await import("/lib/history-store.js?v=4");
+    const HistoryStore = await import("/lib/history-store.js?v=5");
     await HistoryStore.clearHistory();
   });
   await page.reload({ waitUntil: "networkidle" });
   const afterClear = await page.evaluate(async () => {
-    const HistoryStore = await import("/lib/history-store.js?v=3");
+    const HistoryStore = await import("/lib/history-store.js?v=5");
     const cached = await HistoryStore.loadHistory();
     return cached?.runs?.length ?? 0;
   });

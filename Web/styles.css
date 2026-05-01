@@ -820,6 +820,34 @@ main {
   color: var(--text-2);
   margin: 0 0 20px;
 }
+.empty-state-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: center;
+  margin: 4px 0 18px;
+}
+.empty-state-tip {
+  color: var(--text-3);
+  font-size: 12px;
+  margin: 0 0 6px;
+}
+.empty-state-tip code {
+  background: var(--bg-deep);
+  border: 1px solid var(--border);
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 11px;
+}
+.empty-state-hints kbd {
+  background: var(--bg-deep);
+  border: 1px solid var(--border);
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 11px;
+  color: var(--text);
+}
 .empty-state-hints {
   margin-top: 26px;
   text-align: left;

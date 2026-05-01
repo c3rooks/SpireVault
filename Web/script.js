@@ -14,7 +14,7 @@
 // =========================================================================
 
 import * as Stats from "/lib/stats-engine.js?v=4";
-import * as HistoryStore from "/lib/history-store.js?v=4";
+import * as HistoryStore from "/lib/history-store.js?v=5";
 import * as InviteAPI from "/lib/invites.js?v=4";
 
 // ─── Constants ─────────────────────────────────────────────────────────
@@ -143,8 +143,15 @@ async function bootSignedIn() {
 
   // Drag-drop history.json
   wireDropOverlay();
-  document.querySelectorAll('[data-action="upload"]').forEach((btn) => {
-    btn.addEventListener("click", triggerFilePicker);
+  // "Find history.json" buttons (sidebar + every empty-state) all route here.
+  // On Chromium browsers we use the File System Access API so we can remember
+  // the file handle and reload with one click on subsequent visits. On Safari
+  // and Firefox we fall back to the standard <input type="file">.
+  document.querySelectorAll('[data-action="upload"], [data-action="scan"]').forEach((btn) => {
+    btn.addEventListener("click", () => void scanForHistory());
+  });
+  document.querySelectorAll('[data-action="reload"]').forEach((btn) => {
+    btn.addEventListener("click", () => void reloadFromSavedHandle());
   });
   document.getElementById("history-file-input").addEventListener("change", (e) => {
     const file = e.target.files?.[0];
@@ -176,6 +183,9 @@ async function bootSignedIn() {
     console.warn("could not load cached history", e);
     renderActiveTab();
   }
+
+  // Reveal the "Reload from saved file" button if a handle is stashed.
+  void renderHistoryToolbar();
 
   // Push presence + start polling
   schedulePush(0);
@@ -695,36 +705,136 @@ function triggerFilePicker() {
   document.getElementById("history-file-input").click();
 }
 
+/**
+ * "Find history.json" entry point.
+ *
+ * On Chromium (Chrome / Edge / Brave / Opera / Arc):
+ *   - Calls showOpenFilePicker with a startIn hint so the picker opens at
+ *     a sensible default, accepting only .json files.
+ *   - Stashes the returned FileSystemFileHandle in IndexedDB so future
+ *     visits can reload the same file with one click via reloadFromSavedHandle.
+ *
+ * On Safari / Firefox:
+ *   - showOpenFilePicker is undefined, so we fall back to the legacy
+ *     <input type="file"> picker. No handle persistence is possible on those
+ *     browsers, but the rest of the flow (parse, store, render) is identical.
+ */
+async function scanForHistory() {
+  if (HistoryStore.supportsFSA()) {
+    let handle;
+    try {
+      const [picked] = await window.showOpenFilePicker({
+        types: [
+          {
+            description: "Vault history",
+            accept: { "application/json": [".json"] },
+          },
+        ],
+        multiple: false,
+        excludeAcceptAllOption: false,
+        startIn: "documents",
+      });
+      handle = picked;
+    } catch (e) {
+      // User cancelled the picker. Don't toast on AbortError.
+      if (e?.name !== "AbortError") {
+        console.warn("file picker failed", e);
+        toast("Couldn't open the file picker. Use the manual upload button.");
+      }
+      return;
+    }
+    let file;
+    try {
+      file = await handle.getFile();
+    } catch {
+      toast("Picked the file but couldn't read it. Try again.");
+      return;
+    }
+    const ok = await ingestHistoryFile(file);
+    if (ok) {
+      // Only persist the handle once we've confirmed the file is valid.
+      try {
+        await HistoryStore.saveHandle(handle);
+        renderHistoryToolbar();
+      } catch (e) {
+        console.warn("could not persist file handle", e);
+      }
+    }
+    return;
+  }
+  // Safari / Firefox path: standard <input type="file">.
+  triggerFilePicker();
+}
+
+/**
+ * One-click reload using a previously persisted FileSystemFileHandle.
+ * Only callable after the user has scanned at least once on a Chromium
+ * browser. Re-prompts for permission silently when needed.
+ */
+async function reloadFromSavedHandle() {
+  if (!HistoryStore.supportsFSA()) return;
+  const handle = await HistoryStore.loadHandle();
+  if (!handle) {
+    toast("No saved file. Click 'Find history.json' to pick one.");
+    return;
+  }
+  // Permission state is per-session. Browsers re-prompt on each new tab,
+  // so we always go through requestPermission rather than queryPermission.
+  let perm;
+  try {
+    perm = await handle.requestPermission({ mode: "read" });
+  } catch (e) {
+    console.warn("permission request failed", e);
+    toast("Browser denied access to the saved file. Pick it again.");
+    return;
+  }
+  if (perm !== "granted") {
+    toast("Permission denied. Pick the file again to reload.");
+    return;
+  }
+  let file;
+  try {
+    file = await handle.getFile();
+  } catch (e) {
+    console.warn("could not read saved handle", e);
+    toast("That file moved or got deleted. Pick it again.");
+    await HistoryStore.clearHandle();
+    renderHistoryToolbar();
+    return;
+  }
+  await ingestHistoryFile(file);
+}
+
 async function ingestHistoryFile(file) {
   if (file.size > 50 * 1024 * 1024) {
     toast("That file is huge (>50 MB). Are you sure it's history.json?");
-    return;
+    return false;
   }
   let text;
   try {
     text = await file.text();
   } catch {
     toast("Couldn't read that file.");
-    return;
+    return false;
   }
   let parsed;
   try {
     parsed = JSON.parse(text);
   } catch {
     toast("That file isn't valid JSON.");
-    return;
+    return false;
   }
   const result = Stats.extractRuns(parsed);
   if (!result.ok) {
     toast(result.error);
-    return;
+    return false;
   }
   if (result.runs.length === 0) {
     toast("File parsed, but it had zero runs in it.");
-    return;
+    return false;
   }
   parsedRuns = result.runs;
-  // Persist (serialized form — Date objects round-trip via ISO)
+  // Persist (serialized form, Date objects round-trip via ISO)
   await HistoryStore.saveHistory({
     savedAt: new Date().toISOString(),
     sourceFilename: file.name,
@@ -737,6 +847,23 @@ async function ingestHistoryFile(file) {
   } else {
     switchTab("overview");
   }
+  return true;
+}
+
+/**
+ * Refresh any "Reload from history.json" buttons in the UI based on whether
+ * we currently have a persisted file handle. Called after sign-in, after a
+ * successful scan, and after clearHandle. Cheap, idempotent.
+ */
+async function renderHistoryToolbar() {
+  if (!HistoryStore.supportsFSA()) return;
+  let hasHandle = false;
+  try {
+    hasHandle = !!(await HistoryStore.loadHandle());
+  } catch { /* IDB error: treat as no handle */ }
+  document.querySelectorAll('[data-reload-toolbar]').forEach((el) => {
+    el.hidden = !hasHandle;
+  });
 }
 
 function serializeRun(r) {
@@ -763,7 +890,13 @@ function renderStatsTab(tab) {
   if (!$body) return;
   if (parsedRuns.length === 0) {
     $body.innerHTML = renderEmptyState();
-    $body.querySelector("[data-action='upload']")?.addEventListener("click", triggerFilePicker);
+    $body.querySelectorAll("[data-action='scan'], [data-action='upload']").forEach((btn) => {
+      btn.addEventListener("click", () => void scanForHistory());
+    });
+    $body.querySelectorAll("[data-action='reload']").forEach((btn) => {
+      btn.addEventListener("click", () => void reloadFromSavedHandle());
+    });
+    void renderHistoryToolbar();
     return;
   }
   const report = Stats.summarize(parsedRuns);
@@ -783,18 +916,27 @@ function renderStatsTab(tab) {
 }
 
 function renderEmptyState() {
+  // Reload button is rendered hidden by default. renderHistoryToolbar()
+  // un-hides it on Chromium browsers where we have a saved handle.
   return `
     <div class="empty-state">
       <div class="empty-state-icon">📂</div>
-      <h2>Drop your <code>history.json</code></h2>
-      <p>The Vault keeps your run history in <code>history.json</code>. Drag it anywhere on this page, or click below.</p>
-      <button class="btn-primary" data-action="upload">↑ Choose history.json</button>
+      <h2>Load your <code>history.json</code></h2>
+      <p>One click finds the file, parses every run, and renders the same Overview, Characters, Ascensions, Relics, Cards, and Recent Runs tabs the macOS app has. Stays on your device.</p>
+      <div class="empty-state-actions">
+        <button class="btn-primary" data-action="scan">Find history.json</button>
+        <button class="btn-ghost" data-action="reload" data-reload-toolbar hidden>Reload from saved file</button>
+      </div>
+      <p class="empty-state-tip">
+        Tip: drag <code>history.json</code> anywhere on this page to load it instantly.
+      </p>
       <details class="empty-state-hints">
-        <summary>Where is <code>history.json</code>?</summary>
+        <summary>Where is <code>history.json</code> on my machine?</summary>
         <ul>
           <li><strong>macOS:</strong> <code>~/Library/Application Support/AscensionCompanion/vault/history.json</code></li>
-          <li><strong>Windows:</strong> Run the macOS app once to generate it (a Windows scanner is on the roadmap).</li>
-          <li>Stays on your device. We persist it in IndexedDB locally — never uploaded.</li>
+          <li><strong>Tip on macOS:</strong> in the file picker, press <kbd>Cmd</kbd>+<kbd>Shift</kbd>+<kbd>G</kbd> and paste the path above.</li>
+          <li><strong>Windows:</strong> run the macOS app once to generate it (a Windows scanner is on the roadmap), or load a <code>history.json</code> a friend exported.</li>
+          <li>Stays on your device. We persist it in your browser locally and never upload it.</li>
         </ul>
       </details>
     </div>`;

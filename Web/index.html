@@ -23,7 +23,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Playfair+Display:wght@700;900&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/styles.css?v=5" />
+  <link rel="stylesheet" href="/styles.css?v=6" />
 </head>
 <body>
   <div class="bg-glow" aria-hidden="true"></div>
@@ -159,7 +159,8 @@
             <p class="panel-sub" id="overview-sub">Your run history at a glance.</p>
           </div>
           <div class="panel-actions">
-            <button class="btn-ghost" data-action="upload">↑ Upload history.json</button>
+            <button class="btn-ghost" data-action="reload" data-reload-toolbar hidden>Reload</button>
+            <button class="btn-ghost" data-action="scan">Find history.json</button>
           </div>
         </header>
         <div class="panel-body" id="overview-body">
@@ -171,7 +172,7 @@
       <article class="tab-panel" data-tab="characters" hidden>
         <header class="panel-head">
           <div><h1>Characters</h1><p class="panel-sub">Win rate by character.</p></div>
-          <div class="panel-actions"><button class="btn-ghost" data-action="upload">↑ Upload history.json</button></div>
+          <div class="panel-actions"><button class="btn-ghost" data-action="reload" data-reload-toolbar hidden>Reload</button><button class="btn-ghost" data-action="scan">Find history.json</button></div>
         </header>
         <div class="panel-body" id="characters-body"></div>
       </article>
@@ -180,7 +181,7 @@
       <article class="tab-panel" data-tab="ascensions" hidden>
         <header class="panel-head">
           <div><h1>Ascensions</h1><p class="panel-sub">Win rate by ascension level.</p></div>
-          <div class="panel-actions"><button class="btn-ghost" data-action="upload">↑ Upload history.json</button></div>
+          <div class="panel-actions"><button class="btn-ghost" data-action="reload" data-reload-toolbar hidden>Reload</button><button class="btn-ghost" data-action="scan">Find history.json</button></div>
         </header>
         <div class="panel-body" id="ascensions-body"></div>
       </article>
@@ -189,7 +190,7 @@
       <article class="tab-panel" data-tab="relics" hidden>
         <header class="panel-head">
           <div><h1>Top Relics</h1><p class="panel-sub">Best relics by win rate (min. 3 runs).</p></div>
-          <div class="panel-actions"><button class="btn-ghost" data-action="upload">↑ Upload history.json</button></div>
+          <div class="panel-actions"><button class="btn-ghost" data-action="reload" data-reload-toolbar hidden>Reload</button><button class="btn-ghost" data-action="scan">Find history.json</button></div>
         </header>
         <div class="panel-body" id="relics-body"></div>
       </article>
@@ -198,7 +199,7 @@
       <article class="tab-panel" data-tab="cards" hidden>
         <header class="panel-head">
           <div><h1>Cards</h1><p class="panel-sub">Most picked vs. most skipped.</p></div>
-          <div class="panel-actions"><button class="btn-ghost" data-action="upload">↑ Upload history.json</button></div>
+          <div class="panel-actions"><button class="btn-ghost" data-action="reload" data-reload-toolbar hidden>Reload</button><button class="btn-ghost" data-action="scan">Find history.json</button></div>
         </header>
         <div class="panel-body" id="cards-body"></div>
       </article>
@@ -207,7 +208,7 @@
       <article class="tab-panel" data-tab="runs" hidden>
         <header class="panel-head">
           <div><h1>Recent Runs</h1><p class="panel-sub">Latest runs from your history.</p></div>
-          <div class="panel-actions"><button class="btn-ghost" data-action="upload">↑ Upload history.json</button></div>
+          <div class="panel-actions"><button class="btn-ghost" data-action="reload" data-reload-toolbar hidden>Reload</button><button class="btn-ghost" data-action="scan">Find history.json</button></div>
         </header>
         <div class="panel-body" id="runs-body"></div>
       </article>
@@ -323,6 +324,6 @@
     </div>
   </footer>
 
-  <script src="/script.js?v=5" type="module"></script>
+  <script src="/script.js?v=6" type="module"></script>
 </body>
 </html>
