@@ -121,10 +121,10 @@ async function refreshPresence() {
     if (presenceLabel) {
       presenceLabel.textContent =
         count === 0
-          ? "no one signed in yet · be the first"
+          ? "no one signed up yet · be the first"
           : count === 1
-            ? "player online right now"
-            : "players online right now";
+            ? "player signed up"
+            : "players signed up";
     }
     if (presenceInGame) {
       presenceInGame.textContent = inGame === 0 && count === 0 ? "—" : String(inGame);
@@ -134,15 +134,15 @@ async function refreshPresence() {
     // Inline trust line under the install CTAs
     if (presenceText) {
       if (count === 0) {
-        presenceText.textContent = "Be the first online today.";
+        presenceText.textContent = "Be the first to sign up.";
       } else if (inGame > 0) {
         presenceText.textContent =
-          `${count} online · ${inGame} currently in Slay the Spire 2`;
+          `${count} signed up · ${inGame} currently in Slay the Spire 2`;
       } else {
         presenceText.textContent =
           count === 1
-            ? "1 player online right now"
-            : `${count} players online right now`;
+            ? "1 player signed up"
+            : `${count} players signed up`;
       }
     }
 
@@ -152,8 +152,8 @@ async function refreshPresence() {
         count === 0
           ? "Live presence"
           : count === 1
-            ? "1 player online"
-            : `${count} players online`;
+            ? "1 player signed up"
+            : `${count} players signed up`;
     }
   } catch {
     if (presenceCount) presenceCount.textContent = "—";

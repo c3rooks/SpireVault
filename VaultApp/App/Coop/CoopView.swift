@@ -562,7 +562,7 @@ private struct EmptyFeedState: View {
             Image(systemName: "person.2.gobackward")
                 .font(.system(size: 38, weight: .light))
                 .foregroundStyle(Theme.textTertiary)
-            Text("Nobody else online right now")
+            Text("Nobody else on the feed yet")
                 .font(.system(size: 15, weight: .heavy))
                 .foregroundStyle(Theme.textSecondary)
             Text("Leave The Vault open — when someone else with the app fires up Slay the Spire 2, they'll show up here.")

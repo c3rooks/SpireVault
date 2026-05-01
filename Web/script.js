@@ -135,13 +135,13 @@ async function refreshPublicCount() {
   try {
     const list = await fetchFeed();
     if (list.length === 0) {
-      $text.textContent = "No one online right now. Be the first.";
+      $text.textContent = "Nobody signed up yet. Be the first.";
     } else {
       const looking = list.filter((p) => p.status === "looking").length;
-      $text.textContent =
-        list.length === 1
-          ? "1 player online right now"
-          : `${list.length} players online · ${looking} looking for co-op`;
+      const activeNow = list.filter((p) => isActiveNow(p)).length;
+      const head =
+        list.length === 1 ? "1 player signed up" : `${list.length} players signed up`;
+      $text.textContent = `${head} · ${activeNow} active now · ${looking} looking`;
     }
   } catch {
     $text.textContent = "Live count momentarily unavailable.";
@@ -581,13 +581,14 @@ function renderFeed(list) {
   const others = list.filter((p) => p.steamID !== session.steamID);
   const inGame = others.filter((p) => p.inSTS2).length;
   const looking = others.filter((p) => p.status === "looking").length;
+  const activeNow = others.filter((p) => isActiveNow(p)).length;
 
   document.getElementById("online-count").textContent = String(others.length);
   document.getElementById("online-summary").textContent =
     others.length === 0
-      ? "No one else around right now. Hang around, heartbeats land every 30 seconds."
-      : `${others.length} other player${others.length === 1 ? "" : "s"} active recently · ` +
-        `${looking} looking · ${inGame} in Slay the Spire 2`;
+      ? "No one else has signed up yet. Be the first."
+      : `${others.length} signed-up player${others.length === 1 ? "" : "s"} · ` +
+        `${activeNow} active now · ${looking} looking · ${inGame} in Slay the Spire 2`;
 
   const $feed = document.getElementById("feed");
   if (others.length === 0) {
@@ -595,13 +596,24 @@ function renderFeed(list) {
     return;
   }
 
-  // Sort: looking + in-game first, then looking, then others.
+  // Sort with freshness as the dominant factor. Persistent presence means
+  // the roster includes everyone who's ever signed in, so a 3-day-old
+  // "looking" entry should not outrank someone who heartbeated 30 seconds
+  // ago. The freshness bucket is worth far more than any status flag.
   others.sort((a, b) => rank(b) - rank(a));
   function rank(p) {
     let n = 0;
-    if (p.status === "looking") n += 100;
-    if (p.inSTS2) n += 50;
-    if (p.status === "inRun") n += 10;
+    const ageS = (Date.now() - Date.parse(p.updatedAt ?? "")) / 1000;
+    if (Number.isFinite(ageS)) {
+      if (ageS < 5 * 60)        n += 1000; // active now: anchor at the top
+      else if (ageS < 30 * 60)  n += 500;  // active in last 30 min
+      else if (ageS < 4 * 3600) n += 200;  // active in last few hours
+      else if (ageS < 86_400)   n += 50;   // active today
+      else                      n -= ageS / 86_400; // older = bigger penalty
+    }
+    if (p.inSTS2)               n += 80; // currently in the game itself
+    if (p.status === "looking") n += 40;
+    if (p.status === "inRun")   n += 10;
     return n;
   }
 
@@ -661,6 +673,15 @@ function activeFreshnessClass(iso) {
   if (seconds < 5 * 60) return "fresh";
   if (seconds < 30 * 60) return "warm";
   return "stale";
+}
+
+/**
+ * Is this entry "active right now" by the same threshold the freshness
+ * badge uses for its green state? Used by the summary line to count
+ * "X active now" out of the full signed-up roster.
+ */
+function isActiveNow(p) {
+  return activeFreshnessClass(p?.updatedAt) === "fresh";
 }
 
 function renderRow(p) {

@@ -30,26 +30,43 @@ import type { Env, PresenceEntry, PresenceUpsert, PlayerStats } from "./types";
  *   correctness matters.
  */
 
-// 4 hours. The earlier "online right now" semantics (5-10 min) were too
-// strict for a low-traffic launch period. If a user signs in, sets their
-// status to "looking," and then closes the tab to alt-tab into the actual
-// game, we want them to stay visible to other players for a long while —
-// they're still genuinely available to co-op. Anything older than 4 hours
-// is almost certainly someone who closed the tab and moved on, so we
-// prune.
+// Persistent presence model.
 //
-// Each row carries `updatedAt`, which the client surfaces as a relative
-// "last active 12 min ago" badge. So the feed stays honest even with the
-// generous TTL: fresh heartbeats stand out, and players can decide for
-// themselves whether to invite someone who hasn't pinged in a while.
-const PRESENCE_TTL_SECONDS = 4 * 60 * 60;
+// We do NOT auto-prune the roster based on heartbeat staleness anymore.
+// The product semantics changed: once a user has signed in via Steam
+// OpenID, they appear on the co-op feed permanently until they EXPLICITLY
+// sign out. Closing the browser, sleeping the laptop, putting the phone
+// down — none of those should remove someone from the feed. The feed is
+// a living roster of everyone who's signed up, not a "who's tapping
+// keys this exact second" list.
+//
+// Two safety nets keep the roster from growing unbounded:
+//
+//   1. `MAX_ROSTER_ENTRIES` (200) — when the roster fills, the entries
+//      with the *oldest* `updatedAt` get evicted to make room for newer
+//      activity. Stale signups roll out naturally as new ones roll in.
+//
+//   2. `ROSTER_TTL_SECONDS` on the KV blob itself (30 days). The blob
+//      gets re-written on every heartbeat, which restarts the TTL, so
+//      this only triggers if literally no one heartbeats for 30 straight
+//      days — at which point the product is dead anyway.
+//
+// Per-row `updatedAt` is still useful: the client surfaces it as a
+// freshness badge ("just now" / "12 min ago" / "2h ago" / "3d ago") so
+// players can self-filter. Sort order on the client weights freshness
+// heavily so fresh activity ranks above stale signups.
 /**
  * Minimum spacing between heartbeats from the same session. Legit clients
  * write every ~180 s; anything faster is either a bug or an abuser.
  */
 const MIN_HEARTBEAT_INTERVAL_MS = 60_000; // 60 s — was 2 s; we no longer need fast pulses
 const ROSTER_KEY = "presence:roster";
-const ROSTER_TTL_SECONDS = 7 * 86400;
+// 30 days. Way longer than the old 7-day value because the persistent
+// presence model means we want the roster to survive even a multi-week
+// quiet period without losing the list of signed-up users. The blob's
+// TTL is renewed on every write, so in practice this only triggers if
+// no one heartbeats for 30 straight days.
+const ROSTER_TTL_SECONDS = 30 * 86400;
 /**
  * Hard ceiling on online-feed size. The wire format gets shipped to every
  * polling client, so the bigger this is the more bytes we egress and the
@@ -78,17 +95,6 @@ async function writeRoster(env: Env, roster: Roster): Promise<void> {
   });
 }
 
-/** Drop entries whose `updatedAt` is older than PRESENCE_TTL_SECONDS. */
-function pruneStale(roster: Roster): Roster {
-  const cutoff = Date.now() - PRESENCE_TTL_SECONDS * 1000;
-  return {
-    entries: roster.entries.filter((e) => {
-      const t = Date.parse(e.updatedAt);
-      return Number.isFinite(t) && t >= cutoff;
-    }),
-  };
-}
-
 // MARK: - Public CRUD --------------------------------------------------------
 
 export async function upsertPresence(
@@ -96,7 +102,7 @@ export async function upsertPresence(
   steamID: string,
   body: PresenceUpsert
 ): Promise<PresenceEntry> {
-  const roster = pruneStale(await readRoster(env));
+  const roster = await readRoster(env);
   const idx = roster.entries.findIndex((e) => e.steamID === steamID);
   const prev = idx >= 0 ? roster.entries[idx] : null;
 
@@ -143,7 +149,7 @@ export async function upsertPresence(
 }
 
 export async function deletePresence(env: Env, steamID: string): Promise<void> {
-  const roster = pruneStale(await readRoster(env));
+  const roster = await readRoster(env);
   const next = roster.entries.filter((e) => e.steamID !== steamID);
   if (next.length === roster.entries.length) {
     // Nothing to delete and we already paid for the read; skip the write.
@@ -153,11 +159,14 @@ export async function deletePresence(env: Env, steamID: string): Promise<void> {
 }
 
 /**
- * List everyone currently online. Steam-Web-API enrichment is unchanged but
- * is now layered on a single-read roster instead of a list+N-gets fan-out.
+ * List the full persistent roster. Every signed-up user (who hasn't
+ * explicitly signed out) shows up here regardless of whether they're
+ * actively heartbeating. Steam-Web-API enrichment of `inSTS2` is layered
+ * on top so the UI can highlight people who are literally in the game
+ * right now versus people who signed up earlier.
  */
 export async function listPresence(env: Env): Promise<PresenceEntry[]> {
-  const roster = pruneStale(await readRoster(env));
+  const roster = await readRoster(env);
   if (roster.entries.length === 0) return [];
 
   const inGame = await fetchInGameSet(env, roster.entries.map((e) => e.steamID));
