@@ -119,12 +119,16 @@ async function handle(req: Request, env: Env): Promise<Response> {
         if (token) {
           refreshSessionTTL(env, token, auth.steamID).catch(() => {});
         }
+        // So the next GET /presence from anyone sees this user immediately
+        // instead of waiting out the edge-cache window (up to 15 s).
+        await purgePresenceFeedCache();
         return json(result);
       }
       if (method === "DELETE" && pathname === "/presence") {
         const auth = await requireSession(req, env);
         if (auth instanceof Response) return auth;
         await deletePresence(env, auth.steamID);
+        await purgePresenceFeedCache();
         return json({ ok: true });
       }
 
@@ -218,12 +222,29 @@ async function handle(req: Request, env: Env): Promise<Response> {
  */
 const PRESENCE_EDGE_CACHE_S = 15;
 
+/** Synthetic cache key — must match `purgePresenceFeedCache`. */
+const PRESENCE_FEED_CACHE_KEY = new Request("https://presence.cache/feed/v3", {
+  method: "GET",
+});
+
+/**
+ * Drop the edge-cached `/presence` snapshot. Called after every roster write
+ * (POST upsert, DELETE sign-out) so nobody stares at a stale feed that still
+ * lists zero players for up to `PRESENCE_EDGE_CACHE_S` after their friend
+ * just heartbeated in.
+ */
+async function purgePresenceFeedCache(): Promise<void> {
+  try {
+    await caches.default.delete(PRESENCE_FEED_CACHE_KEY);
+  } catch {
+    /* never fail the authenticated write path on cache quirks */
+  }
+}
+
 async function getPresenceCached(_req: Request, env: Env): Promise<Response> {
-  // Bump the cache-key version when the response shape changes. v3 = 15 s TTL.
-  const cacheKey = new Request("https://presence.cache/feed/v3", { method: "GET" });
   const cache = caches.default;
 
-  const hit = await cache.match(cacheKey);
+  const hit = await cache.match(PRESENCE_FEED_CACHE_KEY);
   if (hit) return hit;
 
   const data = await listPresence(env);
@@ -236,7 +257,7 @@ async function getPresenceCached(_req: Request, env: Env): Promise<Response> {
     },
   });
   // Best-effort cache write; never fail a user response on a cache miss.
-  try { await cache.put(cacheKey, resp.clone()); } catch {}
+  try { await cache.put(PRESENCE_FEED_CACHE_KEY, resp.clone()); } catch {}
   return resp;
 }
 
