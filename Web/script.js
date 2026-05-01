@@ -902,14 +902,25 @@ function triggerFilePicker() {
 }
 
 /**
- * Default location of `history.json` on macOS, written by the Ascension
- * Companion / desktop Vault app. Surfaced to the user in the empty state
- * and copied to the clipboard right before the file picker opens, so the
- * user can paste it with Cmd+Shift+G inside the picker and skip every bit
- * of folder navigation. Hidden `~/Library` is the entire reason this UX
- * needs hand-holding.
+ * Default locations of `history.json` per platform.
+ *
+ * macOS — written today by the Ascension Companion / Vault desktop app at:
+ *   ~/Library/Application Support/AscensionCompanion/vault/history.json
+ *
+ * Windows — the Windows desktop app is on the roadmap (not yet shipped).
+ * When it ships it will write to `%APPDATA%\AscensionCompanion\vault\
+ * history.json`, which Windows expands to
+ * `C:\Users\<You>\AppData\Roaming\AscensionCompanion\vault\history.json`.
+ * We surface the path now so muscle memory is correct on day one and so
+ * Windows users see we haven't ignored them, with copy explaining what
+ * they can do today (import a friend's export).
+ *
+ * Linux — same story as Windows; the Vault desktop app is macOS-only
+ * today. We surface the XDG path that the eventual Linux build will use.
  */
 const HISTORY_PATH_MAC = "~/Library/Application Support/AscensionCompanion/vault/history.json";
+const HISTORY_PATH_WIN = "%APPDATA%\\AscensionCompanion\\vault\\history.json";
+const HISTORY_PATH_LINUX = "~/.local/share/AscensionCompanion/vault/history.json";
 
 /**
  * "Find history.json" entry point.
@@ -970,22 +981,33 @@ async function scanForHistory() {
   // STEP 2 — no usable saved handle. Open the picker exactly once. After
   // this succeeds, every subsequent visit is silent (step 1 covers it).
   //
-  // First-time UX shortcut: copy the macOS path to the clipboard so the
-  // user can press Cmd+Shift+G inside the picker, paste, and land on the
-  // file without navigating hidden ~/Library through Finder. If the
-  // clipboard write fails for any reason (permission, non-secure context,
-  // older browser) we just skip it silently — the picker still opens.
-  let copied = false;
+  // First-time UX shortcut: copy the platform-appropriate default path
+  // to the clipboard so the user can paste it inside the picker:
+  //   - macOS:   Cmd+Shift+G inside the picker, paste, Enter
+  //   - Windows: paste into the File Explorer address bar
+  //   - Linux:   varies by file manager; the path itself is still useful
+  // If the clipboard write fails (permission, non-secure context, older
+  // browser) we just skip it silently — the picker still opens.
+  const platform = detectPlatform();
+  let copiedPath = null;
   try {
-    if (isMacUserAgent() && navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(HISTORY_PATH_MAC);
-      copied = true;
+    if (navigator.clipboard?.writeText) {
+      if (platform === "mac") copiedPath = HISTORY_PATH_MAC;
+      else if (platform === "windows") copiedPath = HISTORY_PATH_WIN;
+      else if (platform === "linux") copiedPath = HISTORY_PATH_LINUX;
+      if (copiedPath) await navigator.clipboard.writeText(copiedPath);
     }
   } catch {
-    // Clipboard permission can be flaky; not worth blocking the picker.
+    copiedPath = null; // not worth blocking the picker
   }
-  if (copied) {
-    toast("Path copied. In the picker, press Cmd+Shift+G and paste.");
+  if (copiedPath) {
+    if (platform === "mac") {
+      toast("Path copied. In the picker, press Cmd+Shift+G and paste.");
+    } else if (platform === "windows") {
+      toast("Path copied. Paste it into the picker's address bar.");
+    } else {
+      toast("Path copied. Paste it into the picker.");
+    }
   }
 
   let picked;
@@ -1149,8 +1171,13 @@ function renderStatsTab(tab) {
     });
     $body.querySelectorAll("[data-action='copy-path']").forEach((btn) => {
       btn.addEventListener("click", async () => {
+        const key = btn.dataset.pathKey || "mac";
+        const path =
+          key === "win" ? HISTORY_PATH_WIN
+          : key === "linux" ? HISTORY_PATH_LINUX
+          : HISTORY_PATH_MAC;
         try {
-          await navigator.clipboard.writeText(HISTORY_PATH_MAC);
+          await navigator.clipboard.writeText(path);
           const original = btn.textContent;
           btn.textContent = "Copied";
           setTimeout(() => (btn.textContent = original), 1500);
@@ -1178,35 +1205,74 @@ function renderStatsTab(tab) {
 }
 
 function renderEmptyState() {
-  const isMac = isMacUserAgent();
+  const platform = detectPlatform();
+
+  // Platform-specific path callout. Mac users get a clipboard-paste
+  // shortcut into the picker; Windows users see where the future Windows
+  // desktop app will write the file (and why Import is the path today);
+  // Linux users see the XDG path. Unknown platforms get no callout — the
+  // hints details still cover them.
+  let pathBlock = "";
+  if (platform === "mac") {
+    pathBlock = `
+      <div class="empty-state-path">
+        <span class="path-label">Default macOS location</span>
+        <code class="path-value">${esc(HISTORY_PATH_MAC)}</code>
+        <button class="btn-ghost btn-sm" data-action="copy-path" data-path-key="mac" title="Copy path. Then paste with Cmd+Shift+G inside the picker.">Copy path</button>
+      </div>
+      <p class="empty-state-tip muted">
+        Tip: clicking <strong>Find history.json</strong> copies the path automatically. In the picker, press <kbd>Cmd</kbd>+<kbd>Shift</kbd>+<kbd>G</kbd> and paste.
+      </p>`;
+  } else if (platform === "windows") {
+    pathBlock = `
+      <div class="empty-state-path">
+        <span class="path-label">Windows location</span>
+        <code class="path-value">${esc(HISTORY_PATH_WIN)}</code>
+        <button class="btn-ghost btn-sm" data-action="copy-path" data-path-key="win" title="Copy path. Paste it into File Explorer's address bar.">Copy path</button>
+      </div>
+      <p class="empty-state-tip muted">
+        <strong>Windows desktop app coming soon.</strong> For now, ask a macOS user to share their <code>history.json</code> and use <strong>Import</strong> below. When the Windows app ships, it'll write to the path above automatically.
+      </p>`;
+  } else if (platform === "linux") {
+    pathBlock = `
+      <div class="empty-state-path">
+        <span class="path-label">Linux location</span>
+        <code class="path-value">${esc(HISTORY_PATH_LINUX)}</code>
+        <button class="btn-ghost btn-sm" data-action="copy-path" data-path-key="linux" title="Copy path. Paste it into your file manager.">Copy path</button>
+      </div>
+      <p class="empty-state-tip muted">
+        <strong>Linux desktop app coming soon.</strong> For now, import a <code>history.json</code> shared from a macOS user.
+      </p>`;
+  }
+
+  // Windows + Linux users won't have a file to find yet, so the primary
+  // CTA changes to Import to match the realistic flow. Mac stays Find.
+  const primaryCTA =
+    platform === "mac"
+      ? `<button class="btn-primary" data-action="scan">Find history.json</button>`
+      : `<button class="btn-primary" data-action="upload">Import history.json</button>
+         <button class="btn-ghost" data-action="scan">Or browse</button>`;
+
   return `
     <div class="empty-state">
       <div class="empty-state-icon">📂</div>
       <h2>Connect your <code>history.json</code></h2>
       <p>Browsers can't read your disk without permission, so this is a one-time pick. After that, every visit auto-loads silently — no picker, no clicks.</p>
       <div class="empty-state-actions">
-        <button class="btn-primary" data-action="scan">Find history.json</button>
+        ${primaryCTA}
       </div>
       <p class="empty-state-tip">
         Or drag <code>history.json</code> anywhere on this page to load it now.
       </p>
-      ${isMac ? `
-      <div class="empty-state-path">
-        <span class="path-label">Default macOS location</span>
-        <code class="path-value">${esc(HISTORY_PATH_MAC)}</code>
-        <button class="btn-ghost btn-sm" data-action="copy-path" title="Copy path. Then paste with Cmd+Shift+G inside the picker.">Copy path</button>
-      </div>
-      <p class="empty-state-tip muted">
-        Tip: clicking <strong>Find history.json</strong> copies the path automatically. In the picker, press <kbd>Cmd</kbd>+<kbd>Shift</kbd>+<kbd>G</kbd> and paste.
-      </p>
-      ` : ""}
+      ${pathBlock}
       <details class="empty-state-hints">
-        <summary>Why isn't this fully automatic?</summary>
+        <summary>Where is <code>history.json</code> on each OS?</summary>
         <ul>
-          <li>Web browsers physically forbid websites from scanning the filesystem. There is no JavaScript API that lets us walk your drives — by design, since the 90s.</li>
-          <li><strong>Want true zero-click auto-detect?</strong> Use the <a href="https://github.com/c3rooks/SpireVault/releases">macOS desktop app</a>. It finds the file on launch with no setup.</li>
-          <li><strong>Windows:</strong> a desktop scanner is on the roadmap. For now, the web companion works if you import a history.json from another device.</li>
-          <li>Once connected, the browser remembers the file. Future visits silently re-read it on load. No re-pick required.</li>
+          <li><strong>macOS:</strong> <code>${esc(HISTORY_PATH_MAC)}</code> (Cmd+Shift+G in the picker pastes the path).</li>
+          <li><strong>Windows:</strong> <code>${esc(HISTORY_PATH_WIN)}</code> (paste into File Explorer's address bar). Windows desktop app on the roadmap.</li>
+          <li><strong>Linux:</strong> <code>${esc(HISTORY_PATH_LINUX)}</code>. Linux desktop app on the roadmap.</li>
+          <li>Browsers physically forbid filesystem scanning. After one pick, the browser remembers and we silently re-read on every future visit.</li>
+          <li><strong>Want true zero-click auto-detect today?</strong> The <a href="https://github.com/c3rooks/SpireVault/releases">macOS desktop app</a> finds the file on launch with no setup.</li>
           <li>Your file stays on your device. Persisted locally; never uploaded.</li>
         </ul>
       </details>
@@ -1411,15 +1477,23 @@ function capitalize(s) {
 }
 
 /**
- * Best-effort macOS detection. Used only to pick the right copy-to-clipboard
- * path hint in the file picker UX. Wrong answers are harmless: a Windows
- * user who somehow looks like macOS just gets a path they can ignore.
+ * Best-effort platform detection. Used only to pick the right path hint
+ * in the file picker UX. Wrong answers are harmless — the worst case is
+ * a user sees a path they can ignore.
  */
-function isMacUserAgent() {
+function detectPlatform() {
   const ua = (navigator.userAgent || "").toLowerCase();
-  if (ua.includes("mac os x") || ua.includes("macintosh")) return true;
-  // Modern Chromium reports navigator.platform = "MacIntel"
-  return (navigator.platform || "").toLowerCase().includes("mac");
+  const plat = (navigator.platform || "").toLowerCase();
+  if (ua.includes("mac os x") || ua.includes("macintosh") || plat.includes("mac")) {
+    return "mac";
+  }
+  if (ua.includes("windows") || plat.includes("win")) return "windows";
+  if (ua.includes("linux") || plat.includes("linux")) return "linux";
+  return "other";
+}
+
+function isMacUserAgent() {
+  return detectPlatform() === "mac";
 }
 
 function esc(s) {
