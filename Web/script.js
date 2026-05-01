@@ -1622,7 +1622,7 @@ function renderAscensionsTab(report) {
     <div class="asc-chart-panel">
       <div class="asc-chart">
         ${buckets.map((b) => {
-          const totalH = Math.max(8, (b.runs / maxRuns) * 130);
+          const totalH = Math.max(8, (b.runs / maxRuns) * 120);
           const winsH = b.runs > 0 ? totalH * (b.wins / b.runs) : 0;
           const wrPct = (b.winrate * 100).toFixed(1);
           return `
@@ -1761,74 +1761,123 @@ function renderBucketTable(buckets, opts = {}) {
     </table>`;
 }
 
+/** Cards tab — mirrors VaultApp/App/DetailView.swift CardsView.
+ *  Two icon-row panels: "Most-picked cards" (orange filled-square icon)
+ *  and "Most-skipped cards" (red X icon, with explanatory subtitle).
+ *  No tables, no progress bars — just the list rows the desktop uses. */
 function renderCards(report) {
-  return `
-    <div class="cards-split">
-      <div>
-        <h3 class="section-title">Most picked</h3>
-        ${renderBucketTable(report.topPickedCards, { keyLabel: "Card" })}
-      </div>
-      <div>
-        <h3 class="section-title">Most skipped</h3>
-        ${renderSkippedTable(report.topSkippedCards)}
-      </div>
-    </div>`;
+  const pickedSection = report.topPickedCards?.length
+    ? `
+      ${secTitle("Most-picked cards", "cards")}
+      <div class="card-list-panel">
+        ${report.topPickedCards.map((b) => {
+          const wr = (b.winrate * 100).toFixed(1);
+          const wrCls = b.winrate >= 0.5 ? "win" : "accent";
+          return `
+            <div class="card-row card-row-picked">
+              <div class="card-row-icon card-row-icon-picked">
+                <svg viewBox="0 0 16 16" fill="currentColor"><rect x="3" y="2" width="10" height="12" rx="1.5"/></svg>
+              </div>
+              <span class="card-row-name">${esc(prettifyId(b.key))}</span>
+              <span class="card-row-count">${b.runs}x</span>
+              <span class="card-row-pct card-row-pct-${wrCls}">${wr}%</span>
+            </div>`;
+        }).join("")}
+      </div>`
+    : `
+      ${secTitle("Most-picked cards", "cards")}
+      <p class="muted">No card-pick data in your history yet.</p>`;
+
+  const skippedSection = report.topSkippedCards?.length
+    ? `
+      ${secTitle("Most-skipped cards", "cards", "loss")}
+      <p class="muted small" style="margin: -6px 0 14px;">Offered often, picked rarely.</p>
+      <div class="card-list-panel">
+        ${report.topSkippedCards.map((b) => {
+          const pr = ((b.pickedRate ?? 0) * 100).toFixed(1);
+          return `
+            <div class="card-row card-row-skipped">
+              <div class="card-row-icon card-row-icon-skipped">
+                <svg viewBox="0 0 16 16" fill="currentColor"><rect x="3" y="2" width="10" height="12" rx="1.5"/><path d="M5 6l6 6M11 6l-6 6" stroke="rgba(0,0,0,0.6)" stroke-width="1.5" stroke-linecap="round"/></svg>
+              </div>
+              <span class="card-row-name">${esc(prettifyId(b.key))}</span>
+              <span class="card-row-mono card-row-offered">${b.runs} offered</span>
+              <span class="card-row-mono card-row-picked-count">${b.wins} picked</span>
+              <span class="card-row-pct card-row-pct-loss">${pr}%</span>
+            </div>`;
+        }).join("")}
+      </div>`
+    : "";
+
+  return `${pickedSection}${skippedSection}`;
 }
 
-function renderSkippedTable(buckets) {
-  if (!buckets?.length) return `<p class="muted">No skip data yet.</p>`;
-  return `
-    <table class="bucket-table">
-      <thead><tr>
-        <th>Card</th>
-        <th class="num">Offered</th>
-        <th class="num">Picked</th>
-        <th class="num">Pick rate</th>
-      </tr></thead>
-      <tbody>
-        ${buckets.map((b) => `
-          <tr>
-            <td>${esc(b.key)}</td>
-            <td class="num">${b.runs}</td>
-            <td class="num">${b.wins}</td>
-            <td class="num">${((b.pickedRate ?? 0) * 100).toFixed(0)}%</td>
-          </tr>
-        `).join("")}
-      </tbody>
-    </table>`;
-}
-
+/** Recent Runs — mirrors VaultApp/App/DetailView.swift RunRow.
+ *  Each row: 4px character-color stripe, themed character icon in a
+ *  rounded square, character name + ascension pill + floor pill, date
+ *  underneath, then duration / outcome badge on the right. Hover changes
+ *  the border color to the character's color. */
 function renderRecentRuns(runs) {
   const sorted = runs.slice().sort((a, b) => {
     const at = a.endedAt?.getTime() ?? 0;
     const bt = b.endedAt?.getTime() ?? 0;
     return bt - at;
   });
-  const slice = sorted.slice(0, 50);
-  if (!slice.length) return `<p class="muted">No runs.</p>`;
+  const slice = sorted.slice(0, 120);
+  if (!slice.length) {
+    return `
+      ${secTitle("Recent runs", "clock")}
+      <p class="muted">No runs match the current filters.</p>`;
+  }
   return `
-    <table class="bucket-table">
-      <thead><tr>
-        <th>When</th>
-        <th>Character</th>
-        <th class="num">Asc</th>
-        <th>Result</th>
-        <th class="num">Floor</th>
-        <th class="num">Time</th>
-      </tr></thead>
-      <tbody>
-        ${slice.map((r) => `
-          <tr>
-            <td>${esc(formatDate(r.endedAt))}</td>
-            <td>${esc(capitalize(r.character) ?? "—")}</td>
-            <td class="num">${r.ascension ?? "—"}</td>
-            <td>${r.won ? `<span class="tag ok">Win</span>` : `<span class="tag mute">Loss</span>`}</td>
-            <td class="num">${r.floorReached ?? "—"}</td>
-            <td class="num">${formatPlayTime(r.playTimeSeconds)}</td>
-          </tr>
-        `).join("")}
-      </tbody>
-    </table>`;
+    ${secTitle("Recent runs", "clock")}
+    <div class="run-list">
+      ${slice.map((r) => {
+        const theme = charTheme(r.character);
+        const charName = r.character ? capitalize(r.character) : "Unknown";
+        const dateStr = r.endedAt ? formatRunDate(r.endedAt) : (r.startedAt ? formatRunDate(r.startedAt) : "");
+        const durStr = formatPlayTimeStrict(r.playTimeSeconds);
+        const wonClass = r.won ? "is-victory" : "is-defeat";
+        const outcomeText = r.won ? "VICTORY" : "DEFEAT";
+        return `
+          <div class="run-row" style="--char-color:${theme.color}">
+            <div class="run-stripe"></div>
+            <div class="run-row-body">
+              <div class="run-icon">${charIcon(theme.icon)}</div>
+              <div class="run-meta">
+                <div class="run-meta-top">
+                  <span class="run-name">${esc(charName)}</span>
+                  ${Number.isFinite(r.ascension) ? `<span class="pill pill-gold">A${r.ascension}</span>` : ""}
+                  ${Number.isFinite(r.floorReached) ? `<span class="pill pill-muted">Floor ${r.floorReached}</span>` : ""}
+                </div>
+                ${dateStr ? `<span class="run-date">${esc(dateStr)}</span>` : ""}
+              </div>
+              <div class="run-spacer"></div>
+              ${durStr ? `
+                <div class="run-duration">
+                  <strong>${esc(durStr)}</strong>
+                  <span>DURATION</span>
+                </div>` : ""}
+              <span class="run-outcome ${wonClass}">${outcomeText}</span>
+            </div>
+          </div>`;
+      }).join("")}
+    </div>`;
+}
+
+function formatRunDate(d) {
+  if (!d) return "";
+  // "Apr 29, 2026 at 3:08 AM" — matches Swift .formatted(date: .abbreviated, time: .shortened)
+  const date = d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+  const time = d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  return `${date} at ${time}`;
+}
+
+function formatPlayTimeStrict(s) {
+  if (!Number.isFinite(s) || s <= 0) return "";
+  const m = Math.floor(s / 60);
+  const sec = Math.floor(s % 60);
+  return `${m}:${String(sec).padStart(2, "0")}`;
 }
 
 function formatDate(d) {
