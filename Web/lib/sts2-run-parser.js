@@ -52,6 +52,21 @@
 const VALID_CHAR_KEYS = new Set(["ironclad", "silent", "regent", "necrobinder", "defect"]);
 
 /**
+ * Schema versions we have explicitly tested against. STS2 is in early
+ * access and ships every few weeks; the user already has runs from
+ * schema 8 and schema 9 on disk simultaneously. We don't refuse to
+ * parse unknown schema versions (most fields are stable across bumps,
+ * so a degraded read is still useful), but we DO record the schema we
+ * saw so the UI can show a "this run is from a newer build, some stats
+ * may be off" banner instead of silently producing wrong numbers.
+ *
+ * To bump after testing: add the new number, ship a build. To support
+ * a wholly new schema: write a sibling parser and dispatch in
+ * `extractRuns` based on schema_version.
+ */
+export const KNOWN_SCHEMA_VERSIONS = new Set([8, 9]);
+
+/**
  * Quick fingerprint test: does this object look like an STS2 `.run`?
  * Returns true only if both `players[0]` and `map_point_history` are
  * present. Profile / settings / progress saves don't have both, which is
@@ -157,6 +172,13 @@ export function parseSTS2Run(obj, sourceName = "unknown.run") {
     }
   }
 
+  // Record the schema version we saw on this run. Used by the stats
+  // panel to surface a non-blocking "newer build" banner when any run
+  // is from a schema we haven't explicitly tested. Without this signal
+  // a future STS2 patch could silently produce wrong stats.
+  const schemaVersion = Number.isFinite(obj.schema_version) ? obj.schema_version | 0 : null;
+  const buildId = typeof obj.build_id === "string" ? obj.build_id : null;
+
   return {
     id,
     character,
@@ -171,6 +193,8 @@ export function parseSTS2Run(obj, sourceName = "unknown.run") {
     deckAtEnd,
     cardPicks,
     sourceFile: sourceName,
+    schemaVersion,
+    buildId,
   };
 }
 

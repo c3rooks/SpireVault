@@ -182,6 +182,15 @@ function cardSlug(id) {
  *  emits the same shape, so the common case is a direct hit. We add
  *  fallbacks for legacy / mod / test data that might use snake_case
  *  variants. */
+// Set of class-prefix tokens used by the asset library. Used by the slug-
+// swap fallback below: when the input slug ends with a class name (e.g.
+// `strike_ironclad`, the order STS2's `.run` files use) we know to try
+// the swapped form (`ironclad_strike`, the order the asset library uses).
+const CLASS_PREFIXES = new Set([
+  "ironclad", "silent", "defect", "regent", "necrobinder",
+  "watcher", "colorless", "curse", "status",
+]);
+
 function cardImageSrc(id) {
   let slug = cardSlug(id);
   if (!slug) return null;
@@ -190,6 +199,25 @@ function cardImageSrc(id) {
   const isPlus = parts[parts.length - 1] === "plus";
   const baseParts = isPlus ? parts.slice(0, -1) : parts;
   const plusSuffix = isPlus ? "_plus" : "";
+
+  // Slug-order swap: STS2's `.run` files emit the most common cards as
+  // `<action>_<class>` (e.g. `strike_ironclad`, `defend_silent`) but the
+  // asset manifest uses `<class>_<action>` (`ironclad_strike`,
+  // `silent_defend`). Detect a trailing class token and try the swap
+  // before any other fallback. This restores art on the most-played
+  // cards in the entire game (every starting deck's strikes and defends).
+  if (baseParts.length >= 2) {
+    const last = baseParts[baseParts.length - 1];
+    if (CLASS_PREFIXES.has(last)) {
+      const swapped = last + "_" + baseParts.slice(0, -1).join("_") + plusSuffix;
+      if (assetManifest.cards.has(swapped)) return `${ASSET_BASE}/cards/${swapped}.webp`;
+      // Also try the collapsed-name variant of the swap, e.g.
+      // `feel_no_pain_ironclad` → `ironclad_feelnopain`.
+      const swappedCollapsed = last + "_" + baseParts.slice(0, -1).join("") + plusSuffix;
+      if (assetManifest.cards.has(swappedCollapsed)) return `${ASSET_BASE}/cards/${swappedCollapsed}.webp`;
+    }
+  }
+
   // 3+ baseparts → has a class prefix; concatenate the rest of the name:
   //   `ironclad_pommel_strike` → `ironclad_pommelstrike`.
   if (baseParts.length >= 3) {
@@ -204,6 +232,20 @@ function cardImageSrc(id) {
     if (assetManifest.cards.has(concatenated)) return `${ASSET_BASE}/cards/${concatenated}.webp`;
     for (const c of assetManifest.cards) {
       if (c.endsWith(`_${concatenated}`)) return `${ASSET_BASE}/cards/${c}.webp`;
+    }
+  }
+  // Last-resort partial match: scan for an asset that ends with the slug
+  // joined with one or zero underscores. Handles cases where the manifest
+  // has `ironclad_one_twopunch` (one underscore preserved, rest collapsed)
+  // for the unupgraded base while the upgraded form is `ironclad_onetwopunch_plus`.
+  if (baseParts.length >= 2) {
+    for (let split = 1; split < baseParts.length; split++) {
+      const head = baseParts.slice(0, split).join("");
+      const tail = baseParts.slice(split).join("");
+      const blended = head + "_" + tail + plusSuffix;
+      for (const c of assetManifest.cards) {
+        if (c.endsWith(`_${blended}`) || c === blended) return `${ASSET_BASE}/cards/${c}.webp`;
+      }
     }
   }
   // Single-word legacy fallback: `inflame` → `ironclad_inflame`.
@@ -222,6 +264,17 @@ function relicImageSrc(id) {
   // Try the underscore-stripped form as a fallback.
   const concat = slug.replace(/_/g, "");
   if (assetManifest.relics.has(concat)) return `${ASSET_BASE}/relics/${concat}.webp`;
+  // Some manifest entries collapse only the trailing words and keep one
+  // leading underscore — e.g. `self_formingclay` (manifest) for input
+  // `self_forming_clay`. Try every "first-N joined, rest concatenated"
+  // variant; the manifest is small enough that this is essentially free.
+  const parts = slug.split("_");
+  if (parts.length >= 3) {
+    for (let split = 1; split < parts.length; split++) {
+      const variant = parts.slice(0, split).join("_") + "_" + parts.slice(split).join("");
+      if (assetManifest.relics.has(variant)) return `${ASSET_BASE}/relics/${variant}.webp`;
+    }
+  }
   return null;
 }
 
@@ -452,6 +505,25 @@ function maybeBeaconDiagnostic(reason, detail) {
     const seenKey = "vault.diag.sent." + reason;
     if (sessionStorage.getItem(seenKey)) return;
     sessionStorage.setItem(seenKey, "1");
+    sendBeacon(reason, detail);
+  } catch { /* never let diagnostics break sign-in */ }
+}
+
+/**
+ * Send a beacon event WITHOUT per-session dedupe. Use for events where we
+ * want a count per occurrence (e.g. every file picker open, every ingest
+ * commit), not just the first per session. Same backend endpoint, same
+ * fire-and-forget guarantees.
+ *
+ * Why this matters: the bug that hid the wrong-save-path issue for weeks
+ * was the lack of any signal between "user opened picker" and "user got
+ * stats." These beacons are the signal — they let the admin dashboard
+ * show ingest-funnel breakdown the same way it shows auth-funnel
+ * breakdown today, so the next "everyone bouncing silently" gets
+ * surfaced within a day instead of three weeks.
+ */
+function sendBeacon(reason, detail) {
+  try {
     const payload = JSON.stringify({
       reason,
       detail: String(detail || "").slice(0, 280),
@@ -467,7 +539,7 @@ function maybeBeaconDiagnostic(reason, detail) {
         keepalive: true,
       }).catch(() => {});
     }
-  } catch { /* never let diagnostics break sign-in */ }
+  } catch { /* never let beacons break user flow */ }
 }
 
 async function refreshPublicCount() {
@@ -1516,6 +1588,7 @@ function triggerFilePicker() {
   const $input = document.getElementById("history-file-input");
   if ($input) $input.value = "";
   $input?.click();
+  sendBeacon("ingest-picker-opened", "input-fallback");
 }
 
 /**
@@ -1567,12 +1640,14 @@ async function scanForHistory() {
   // recursively read every `.run` file inside. This is the experience
   // 95% of new users actually want: "show me my stats", one gesture.
   if (typeof window.showDirectoryPicker === "function") {
+    sendBeacon("ingest-picker-opened", "directory");
     return scanForHistoryViaDirectoryPicker();
   }
   // Second-best: file picker on Chromium with `multiple: true` — user
   // can shift-select every `.run` file in their save folder. Still one
   // gesture, but they have to navigate to the folder themselves.
   if (HistoryStore.supportsFSA()) {
+    sendBeacon("ingest-picker-opened", "fsa-multifile");
     return scanForHistoryViaFilePicker();
   }
   // Safari / Firefox fallback: legacy `<input type="file" multiple>`.
@@ -1860,6 +1935,7 @@ async function parseOneFile(file) {
 async function ingestHistoryFiles(files, { silent = false } = {}) {
   const list = Array.from(files || []).filter((f) => f && typeof f.size === "number");
   if (list.length === 0) {
+    sendBeacon("ingest-files-empty", silent ? "silent" : "interactive");
     if (!silent) toast("No files to read.");
     return false;
   }
@@ -1872,9 +1948,11 @@ async function ingestHistoryFiles(files, { silent = false } = {}) {
     return name.endsWith(".json") || name.endsWith(".run") || name.endsWith(".save");
   });
   if (plausible.length === 0) {
+    sendBeacon("ingest-no-plausible", `chosen=${list.length}`);
     if (!silent) toast(`None of those ${list.length} file(s) look like STS2 saves (.run or history.json).`);
     return false;
   }
+  sendBeacon("ingest-files-chosen", `count=${plausible.length}`);
 
   console.info(`[Vault] ingest start: ${plausible.length} file(s)${list.length > plausible.length ? ` (filtered ${list.length - plausible.length} non-save file(s))` : ""}`);
   if (!silent) {
@@ -1912,6 +1990,7 @@ async function ingestHistoryFiles(files, { silent = false } = {}) {
 
   if (runs.length === 0) {
     console.error("[Vault] ingest produced zero runs", { firstError, results });
+    sendBeacon("ingest-runs-zero", `files=${plausible.length} firstError=${(firstError || "none").slice(0, 60)}`);
     if (!silent) {
       if (firstError) {
         toast(firstError);
@@ -1920,6 +1999,23 @@ async function ingestHistoryFiles(files, { silent = false } = {}) {
       }
     }
     return false;
+  }
+
+  // Partial-failure visibility. Previously we silently dropped failed
+  // files and reported only the success count, which means a future
+  // game update breaking 5/100 files would silently truncate stats and
+  // the user would never know. Now we surface a follow-up toast AND
+  // beacon the partial-failure rate so we can spot a trend in the wild.
+  const failedFiles = plausible.length - okFiles;
+  if (failedFiles > 0) {
+    sendBeacon("ingest-partial-failure", `failed=${failedFiles}/${plausible.length} firstError=${(firstError || "").slice(0, 60)}`);
+    if (!silent) {
+      // Delay so the "Loaded N runs" toast posts first; both stay visible
+      // because the toaster stacks.
+      setTimeout(() => {
+        toast(`${failedFiles} of ${plausible.length} files failed to parse${firstError ? ` (${(firstError).slice(0, 80)})` : ""}.`);
+      }, 1200);
+    }
   }
 
   console.info(`[Vault] loaded ${runs.length} unique run(s) from ${okFiles}/${plausible.length} file(s)`);
@@ -1966,6 +2062,33 @@ async function commitParsedRuns(runs, sourceName, { silent, fileCount = 1 }) {
   parsedRuns = runs;
   // Real data has arrived — flip out of demo mode so the banner disappears.
   isDemoMode = false;
+
+  // Beacon the successful import. This is THE event the path bug should
+  // have been caught by — without it, "user saw stats" had zero signal
+  // distinct from "user opened the page" in our analytics. detail
+  // includes run count and unique-schema-version count so the admin
+  // dashboard can show ingest health (success volume, schema drift).
+  const schemaSet = new Set();
+  for (const r of runs) {
+    if (r?.schemaVersion != null) schemaSet.add(r.schemaVersion);
+  }
+  const schemaList = [...schemaSet].sort().join(",");
+  sendBeacon(
+    "ingest-runs-committed",
+    `runs=${runs.length} files=${fileCount} schemas=${schemaList || "none"} silent=${silent ? 1 : 0}`
+  );
+
+  // Independent unknown-schema beacon. Fires once per commit if any run
+  // is on a schema we haven't tested. The schema-warning banner in the
+  // UI uses the same signal; this beacon makes the same condition
+  // visible in the admin dashboard so we know when a new STS2 build is
+  // landing in users' saves.
+  loadKnownSchemas().then((known) => {
+    const unknown = [...schemaSet].filter((v) => !known.has(v));
+    if (unknown.length > 0) {
+      sendBeacon("ingest-unknown-schema", `versions=${unknown.join(",")} affected=${runs.filter(r => unknown.includes(r.schemaVersion)).length}`);
+    }
+  }).catch(() => { /* non-fatal */ });
 
   // Persist. We swallow IDB errors so a flaky storage layer never blocks
   // the in-memory render — the user still sees their stats this session.
@@ -2161,13 +2284,19 @@ function renderStatsTab(tab) {
   // a primary CTA that fires the same drag-drop / file-picker the empty
   // state uses, so swapping in real data is one click away.
   const banner = isDemoMode ? renderDemoBanner() : "";
+  // Schema warning — surfaces above stats when any real run uses an STS2
+  // schema_version we haven't explicitly tested. Lets the user know the
+  // game just shipped a build we're still catching up to, instead of
+  // silently rendering possibly-wrong numbers. Suppressed in demo mode.
+  const schemaWarning = isDemoMode ? "" : renderSchemaWarning(parsedRuns);
+  const prefix = banner + schemaWarning;
   switch (tab) {
-    case "overview":   $body.innerHTML = banner + renderOverview(report);     break;
-    case "characters": $body.innerHTML = banner + renderCharactersTab(report); break;
-    case "ascensions": $body.innerHTML = banner + renderAscensionsTab(report); break;
-    case "relics":     $body.innerHTML = banner + renderRelicsTab(report);     break;
-    case "cards":      $body.innerHTML = banner + renderCards(report);         break;
-    case "runs":       $body.innerHTML = banner + renderRecentRuns(parsedRuns); break;
+    case "overview":   $body.innerHTML = prefix + renderOverview(report);     break;
+    case "characters": $body.innerHTML = prefix + renderCharactersTab(report); break;
+    case "ascensions": $body.innerHTML = prefix + renderAscensionsTab(report); break;
+    case "relics":     $body.innerHTML = prefix + renderRelicsTab(report);     break;
+    case "cards":      $body.innerHTML = prefix + renderCards(report);         break;
+    case "runs":       $body.innerHTML = prefix + renderRecentRuns(parsedRuns); break;
   }
   // Demo banner CTAs route to the existing scan/upload flow.
   if (isDemoMode) {
@@ -2267,6 +2396,57 @@ function renderDemoBanner() {
           <p class="hints-tip">Inside the folder you'll see files named like <code>1735689420.run</code> — one per run, raw JSON. Pick the parent folder and we read every <code>.run</code> file in one pass.</p>
         </div>
       </details>
+    </div>`;
+}
+
+/**
+ * Schema-version warning banner. Returns an empty string most of the
+ * time. When parsedRuns contains any run on a schema_version we haven't
+ * explicitly tested (KNOWN_SCHEMA_VERSIONS), we render a yellow callout
+ * above the stats so the user knows their freshly-patched game might
+ * have introduced fields we haven't caught up to yet. The alternative
+ * — silent wrong numbers — is what hid the path bug for weeks.
+ *
+ * Lazy-loaded to avoid pulling sts2-run-parser.js on the demo path.
+ */
+let cachedKnownSchemas = null;
+async function loadKnownSchemas() {
+  if (cachedKnownSchemas) return cachedKnownSchemas;
+  const mod = await import("./lib/sts2-run-parser.js");
+  cachedKnownSchemas = mod.KNOWN_SCHEMA_VERSIONS || new Set();
+  return cachedKnownSchemas;
+}
+// Synchronous-friendly hook: the parser file is already loaded by the
+// time we render stats (extractRuns dynamically imports it before
+// parsedRuns gets populated), so it lives in the module cache. We use a
+// best-effort sync read; if the cache hasn't warmed yet we silently
+// suppress the banner and rely on the next render pass.
+function knownSchemasSync() {
+  return cachedKnownSchemas;
+}
+// Warm the cache on module load so the first render after ingest has it.
+loadKnownSchemas().catch(() => { /* non-fatal */ });
+
+function renderSchemaWarning(runs) {
+  const known = knownSchemasSync();
+  if (!known) return "";
+  const unknown = new Set();
+  let unknownRunCount = 0;
+  for (const r of runs) {
+    if (r?.schemaVersion != null && !known.has(r.schemaVersion)) {
+      unknown.add(r.schemaVersion);
+      unknownRunCount += 1;
+    }
+  }
+  if (unknown.size === 0) return "";
+  const versions = [...unknown].sort((a, b) => a - b).join(", ");
+  return `
+    <div class="schema-warning" role="region" aria-label="New game version notice">
+      <div class="schema-warning-icon">⚡</div>
+      <div class="schema-warning-text">
+        <strong>${unknownRunCount} run${unknownRunCount === 1 ? "" : "s"} from a newer STS2 build</strong>
+        <span>STS2 just shipped schema version ${esc(versions)}, which we haven't tested yet. Most stats should still work; some details might be off until I push a parser update. <a href="https://github.com/c3rooks/SpireVault/issues/new?title=STS2+schema+${esc(versions)}+support" target="_blank" rel="noopener">Open an issue</a> if you spot anything wrong.</span>
+      </div>
     </div>`;
 }
 

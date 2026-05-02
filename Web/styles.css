@@ -2631,6 +2631,43 @@ select#me-note option { background: var(--bg-deep); color: var(--text); }
   line-height: 1.5;
 }
 
+/* Schema-version warning — appears when the user's runs are from an
+ * STS2 build we haven't tested. Visually distinct from the demo banner
+ * (yellow + lightning) and the in-app browser overlay (red + full
+ * screen) so it reads as "informational, not blocking". */
+.schema-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin: 0 0 18px;
+  padding: 12px 14px;
+  background: linear-gradient(135deg, rgba(255, 198, 92, 0.06), rgba(255, 167, 38, 0.04));
+  border: 1px solid rgba(255, 198, 92, 0.28);
+  border-left: 3px solid rgba(255, 198, 92, 0.6);
+  border-radius: 10px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.schema-warning-icon {
+  font-size: 18px;
+  line-height: 1;
+  padding-top: 1px;
+  flex: 0 0 auto;
+}
+.schema-warning-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.schema-warning-text strong {
+  color: var(--gold, #ffc65c);
+  font-size: 12px;
+  font-weight: 700;
+}
+.schema-warning-text span { color: var(--text-2); }
+.schema-warning-text a {
+  color: var(--gold, #ffc65c);
+  text-decoration: underline;
+  text-decoration-color: rgba(255, 198, 92, 0.4);
+}
+.schema-warning-text a:hover { text-decoration-color: rgba(255, 198, 92, 0.8); }
+
 /* Empty-state warning (the equivalent of the demo-banner-hints warning,
  * shown above the collapsible details so it's always visible). */
 .empty-state-warning {
