@@ -384,6 +384,13 @@ boot();
 // generation + sessionStorage smoke-test stays in one place.
 // =========================================================================
 function startSteamSignIn() {
+  // Beacon: user tapped a sign-in CTA. Paired with successful-callback
+  // accounting on the backend, we can now tell "no one clicked sign-in"
+  // apart from "people clicked sign-in but the redirect or callback
+  // failed" — and on mobile specifically, from "people never saw the
+  // button at all." That distinction is what would have surfaced the
+  // mobile-missing-CTA bug before launch instead of during.
+  sendBeacon("signin-cta-clicked", `w=${window.innerWidth} ua=${navigator.userAgent.slice(0, 80)}`);
   const nonce = randomNonce();
   sessionStorage.setItem("vault.auth.nonce", nonce);
   // Smoke test: write+read sessionStorage and beacon if it's broken.
@@ -615,6 +622,29 @@ async function boot() {
     const $mobileSign = document.getElementById("me-pill-name-mobile");
     if ($mobileSign) $mobileSign.textContent = "Guest";
     setStatus("offline", "Browsing as guest");
+  }
+
+  // Mobile-only account-row action slot. The desktop sidebar footer has
+  // plenty of room for distinct persona + status + sign-out elements;
+  // the mobile strip only has one action slot, and it has to do the
+  // right thing per session state:
+  //   - Guest: show "Sign in with Steam" (hydrated by the document-
+  //     level [data-action=signin-cta] handler wired below, so tapping
+  //     it actually starts OpenID instead of silently failing)
+  //   - Signed-in: show "Sign out" (handler wired inside the session
+  //     branch further down)
+  // This is THE mobile bug: previously the row always rendered a
+  // "Sign out" button whose handler was session-gated, so a guest had
+  // a visible but dead button AND no sign-in affordance on the default
+  // (Overview) tab.
+  const $mobileSignout = document.getElementById("signout-btn-mobile");
+  const $mobileSignin  = document.getElementById("signin-btn-mobile");
+  if (session) {
+    if ($mobileSignout) $mobileSignout.hidden = false;
+    if ($mobileSignin)  $mobileSignin.hidden  = true;
+  } else {
+    if ($mobileSignout) $mobileSignout.hidden = true;
+    if ($mobileSignin)  $mobileSignin.hidden  = false;
   }
 
   // Tab navigation — sidebar buttons + content panels.

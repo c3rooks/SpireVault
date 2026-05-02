@@ -2491,6 +2491,45 @@ select#me-note option { background: var(--bg-deep); color: var(--text); }
     color: var(--text);
     text-decoration: none;
   }
+  /* Mobile account-row action slot. The two buttons inside (signin /
+   * signout) are toggled at runtime by boot(). Container keeps the
+   * slot right-aligned regardless of which button is currently shown. */
+  .mobile-account-row .mobile-account-action {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+  }
+  /* Sign-in CTA in the mobile account-row. Uses the same ember gradient
+   * as the primary desktop sign-in so the visual language is consistent
+   * across breakpoints, but compressed to match the thin account strip. */
+  .mobile-account-row .mobile-signin-cta {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 12px;
+    border-radius: 8px;
+    background: linear-gradient(135deg, #ff6b1a 0%, #ffa05c 50%, #ffc65c 100%);
+    border: 1px solid rgba(255, 160, 92, 0.6);
+    color: #1a0e02;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.01em;
+    white-space: nowrap;
+    cursor: pointer;
+    box-shadow: 0 1px 4px rgba(255, 107, 26, 0.3);
+  }
+  .mobile-account-row .mobile-signin-cta:active {
+    transform: translateY(1px);
+    box-shadow: 0 0 0 rgba(255, 107, 26, 0);
+  }
+  .mobile-account-row .mobile-signin-cta svg { flex: 0 0 auto; }
+  /* Narrow screens still have room for the tagline, but on very small
+   * phones collapse the subtitle and persona label to keep the CTA
+   * unclipped. */
+  @media (max-width: 380px) {
+    .mobile-account-row .muted-status { display: none; }
+    .mobile-account-row .me-pill-mini strong { max-width: 80px; }
+  }
 }
 
 /* =====================================================================

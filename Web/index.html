@@ -23,7 +23,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Playfair+Display:wght@700;900&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/styles.css?v=24" />
+  <link rel="stylesheet" href="/styles.css?v=25" />
 </head>
 <body>
   <div class="bg-glow" aria-hidden="true"></div>
@@ -165,7 +165,10 @@
       <!-- Mobile-only account row. Lives below the horizontal tab strip
            and surfaces the same persona + status + sign-out controls
            that the desktop sidebar-footer has, but in a thin horizontal
-           bar that doesn't push content offscreen. Hidden ≥881px via CSS. -->
+           bar that doesn't push content offscreen. Hidden ≥881px via CSS.
+           The right-side action slot is hydrated at boot: "Sign in with
+           Steam" for guests, "Sign out" for authenticated users. We
+           never show an auth CTA whose click handler isn't wired. -->
       <div class="mobile-account-row" aria-hidden="false">
         <div class="me-pill-mini">
           <img id="me-pill-avatar-mobile" alt="" src="/assets/vault-mark.svg" />
@@ -173,7 +176,13 @@
         </div>
         <span class="status-dot" id="status-dot-mobile"></span>
         <span id="status-label-mobile" class="muted-status">Connecting…</span>
-        <button class="status-signout" id="signout-btn-mobile" title="Sign out">Sign out</button>
+        <div class="mobile-account-action" id="mobile-account-action">
+          <button class="status-signout" id="signout-btn-mobile" title="Sign out" hidden>Sign out</button>
+          <button class="mobile-signin-cta" id="signin-btn-mobile" type="button" data-action="signin-cta" hidden>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3 5l8-1.1V11H3V5zm0 7h8v7.1L3 18V12zm9 7.2V12h9v8L12 19.2zM12 11V3.9L21 3v8h-9z"/></svg>
+            <span>Sign in with Steam</span>
+          </button>
+        </div>
       </div>
     </aside>
 
@@ -382,6 +391,6 @@
     </div>
   </footer>
 
-  <script src="/script.js?v=35" type="module"></script>
+  <script src="/script.js?v=37" type="module"></script>
 </body>
 </html>
