@@ -3653,32 +3653,36 @@ function drawShareCard(run, opts = {}) {
   ctx.stroke();
 
   // Branded wordmark pill (character-tinted) — left
-  const markPadX = 14;
-  const markText = "SPIREVAULT";
-  const tagText  = "The Vault · run tracker for Slay the Spire 2";
+  // Names prefixed `brand` to avoid colliding with the header pill row
+  // above, which already owns `pillX`/`pillY` in this function's scope.
+  // (Duplicate `const pillY` in the same function is a SyntaxError that
+  // takes down the whole module.)
+  const brandMarkPadX = 14;
+  const brandMarkText = "SPIREVAULT";
+  const brandTagText  = "The Vault · run tracker for Slay the Spire 2";
   ctx.font = "900 13px 'Inter', 'Helvetica Neue', Arial, sans-serif";
-  const markW = ctx.measureText(markText).width;
-  const pillH = 26;
-  const pillY = footerBarY + (footerBarH - pillH) / 2;
-  const pillX = PAD;
-  const pillW = markW + markPadX * 2;
+  const brandMarkW = ctx.measureText(brandMarkText).width;
+  const brandPillH = 26;
+  const brandPillY = footerBarY + (footerBarH - brandPillH) / 2;
+  const brandPillX = PAD;
+  const brandPillW = brandMarkW + brandMarkPadX * 2;
 
   // Gradient fill so the mark reads as a real product badge, not plain text
-  const pillGrad = ctx.createLinearGradient(pillX, pillY, pillX + pillW, pillY);
-  pillGrad.addColorStop(0, hexA(charColor, 0.95));
-  pillGrad.addColorStop(1, hexA(charColor, 0.55));
-  roundRectFill(ctx, pillX, pillY, pillW, pillH, 8, pillGrad);
-  roundRectStroke(ctx, pillX, pillY, pillW, pillH, 8, hexA(charColor, 0.85), 1.25);
+  const brandGrad = ctx.createLinearGradient(brandPillX, brandPillY, brandPillX + brandPillW, brandPillY);
+  brandGrad.addColorStop(0, hexA(charColor, 0.95));
+  brandGrad.addColorStop(1, hexA(charColor, 0.55));
+  roundRectFill(ctx, brandPillX, brandPillY, brandPillW, brandPillH, 8, brandGrad);
+  roundRectStroke(ctx, brandPillX, brandPillY, brandPillW, brandPillH, 8, hexA(charColor, 0.85), 1.25);
 
   ctx.fillStyle = "#0b0d12";
   ctx.font = "900 13px 'Inter', 'Helvetica Neue', Arial, sans-serif";
   ctx.textBaseline = "middle";
-  ctx.fillText(markText, pillX + markPadX, pillY + pillH / 2 + 1);
+  ctx.fillText(brandMarkText, brandPillX + brandMarkPadX, brandPillY + brandPillH / 2 + 1);
 
   // Tagline to the right of the pill
   ctx.fillStyle = "#8a93a6";
   ctx.font = "600 11px 'Inter', 'Helvetica Neue', Arial, sans-serif";
-  ctx.fillText(tagText, pillX + pillW + 10, pillY + pillH / 2 + 1);
+  ctx.fillText(brandTagText, brandPillX + brandPillW + 10, brandPillY + brandPillH / 2 + 1);
   ctx.textBaseline = "alphabetic";
 
   // Author credit + live URL stacked on the right
