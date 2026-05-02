@@ -25,6 +25,20 @@ const STS2_APP_ID = "2868840";
 const STORAGE_SESSION       = "vault.web.session";
 const STORAGE_DRAFT         = "vault.web.presence.draft";
 const STORAGE_LAST_TAB      = "vault.web.last-tab";
+const STORAGE_COMPANION     = "vault.web.companion";
+
+// Companion options for the Overview page's animated persona picker.
+// Declared up here (not next to renderCompanion()) because boot() runs
+// immediately on module load and calls renderCompanion() before the
+// physical location of its own declaration — a module-scope `const`
+// defined further down would hit a Temporal Dead Zone at call time.
+const COMPANIONS = [
+  { id: "ironclad",   label: "Ironclad",   blurb: "Tempered steel.",         color: "#e94560" },
+  { id: "silent",     label: "Silent",     blurb: "Poisons and shadows.",    color: "#6dd97c" },
+  { id: "defect",     label: "Defect",     blurb: "Orbs and algorithms.",    color: "#4dc8ff" },
+  { id: "regent",     label: "Regent",     blurb: "Crown and consequence.",  color: "#d4af37" },
+  { id: "necrobinder",label: "Necrobinder",blurb: "Bone, blood, and will.",  color: "#9b83ff" },
+];
 // Poll cadences are tuned to keep us well under Cloudflare KV's free-tier
 // daily quotas (1k writes/day, 1k list ops/day, 100k reads/day). A single
 // pair of active browsers used to burn the list-op quota in hours; new
@@ -697,6 +711,11 @@ async function boot() {
     startSteamSignIn();
   });
 
+  // Companion avatar — see renderCompanion() for details. Wired once
+  // on boot; the actual render happens when Overview becomes active.
+  wireCompanion();
+  renderCompanion();
+
   // Drag-drop history.json
   wireDropOverlay();
   // "Find history.json" buttons (sidebar + every empty-state) all route here.
@@ -960,7 +979,108 @@ function switchTab(tab) {
   document.querySelectorAll(".tab-panel").forEach((p) => {
     p.hidden = p.dataset.tab !== tab;
   });
+  // Overview hosts the companion avatar; re-render on every switch so
+  // it picks up persona changes made from other tabs (future) without
+  // the user having to refresh.
+  if (tab === "overview") renderCompanion();
   renderActiveTab();
+}
+
+// =========================================================================
+// Companion avatar — overview-only
+//
+// A small, idle-animated character portrait between the title and the
+// Import button. Click to open a picker popover with the five STS2
+// playable characters. Selection persists to localStorage under
+// vault.web.companion so it survives refreshes. Pure cosmetic — nothing
+// about stats, co-op, or uploads depends on this value.
+//
+// The feature is deliberately low-blast-radius:
+//   - Lives in one DOM node (#companion-slot) that's empty until we
+//     render it, so a render failure can only hide the companion, not
+//     break the Overview tab.
+//   - Uses the same character assets already bundled for the Overview
+//     and Characters cards, so no new asset pipeline.
+//   - Picker is a lightweight popover (no modal), closes on outside
+//     click; defeat-click on a picked option only updates this state,
+//     never touches session / parsedRuns / presence.
+// =========================================================================
+function getCompanion() {
+  const stored = localStorage.getItem(STORAGE_COMPANION);
+  const match = COMPANIONS.find((c) => c.id === stored);
+  return match || COMPANIONS[0];
+}
+function setCompanion(id) {
+  if (!COMPANIONS.find((c) => c.id === id)) return;
+  localStorage.setItem(STORAGE_COMPANION, id);
+  renderCompanion();
+}
+function renderCompanion() {
+  const $slot = document.getElementById("companion-slot");
+  if (!$slot) return;
+  const c = getCompanion();
+  const portrait = characterImageSrc(c.id) || "";
+  $slot.innerHTML = `
+    <button class="companion-btn" type="button"
+            data-action="companion-toggle"
+            style="--companion-color:${c.color}"
+            aria-label="Change companion. Current: ${esc(c.label)}"
+            title="Change companion">
+      <span class="companion-ring" aria-hidden="true"></span>
+      ${portrait
+        ? `<img class="companion-portrait" src="${esc(portrait)}" alt="" draggable="false">`
+        : `<span class="companion-glyph">${esc(c.label[0])}</span>`}
+      <span class="companion-label">
+        <span class="companion-name">${esc(c.label)}</span>
+        <span class="companion-sub">${esc(c.blurb)}</span>
+      </span>
+    </button>
+    <div class="companion-picker" id="companion-picker" hidden role="listbox" aria-label="Pick companion">
+      ${COMPANIONS.map((opt) => {
+        const src = characterImageSrc(opt.id) || "";
+        const isActive = opt.id === c.id;
+        return `
+          <button class="companion-option${isActive ? " is-active" : ""}" type="button"
+                  role="option" aria-selected="${isActive}"
+                  data-action="companion-pick" data-companion-id="${esc(opt.id)}"
+                  style="--companion-color:${opt.color}"
+                  title="${esc(opt.label)}">
+            ${src
+              ? `<img src="${esc(src)}" alt="" draggable="false">`
+              : `<span class="companion-option-glyph">${esc(opt.label[0])}</span>`}
+            <span class="companion-option-name">${esc(opt.label)}</span>
+          </button>`;
+      }).join("")}
+    </div>`;
+}
+function wireCompanion() {
+  // Event delegation on document so re-renders don't strand listeners.
+  document.addEventListener("click", (e) => {
+    const toggle = e.target.closest('[data-action="companion-toggle"]');
+    if (toggle) {
+      e.preventDefault();
+      const $picker = document.getElementById("companion-picker");
+      if ($picker) $picker.hidden = !$picker.hidden;
+      return;
+    }
+    const pick = e.target.closest('[data-action="companion-pick"]');
+    if (pick) {
+      e.preventDefault();
+      setCompanion(pick.dataset.companionId);
+      return;
+    }
+    // Outside click — close any open picker
+    const $picker = document.getElementById("companion-picker");
+    if ($picker && !$picker.hidden && !e.target.closest(".companion-slot")) {
+      $picker.hidden = true;
+    }
+  });
+  // Esc closes the picker without losing keyboard focus context.
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape") return;
+    const $picker = document.getElementById("companion-picker");
+    if ($picker && !$picker.hidden) $picker.hidden = true;
+  });
 }
 
 function renderActiveTab() {

@@ -900,6 +900,206 @@ main.main-public,
 .panel-actions { display: flex; gap: 8px; }
 .panel-body { padding: 24px 32px 60px; }
 
+/* ─── Companion avatar (Overview panel-head) ─────────────────────
+ * A small animated character portrait between the page title and
+ * the Import button. Cosmetic only — nothing about stats, co-op,
+ * or auth depends on it. Intentionally scoped: all styles live in
+ * `.companion-*` so adding / removing the block can't ripple into
+ * the rest of the panel-head layout.
+ * ---------------------------------------------------------------- */
+.companion-slot {
+  position: relative;
+  display: flex;
+  align-items: center;
+  margin-right: auto;
+  margin-left: 24px;
+}
+.companion-slot:empty { display: none; }
+.companion-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 14px 6px 6px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 999px;
+  cursor: pointer;
+  color: var(--text);
+  transition: background-color 0.15s ease, border-color 0.15s ease, transform 0.2s ease;
+}
+.companion-btn:hover {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.12);
+  transform: translateY(-1px);
+}
+.companion-btn:focus-visible {
+  outline: 2px solid var(--companion-color, var(--accent));
+  outline-offset: 3px;
+}
+.companion-portrait,
+.companion-glyph {
+  position: relative;
+  z-index: 1;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  object-fit: cover;
+  object-position: center top;
+  background: #0a0812;
+  border: 1.5px solid var(--companion-color, #9aa3b2);
+  box-shadow: 0 0 14px color-mix(in srgb, var(--companion-color, #9aa3b2) 45%, transparent);
+  animation: companionIdle 4s ease-in-out infinite;
+}
+.companion-glyph {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 900;
+  font-size: 16px;
+  color: var(--companion-color, var(--text-2));
+}
+/* Thin pulsing ring so the avatar feels alive even without a portrait */
+.companion-ring {
+  position: absolute;
+  inset: 2px;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  border: 1.5px solid var(--companion-color, transparent);
+  opacity: 0;
+  animation: companionPulse 3.2s ease-out infinite;
+  pointer-events: none;
+}
+.companion-label {
+  display: flex;
+  flex-direction: column;
+  text-align: left;
+  min-width: 0;
+  max-width: 160px;
+}
+.companion-name {
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.1;
+  color: var(--text);
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.companion-sub {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text-3);
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 1px;
+}
+
+/* Subtle float — 3 px of vertical drift, long and smooth so it
+ * reads as "alive" instead of "looping GIF". */
+@keyframes companionIdle {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-3px); }
+}
+@keyframes companionPulse {
+  0%   { transform: scale(1);   opacity: 0.65; }
+  100% { transform: scale(1.28); opacity: 0;   }
+}
+
+/* Popover picker — opens below the button. Uses absolute positioning
+ * inside .companion-slot so it never escapes the panel-head scroll
+ * container. Max-height + overflow-y keeps it sane if we ever add
+ * a sixth character. */
+.companion-picker {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 220px;
+  max-height: 340px;
+  overflow-y: auto;
+  padding: 6px;
+  background: var(--card-raised, #131022);
+  border: 1px solid var(--border-strong, rgba(255, 255, 255, 0.12));
+  border-radius: 10px;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.5);
+  animation: companionPickerIn 0.14s ease-out both;
+}
+.companion-picker[hidden] { display: none; }
+@keyframes companionPickerIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0);    }
+}
+.companion-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  color: var(--text);
+  text-align: left;
+  transition: background-color 0.12s ease, border-color 0.12s ease;
+}
+.companion-option:hover { background: rgba(255, 255, 255, 0.05); }
+.companion-option.is-active {
+  background: color-mix(in srgb, var(--companion-color) 12%, transparent);
+  border-color: color-mix(in srgb, var(--companion-color) 40%, transparent);
+}
+.companion-option:focus-visible {
+  outline: 2px solid var(--companion-color, var(--accent));
+  outline-offset: 2px;
+}
+.companion-option img,
+.companion-option-glyph {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  object-fit: cover;
+  object-position: center top;
+  border: 1px solid var(--companion-color);
+}
+.companion-option-glyph {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 900;
+  font-size: 12px;
+  color: var(--companion-color);
+  background: rgba(255, 255, 255, 0.03);
+}
+.companion-option-name {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+/* Mobile: collapse to just the avatar (no label text) to reclaim
+ * horizontal room for the Import button. Picker anchors to the right
+ * so it doesn't clip off the left edge of a narrow viewport. */
+@media (max-width: 720px) {
+  .companion-slot { margin-left: 8px; }
+  .companion-label { display: none; }
+  .companion-btn { padding: 4px; }
+  .companion-portrait, .companion-glyph { width: 38px; height: 38px; }
+  .companion-ring { width: 40px; height: 40px; inset: 2px; }
+  .companion-picker { left: auto; right: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .companion-portrait, .companion-glyph { animation: none; }
+  .companion-ring { animation: none; opacity: 0; }
+  .companion-btn { transition: none; }
+  .companion-btn:hover { transform: none; }
+}
+
 /* Tighten panel chrome on mobile. The desktop padding (24/32 px) eats
    too much horizontal real estate on a 375 px iPhone SE; the page
    header h1 size also halves to keep the panel-head from dominating

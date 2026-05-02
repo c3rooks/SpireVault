@@ -23,7 +23,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Playfair+Display:wght@700;900&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/styles.css?v=31" />
+  <link rel="stylesheet" href="/styles.css?v=32" />
 </head>
 <body>
   <div class="bg-glow" aria-hidden="true"></div>
@@ -36,7 +36,14 @@
        Signed-out hero: only thing you see if you have no session.
        Kept simple on purpose — sign-in is the only call to action.
   ================================================================ -->
-  <header class="topbar topbar-public" id="topbar-public">
+  <!-- Default-hidden fallback. The app shell (below) is what every
+       visitor sees first; this block only becomes visible if script.js
+       fails to boot (e.g. a deploy-time parse error). That way a broken
+       bundle still shows *something* instead of a blank page, without
+       ever showing the marketing hero to a user who can use the app.
+       If you need to force-show this during debugging, flip the
+       `hidden` attribute manually. -->
+  <header class="topbar topbar-public" id="topbar-public" hidden>
     <a class="brand" href="/">
       <img src="/assets/vault-mark.svg" alt="" class="brand-emblem" />
       <span class="brand-mark">THE VAULT · WEB</span>
@@ -46,7 +53,7 @@
     </div>
   </header>
 
-  <main id="main-public" class="main-public">
+  <main id="main-public" class="main-public" hidden>
     <section id="signed-out-view" class="signed-out">
       <span class="eyebrow">Slay the Spire 2 · Vault for the Web</span>
       <h1>Run history, stats, and co-op, <span class="grad">in&nbsp;your&nbsp;browser</span>.</h1>
@@ -97,7 +104,11 @@
        Signed-in app shell: sidebar + tab panels. Mirrors the macOS app.
        Each panel is hidden until its tab becomes active.
   ================================================================ -->
-  <div id="app-shell" class="app-shell" hidden>
+  <!-- Visible by default. boot() leaves it alone on success and it's
+       the only surface the user ever sees in a normal visit. Demo data
+       is pre-populated on first paint so the stats tabs light up even
+       before the user drops their own save folder. -->
+  <div id="app-shell" class="app-shell">
     <aside class="sidebar" aria-label="App navigation">
       <div class="sidebar-brand">
         <img src="/assets/vault-emblem.png" alt="" width="44" height="44" />
@@ -197,6 +208,12 @@
             <h2 id="tab-overview-title">Overview</h2>
             <p class="panel-sub" id="overview-sub">Your run history at a glance.</p>
           </div>
+          <!-- Companion slot. Rendered by renderCompanion() in script.js.
+               Lives between the title and the action button so it reads
+               as a quiet personal touch, not a UI element. Clicking it
+               opens a picker popover; selection is stored in
+               localStorage under vault.web.companion. -->
+          <div class="companion-slot" id="companion-slot" aria-live="polite"></div>
           <div class="panel-actions">
             <button class="btn-ghost" data-action="upload">Import</button>
           </div>
@@ -394,6 +411,6 @@
     </div>
   </footer>
 
-  <script src="/script.js?v=40" type="module"></script>
+  <script src="/script.js?v=42" type="module"></script>
 </body>
 </html>
