@@ -2504,18 +2504,23 @@ select#me-note option { background: var(--bg-deep); color: var(--text); }
 /* ── Demo data banner ── */
 .demo-banner {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
+  flex-direction: column;
+  gap: 12px;
   margin: 0 0 18px;
-  padding: 12px 16px;
+  padding: 14px 16px;
   background: linear-gradient(135deg, rgba(255, 198, 92, 0.08), rgba(255, 107, 26, 0.05));
   border: 1px solid rgba(255, 198, 92, 0.32);
   border-radius: 12px;
   font-size: 13px;
+}
+.demo-banner-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
   flex-wrap: wrap;
 }
-.demo-banner-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.demo-banner-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1 1 auto; }
 .demo-banner-text strong {
   color: var(--gold, #ffc65c);
   font-size: 11px;
@@ -2524,7 +2529,9 @@ select#me-note option { background: var(--bg-deep); color: var(--text); }
   text-transform: uppercase;
 }
 .demo-banner-text span { color: var(--text-2); }
-.demo-banner-text code {
+.demo-banner-text code,
+.demo-banner-path code,
+.demo-banner-hints code {
   background: rgba(255, 255, 255, 0.06);
   padding: 1px 6px;
   border-radius: 4px;
@@ -2537,11 +2544,117 @@ select#me-note option { background: var(--bg-deep); color: var(--text); }
   padding: 7px 14px;
   font-size: 12px;
 }
+
+/* Path callout inside the demo banner */
+.demo-banner-path {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: rgba(0, 0, 0, 0.22);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+  flex-wrap: wrap;
+}
+.demo-banner-path .path-label {
+  color: var(--text-2);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.demo-banner-path .path-value {
+  flex: 1 1 240px;
+  min-width: 0;
+  background: rgba(255, 255, 255, 0.05) !important;
+  padding: 6px 10px !important;
+  border-radius: 6px !important;
+  font-size: 12px !important;
+  color: var(--text-1);
+  word-break: break-all;
+  overflow-wrap: anywhere;
+}
+.demo-banner-path .btn-sm {
+  flex: 0 0 auto;
+  font-size: 11px;
+  padding: 5px 10px;
+}
+
+/* Collapsible "I can't find my saves" hints inside the banner */
+.demo-banner-hints {
+  margin: 0;
+  font-size: 12px;
+}
+.demo-banner-hints summary {
+  cursor: pointer;
+  color: var(--text-2);
+  padding: 4px 0;
+  font-weight: 600;
+  list-style: none;
+}
+.demo-banner-hints summary::-webkit-details-marker { display: none; }
+.demo-banner-hints summary::before {
+  content: "▸ ";
+  display: inline-block;
+  margin-right: 4px;
+  transition: transform 0.15s ease;
+}
+.demo-banner-hints[open] summary::before { transform: rotate(90deg); }
+.demo-banner-hints .hints-body {
+  padding-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.demo-banner-hints .hints-warning {
+  padding: 10px 12px;
+  background: rgba(255, 92, 92, 0.08);
+  border: 1px solid rgba(255, 92, 92, 0.3);
+  border-radius: 8px;
+  color: var(--text-1);
+  line-height: 1.5;
+}
+.demo-banner-hints .hints-warning strong { color: #ff8a8a; }
+.demo-banner-hints .hints-list {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--text-2);
+  line-height: 1.5;
+}
+.demo-banner-hints .hints-list strong { color: var(--text-1); }
+.demo-banner-hints .hints-tip {
+  margin: 0;
+  color: var(--text-2);
+  line-height: 1.5;
+}
+
+/* Empty-state warning (the equivalent of the demo-banner-hints warning,
+ * shown above the collapsible details so it's always visible). */
+.empty-state-warning {
+  margin: 16px auto 0;
+  max-width: 540px;
+  padding: 12px 14px;
+  background: rgba(255, 92, 92, 0.08);
+  border: 1px solid rgba(255, 92, 92, 0.3);
+  border-radius: 10px;
+  color: var(--text-1);
+  font-size: 13px;
+  line-height: 1.5;
+  text-align: left;
+}
+.empty-state-warning strong { color: #ff8a8a; display: block; margin-bottom: 4px; }
+.empty-state-warning em { color: var(--text-2); font-style: normal; }
+
 @media (max-width: 600px) {
-  .demo-banner { flex-direction: column; align-items: stretch; }
+  .demo-banner-row { flex-direction: column; align-items: stretch; }
   .demo-banner-actions { width: 100%; }
   .demo-banner-actions .btn-primary,
   .demo-banner-actions .btn-ghost { flex: 1; justify-content: center; }
+  .demo-banner-path { flex-direction: column; align-items: stretch; }
+  .demo-banner-path .path-value { width: 100%; box-sizing: border-box; }
 }
 
 /* ── Sidebar guest pill (replaces persona pill when no session) ── */

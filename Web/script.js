@@ -42,20 +42,38 @@ const TABS_WITH_DATA = ["overview", "characters", "ascensions", "relics", "cards
 // up here avoids a Temporal Dead Zone ReferenceError on cold load that
 // would otherwise wipe out the entire boot path (and silently kill
 // IndexedDB persistence, presence heartbeats, and the live feed).
-// Where Slay the Spire 2 itself writes per-run save files. One JSON
-// `.run` file per game, named `<unix_timestamp>.run`. These are the
-// REAL paths a user has on disk after playing — not a Vault-built
-// rollup. The web app reads these directly so any platform can use
-// it without first running the macOS CLI.
+// Where Slay the Spire 2 actually writes per-run save files. One JSON
+// `.run` file per game, named `<unix_timestamp>.run`. STS2's full path
+// embeds your numeric Steam user ID, which we don't need — pointing the
+// directory picker at the parent `SlayTheSpire2/` folder works because
+// our walker recurses to find every `.run` file underneath, regardless
+// of which Steam profile id is in there.
 //
-// (The legacy path `~/Library/Application Support/AscensionCompanion/
-// vault/history.json` is the rollup the macOS Vault CLI produces.
-// We still accept that file when dropped — see Stats.extractRuns —
-// but we no longer point users at it because most people don't have
-// it. They have the raw `.run` folder below.)
-const HISTORY_PATH_MAC = "~/Library/Application Support/Mega Crit/Slay the Spire 2/profile1/saves/history";
-const HISTORY_PATH_WIN = "%APPDATA%\\Mega Crit\\Slay the Spire 2\\profile1\\saves\\history";
-const HISTORY_PATH_LINUX = "~/.local/share/Mega Crit/Slay the Spire 2/profile1/saves/history";
+// VERIFIED (May 2026, STS2 build v0.104.x, schema_version 9):
+//
+//   macOS:    ~/Library/Application Support/SlayTheSpire2/steam/<id>/profile1/saves/history/
+//   Windows:  %APPDATA%\SlayTheSpire2\steam\<id>\profile1\saves\history\
+//   Linux:    ~/.local/share/SlayTheSpire2/steam/<id>/profile1/saves/history/
+//
+// IMPORTANT — common confusion: Steam Library → right-click STS2 →
+// "Browse local files" opens the GAME INSTALL folder
+// (Steam/steamapps/common/Slay the Spire 2/), which is a different
+// folder entirely with no save data. Saves live in the application-
+// support / AppData paths above.
+//
+// We expose just the `SlayTheSpire2/` parent in the UI because:
+//   1. The user doesn't have to know their numeric Steam ID
+//   2. It's the same path on a fresh install vs. a long-time player
+//   3. Multi-account households with multiple `<id>/` subfolders just
+//      work — our walker reads them all
+//
+// The legacy `history.json` rollup path
+// (`~/Library/Application Support/AscensionCompanion/vault/`) was
+// what the macOS Vault CLI wrote. Still accepted by the parser, but
+// no longer surfaced in the UI because almost nobody has it.
+const HISTORY_PATH_MAC = "~/Library/Application Support/SlayTheSpire2";
+const HISTORY_PATH_WIN = "%APPDATA%\\SlayTheSpire2";
+const HISTORY_PATH_LINUX = "~/.local/share/SlayTheSpire2";
 
 // ─── STS2 asset library ────────────────────────────────────────────────
 // Card / relic / character art lives under /assets/sts2/ as optimized
@@ -2185,25 +2203,70 @@ function renderStatsTab(tab) {
 
 /**
  * "Sample data" banner shown above every stats tab when isDemoMode is true.
- * Two CTAs: the primary one opens the file picker (works everywhere); the
- * secondary one triggers the smarter scan flow (Chromium with FSA support).
- * Clicking either replaces demo data with the user's real history.json.
+ * This is the primary UX surface for new visitors, so it has to do double
+ * duty: signal that the numbers are demo, AND explain how to swap in real
+ * data without sending the user to a separate page.
+ *
+ * It includes:
+ *  - The platform-detected save folder path with a copy button
+ *  - "Find / Pick" CTAs that route to the same flow as the empty state
+ *  - A collapsible "Where is my save folder?" panel with the Steam Library
+ *    warning, alternate paths, and a description of what a `.run` file
+ *    looks like — answers everything users actually ask.
  */
 function renderDemoBanner() {
   const hasDirPicker = typeof window.showDirectoryPicker === "function";
-  const primary = hasDirPicker
+  const primaryCTAs = hasDirPicker
     ? `<button class="btn-primary" data-action="scan">Find my STS2 saves</button>
        <button class="btn-ghost" data-action="upload">Pick files</button>`
     : `<button class="btn-primary" data-action="upload">Pick STS2 save files</button>`;
+
+  const platform = detectPlatform();
+  const path =
+    platform === "windows" ? HISTORY_PATH_WIN
+    : platform === "linux" ? HISTORY_PATH_LINUX
+    : HISTORY_PATH_MAC; // mac + unknown both use Mac path as the visible default
+  const platformLabel =
+    platform === "windows" ? "Windows" : platform === "linux" ? "Linux" : "macOS";
+  const pasteHint =
+    platform === "windows"
+      ? `paste into File Explorer's address bar`
+      : platform === "linux"
+        ? `paste into your file manager's path bar`
+        : `Cmd+Shift+G in the picker, paste, Enter`;
+  const pathKey =
+    platform === "windows" ? "win" : platform === "linux" ? "linux" : "mac";
+
   return `
     <div class="demo-banner" role="region" aria-label="Sample data notice">
-      <div class="demo-banner-text">
-        <strong>Sample data</strong>
-        <span>Drop your STS2 save folder (or any <code>.run</code> files) to see your own runs.</span>
+      <div class="demo-banner-row">
+        <div class="demo-banner-text">
+          <strong>Sample data</strong>
+          <span>Drop your STS2 save folder (or any <code>.run</code> files) to see your own runs — nothing uploads, everything stays in your browser.</span>
+        </div>
+        <div class="demo-banner-actions">${primaryCTAs}</div>
       </div>
-      <div class="demo-banner-actions">
-        ${primary}
+      <div class="demo-banner-path">
+        <span class="path-label">Your STS2 save folder on ${platformLabel}</span>
+        <code class="path-value">${esc(path)}</code>
+        <button class="btn-ghost btn-sm" data-action="copy-path" data-path-key="${pathKey}" title="Copy path. Then ${pasteHint}.">Copy path</button>
       </div>
+      <details class="demo-banner-hints">
+        <summary>I can't find my saves</summary>
+        <div class="hints-body">
+          <div class="hints-warning">
+            <strong>⚠ Steam Library → Browse Local Files won't work.</strong>
+            That opens the game's <em>install</em> folder (the .app / .exe). Your saves live in a different place — the path above.
+          </div>
+          <ul class="hints-list">
+            <li><strong>macOS:</strong> <code>${esc(HISTORY_PATH_MAC)}</code> — Cmd+Shift+G in the picker, paste, Enter.</li>
+            <li><strong>Windows:</strong> <code>${esc(HISTORY_PATH_WIN)}</code> — paste into File Explorer's address bar.</li>
+            <li><strong>Linux / Steam Deck:</strong> <code>${esc(HISTORY_PATH_LINUX)}</code>.</li>
+            <li><strong>Steam Cloud (Mac fallback):</strong> if the path above is empty, your saves may be at <code>~/Library/Application Support/Steam/userdata/&lt;your-id&gt;/2868840/remote/</code>.</li>
+          </ul>
+          <p class="hints-tip">Inside the folder you'll see files named like <code>1735689420.run</code> — one per run, raw JSON. Pick the parent folder and we read every <code>.run</code> file in one pass.</p>
+        </div>
+      </details>
     </div>`;
 }
 
@@ -2211,35 +2274,35 @@ function renderEmptyState() {
   const platform = detectPlatform();
   const hasDirPicker = typeof window.showDirectoryPicker === "function";
 
-  // Platform-specific path callout. Mac users get a clipboard-paste
-  // shortcut into the picker; Windows users get the AppData path; Linux
-  // users get the XDG path. Unknown platforms see all three in the
-  // collapsible hints below.
+  // Platform-specific path callout. The path constant points at the
+  // SlayTheSpire2/ parent on each OS; the directory walker recurses
+  // into steam/<your-id>/profile1/saves/history/, so the user never
+  // has to know their numeric Steam ID.
   let pathBlock = "";
   if (platform === "mac") {
     pathBlock = `
       <div class="empty-state-path">
-        <span class="path-label">Where Slay the Spire 2 saves runs on macOS</span>
+        <span class="path-label">Your STS2 save folder on macOS</span>
         <code class="path-value">${esc(HISTORY_PATH_MAC)}</code>
         <button class="btn-ghost btn-sm" data-action="copy-path" data-path-key="mac" title="Copy path. Paste with Cmd+Shift+G inside the picker.">Copy path</button>
       </div>
       <p class="empty-state-tip muted">
-        Tip: <strong>Find my STS2 saves</strong> copies the path for you. Inside the picker, press <kbd>Cmd</kbd>+<kbd>Shift</kbd>+<kbd>G</kbd> and paste.
+        After the picker opens, press <kbd>Cmd</kbd>+<kbd>Shift</kbd>+<kbd>G</kbd>, paste, and hit Enter.
       </p>`;
   } else if (platform === "windows") {
     pathBlock = `
       <div class="empty-state-path">
-        <span class="path-label">Where Slay the Spire 2 saves runs on Windows</span>
+        <span class="path-label">Your STS2 save folder on Windows</span>
         <code class="path-value">${esc(HISTORY_PATH_WIN)}</code>
         <button class="btn-ghost btn-sm" data-action="copy-path" data-path-key="win" title="Copy path. Paste it into File Explorer's address bar.">Copy path</button>
       </div>
       <p class="empty-state-tip muted">
-        Tip: paste this path into File Explorer's address bar to land directly on the folder.
+        Paste this path into File Explorer's address bar to land directly on the folder.
       </p>`;
   } else if (platform === "linux") {
     pathBlock = `
       <div class="empty-state-path">
-        <span class="path-label">Where Slay the Spire 2 saves runs on Linux</span>
+        <span class="path-label">Your STS2 save folder on Linux</span>
         <code class="path-value">${esc(HISTORY_PATH_LINUX)}</code>
         <button class="btn-ghost btn-sm" data-action="copy-path" data-path-key="linux" title="Copy path. Paste it into your file manager.">Copy path</button>
       </div>`;
@@ -2257,7 +2320,7 @@ function renderEmptyState() {
     <div class="empty-state">
       <div class="empty-state-icon">📂</div>
       <h2>See your STS2 stats — no sign-in required</h2>
-      <p>Slay the Spire 2 saves one <code>.run</code> file per game. Point us at your STS2 save folder (or just drag it in) and we'll read every run on disk to build your stats.</p>
+      <p>Slay the Spire 2 saves one <code>.run</code> file per game. Point us at your STS2 save folder (or drag it in) and we'll read every run on disk to build your stats. Nothing uploads — everything stays in your browser.</p>
       <div class="empty-state-actions">
         ${primaryCTA}
       </div>
@@ -2265,17 +2328,19 @@ function renderEmptyState() {
         Or drag your STS2 <strong>save folder</strong> (or any <code>.run</code> files) anywhere on this page to load them now.
       </p>
       ${pathBlock}
+      <div class="empty-state-warning">
+        <strong>⚠ Don't use Steam Library → "Browse local files"</strong> — that opens the game's <em>install</em> folder (the .app / .exe), not your saves. Saves live in the path above.
+      </div>
       <details class="empty-state-hints">
-        <summary>How do I find my STS2 save folder?</summary>
+        <summary>I still can't find them</summary>
         <ul>
           <li><strong>macOS:</strong> <code>${esc(HISTORY_PATH_MAC)}</code> — Cmd+Shift+G in the picker, paste, Enter.</li>
           <li><strong>Windows:</strong> <code>${esc(HISTORY_PATH_WIN)}</code> — paste into File Explorer's address bar.</li>
-          <li><strong>Linux:</strong> <code>${esc(HISTORY_PATH_LINUX)}</code>.</li>
-          <li><strong>Steam Cloud (Mac):</strong> <code>~/Library/Application Support/Steam/userdata/&lt;your-id&gt;/2868840/remote/</code> if you sync via Steam Cloud.</li>
-          <li>You'll see files named like <code>1735689420.run</code> — those are your runs. We read all of them in one shot; you don't need to pick individually.</li>
-          <li>Browsers can't scan disk silently, so this is a one-time gesture per visit. On Chromium browsers we'll re-read silently on later visits.</li>
-          <li>Your saves never leave your device. Stats are computed in your browser; nothing uploads anywhere.</li>
-          <li>Already have a <code>history.json</code> rollup from the macOS Vault CLI? That still works — just drop it in too.</li>
+          <li><strong>Linux / Steam Deck:</strong> <code>${esc(HISTORY_PATH_LINUX)}</code>.</li>
+          <li><strong>Steam Cloud fallback (Mac):</strong> if the path above is empty, try <code>~/Library/Application Support/Steam/userdata/&lt;your-id&gt;/2868840/remote/</code>.</li>
+          <li>Inside the folder you'll see files named like <code>1735689420.run</code> — one per run. Pick the parent and we read all of them in one pass; you don't need to pick individually.</li>
+          <li>Browsers can't scan disk silently, so this is a one-time gesture per visit. On Chromium-based browsers (Chrome, Edge, Brave, Arc) we'll re-read silently on later visits.</li>
+          <li>Already have a <code>history.json</code> rollup from the macOS Vault CLI? That still works — just drop it in.</li>
         </ul>
       </details>
     </div>`;
