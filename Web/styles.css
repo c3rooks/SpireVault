@@ -160,13 +160,19 @@ input[type="text"]:focus { outline: none; border-color: var(--gold); box-shadow:
   color: var(--win);
 }
 
-main {
+/* Signed-out public landing page only. The app-shell's <main> has its
+ * own width governance via the grid layout below — applying this rule
+ * to it would clamp every stats panel to 980px and collapse the chart
+ * area on wide displays. */
+main.main-public,
+.main-public {
   max-width: var(--max-w);
   margin: 0 auto;
   padding: 32px 28px 64px;
 }
 @media (max-width: 600px) {
-  main { padding: 20px 16px 40px; }
+  main.main-public,
+  .main-public { padding: 20px 16px 40px; }
   .topbar { padding: 14px 16px; }
 }
 
@@ -1951,19 +1957,66 @@ main {
   border-radius: 12px;
   overflow: hidden;
 }
+/* Each row is a <details> element: the summary is always visible, the
+ * body reveals the ascension-level modifier text on click/tap. This
+ * lets the page stay dense for power users while surfacing the
+ * "what does A4 do?" answer one click away. */
 .asc-detail-row {
+  display: block;
+  border-bottom: 1px solid rgba(40, 35, 58, 0.5);
+}
+.asc-detail-row:last-child { border-bottom: 0; }
+.asc-detail-row.has-divider {
+  border-bottom: 1px solid rgba(40, 35, 58, 0.5);
+}
+.asc-detail-row > summary {
+  list-style: none;
+  cursor: pointer;
   display: grid;
-  grid-template-columns: 40px 1fr 60px 90px;
+  grid-template-columns: 40px auto 1fr 60px 90px 20px;
   align-items: center;
   gap: 14px;
   padding: 12px 18px;
+  transition: background-color 0.12s ease;
 }
-.asc-detail-row.has-divider { border-bottom: 1px solid rgba(40, 35, 58, 0.5); }
+.asc-detail-row > summary::-webkit-details-marker { display: none; }
+.asc-detail-row > summary:hover { background: rgba(255, 255, 255, 0.02); }
+.asc-detail-row[open] > summary { background: rgba(255, 140, 66, 0.05); }
 .asc-detail-key {
   font-family: 'Inter', sans-serif;
   font-size: 13px;
   font-weight: 900;
-  color: var(--gold);
+  color: var(--tier-accent, var(--gold));
+  position: relative;
+  padding-left: 10px;
+}
+/* Tier-colored inset bar on the level number so the label "A5" reads
+ * at a glance as "mid climb" without the user parsing the tier pill. */
+.asc-detail-key::before {
+  content: "";
+  position: absolute;
+  left: 0; top: 50%;
+  transform: translateY(-50%);
+  width: 3px; height: 18px;
+  border-radius: 2px;
+  background: var(--tier-accent, var(--gold));
+  opacity: 0.85;
+}
+.asc-mod-badge {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--text-2);
+  padding: 3px 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.asc-mod-badge-plain {
+  color: var(--text-3);
+  font-weight: 600;
 }
 .asc-detail-bar {
   height: 6px;
@@ -1975,6 +2028,7 @@ main {
   display: block;
   height: 100%;
   border-radius: 4px;
+  transition: width 0.4s cubic-bezier(0.2, 0.9, 0.3, 1);
 }
 .asc-detail-pct {
   font-family: 'Inter', sans-serif;
@@ -1990,6 +2044,112 @@ main {
   font-variant-numeric: tabular-nums;
   color: var(--text-2);
   text-align: right;
+}
+.asc-detail-chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-3);
+  transition: transform 0.18s ease, color 0.18s ease;
+}
+.asc-detail-row[open] > summary .asc-detail-chevron {
+  transform: rotate(180deg);
+  color: var(--accent);
+}
+.asc-detail-body {
+  padding: 0 18px 16px 71px; /* align with level number column */
+  animation: ascRowSlide 0.22s ease both;
+}
+@keyframes ascRowSlide {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.asc-detail-title {
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--text);
+  margin-bottom: 6px;
+}
+.asc-detail-text {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-2);
+  margin: 0 0 10px;
+  max-width: 620px;
+}
+.asc-detail-note {
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--text-3);
+  margin: 0;
+  padding: 8px 12px;
+  background: rgba(212, 175, 55, 0.06);
+  border-left: 2px solid var(--gold);
+  border-radius: 4px;
+  max-width: 620px;
+}
+
+/* Tier legend — horizontal row of color-chipped pills that maps level
+ * ranges to their band (Standard / Early / Mid / Expert / Master).
+ * Scrolls horizontally on narrow viewports instead of stacking. */
+.asc-tier-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 20px;
+  padding: 14px 16px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.asc-tier-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-left: 3px solid var(--tier-accent, var(--text-3));
+  border-radius: 6px;
+  transition: background-color 0.15s ease, transform 0.15s ease;
+}
+.asc-tier-pill:hover {
+  background: rgba(255, 255, 255, 0.05);
+  transform: translateY(-1px);
+}
+.asc-tier-label {
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--text);
+  letter-spacing: 0.01em;
+}
+.asc-tier-range {
+  font-family: 'SF Mono', 'Menlo', monospace;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--tier-accent, var(--text-2));
+  font-variant-numeric: tabular-nums;
+}
+
+/* Mobile: collapse the mod badge and tighten the summary grid so the
+ * row still fits on a 360px phone. The info body itself reflows
+ * naturally because its grid lives outside the summary. */
+@media (max-width: 560px) {
+  .asc-detail-row > summary {
+    grid-template-columns: 34px 1fr 50px 20px;
+    gap: 10px;
+    padding: 10px 14px;
+  }
+  .asc-mod-badge { display: none; }
+  .asc-detail-record { display: none; }
+  .asc-detail-body { padding: 0 14px 14px 58px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .asc-detail-body { animation: none; }
+  .asc-detail-chevron { transition: none; }
+  .asc-detail-bar > span { transition: none; }
+  .asc-tier-pill { transition: none; }
+  .asc-tier-pill:hover { transform: none; }
 }
 
 /* ─── Stats: grid + tables ────────────────────────────── */
@@ -2566,6 +2726,12 @@ select#me-note option { background: var(--bg-deep); color: var(--text); }
     display: flex;
     align-items: center;
   }
+  /* HTML `hidden` attribute is only `display: none` by default, which
+   * loses to the `display: inline-flex` selector below. Enforce it so
+   * the runtime toggle in boot() actually takes effect. Without this,
+   * signed-in users saw BOTH "Sign out" and "Sign in with Steam"
+   * buttons at the same time. */
+  .mobile-account-row [hidden] { display: none !important; }
   /* Sign-in CTA in the mobile account-row. Uses the same ember gradient
    * as the primary desktop sign-in so the visual language is consistent
    * across breakpoints, but compressed to match the thin account strip. */

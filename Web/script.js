@@ -16,6 +16,7 @@
 import * as Stats from "/lib/stats-engine.js?v=4";
 import * as HistoryStore from "/lib/history-store.js?v=5";
 import * as InviteAPI from "/lib/invites.js?v=4";
+import * as AscInfo from "/lib/ascension-info.js?v=1";
 
 // ─── Constants ─────────────────────────────────────────────────────────
 const SERVER_URL  = "https://vault-coop.coreycrooks.workers.dev";
@@ -2835,24 +2836,64 @@ function renderAscensionsTab(report) {
       </div>
     </div>`;
 
+  // Tier legend — condenses the 10+ ascension levels into five honest
+  // difficulty bands. Kept above the detailed breakdown so the reader
+  // knows what "A4" means before they see their 5.6% winrate at A4.
+  const tierLegend = `
+    <div class="asc-tier-legend" aria-label="Ascension tiers">
+      ${AscInfo.ASCENSION_TIERS.filter((t) => t.band[0] < 10).map((t) => {
+        const range = t.band[0] === t.band[1] ? `A${t.band[0]}` : `A${t.band[0]}–A${t.band[1]}`;
+        return `
+          <div class="asc-tier-pill" style="--tier-accent:${t.accent}">
+            <span class="asc-tier-label">${esc(t.label)}</span>
+            <span class="asc-tier-range">${esc(range)}</span>
+          </div>`;
+      }).join("")}
+    </div>`;
+
+  // Detailed breakdown. Each row shows the level number, in-game modifier
+  // (with Early-Access caveat), their personal bar + stats, plus a chevron
+  // that animates open to reveal the tier blurb. The expand-on-click keeps
+  // the page dense by default for power users but learnable for newcomers.
   const detailRows = `
     <div class="asc-detail-panel">
       ${buckets.map((b, i) => {
         const wr = (b.winrate * 100).toFixed(1);
         const tint = b.winrate >= 0.10 ? "var(--win)" : "var(--accent)";
+        const ascLevel = parseAsc(b.key);
+        const info = AscInfo.modifierFor(ascLevel);
+        const modBadge = info.modifier
+          ? `<span class="asc-mod-badge">${esc(info.modifier)}</span>`
+          : `<span class="asc-mod-badge asc-mod-badge-plain">${esc(info.tier.label)}</span>`;
+        const divider = i === buckets.length - 1 ? "" : " has-divider";
         return `
-          <div class="asc-detail-row${i === buckets.length - 1 ? "" : " has-divider"}">
-            <span class="asc-detail-key">${esc(b.key)}</span>
-            <div class="asc-detail-bar"><span style="width:${Math.min(100, b.winrate*100)}%; background:${tint}"></span></div>
-            <span class="asc-detail-pct">${wr}%</span>
-            <span class="asc-detail-record">${b.wins}w / ${b.runs}r</span>
-          </div>`;
+          <details class="asc-detail-row${divider}" data-asc="${esc(String(ascLevel))}">
+            <summary class="asc-detail-summary">
+              <span class="asc-detail-key" style="--tier-accent:${info.tier.accent}">${esc(b.key)}</span>
+              ${modBadge}
+              <div class="asc-detail-bar"><span style="width:${Math.min(100, b.winrate*100)}%; background:${tint}"></span></div>
+              <span class="asc-detail-pct">${wr}%</span>
+              <span class="asc-detail-record">${b.wins}w / ${b.runs}r</span>
+              <span class="asc-detail-chevron" aria-hidden="true">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+              </span>
+            </summary>
+            <div class="asc-detail-body">
+              <div class="asc-detail-title">${esc(info.title)}</div>
+              <p class="asc-detail-text">${esc(info.detail)}</p>
+              <p class="asc-detail-note">
+                Slay the Spire 2 is in Early Access — modifiers can shift between patches. Confirm live details on the in-game level-select screen.
+              </p>
+            </div>
+          </details>`;
       }).join("")}
     </div>`;
 
   return `
     ${secTitle("Per ascension", "bars")}
     ${barChart}
+    ${secTitle("Difficulty tiers", "sparkles")}
+    ${tierLegend}
     ${secTitle("Detailed breakdown", "list")}
     ${detailRows}`;
 }
@@ -3584,31 +3625,70 @@ function drawShareCard(run, opts = {}) {
   drawListColumn(ctx, PAD + colW + 24,    colsTop, colW, `DECK · ${(run.deckAtEnd || []).length} CARDS`,
     highlightCards(run), charColor, true, cardLabel);
 
-  // ── Footer ──
-  const footerY = H - PAD;
-  // Shield-ish glyph
-  ctx.fillStyle = "#9b83ff";
+  // ── Footer ─────────────────────────────────────────────────────
+  // This is the sole piece of branding on a card that gets screenshot,
+  // reposted to Discord/Reddit/X, and re-compressed a dozen times. It
+  // needs to survive a Discord thumbnail at 320px wide and STILL answer
+  // the "what tool did you use to make that?" question on first glance.
+  //
+  // Design choices:
+  //   - Filled pill with the SPIREVAULT wordmark in high contrast white
+  //     on character-tinted background. Lockup is legible even after
+  //     heavy JPEG compression.
+  //   - Tagline ("run tracker for STS2") in a dimmed shade so the
+  //     wordmark leads the eye.
+  //   - Short URL (app.spirevault.app) right-aligned in a monospace
+  //     face so it reads as "visit this site" and not as decoration.
+  //   - "Made by @c3rooks" mark sits above-right of the URL for
+  //     personal attribution without being pushy.
+  const footerBarY = H - 56;
+  const footerBarH = 36;
+
+  // Divider above the footer for visual separation
+  ctx.strokeStyle = "rgba(255,255,255,0.06)";
+  ctx.lineWidth = 1;
   ctx.beginPath();
-  ctx.moveTo(PAD, footerY - 7);
-  ctx.lineTo(PAD + 6, footerY - 13);
-  ctx.lineTo(PAD + 12, footerY - 7);
-  ctx.lineTo(PAD + 12, footerY);
-  ctx.lineTo(PAD + 6, footerY + 4);
-  ctx.lineTo(PAD, footerY);
-  ctx.closePath();
-  ctx.fill();
+  ctx.moveTo(PAD, footerBarY - 8);
+  ctx.lineTo(W - PAD, footerBarY - 8);
+  ctx.stroke();
 
-  ctx.fillStyle = "#f4f6fa";
-  ctx.font = "900 11px 'Inter', sans-serif";
-  ctx.fillText("SPIREVAULT", PAD + 18, footerY);
-  ctx.fillStyle = "#6b7280";
-  ctx.font = "500 11px 'Inter', sans-serif";
-  ctx.fillText("· run tracker for Slay the Spire 2", PAD + 18 + ctx.measureText("SPIREVAULT").width + 8, footerY);
+  // Branded wordmark pill (character-tinted) — left
+  const markPadX = 14;
+  const markText = "SPIREVAULT";
+  const tagText  = "The Vault · run tracker for Slay the Spire 2";
+  ctx.font = "900 13px 'Inter', 'Helvetica Neue', Arial, sans-serif";
+  const markW = ctx.measureText(markText).width;
+  const pillH = 26;
+  const pillY = footerBarY + (footerBarH - pillH) / 2;
+  const pillX = PAD;
+  const pillW = markW + markPadX * 2;
 
+  // Gradient fill so the mark reads as a real product badge, not plain text
+  const pillGrad = ctx.createLinearGradient(pillX, pillY, pillX + pillW, pillY);
+  pillGrad.addColorStop(0, hexA(charColor, 0.95));
+  pillGrad.addColorStop(1, hexA(charColor, 0.55));
+  roundRectFill(ctx, pillX, pillY, pillW, pillH, 8, pillGrad);
+  roundRectStroke(ctx, pillX, pillY, pillW, pillH, 8, hexA(charColor, 0.85), 1.25);
+
+  ctx.fillStyle = "#0b0d12";
+  ctx.font = "900 13px 'Inter', 'Helvetica Neue', Arial, sans-serif";
+  ctx.textBaseline = "middle";
+  ctx.fillText(markText, pillX + markPadX, pillY + pillH / 2 + 1);
+
+  // Tagline to the right of the pill
+  ctx.fillStyle = "#8a93a6";
+  ctx.font = "600 11px 'Inter', 'Helvetica Neue', Arial, sans-serif";
+  ctx.fillText(tagText, pillX + pillW + 10, pillY + pillH / 2 + 1);
+  ctx.textBaseline = "alphabetic";
+
+  // Author credit + live URL stacked on the right
   ctx.textAlign = "right";
-  ctx.fillStyle = "#6b7280";
-  ctx.font = "600 10px 'SF Mono', 'Menlo', monospace";
-  ctx.fillText("github.com/c3rooks/SpireVault", W - PAD, footerY);
+  ctx.fillStyle = "#9aa3b2";
+  ctx.font = "700 10px 'Inter', 'Helvetica Neue', Arial, sans-serif";
+  ctx.fillText("Made by @c3rooks", W - PAD, footerBarY + 12);
+  ctx.fillStyle = "#d4af37"; // gold — matches the ascension pill hue
+  ctx.font = "800 12px 'SF Mono', 'Menlo', monospace";
+  ctx.fillText("app.spirevault.app", W - PAD, footerBarY + 30);
   ctx.textAlign = "left";
 }
 
