@@ -28,53 +28,63 @@ const NOW = Date.now();
 const DAY = 86_400_000;
 
 // ─── card / relic vocab (real STS2 IDs from our scraped manifest) ─────
+// Relic IDs verified against Web/assets/sts2/manifest.json so art
+// actually renders on first visit. Format matches what our asset
+// library uses (camelCase/no-underscore), not the STS1-style
+// snake_case the demo originally used.
 const RELICS_COMMON = [
-  "burning_blood", "anchor", "ancient_tea_set", "art_of_war", "bag_of_marbles",
-  "blood_vial", "boot", "centennial_puzzle", "happy_flower", "lantern",
-  "letter_opener", "maw_bank", "meat_on_the_bone", "nunchaku", "preserved_insect",
-  "shovel", "smiling_mask", "strange_spoon", "the_courier", "vajra",
-  "akabeko", "bronze_scales", "lucky_cat", "oddly_smooth_stone", "potion_belt",
-  "regal_pillow", "strawberry", "war_paint",
+  "burningblood", "anchor", "artofwar", "bagofmarbles",
+  "bloodvial", "theboot", "centennialpuzzle", "happyflower", "lantern",
+  "letteropener", "mawbank", "meatonthebone", "nunchaku", "shovel",
+  "thecourier", "vajra", "akabeko", "bronzescales",
+  "oddlysmoothstone", "potionbelt", "regalpillow", "strawberry", "warpaint",
 ];
 const RELICS_RARE = [
-  "sword_of_jade", "sundial", "ginger", "kunai", "shuriken",
-  "ice_cream", "mark_of_pain", "runic_dome", "runic_pyramid", "snecko_eye",
-  "fossilized_helix", "girya", "philosophers_stone", "tingsha", "ectoplasm",
+  "swordofjade", "kunai", "shuriken", "icecream",
+  "runicpyramid", "sneckoeye", "girya", "philosophersstone",
+  "tingsha", "ectoplasm", "callingbell", "blackstar",
+  "dreamcatcher", "lizardtail", "bookoffiverings",
 ];
 
-// Character-specific cards. Real card IDs from the STS2 asset manifest.
-// Use the same slug format the asset lookup expects so card art renders.
+// Character-specific cards. Every ID below is verified against the
+// shipped STS2 asset manifest (Web/assets/sts2/manifest.json), so the
+// Cards tab renders real art on first visit rather than placeholder
+// sparkles. If the manifest changes, regenerate this block via
+// scripts/regen_demo_cards.py (or by hand) — otherwise placeholders
+// come back.
+//
+// "common/uncommon/rare" here is for shape only (the demo doesn't
+// model rarity economics); the manifest doesn't expose rarity metadata.
 const CARDS = {
   ironclad: {
-    base: ["strike_red", "strike_red", "strike_red", "strike_red", "defend_red", "defend_red", "defend_red", "defend_red", "bash"],
-    common: ["pommelstrike", "anger", "cleave", "ironwave", "perfectedstrike", "bodyslam", "shrugitoff", "twinstrike", "uppercut", "thunderclap"],
-    uncommon: ["bloodletting", "carnage", "drop_kick", "hemokinesis", "infernal_blade", "metallicize", "powerthrough", "secondwind", "spotweakness", "warcry"],
-    rare: ["bludgeon", "limit_break", "demon_form", "feed", "offering", "reaper", "barricade", "berserk", "corruption"],
+    base: ["ironclad_strike", "ironclad_strike", "ironclad_strike", "ironclad_strike", "ironclad_defend", "ironclad_defend", "ironclad_defend", "ironclad_defend", "ironclad_bash"],
+    common: ["ironclad_perfectedstrike", "ironclad_stomp", "ironclad_drumofbattle", "ironclad_pillage", "ironclad_flamebarrier", "ironclad_rampage", "ironclad_break", "ironclad_moltenfist", "ironclad_secondwind", "ironclad_infernalblade", "ironclad_colossus", "ironclad_tearasunder", "ironclad_shrugitoff", "ironclad_impervious"],
+    uncommon: ["ironclad_ironwave", "ironclad_stoke", "ironclad_entrench", "ironclad_rupture", "ironclad_unrelenting", "ironclad_anger", "ironclad_tremble", "ironclad_pyre", "ironclad_cruelty", "ironclad_tank", "ironclad_darkembrace", "ironclad_demonicshield"],
+    rare: ["ironclad_bludgeon", "ironclad_barricade", "ironclad_corruption", "ironclad_feed", "ironclad_offering", "ironclad_demonform", "ironclad_bloodletting"],
   },
   silent: {
-    base: ["strike_green", "strike_green", "strike_green", "strike_green", "strike_green", "defend_green", "defend_green", "defend_green", "defend_green", "neutralize", "survivor"],
-    common: ["bane", "dark_shackles", "deadly_poison", "footwork", "poisoned_stab", "preparedness", "quick_slice", "slice", "sneaky_strike", "underhanded_strike", "acrobatics"],
-    uncommon: ["accuracy", "all_out_attack", "backstab", "blade_dance", "bouncing_flask", "calculated_gamble", "caltrops", "catalyst", "infinite_blades", "predator", "skewer"],
-    rare: ["bullet_time", "tools_of_the_trade", "envenom", "wraith_form", "a_thousand_cuts", "die_die_die", "glass_knife", "storm_of_steel"],
+    base: ["silent_strike", "silent_strike", "silent_strike", "silent_strike", "silent_strike", "silent_defend", "silent_defend", "silent_defend", "silent_defend", "silent_neutralize", "silent_survivor"],
+    common: ["silent_corrosivewave", "silent_untouchable", "silent_tracking", "silent_outmaneuver", "silent_echoingslash", "silent_legsweep", "silent_anticipate", "silent_accelerant", "silent_haze", "silent_suppress", "silent_handtrick", "silent_bladeofink", "silent_knifetrap", "silent_noxiousfumes"],
+    uncommon: ["silent_accuracy", "silent_bouncingflask", "silent_murder", "silent_deadlypoison", "silent_flechettes", "silent_leadingstrike", "silent_distraction", "silent_footwork", "silent_dash", "silent_abrasive", "silent_cloakanddagger", "silent_shadowmeld"],
+    rare: ["silent_bullettime", "silent_envenom", "silent_wraithform", "silent_nightmare", "silent_burst"],
   },
   defect: {
-    base: ["strike_blue", "strike_blue", "strike_blue", "strike_blue", "defend_blue", "defend_blue", "defend_blue", "defend_blue", "zap", "dualcast"],
-    common: ["coldsnap", "compile_driver", "consume", "darkness", "double_energy", "rebound", "skim", "stream_of_time", "streamline", "sweeping_beam"],
-    uncommon: ["aggregate", "amplify", "auto_shields", "blizzard", "boot_sequence", "bullseye", "capacitor", "chaos", "force_field", "genetic_algorithm", "glacier"],
-    rare: ["meteor_strike", "thunder_strike", "biased_cognition", "echo_form", "buffer", "core_surge", "creative_ai", "fission", "machine_learning"],
+    base: ["defect_strike", "defect_strike", "defect_strike", "defect_strike", "defect_defend", "defect_defend", "defect_defend", "defect_defend", "defect_zap", "defect_dualcast"],
+    common: ["defect_overclock", "defect_modded", "defect_rebound", "defect_sweepingbeam", "defect_boostaway", "defect_quadcast", "defect_bootsequence", "defect_glasswork", "defect_coolant", "defect_null", "defect_chaos", "defect_chill", "defect_multi_cast", "defect_shadowshield"],
+    uncommon: ["defect_barrage", "defect_helloworld", "defect_spinner", "defect_leap", "defect_rocketpunch", "defect_focusedstrike", "defect_scavenge", "defect_fightthrough", "defect_rainbow", "defect_geneticalgorithm", "defect_gofortheeyes", "defect_whitenoise"],
+    rare: ["defect_biasedcognition", "defect_echoform", "defect_buffer", "defect_creativeai", "defect_reboot", "defect_meteorstrike"],
   },
   regent: {
-    base: ["strike_purple", "strike_purple", "strike_purple", "strike_purple", "defend_purple", "defend_purple", "defend_purple", "defend_purple", "eruption", "vigilance"],
-    common: ["bowling_bash", "consecrate", "crush_joints", "cut_through_fate", "halt", "inner_peace", "press", "prostrate", "protect", "smite"],
-    uncommon: ["empty_body", "empty_fist", "empty_mind", "evaluate", "flurry_of_blows", "follow_up", "foreign_influence", "indignation", "like_water", "mental_fortress"],
-    rare: ["alpha", "blasphemy", "deus_ex_machina", "establishment", "judgment", "master_reality", "ragnarok", "scrawl", "spirit_shield"],
+    base: ["regent_strike", "regent_strike", "regent_strike", "regent_strike", "regent_defend", "regent_defend", "regent_defend", "regent_defend"],
+    common: ["regent_crushunder", "regent_kinglykick", "regent_terraforming", "regent_neutronaegis", "regent_palebluedot", "regent_royalgamble", "regent_guidingstar", "regent_parry", "regent_astralpulse", "regent_photoncut", "regent_bulwark", "regent_swordsage", "regent_makeitso", "regent_collisioncourse"],
+    uncommon: ["regent_heirloomhammer", "regent_iaminvincible", "regent_crescentspear", "regent_summonforth", "regent_guards", "regent_arsenal", "regent_sevenstars", "regent_bundleofjoy", "regent_tyranny", "regent_quasar", "regent_monologue", "regent_knowthyplace"],
+    rare: ["regent_gammablast", "regent_solarstrike", "regent_lunarblast", "regent_monarchsgaze", "regent_cosmicindifference", "regent_heavenlydrill", "regent_meteorshower"],
   },
   necrobinder: {
-    // Necrobinder card pool is small in the demo since it's a new unlock.
-    base: ["strike_orange", "strike_orange", "strike_orange", "strike_orange", "defend_orange", "defend_orange", "defend_orange", "defend_orange", "rebirth"],
-    common: ["bone_strike", "graveyard", "haunting", "lich_form", "marrow", "rot", "soul_drain", "summon_skeleton"],
-    uncommon: ["bone_pile", "death_pact", "dead_branch", "ghoul_pact", "necrotic_slash", "summon_zombie"],
-    rare: ["lich_king", "soul_chain", "undying_resolve"],
+    base: ["necrobinder_strike", "necrobinder_strike", "necrobinder_strike", "necrobinder_strike", "necrobinder_defend", "necrobinder_defend", "necrobinder_defend", "necrobinder_defend"],
+    common: ["necrobinder_endofdays", "necrobinder_deathmarch", "necrobinder_righthandhand", "necrobinder_thescythe", "necrobinder_eidolon", "necrobinder_blightstrike", "necrobinder_poke", "necrobinder_countdown", "necrobinder_dansemacabre", "necrobinder_pagestorm", "necrobinder_bansheescry", "necrobinder_veilpiercer", "necrobinder_neurosurge", "necrobinder_calcify"],
+    uncommon: ["necrobinder_sculptingstrike", "necrobinder_dirge", "necrobinder_rattle", "necrobinder_lethality", "necrobinder_transfigure", "necrobinder_parse", "necrobinder_capturespirit", "necrobinder_fear", "necrobinder_spur", "necrobinder_defy", "necrobinder_spiritofash", "necrobinder_sleightofflesh"],
+    rare: ["necrobinder_oblivion", "necrobinder_soulstorm", "necrobinder_forbiddengrimoire", "necrobinder_legionofbone", "necrobinder_eradicate", "necrobinder_defile"],
   },
 };
 
@@ -116,7 +126,7 @@ function buildRelics(won, ascension) {
   // Sword of Jade is the obvious A20-sample relic the user noticed earlier.
   // Sprinkle it in only on a handful of high-ascension wins so the
   // Wilson-LB confidence math has something to talk about.
-  if (won && ascension >= 12 && r01() < 0.4) out.push("sword_of_jade");
+  if (won && ascension >= 12 && r01() < 0.4) out.push("swordofjade");
   if (won && r01() < 0.3) out.push(pickFrom(RELICS_RARE));
   return out;
 }

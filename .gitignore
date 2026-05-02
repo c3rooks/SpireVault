@@ -107,3 +107,6 @@ generate_screenshots.py
 # Internal launch playbook — keep local, not on the public repo
 LAUNCH_POSTS.md
 GOLIVE.md
+
+# Local dev artifacts from Playwright UI audits (not shipped)
+Web/.audit-screenshots/

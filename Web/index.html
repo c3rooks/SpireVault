@@ -4,12 +4,12 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Spire Vault · Slay the Spire 2 stats &amp; co-op (web)</title>
-  <meta name="description" content="Slay the Spire 2 run history and stats in your browser. Drop your history.json to see win rates, top relics, deck patterns, and victories. Optional Steam sign-in unlocks the co-op partner feed." />
+  <meta name="description" content="See your Slay the Spire 2 stats in your browser. Drop your STS2 save folder (.run files) — nothing uploads, everything stays local. Optional Steam sign-in unlocks the co-op partner feed." />
   <meta name="theme-color" content="#0c0a14" />
   <link rel="icon" type="image/svg+xml" href="/assets/vault-mark.svg" />
 
   <meta property="og:title" content="Spire Vault · Slay the Spire 2 stats &amp; co-op (web)" />
-  <meta property="og:description" content="Drop your history.json, see your STS2 stats instantly. No sign-in required for stats. Optional Steam sign-in for the co-op partner feed." />
+  <meta property="og:description" content="Drop your STS2 save folder, see your stats instantly. Nothing uploads. Optional Steam sign-in for the co-op partner feed." />
   <meta property="og:image" content="https://app.spirevault.app/assets/og.png?v=1" />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
@@ -18,15 +18,19 @@
   <meta property="og:site_name" content="Spire Vault" />
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="Spire Vault · Slay the Spire 2 stats &amp; co-op (web)" />
-  <meta name="twitter:description" content="Drop your history.json, see your STS2 stats instantly. No sign-in required for stats. Optional Steam sign-in for the co-op partner feed." />
+  <meta name="twitter:description" content="Drop your STS2 save folder, see your stats instantly. Nothing uploads. Optional Steam sign-in for the co-op partner feed." />
   <meta name="twitter:image" content="https://app.spirevault.app/assets/og.png?v=1" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Playfair+Display:wght@700;900&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/styles.css?v=25" />
+  <link rel="stylesheet" href="/styles.css?v=28" />
 </head>
 <body>
   <div class="bg-glow" aria-hidden="true"></div>
+
+  <!-- Keyboard-first: jump straight to the main app content. Visually
+       hidden until focused so it doesn't interfere with design. -->
+  <a class="skip-to-content" href="#app-content">Skip to main content</a>
 
   <!-- ================================================================
        Signed-out hero: only thing you see if you have no session.
@@ -47,11 +51,10 @@
       <span class="eyebrow">Slay the Spire 2 · Vault for the Web</span>
       <h1>Run history, stats, and co-op, <span class="grad">in&nbsp;your&nbsp;browser</span>.</h1>
       <p class="lede">
-        Sign in with Steam to see who's around right now, send canned co-op
-        invites, and launch <strong>Slay the Spire 2</strong> straight from
-        the page. Drop your <code>history.json</code> in to get the same
-        Overview, Characters, Ascensions, Relics, Cards, and Recent Runs tabs
-        the macOS app has. Same data, same engine, no install.
+        Drop your <strong>Slay the Spire 2</strong> save folder in to see the
+        same Overview, Characters, Ascensions, Relics, Cards, and Recent Runs
+        tabs the macOS app has. Everything stays in your browser — nothing
+        uploads. Optional Steam sign-in unlocks the live co-op partner feed.
       </p>
       <div class="cta-row">
         <button class="btn-primary" id="signin-btn">
@@ -95,7 +98,7 @@
        Each panel is hidden until its tab becomes active.
   ================================================================ -->
   <div id="app-shell" class="app-shell" hidden>
-    <aside class="sidebar">
+    <aside class="sidebar" aria-label="App navigation">
       <div class="sidebar-brand">
         <img src="/assets/vault-emblem.png" alt="" width="44" height="44" />
         <div>
@@ -186,83 +189,83 @@
       </div>
     </aside>
 
-    <section class="content">
+    <main id="app-content" class="content" role="main">
       <!-- =================== Overview =================== -->
-      <article class="tab-panel" data-tab="overview" hidden>
-        <header class="panel-head">
+      <article class="tab-panel" data-tab="overview" aria-labelledby="tab-overview-title" hidden>
+        <div class="panel-head">
           <div>
-            <h1>Overview</h1>
+            <h2 id="tab-overview-title">Overview</h2>
             <p class="panel-sub" id="overview-sub">Your run history at a glance.</p>
           </div>
           <div class="panel-actions">
             <button class="btn-ghost" data-action="upload">Import</button>
           </div>
-        </header>
+        </div>
         <div class="panel-body" id="overview-body">
           <!-- Filled by renderer when history is loaded; empty state otherwise -->
         </div>
       </article>
 
       <!-- =================== Characters =================== -->
-      <article class="tab-panel" data-tab="characters" hidden>
-        <header class="panel-head">
-          <div><h1>Characters</h1><p class="panel-sub">Win rate by character.</p></div>
+      <article class="tab-panel" data-tab="characters" aria-labelledby="tab-characters-title" hidden>
+        <div class="panel-head">
+          <div><h2 id="tab-characters-title">Characters</h2><p class="panel-sub">Win rate by character.</p></div>
           <div class="panel-actions"><button class="btn-ghost" data-action="upload">Import</button></div>
-        </header>
+        </div>
         <div class="panel-body" id="characters-body"></div>
       </article>
 
       <!-- =================== Ascensions =================== -->
-      <article class="tab-panel" data-tab="ascensions" hidden>
-        <header class="panel-head">
-          <div><h1>Ascensions</h1><p class="panel-sub">Win rate by ascension level.</p></div>
+      <article class="tab-panel" data-tab="ascensions" aria-labelledby="tab-ascensions-title" hidden>
+        <div class="panel-head">
+          <div><h2 id="tab-ascensions-title">Ascensions</h2><p class="panel-sub">Win rate by ascension level.</p></div>
           <div class="panel-actions"><button class="btn-ghost" data-action="upload">Import</button></div>
-        </header>
+        </div>
         <div class="panel-body" id="ascensions-body"></div>
       </article>
 
       <!-- =================== Relics =================== -->
-      <article class="tab-panel" data-tab="relics" hidden>
-        <header class="panel-head">
-          <div><h1>Top Relics</h1><p class="panel-sub">Best relics by win rate (min. 3 runs).</p></div>
+      <article class="tab-panel" data-tab="relics" aria-labelledby="tab-relics-title" hidden>
+        <div class="panel-head">
+          <div><h2 id="tab-relics-title">Top Relics</h2><p class="panel-sub">Best relics by win rate (min. 3 runs).</p></div>
           <div class="panel-actions"><button class="btn-ghost" data-action="upload">Import</button></div>
-        </header>
+        </div>
         <div class="panel-body" id="relics-body"></div>
       </article>
 
       <!-- =================== Cards =================== -->
-      <article class="tab-panel" data-tab="cards" hidden>
-        <header class="panel-head">
-          <div><h1>Cards</h1><p class="panel-sub">Most picked vs. most skipped.</p></div>
+      <article class="tab-panel" data-tab="cards" aria-labelledby="tab-cards-title" hidden>
+        <div class="panel-head">
+          <div><h2 id="tab-cards-title">Cards</h2><p class="panel-sub">Most picked vs. most skipped.</p></div>
           <div class="panel-actions"><button class="btn-ghost" data-action="upload">Import</button></div>
-        </header>
+        </div>
         <div class="panel-body" id="cards-body"></div>
       </article>
 
       <!-- =================== Recent Runs =================== -->
-      <article class="tab-panel" data-tab="runs" hidden>
-        <header class="panel-head">
-          <div><h1>Recent Runs</h1><p class="panel-sub">Latest runs from your history. Auto-refreshes from disk.</p></div>
+      <article class="tab-panel" data-tab="runs" aria-labelledby="tab-runs-title" hidden>
+        <div class="panel-head">
+          <div><h2 id="tab-runs-title">Recent Runs</h2><p class="panel-sub">Latest runs from your history. Auto-refreshes from disk.</p></div>
           <div class="panel-actions">
             <button class="btn-ghost" data-action="export-json" title="Download all runs as JSON">Export JSON</button>
             <button class="btn-ghost" data-action="export-csv" title="Download all runs as CSV">Export CSV</button>
             <button class="btn-ghost" data-action="upload">Import</button>
           </div>
-        </header>
+        </div>
         <div class="panel-body" id="runs-body"></div>
       </article>
 
       <!-- =================== Co-op =================== -->
-      <article class="tab-panel" data-tab="coop" hidden>
-        <header class="panel-head">
+      <article class="tab-panel" data-tab="coop" aria-labelledby="tab-coop-title" hidden>
+        <div class="panel-head">
           <div>
-            <h1>Who's around right now</h1>
+            <h2 id="tab-coop-title">Who's around right now</h2>
             <p class="panel-sub" id="online-summary">Loading…</p>
           </div>
           <div class="panel-actions">
             <button class="btn-ghost" id="refresh-btn" title="Refresh">↻ Refresh</button>
           </div>
-        </header>
+        </div>
         <div class="panel-body">
           <!-- Inbox banner (invites I've received) -->
           <section class="inbox" id="inbox" hidden>
@@ -316,7 +319,7 @@
           <p class="muted small footnote" id="last-updated">…</p>
         </div>
       </article>
-    </section>
+    </main>
   </div>
 
   <!-- ================================================================
@@ -324,9 +327,9 @@
   ================================================================ -->
   <div class="drop-overlay" id="drop-overlay" hidden>
     <div class="drop-overlay-card">
-      <div class="drop-overlay-icon">↑</div>
-      <h2>Drop <code>history.json</code> here</h2>
-      <p>Stays on your device. Never uploaded.</p>
+      <div class="drop-overlay-icon" aria-hidden="true">↑</div>
+      <h2>Drop your STS2 save folder here</h2>
+      <p>Or any <code>.run</code> files. Everything stays on your device — nothing uploads.</p>
     </div>
   </div>
 
@@ -391,6 +394,6 @@
     </div>
   </footer>
 
-  <script src="/script.js?v=37" type="module"></script>
+  <script src="/script.js?v=38" type="module"></script>
 </body>
 </html>

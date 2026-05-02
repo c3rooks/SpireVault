@@ -951,7 +951,10 @@ function switchTab(tab) {
   activeTab = tab;
   localStorage.setItem(STORAGE_LAST_TAB, tab);
   document.querySelectorAll(".nav-row").forEach((b) => {
-    b.classList.toggle("is-active", b.dataset.tab === tab);
+    const isActive = b.dataset.tab === tab;
+    b.classList.toggle("is-active", isActive);
+    if (isActive) b.setAttribute("aria-current", "page");
+    else b.removeAttribute("aria-current");
   });
   document.querySelectorAll(".tab-panel").forEach((p) => {
     p.hidden = p.dataset.tab !== tab;
@@ -2225,7 +2228,7 @@ function csvEscape(v) {
  *  asking for CSV want spreadsheet-friendly summary stats. */
 function exportAllRuns(format) {
   if (parsedRuns.length === 0) {
-    toast("Load history.json first — nothing to export yet.");
+    toast("Drop your STS2 save folder first — nothing to export yet.");
     return;
   }
   const stamp = todayStamp();
