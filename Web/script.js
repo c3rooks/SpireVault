@@ -42,9 +42,20 @@ const TABS_WITH_DATA = ["overview", "characters", "ascensions", "relics", "cards
 // up here avoids a Temporal Dead Zone ReferenceError on cold load that
 // would otherwise wipe out the entire boot path (and silently kill
 // IndexedDB persistence, presence heartbeats, and the live feed).
-const HISTORY_PATH_MAC = "~/Library/Application Support/AscensionCompanion/vault/history.json";
-const HISTORY_PATH_WIN = "%APPDATA%\\AscensionCompanion\\vault\\history.json";
-const HISTORY_PATH_LINUX = "~/.local/share/AscensionCompanion/vault/history.json";
+// Where Slay the Spire 2 itself writes per-run save files. One JSON
+// `.run` file per game, named `<unix_timestamp>.run`. These are the
+// REAL paths a user has on disk after playing — not a Vault-built
+// rollup. The web app reads these directly so any platform can use
+// it without first running the macOS CLI.
+//
+// (The legacy path `~/Library/Application Support/AscensionCompanion/
+// vault/history.json` is the rollup the macOS Vault CLI produces.
+// We still accept that file when dropped — see Stats.extractRuns —
+// but we no longer point users at it because most people don't have
+// it. They have the raw `.run` folder below.)
+const HISTORY_PATH_MAC = "~/Library/Application Support/Mega Crit/Slay the Spire 2/profile1/saves/history";
+const HISTORY_PATH_WIN = "%APPDATA%\\Mega Crit\\Slay the Spire 2\\profile1\\saves\\history";
+const HISTORY_PATH_LINUX = "~/.local/share/Mega Crit/Slay the Spire 2/profile1/saves/history";
 
 // ─── STS2 asset library ────────────────────────────────────────────────
 // Card / relic / character art lives under /assets/sts2/ as optimized
@@ -591,8 +602,10 @@ async function boot() {
     btn.addEventListener("click", () => exportAllRuns("csv"));
   });
   document.getElementById("history-file-input").addEventListener("change", (e) => {
-    const file = e.target.files?.[0];
-    if (file) void ingestHistoryFile(file);
+    const files = e.target.files;
+    if (files && files.length > 0) {
+      void ingestHistoryFiles(files);
+    }
     e.target.value = ""; // allow re-selecting same file
   });
 
@@ -1381,8 +1394,38 @@ function wireDropOverlay() {
     e.preventDefault();
     dragDepth = 0;
     $ov.hidden = true;
-    const file = e.dataTransfer?.files?.[0];
-    if (file) void ingestHistoryFile(file);
+    // Two paths:
+    //   1. Folder drop — DataTransferItem.webkitGetAsEntry() returns a
+    //      directory entry we recursively walk to find every `.run` file
+    //      buried under `profile1/saves/history/`. Works in Chromium + WebKit.
+    //   2. File drop — bare files, single or multi. Goes straight to ingest.
+    // We try (1) first if any item is a directory; otherwise fall through
+    // to (2) so a single dropped `history.json` still works one-click.
+    const items = e.dataTransfer?.items;
+    if (items && items.length > 0) {
+      const entries = [];
+      for (let i = 0; i < items.length; i++) {
+        const it = items[i];
+        if (it.kind !== "file") continue;
+        const entry = it.webkitGetAsEntry?.();
+        if (entry) entries.push(entry);
+      }
+      if (entries.some((en) => en.isDirectory)) {
+        void collectFilesFromEntries(entries).then((files) => {
+          if (files.length === 0) {
+            toast("No .run or .json files found in that folder.");
+            return;
+          }
+          void ingestHistoryFiles(files);
+        });
+        return;
+      }
+    }
+    // Plain file(s) drop — pass them all to the multi-file ingest.
+    const files = e.dataTransfer?.files;
+    if (files && files.length > 0) {
+      void ingestHistoryFiles(files);
+    }
   });
 
   function hasFiles(e) {
@@ -1391,8 +1434,70 @@ function wireDropOverlay() {
   }
 }
 
+/**
+ * Recursively walk a list of `FileSystemEntry` objects (returned by
+ * `DataTransferItem.webkitGetAsEntry`) and yield every regular file
+ * inside, filtered to plausible STS2 save extensions.
+ *
+ * Used by the drag-drop overlay so a user can drop their entire STS2
+ * save folder (`Slay the Spire 2/`, `runs/`, or `profile1/saves/history/`)
+ * and we'll pick up every `.run` file regardless of how deep it sits.
+ *
+ * The entire walk uses async iteration over the legacy webkit FileSystem
+ * API because that's the only API browsers expose for synchronous-style
+ * folder reads after a drop. It works in Chromium, WebKit (Safari), and
+ * Firefox (which implements it for compatibility).
+ */
+async function collectFilesFromEntries(entries) {
+  const out = [];
+  const allowedExt = /\.(run|json|save)$/i;
+  // Cap the walk so a malicious or accidental drop of `~/` doesn't
+  // pull in 500k files. STS2 save folders top out around 1k runs even
+  // for the most prolific players.
+  const MAX_FILES = 5000;
+
+  async function walk(entry) {
+    if (out.length >= MAX_FILES) return;
+    if (!entry) return;
+    if (entry.isFile) {
+      if (!allowedExt.test(entry.name || "")) return;
+      const file = await new Promise((resolve, reject) => entry.file(resolve, reject));
+      if (file) {
+        // Stash the relative path on the File object so error messages
+        // can say "profile1/saves/history/123.run" instead of "123.run".
+        try { file.webkitRelativePath = entry.fullPath || file.name; } catch {}
+        out.push(file);
+      }
+      return;
+    }
+    if (entry.isDirectory) {
+      const reader = entry.createReader();
+      // readEntries returns chunks of up to ~100 entries; loop until empty.
+      while (true) {
+        const chunk = await new Promise((resolve, reject) => reader.readEntries(resolve, reject));
+        if (!chunk || chunk.length === 0) break;
+        for (const child of chunk) {
+          await walk(child);
+          if (out.length >= MAX_FILES) return;
+        }
+      }
+    }
+  }
+
+  for (const entry of entries) {
+    await walk(entry);
+    if (out.length >= MAX_FILES) break;
+  }
+  return out;
+}
+
 function triggerFilePicker() {
-  document.getElementById("history-file-input").click();
+  // Force-clear so re-selecting the same file fires `change`. Browsers
+  // suppress the event when the value didn't appear to change, which
+  // otherwise breaks the "I picked the wrong file, let me try again" flow.
+  const $input = document.getElementById("history-file-input");
+  if ($input) $input.value = "";
+  $input?.click();
 }
 
 /**
@@ -1438,52 +1543,40 @@ function triggerFilePicker() {
  *      impossible. Always falls through to a plain <input type="file">.
  */
 async function scanForHistory() {
-  if (!HistoryStore.supportsFSA()) {
-    triggerFilePicker();
-    return;
+  // Best path: directory picker (Chromium, Edge, Brave). One click, the
+  // user picks `Slay the Spire 2/` (or any parent of the actual `runs/`
+  // folder), the browser hands back a directory handle, and we
+  // recursively read every `.run` file inside. This is the experience
+  // 95% of new users actually want: "show me my stats", one gesture.
+  if (typeof window.showDirectoryPicker === "function") {
+    return scanForHistoryViaDirectoryPicker();
   }
+  // Second-best: file picker on Chromium with `multiple: true` — user
+  // can shift-select every `.run` file in their save folder. Still one
+  // gesture, but they have to navigate to the folder themselves.
+  if (HistoryStore.supportsFSA()) {
+    return scanForHistoryViaFilePicker();
+  }
+  // Safari / Firefox fallback: legacy `<input type="file" multiple>`.
+  // Users can multi-select but no folder picker is exposed by these
+  // browsers without webkitdirectory, which they don't support
+  // consistently for the open-then-trust pattern we want.
+  triggerFilePicker();
+}
 
-  // STEP 1 — try the saved handle silently.
-  let handle = null;
-  try {
-    handle = await HistoryStore.loadHandle();
-  } catch (e) {
-    console.warn("scanForHistory: loadHandle failed", e);
-  }
-  if (handle) {
-    let perm = "prompt";
-    try {
-      perm = await handle.requestPermission({ mode: "read" });
-    } catch (e) {
-      console.warn("scanForHistory: requestPermission failed", e);
-    }
-    if (perm === "granted") {
-      let file = null;
-      try {
-        file = await handle.getFile();
-      } catch (e) {
-        // File was renamed / deleted / moved since last visit.
-        console.warn("saved handle no longer resolves", e);
-        await HistoryStore.clearHandle().catch(() => {});
-      }
-      if (file) {
-        const ok = await ingestHistoryFile(file);
-        if (ok) toast("Auto-scanned history.json from disk.");
-        return;
-      }
-    }
-  }
-
-  // STEP 2 — no usable saved handle. Open the picker exactly once. After
-  // this succeeds, every subsequent visit is silent (step 1 covers it).
-  //
-  // First-time UX shortcut: copy the platform-appropriate default path
-  // to the clipboard so the user can paste it inside the picker:
-  //   - macOS:   Cmd+Shift+G inside the picker, paste, Enter
-  //   - Windows: paste into the File Explorer address bar
-  //   - Linux:   varies by file manager; the path itself is still useful
-  // If the clipboard write fails (permission, non-secure context, older
-  // browser) we just skip it silently — the picker still opens.
+/**
+ * Modern directory-pick flow. Opens the OS folder picker, the user
+ * navigates to (or pastes) their STS2 save folder, we recursively
+ * read every `.run` file, then ingest them all in one shot.
+ *
+ * On subsequent visits we re-read the same folder silently (handle
+ * permission was granted previously), so a returning user sees fresh
+ * stats with zero clicks after they've played a few more runs.
+ */
+async function scanForHistoryViaDirectoryPicker() {
+  // Platform-appropriate path → clipboard so the user can paste into
+  // the picker instead of clicking through `~/Library/Application
+  // Support/Mega Crit/...` from scratch. Best-effort; never blocks.
   const platform = detectPlatform();
   let copiedPath = null;
   try {
@@ -1493,29 +1586,91 @@ async function scanForHistory() {
       else if (platform === "linux") copiedPath = HISTORY_PATH_LINUX;
       if (copiedPath) await navigator.clipboard.writeText(copiedPath);
     }
-  } catch {
-    copiedPath = null; // not worth blocking the picker
-  }
+  } catch { /* ignore */ }
   if (copiedPath) {
     if (platform === "mac") {
       toast("Path copied. In the picker, press Cmd+Shift+G and paste.");
     } else if (platform === "windows") {
-      toast("Path copied. Paste it into the picker's address bar.");
+      toast("Path copied. Paste into the picker's address bar.");
     } else {
-      toast("Path copied. Paste it into the picker.");
+      toast("Path copied. Paste into the picker.");
     }
   }
 
-  let picked;
+  let dirHandle;
   try {
-    [picked] = await window.showOpenFilePicker({
+    dirHandle = await window.showDirectoryPicker({ mode: "read", startIn: "documents" });
+  } catch (e) {
+    if (e?.name !== "AbortError") {
+      console.warn("directory picker failed", e);
+      toast("Couldn't open the folder picker. Try Import as a fallback.");
+    }
+    return;
+  }
+
+  // Walk the directory recursively, collect every `.run` (or .json) file.
+  toast("Scanning folder…");
+  const files = await collectFilesFromDirectoryHandle(dirHandle);
+  if (files.length === 0) {
+    toast(`No .run or .json files found inside ${dirHandle.name || "that folder"}.`);
+    return;
+  }
+  await ingestHistoryFiles(files);
+}
+
+/**
+ * Recursive walk over a `FileSystemDirectoryHandle`. Pulled from the
+ * directory-picker path so the periodic auto-refresh loop can re-walk
+ * the same folder later without prompting the user again.
+ */
+async function collectFilesFromDirectoryHandle(dirHandle, depth = 0) {
+  const out = [];
+  // Same safety cap as the drag-drop walker. Caps an accidental drop
+  // of the entire user home dir from filling memory with millions of
+  // unrelated files.
+  const MAX_FILES = 5000;
+  const allowedExt = /\.(run|json|save)$/i;
+
+  async function walk(handle, prefix) {
+    if (out.length >= MAX_FILES) return;
+    if (depth > 8) return; // sanity: STS2 saves are at most 4 deep
+    for await (const [name, entry] of handle.entries()) {
+      if (out.length >= MAX_FILES) break;
+      if (entry.kind === "file") {
+        if (!allowedExt.test(name)) continue;
+        try {
+          const file = await entry.getFile();
+          // Path label so error messages reference where in the tree
+          // a bad file came from.
+          try { file.webkitRelativePath = `${prefix}${name}`; } catch {}
+          out.push(file);
+        } catch (e) {
+          console.warn("[Vault] could not read", name, e);
+        }
+      } else if (entry.kind === "directory") {
+        // Skip Steam's `cloud/` subfolder which holds dummy backup
+        // copies that aren't real runs.
+        if (name === "cloud" || name === "screenshots") continue;
+        await walk(entry, `${prefix}${name}/`);
+      }
+    }
+  }
+  await walk(dirHandle, "");
+  return out;
+}
+
+/**
+ * Multi-file picker fallback for browsers that don't support
+ * showDirectoryPicker (Safari, Firefox).
+ */
+async function scanForHistoryViaFilePicker() {
+  let pickedHandles;
+  try {
+    pickedHandles = await window.showOpenFilePicker({
       types: [
-        {
-          description: "Vault history",
-          accept: { "application/json": [".json"] },
-        },
+        { description: "STS2 run save", accept: { "application/json": [".run", ".json", ".save"] } },
       ],
-      multiple: false,
+      multiple: true,
       excludeAcceptAllOption: false,
       startIn: "documents",
     });
@@ -1526,21 +1681,17 @@ async function scanForHistory() {
     }
     return;
   }
-
-  let file;
-  try {
-    file = await picked.getFile();
-  } catch {
-    toast("Picked the file but couldn't read it. Try again.");
-    return;
+  const files = [];
+  for (const h of pickedHandles) {
+    try { files.push(await h.getFile()); } catch (e) { console.warn("getFile failed", e); }
   }
-  const ok = await ingestHistoryFile(file);
-  if (ok) {
-    try {
-      await HistoryStore.saveHandle(picked);
-    } catch (e) {
-      console.warn("could not persist file handle", e);
-    }
+  if (files.length === 0) return;
+  const ok = await ingestHistoryFiles(files);
+  // Save the first file's handle so the auto-refresh loop has at least
+  // one anchor to silently re-read later. (For the directory picker we'd
+  // save the directory handle; that's done in the dir picker path.)
+  if (ok && pickedHandles.length === 1) {
+    try { await HistoryStore.saveHandle(pickedHandles[0]); } catch (e) { console.warn("saveHandle failed", e); }
   }
 }
 
@@ -1629,73 +1780,151 @@ function startHistoryAutoRefresh() {
   }, HISTORY_REREAD_INTERVAL_MS);
 }
 
-async function ingestHistoryFile(file, { silent = false } = {}) {
-  // Always announce that we got the file. The previous flow relied on a
-  // single end-of-pipeline toast, which meant any silent failure (or any
-  // sub-3-second fail-too-fast toast) made the picker look totally dead.
-  // Now the user sees feedback the moment we begin and the moment we end.
-  // The exception is silent=true (background auto-refresh): we suppress
-  // the entry/exit toasts entirely so the UI doesn't spam the user every
-  // 60 seconds while they're just looking at their stats.
-  console.info("[Vault] ingest start", { name: file?.name, size: file?.size, type: file?.type, silent });
-  if (!silent) toast(`Reading ${file?.name ?? "history.json"}...`);
-
+/**
+ * Parse a single user-provided file into a list of normalized runs.
+ *
+ * Accepts both:
+ *   - The legacy `history.json` rollup The Vault macOS CLI writes.
+ *   - A raw STS2 `.run` save file (one run, written by Slay the Spire 2
+ *     itself into `…/profile1/saves/history/<unix>.run`).
+ *
+ * Returns `{ ok: true, runs: [...] }` on success, or
+ * `{ ok: false, error: "..." }` on a parsing problem. Never throws.
+ *
+ * Used by both single-file and multi-file ingest so the validation +
+ * decoding logic lives in exactly one place.
+ */
+async function parseOneFile(file) {
   if (!file || typeof file.size !== "number") {
-    console.error("[Vault] ingest aborted: invalid file object", file);
-    toast("Couldn't read that file. The browser handed us nothing.");
-    return false;
+    return { ok: false, error: "Browser handed us an invalid file object." };
   }
   if (file.size === 0) {
-    console.error("[Vault] ingest aborted: file is 0 bytes");
-    toast("That file is empty (0 bytes). Pick a real history.json.");
-    return false;
+    return { ok: false, error: `${file.name || "File"} is empty (0 bytes).` };
   }
+  // STS2 `.run` files are typically <100 KB. The rollup history.json can
+  // grow into the megabytes for prolific players. 50 MB is generous for
+  // both and protects us from somebody accidentally dropping a video.
   if (file.size > 50 * 1024 * 1024) {
-    console.error("[Vault] ingest aborted: file too large", file.size);
-    toast("That file is huge (>50 MB). Are you sure it's history.json?");
-    return false;
+    return { ok: false, error: `${file.name || "File"} is huge (>50 MB).` };
   }
 
   let text;
   try {
     text = await file.text();
   } catch (e) {
-    console.error("[Vault] ingest aborted: file.text() failed", e);
-    toast("Couldn't read that file. " + (e?.message ?? ""));
-    return false;
+    return { ok: false, error: `Couldn't read ${file.name || "file"}: ${e?.message || ""}` };
   }
   if (!text || !text.trim()) {
-    console.error("[Vault] ingest aborted: file body is empty/whitespace");
-    toast("That file is empty. Pick a real history.json.");
-    return false;
+    return { ok: false, error: `${file.name || "File"} is empty.` };
   }
 
   let parsed;
   try {
     parsed = JSON.parse(text);
   } catch (e) {
-    console.error("[Vault] ingest aborted: JSON.parse failed", e, "first 200 chars:", text.slice(0, 200));
-    toast("That file isn't valid JSON. " + (e?.message ?? ""));
+    return { ok: false, error: `${file.name || "File"} isn't valid JSON: ${e?.message || ""}` };
+  }
+
+  return await Stats.extractRuns(parsed);
+}
+
+/**
+ * Ingest one or more save files. The new primary entry point — accepts
+ * any combination of `.run` files and rollup `history.json` files.
+ *
+ * Why this matters: STS2 writes one `.run` file per game. Until now the
+ * web app only accepted the consolidated rollup that the macOS CLI
+ * produces, which silently locked out every Windows / Linux / iOS user
+ * and every Mac user who hadn't installed the desktop app first. This
+ * function now accepts the raw save format directly so anyone can drop
+ * their STS2 save folder and see their stats.
+ */
+async function ingestHistoryFiles(files, { silent = false } = {}) {
+  const list = Array.from(files || []).filter((f) => f && typeof f.size === "number");
+  if (list.length === 0) {
+    if (!silent) toast("No files to read.");
     return false;
   }
 
-  const result = Stats.extractRuns(parsed);
-  if (!result.ok) {
-    // Surface what we DID see, so the user (or a tester) can tell whether
-    // they accidentally picked a .run file, the wrong export, etc.
-    const keys = parsed && typeof parsed === "object" && !Array.isArray(parsed)
-      ? Object.keys(parsed).slice(0, 6).join(", ")
-      : Array.isArray(parsed) ? "array" : typeof parsed;
-    console.error("[Vault] extractRuns rejected file. Top-level keys:", keys, "result:", result);
-    toast(`${result.error} Top-level keys: ${keys || "(none)"}.`);
-    return false;
-  }
-  if (result.runs.length === 0) {
-    console.error("[Vault] extractRuns returned zero runs.", parsed);
-    toast("File parsed, but it had zero runs in it. Wrong file?");
+  // Filter to plausible JSON / .run files. Saves a wasted pass on
+  // anything that obviously isn't ours (e.g. a stray .DS_Store that
+  // came along with a folder drop).
+  const plausible = list.filter((f) => {
+    const name = (f.name || "").toLowerCase();
+    return name.endsWith(".json") || name.endsWith(".run") || name.endsWith(".save");
+  });
+  if (plausible.length === 0) {
+    if (!silent) toast(`None of those ${list.length} file(s) look like STS2 saves (.run or history.json).`);
     return false;
   }
 
+  console.info(`[Vault] ingest start: ${plausible.length} file(s)${list.length > plausible.length ? ` (filtered ${list.length - plausible.length} non-save file(s))` : ""}`);
+  if (!silent) {
+    if (plausible.length === 1) {
+      toast(`Reading ${plausible[0].name}…`);
+    } else {
+      toast(`Reading ${plausible.length} save files…`);
+    }
+  }
+
+  // Parse every file in parallel. A bad file in the middle of a folder
+  // shouldn't blow up the rest of the import — log and keep going.
+  const results = await Promise.all(plausible.map((f) => parseOneFile(f)));
+
+  // Tally: collect every run that came out, dedupe by id (so dropping
+  // both the rollup and the raw `.run` folder doesn't double-count),
+  // remember the first error to surface if we got zero runs total.
+  const seenIds = new Set();
+  const runs = [];
+  let firstError = null;
+  let okFiles = 0;
+  for (let i = 0; i < results.length; i++) {
+    const r = results[i];
+    if (!r?.ok) {
+      if (!firstError) firstError = r?.error || `Couldn't parse ${plausible[i].name}.`;
+      continue;
+    }
+    okFiles += 1;
+    for (const run of r.runs) {
+      if (!run?.id || seenIds.has(run.id)) continue;
+      seenIds.add(run.id);
+      runs.push(run);
+    }
+  }
+
+  if (runs.length === 0) {
+    console.error("[Vault] ingest produced zero runs", { firstError, results });
+    if (!silent) {
+      if (firstError) {
+        toast(firstError);
+      } else {
+        toast(`Read ${plausible.length} file(s) but found zero runs. Wrong files?`);
+      }
+    }
+    return false;
+  }
+
+  console.info(`[Vault] loaded ${runs.length} unique run(s) from ${okFiles}/${plausible.length} file(s)`);
+  return await commitParsedRuns(runs, plausible[0]?.name || "save", { silent, fileCount: plausible.length });
+}
+
+/**
+ * Single-file convenience wrapper. Existing call sites (drag-drop one
+ * file, file-input change handler with single selection, FSA auto-reload
+ * loop) still hand us a single File; route through the multi path so
+ * there's only one place that mutates `parsedRuns`.
+ */
+async function ingestHistoryFile(file, { silent = false } = {}) {
+  return ingestHistoryFiles([file], { silent });
+}
+
+/**
+ * Final stage: take a list of fully-parsed run records and commit them
+ * to in-memory state, persistent storage, and re-render whichever tab
+ * is showing. Pulled into its own function so both single- and multi-
+ * file ingest paths funnel through identical state management.
+ */
+async function commitParsedRuns(runs, sourceName, { silent, fileCount = 1 }) {
   // Diff against the previously loaded set so a silent auto-refresh that
   // pulls in new runs from disk can speak up *just enough* — a single
   // "X new run(s) detected" toast — without spamming the user with reads
@@ -1704,20 +1933,29 @@ async function ingestHistoryFile(file, { silent = false } = {}) {
   // count reporting on the demo→real transition.
   const wasDemo = isDemoMode;
   const previousIds = wasDemo ? new Set() : new Set(parsedRuns.map((r) => r.id));
-  const newCount = result.runs.filter((r) => !previousIds.has(r.id)).length;
+  const newCount = runs.filter((r) => !previousIds.has(r.id)).length;
 
-  parsedRuns = result.runs;
+  // Sort newest-first so Recent Runs always renders chronologically right
+  // out of the box, regardless of whether the source was a single rollup
+  // (which already arrives in order) or a folder of `.run` files (which
+  // arrives in `Promise.all` resolution order).
+  runs.sort((a, b) => {
+    const ta = a.endedAt?.getTime?.() ?? 0;
+    const tb = b.endedAt?.getTime?.() ?? 0;
+    return tb - ta;
+  });
+
+  parsedRuns = runs;
   // Real data has arrived — flip out of demo mode so the banner disappears.
   isDemoMode = false;
-  console.info(`[Vault] loaded ${result.runs.length} runs (${newCount} new${wasDemo ? ", first real load" : ""})`);
 
   // Persist. We swallow IDB errors so a flaky storage layer never blocks
   // the in-memory render — the user still sees their stats this session.
   try {
     await HistoryStore.saveHistory({
       savedAt: new Date().toISOString(),
-      sourceFilename: file.name,
-      runs: result.runs.map(serializeRun),
+      sourceFilename: sourceName,
+      runs: runs.map(serializeRun),
     });
   } catch (e) {
     console.error("[Vault] saveHistory to IndexedDB failed (continuing in-memory)", e);
@@ -1732,9 +1970,11 @@ async function ingestHistoryFile(file, { silent = false } = {}) {
       toast(`${newCount} new run${newCount === 1 ? "" : "s"} from disk.`);
     }
   } else if (wasDemo) {
-    toast(`Loaded ${result.runs.length} run${result.runs.length === 1 ? "" : "s"} from your save.`);
+    toast(`Loaded ${runs.length} run${runs.length === 1 ? "" : "s"} from your save.`);
+  } else if (fileCount > 1) {
+    toast(`Loaded ${runs.length} run${runs.length === 1 ? "" : "s"} from ${fileCount} files.`);
   } else {
-    toast(`Loaded ${result.runs.length} run${result.runs.length === 1 ? "" : "s"}.`);
+    toast(`Loaded ${runs.length} run${runs.length === 1 ? "" : "s"}.`);
   }
 
   // Force-render so the empty state vanishes and stats appear, no matter
@@ -1950,88 +2190,92 @@ function renderStatsTab(tab) {
  * Clicking either replaces demo data with the user's real history.json.
  */
 function renderDemoBanner() {
+  const hasDirPicker = typeof window.showDirectoryPicker === "function";
+  const primary = hasDirPicker
+    ? `<button class="btn-primary" data-action="scan">Find my STS2 saves</button>
+       <button class="btn-ghost" data-action="upload">Pick files</button>`
+    : `<button class="btn-primary" data-action="upload">Pick STS2 save files</button>`;
   return `
     <div class="demo-banner" role="region" aria-label="Sample data notice">
       <div class="demo-banner-text">
         <strong>Sample data</strong>
-        <span>Drop your <code>history.json</code> to see your own runs.</span>
+        <span>Drop your STS2 save folder (or any <code>.run</code> files) to see your own runs.</span>
       </div>
       <div class="demo-banner-actions">
-        <button class="btn-primary" data-action="upload">Import history.json</button>
-        <button class="btn-ghost" data-action="scan">Find it for me</button>
+        ${primary}
       </div>
     </div>`;
 }
 
 function renderEmptyState() {
   const platform = detectPlatform();
+  const hasDirPicker = typeof window.showDirectoryPicker === "function";
 
   // Platform-specific path callout. Mac users get a clipboard-paste
-  // shortcut into the picker; Windows users see where the future Windows
-  // desktop app will write the file (and why Import is the path today);
-  // Linux users see the XDG path. Unknown platforms get no callout — the
-  // hints details still cover them.
+  // shortcut into the picker; Windows users get the AppData path; Linux
+  // users get the XDG path. Unknown platforms see all three in the
+  // collapsible hints below.
   let pathBlock = "";
   if (platform === "mac") {
     pathBlock = `
       <div class="empty-state-path">
-        <span class="path-label">Default macOS location</span>
+        <span class="path-label">Where Slay the Spire 2 saves runs on macOS</span>
         <code class="path-value">${esc(HISTORY_PATH_MAC)}</code>
-        <button class="btn-ghost btn-sm" data-action="copy-path" data-path-key="mac" title="Copy path. Then paste with Cmd+Shift+G inside the picker.">Copy path</button>
+        <button class="btn-ghost btn-sm" data-action="copy-path" data-path-key="mac" title="Copy path. Paste with Cmd+Shift+G inside the picker.">Copy path</button>
       </div>
       <p class="empty-state-tip muted">
-        Tip: clicking <strong>Find history.json</strong> copies the path automatically. In the picker, press <kbd>Cmd</kbd>+<kbd>Shift</kbd>+<kbd>G</kbd> and paste.
+        Tip: <strong>Find my STS2 saves</strong> copies the path for you. Inside the picker, press <kbd>Cmd</kbd>+<kbd>Shift</kbd>+<kbd>G</kbd> and paste.
       </p>`;
   } else if (platform === "windows") {
     pathBlock = `
       <div class="empty-state-path">
-        <span class="path-label">Windows location</span>
+        <span class="path-label">Where Slay the Spire 2 saves runs on Windows</span>
         <code class="path-value">${esc(HISTORY_PATH_WIN)}</code>
         <button class="btn-ghost btn-sm" data-action="copy-path" data-path-key="win" title="Copy path. Paste it into File Explorer's address bar.">Copy path</button>
       </div>
       <p class="empty-state-tip muted">
-        <strong>Windows desktop app coming soon.</strong> For now, ask a macOS user to share their <code>history.json</code> and use <strong>Import</strong> below. When the Windows app ships, it'll write to the path above automatically.
+        Tip: paste this path into File Explorer's address bar to land directly on the folder.
       </p>`;
   } else if (platform === "linux") {
     pathBlock = `
       <div class="empty-state-path">
-        <span class="path-label">Linux location</span>
+        <span class="path-label">Where Slay the Spire 2 saves runs on Linux</span>
         <code class="path-value">${esc(HISTORY_PATH_LINUX)}</code>
         <button class="btn-ghost btn-sm" data-action="copy-path" data-path-key="linux" title="Copy path. Paste it into your file manager.">Copy path</button>
-      </div>
-      <p class="empty-state-tip muted">
-        <strong>Linux desktop app coming soon.</strong> For now, import a <code>history.json</code> shared from a macOS user.
-      </p>`;
+      </div>`;
   }
 
-  // Single button: Import opens the OS file picker on every platform.
-  // We used to have a redundant "Find" button that just copied the path
-  // to the clipboard, but Import does the same job in one click — the
-  // picker opens directly to the user's home, and the path hint below
-  // (with copy-to-clipboard) handles the rest.
-  const primaryCTA = `<button class="btn-primary" data-action="upload">Import history.json</button>`;
+  // Two CTAs: the smart one (folder picker) for Chromium, and the
+  // multi-file picker as a universal fallback. Drag-drop a folder is
+  // also supported via the overlay.
+  const primaryCTA = hasDirPicker
+    ? `<button class="btn-primary" data-action="scan">Find my STS2 saves</button>
+       <button class="btn-ghost" data-action="upload">Pick files instead</button>`
+    : `<button class="btn-primary" data-action="upload">Pick STS2 save files</button>`;
 
   return `
     <div class="empty-state">
       <div class="empty-state-icon">📂</div>
-      <h2>Connect your <code>history.json</code></h2>
-      <p>Browsers can't read your disk without permission, so this is a one-time pick. After that, every visit auto-loads silently — no picker, no clicks.</p>
+      <h2>See your STS2 stats — no sign-in required</h2>
+      <p>Slay the Spire 2 saves one <code>.run</code> file per game. Point us at your STS2 save folder (or just drag it in) and we'll read every run on disk to build your stats.</p>
       <div class="empty-state-actions">
         ${primaryCTA}
       </div>
       <p class="empty-state-tip">
-        Or drag <code>history.json</code> anywhere on this page to load it now.
+        Or drag your STS2 <strong>save folder</strong> (or any <code>.run</code> files) anywhere on this page to load them now.
       </p>
       ${pathBlock}
       <details class="empty-state-hints">
-        <summary>Where is <code>history.json</code> on each OS?</summary>
+        <summary>How do I find my STS2 save folder?</summary>
         <ul>
-          <li><strong>macOS:</strong> <code>${esc(HISTORY_PATH_MAC)}</code> (Cmd+Shift+G in the picker pastes the path).</li>
-          <li><strong>Windows:</strong> <code>${esc(HISTORY_PATH_WIN)}</code> (paste into File Explorer's address bar). Windows desktop app on the roadmap.</li>
-          <li><strong>Linux:</strong> <code>${esc(HISTORY_PATH_LINUX)}</code>. Linux desktop app on the roadmap.</li>
-          <li>Browsers physically forbid filesystem scanning. After one pick, the browser remembers and we silently re-read on every future visit.</li>
-          <li><strong>Want true zero-click auto-detect today?</strong> The <a href="https://github.com/c3rooks/SpireVault/releases">macOS desktop app</a> finds the file on launch with no setup.</li>
-          <li>Your file stays on your device. Persisted locally; never uploaded.</li>
+          <li><strong>macOS:</strong> <code>${esc(HISTORY_PATH_MAC)}</code> — Cmd+Shift+G in the picker, paste, Enter.</li>
+          <li><strong>Windows:</strong> <code>${esc(HISTORY_PATH_WIN)}</code> — paste into File Explorer's address bar.</li>
+          <li><strong>Linux:</strong> <code>${esc(HISTORY_PATH_LINUX)}</code>.</li>
+          <li><strong>Steam Cloud (Mac):</strong> <code>~/Library/Application Support/Steam/userdata/&lt;your-id&gt;/2868840/remote/</code> if you sync via Steam Cloud.</li>
+          <li>You'll see files named like <code>1735689420.run</code> — those are your runs. We read all of them in one shot; you don't need to pick individually.</li>
+          <li>Browsers can't scan disk silently, so this is a one-time gesture per visit. On Chromium browsers we'll re-read silently on later visits.</li>
+          <li>Your saves never leave your device. Stats are computed in your browser; nothing uploads anywhere.</li>
+          <li>Already have a <code>history.json</code> rollup from the macOS Vault CLI? That still works — just drop it in too.</li>
         </ul>
       </details>
     </div>`;

@@ -243,10 +243,34 @@ export function applyFilter(runs, filter = {}) {
 }
 
 /**
- * Pull a clean list of normalized runs out of whatever shape `history.json` is on disk.
- * Tolerates {header, runs}, {runs}, and bare arrays.
+ * Pull a clean list of normalized runs out of whatever JSON shape we got.
+ *
+ * Two valid input shapes:
+ *
+ *   1. **Rollup `history.json`** — produced by The Vault macOS CLI.
+ *      Looks like `{ header, runs: [...] }` or just `{ runs: [...] }` or
+ *      a bare array.
+ *
+ *   2. **Single STS2 `.run` file** — written directly by Slay the Spire 2,
+ *      one per game. Shape is the raw save: `{ players: [...],
+ *      map_point_history: [...] }`. We dispatch to `parseSTS2Run` so a
+ *      single dropped `.run` file produces a one-element rollup.
+ *
+ * Returns `{ ok, runs, error? }`. `runs` is always normalized into the
+ * shape downstream stats math expects, regardless of input shape.
  */
-export function extractRuns(parsed) {
+export async function extractRuns(parsed) {
+  // Shape 2: raw STS2 `.run` file. Look for the fingerprint and dispatch
+  // to the dedicated parser. Lazy-loaded so the rollup path stays sync.
+  if (parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      && Array.isArray(parsed.players) && Array.isArray(parsed.map_point_history)) {
+    const { parseSTS2Run } = await import("./sts2-run-parser.js");
+    const r = parseSTS2Run(parsed, "drop.run");
+    if (!r) return { ok: false, error: "File has STS2 run shape but couldn't be parsed." };
+    return { ok: true, runs: [r] };
+  }
+
+  // Shape 1: rollup. Find the runs array.
   let arr;
   if (Array.isArray(parsed)) arr = parsed;
   else if (Array.isArray(parsed?.runs)) arr = parsed.runs;

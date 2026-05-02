@@ -361,7 +361,11 @@
   </div>
 
   <!-- File input lives in the DOM so we can trigger it programmatically -->
-  <input type="file" id="history-file-input" accept=".json,application/json" hidden />
+  <!-- Hidden file input. `multiple` so users can shift-select every .run
+       file in their STS2 save folder. `.run` extension intentionally
+       included so macOS Finder doesn't grey them out — the OS treats
+       .run as foreign by default. -->
+  <input type="file" id="history-file-input" accept=".json,.run,.save,application/json" multiple hidden />
 
   <footer class="footer">
     <div class="footer-inner">
@@ -378,6 +382,6 @@
     </div>
   </footer>
 
-  <script src="/script.js?v=32" type="module"></script>
+  <script src="/script.js?v=33" type="module"></script>
 </body>
 </html>
