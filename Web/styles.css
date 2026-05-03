@@ -923,129 +923,135 @@ main.main-public,
   margin-left: 24px;
   flex: 1 1 auto;
   min-width: 0;
-  max-width: 520px;
+  max-width: 560px;
 }
 .companion-slot:empty { display: none; }
 
 .scene {
   display: flex;
-  align-items: center;
-  gap: 10px;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 8px;
   width: 100%;
   min-width: 0;
+  /* Subtle slide-in on every render so re-rolls and tab returns feel
+   * fresh without screaming for attention. */
+  animation: sceneIn 0.42s cubic-bezier(0.2, 0.9, 0.3, 1) both;
 }
 
-/* Climber tile is the picker click-target. We keep the entire face +
- * label stack inside one button so the existing "click to change
- * companion" UX isn't lost in the redesign. */
-.scene-climber,
-.scene-sentinel-wrap {
+/* Each figure is a column with the full-body art on top and a soft
+ * shadow underneath. No background plate, no circle clip — the
+ * source PNGs ship on transparent backgrounds so we just let them
+ * stand on the panel. The climber column is a button (the picker
+ * trigger); the antagonist column is non-interactive. */
+.scene-figure {
   position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
   flex: 0 0 auto;
-  padding: 4px 6px 0;
+  width: 86px;
+  height: 96px;
+  padding: 0;
   background: transparent;
   border: 0;
-  cursor: pointer;
+  cursor: default;
   color: var(--text);
 }
-.scene-sentinel-wrap { cursor: default; }
-.scene-climber:focus-visible {
+.scene-figure-climber {
+  cursor: pointer;
+  border-radius: 10px;
+  transition: transform 0.18s ease, filter 0.18s ease;
+}
+.scene-figure-climber:hover {
+  transform: translateY(-2px);
+  filter: drop-shadow(0 0 10px color-mix(in srgb, var(--scene-color, var(--accent)) 55%, transparent));
+}
+.scene-figure-climber:focus-visible {
   outline: 2px solid var(--scene-color, var(--accent));
   outline-offset: 4px;
-  border-radius: 8px;
 }
 
-.scene-portrait,
-.scene-glyph,
-.scene-sentinel {
+/* Full-body character art. object-fit:contain keeps the whole figure
+ * visible; object-position:center bottom plants their feet on the
+ * baseline so different poses stay aligned. drop-shadow gives them
+ * an in-world glow without altering the transparent edges. */
+.scene-art {
   position: relative;
   z-index: 1;
-  width: 52px;
-  height: 52px;
-  border-radius: 50%;
-  object-fit: cover;
-  object-position: center top;
-  background: #0a0812;
-  border: 1.5px solid var(--scene-color, #9aa3b2);
-  box-shadow: 0 0 14px color-mix(in srgb, var(--scene-color, #9aa3b2) 40%, transparent);
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: center bottom;
+  filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.55));
+  pointer-events: none;
+  user-select: none;
 }
-/* Climber bobs first; Sentinel bobs offset by half a cycle so the
- * scene never goes still. Two distinct keyframes so the Sentinel's
- * vertical drift is gentler — they're meant to stalk, not skip. */
-.scene-portrait-climber {
-  animation: sceneBobClimber 1.6s ease-in-out infinite;
+.scene-figure-climber   .scene-art { animation: sceneBobClimber    2.4s ease-in-out infinite; }
+.scene-figure-antagonist .scene-art {
+  /* Mirror so the Architect faces the climber. */
+  transform: scaleX(-1);
+  animation: sceneBobAntagonist 3.2s ease-in-out infinite;
+  transform-origin: center bottom;
 }
-.scene-sentinel {
-  border-color: rgba(255, 255, 255, 0.18);
-  background: linear-gradient(180deg, #0a0d18 0%, #1a1029 100%);
-  padding: 4px;
-  animation: sceneBobSentinel 2.1s ease-in-out infinite;
-}
+
+/* Fallback glyph (shown only if the character webp fails to load). */
 .scene-glyph {
   display: flex;
   align-items: center;
   justify-content: center;
+  width: 100%;
+  height: 100%;
   font-weight: 900;
-  font-size: 16px;
+  font-size: 28px;
   color: var(--scene-color, var(--text-2));
-  animation: sceneBobClimber 1.6s ease-in-out infinite;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.04);
 }
 
-/* Soft elliptical shadow under each figure — sells the bounce by
- * scaling slightly out of phase with the figure above it. */
+/* Soft elliptical shadow under each figure. Pulses out of phase with
+ * the bob so the figures look anchored rather than floating. */
 .scene-shadow {
   position: absolute;
-  bottom: 16px;
-  width: 38px;
+  bottom: 2px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 60%;
   height: 6px;
   border-radius: 50%;
   background: rgba(0, 0, 0, 0.55);
   filter: blur(4px);
   z-index: 0;
 }
-.scene-shadow-l { animation: sceneShadowClimber  1.6s ease-in-out infinite; }
-.scene-shadow-r { animation: sceneShadowSentinel 2.1s ease-in-out infinite; }
+.scene-figure-climber   .scene-shadow { animation: sceneShadowClimber    2.4s ease-in-out infinite; }
+.scene-figure-antagonist .scene-shadow { animation: sceneShadowAntagonist 3.2s ease-in-out infinite; }
 
-.scene-name {
-  font-size: 9px;
-  font-weight: 800;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--text-3);
-  white-space: nowrap;
-  margin-top: 2px;
-}
-
-/* Speech bubble. Looks like a soft cloud with a tail pointed at the
- * speaker. Uses two pseudo-elements for the tail so the rounded body
- * and the triangle never have a visible seam at the join. */
+/* Speech bubble. Pill-shaped with a downward tail toward the figure
+ * who's talking. Sits inline between the two figures. */
 .scene-bubble {
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   position: relative;
   min-width: 0;
-  max-width: 280px;
+  max-width: 240px;
+  margin-bottom: 26px;
   padding: 8px 14px;
-  background: linear-gradient(180deg, rgba(238, 244, 255, 0.97) 0%, rgba(220, 230, 245, 0.97) 100%);
+  background: linear-gradient(180deg, rgba(238, 244, 255, 0.98) 0%, rgba(220, 230, 245, 0.98) 100%);
   color: #0a0d18;
   border: 1px solid rgba(255, 255, 255, 0.6);
-  border-radius: 14px;
+  border-radius: 16px;
   font-family: 'Inter', sans-serif;
   font-size: 12px;
   font-weight: 600;
   line-height: 1.35;
   text-align: center;
   cursor: pointer;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4);
   animation: sceneBubblePop 0.32s cubic-bezier(0.2, 1.6, 0.6, 1) both;
   transition: transform 0.15s ease, box-shadow 0.15s ease;
 }
 .scene-bubble:hover {
   transform: translateY(-1px);
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.45);
 }
 .scene-bubble:focus-visible {
   outline: 2px solid var(--scene-color, var(--accent));
@@ -1056,44 +1062,44 @@ main.main-public,
   word-break: break-word;
   hyphens: auto;
 }
+/* Tail points down-left toward the climber, or down-right toward the
+ * Architect, depending on who's speaking. */
 .scene-bubble-tail {
   position: absolute;
-  top: 50%;
+  bottom: -6px;
   width: 0;
   height: 0;
-  transform: translateY(-50%);
-  border-top: 7px solid transparent;
-  border-bottom: 7px solid transparent;
+  border-left: 7px solid transparent;
+  border-right: 7px solid transparent;
+  border-top: 8px solid rgba(220, 230, 245, 0.98);
+  filter: drop-shadow(0 1px 0 rgba(255, 255, 255, 0.6));
 }
-.scene-bubble-left  .scene-bubble-tail {
-  left: -7px;
-  border-right: 8px solid rgba(238, 244, 255, 0.97);
-  filter: drop-shadow(-1px 0 0 rgba(255, 255, 255, 0.6));
-}
-.scene-bubble-right .scene-bubble-tail {
-  right: -7px;
-  border-left:  8px solid rgba(220, 230, 245, 0.97);
-  filter: drop-shadow(1px 0 0 rgba(255, 255, 255, 0.6));
-}
+.scene-bubble-left  .scene-bubble-tail { left:  18%; }
+.scene-bubble-right .scene-bubble-tail { right: 18%; }
 
-/* Animations. Climber is springier (sword-and-fight energy); Sentinel
- * has a slow rolling drift. The shadows scale inversely so the
- * figures look anchored rather than floating in space. */
-@keyframes sceneBobClimber {
-  0%, 100% { transform: translateY(0)    rotate(-0.5deg); }
-  50%      { transform: translateY(-5px) rotate( 0.5deg); }
+/* Animations. Both figures bob; the Architect drifts slower so the
+ * scene never feels synchronized. Shadows pulse opposite the bob so
+ * the figures look like they're stepping, not floating. */
+@keyframes sceneIn {
+  0%   { opacity: 0; transform: translateY(4px); }
+  100% { opacity: 1; transform: translateY(0);   }
 }
-@keyframes sceneBobSentinel {
+@keyframes sceneBobClimber {
   0%, 100% { transform: translateY(0); }
-  50%      { transform: translateY(-3px); }
+  50%      { transform: translateY(-4px); }
+}
+@keyframes sceneBobAntagonist {
+  /* `scaleX(-1)` is preserved so the Architect stays mirrored. */
+  0%, 100% { transform: scaleX(-1) translateY(0); }
+  50%      { transform: scaleX(-1) translateY(-3px); }
 }
 @keyframes sceneShadowClimber {
-  0%, 100% { transform: scaleX(1);    opacity: 0.55; }
-  50%      { transform: scaleX(0.78); opacity: 0.32; }
+  0%, 100% { transform: translateX(-50%) scaleX(1);    opacity: 0.55; }
+  50%      { transform: translateX(-50%) scaleX(0.78); opacity: 0.32; }
 }
-@keyframes sceneShadowSentinel {
-  0%, 100% { transform: scaleX(1);    opacity: 0.55; }
-  50%      { transform: scaleX(0.86); opacity: 0.4;  }
+@keyframes sceneShadowAntagonist {
+  0%, 100% { transform: translateX(-50%) scaleX(1);    opacity: 0.55; }
+  50%      { transform: translateX(-50%) scaleX(0.86); opacity: 0.4;  }
 }
 @keyframes sceneBubblePop {
   0%   { opacity: 0; transform: scale(0.85); }
@@ -1172,36 +1178,32 @@ main.main-public,
   color: var(--text);
 }
 
-/* Tablet: shrink figures and bubble so the diorama stops eating
- * panel-head room around 900px. The whole scene stays inline. */
+/* Tablet: shrink figures + bubble so the diorama stops eating
+ * panel-head room around 900px. Whole scene stays inline. */
 @media (max-width: 1100px) {
-  .companion-slot { max-width: 380px; }
-  .scene-portrait, .scene-glyph, .scene-sentinel { width: 46px; height: 46px; }
-  .scene-bubble { font-size: 11px; padding: 6px 12px; max-width: 220px; }
+  .companion-slot { max-width: 420px; }
+  .scene-figure   { width: 72px; height: 82px; }
+  .scene-bubble   { font-size: 11px; padding: 6px 12px; max-width: 200px; margin-bottom: 22px; }
 }
 
 /* Mobile: the panel-head already wraps at this breakpoint, so the
- * diorama gets its own row underneath the title. Drop the figure
- * "name" labels (they're already implied by the avatars) and shrink
- * the bubble so a 360px phone fits everything without overflow.
- * Picker anchors to the right edge so it can't clip off-screen. */
+ * diorama gets its own row under the title. Shrink figures + bubble
+ * so a 360px phone fits everything without overflow. Picker anchors
+ * to the right edge so it can't clip off-screen. */
 @media (max-width: 720px) {
-  .companion-slot { margin-left: 0; max-width: 100%; }
-  .scene-name { display: none; }
-  .scene-portrait, .scene-glyph, .scene-sentinel { width: 42px; height: 42px; }
-  .scene-shadow { width: 30px; bottom: 8px; }
-  .scene-bubble { font-size: 11px; padding: 6px 10px; max-width: none; }
+  .companion-slot { margin-left: 0; max-width: 100%; justify-content: center; }
+  .scene-figure   { width: 60px; height: 70px; }
+  .scene-bubble   { font-size: 11px; padding: 6px 10px; max-width: none; margin-bottom: 18px; }
   .companion-picker { left: auto; right: 0; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .scene-portrait,
-  .scene-glyph,
-  .scene-sentinel,
-  .scene-shadow-l,
-  .scene-shadow-r { animation: none; }
-  .scene-bubble   { animation: none; }
-  .scene-bubble:hover { transform: none; }
+  .scene,
+  .scene-art,
+  .scene-shadow,
+  .scene-bubble { animation: none; }
+  .scene-bubble:hover, .scene-figure-climber:hover { transform: none; filter: none; }
+  .scene-figure-antagonist .scene-art { transform: scaleX(-1); }
 }
 
 /* Tighten panel chrome on mobile. The desktop padding (24/32 px) eats

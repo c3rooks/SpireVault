@@ -45,89 +45,66 @@ const COMPANIONS = [
 ];
 
 // Lore-flavored two-character chatter for the Overview diorama.
-// `who: "climber"` lines come out of the player character's mouth;
-// `who: "spire"` lines come from the dark figure on the right. Some
-// climber lines key off the active character (`only: "ironclad"`);
-// when the active character matches, those become more likely to be
-// picked. Everything else floats in the general pool.
-//
 // Tone rules:
-//   - In-universe references only (Neow, the Heart, Ascensions, real
-//     STS2 cards/relics like Sword of Jade, Burning Blood, Akabeko).
-//   - No fourth-wall jokes, no meme-speak. Reads like overheard
-//     in-game flavor text, not an internet comment.
-//   - Short. Bubble has limited width, especially on mobile. Aim for
-//     30–55 characters per line.
+//   - In-universe references only (Neow, the Heart, Ascensions,
+//     real STS2 cards/relics).
+//   - Short, declarative, not cryptic. Anyone who's never played
+//     STS2 should be able to read a line without needing context.
+//     ("Skip the campfire" was an inside joke about the act-map UI;
+//     it died here.) Aim for 18–48 characters per line.
+//   - No fourth-wall jokes. Reads like an in-game taunt, not an
+//     internet comment.
 const SCENE_LINES = [
   // ─── Climber, character-agnostic ───
   { who: "climber", text: "Up we go." },
   { who: "climber", text: "One more floor." },
+  { who: "climber", text: "Bring it." },
   { who: "climber", text: "I've seen worse." },
-  { who: "climber", text: "Block first. Ask later." },
-  { who: "climber", text: "I'll take the elite." },
-  { who: "climber", text: "Room for one more relic." },
-  { who: "climber", text: "Saved my potion for the boss." },
-  { who: "climber", text: "Neow blessed me. Let's see." },
-  { who: "climber", text: "Three acts. We finish today." },
-  { who: "climber", text: "Skip the campfire. I want the path." },
-  { who: "climber", text: "Sword of Jade in the deck. Glory waits." },
+  { who: "climber", text: "I've trained for this." },
+  { who: "climber", text: "Block first. Strike harder." },
+  { who: "climber", text: "Show me the boss." },
+  { who: "climber", text: "Three acts. Easy." },
+  { who: "climber", text: "My deck is ready." },
+  { who: "climber", text: "The Spire bleeds today." },
   { who: "climber", text: "Heart, I'm coming for you." },
 
   // ─── Climber, character-specific ───
-  { who: "climber", only: "ironclad",    text: "Anger is a relic." },
-  { who: "climber", only: "ironclad",    text: "Burning Blood means I keep going." },
-  { who: "climber", only: "ironclad",    text: "Strength I trust. Block I respect." },
+  { who: "climber", only: "ironclad",    text: "Anger. Steel. Repeat." },
+  { who: "climber", only: "ironclad",    text: "Burning Blood keeps me going." },
+  { who: "climber", only: "ironclad",    text: "Strength I trust." },
   { who: "climber", only: "silent",      text: "From the shadows." },
-  { who: "climber", only: "silent",      text: "Catalyst on a deadly poison stack. Done." },
-  { who: "climber", only: "silent",      text: "Daggers first, questions never." },
-  { who: "climber", only: "defect",      text: "Channel Frost. Channel Lightning. Repeat." },
+  { who: "climber", only: "silent",      text: "Silent. Deadly. Done." },
+  { who: "climber", only: "silent",      text: "Daggers first." },
+  { who: "climber", only: "defect",      text: "Channel. Defend. Destroy." },
   { who: "climber", only: "defect",      text: "Three orbs. One plan." },
-  { who: "climber", only: "defect",      text: "Compute. Defend. Destroy." },
+  { who: "climber", only: "defect",      text: "Compute the kill." },
   { who: "climber", only: "regent",      text: "Bow to the deck." },
-  { who: "climber", only: "regent",      text: "My court awaits the next floor." },
+  { who: "climber", only: "regent",      text: "My court awaits." },
   { who: "climber", only: "necrobinder", text: "Bones remember." },
-  { who: "climber", only: "necrobinder", text: "Death is just a tutorial." },
+  { who: "climber", only: "necrobinder", text: "Death is a setback." },
   { who: "climber", only: "necrobinder", text: "I bound them. They bind back." },
 
-  // ─── The Sentinel (right-side figure) ───
+  // ─── The Architect (right-side figure) ───
   { who: "spire", text: "Cursed to fight forever, aren't you?" },
   { who: "spire", text: "Climb. The Spire welcomes you back." },
   { who: "spire", text: "You died here last time too." },
   { who: "spire", text: "Three acts. One end. Always." },
-  { who: "spire", text: "Your deck is a mistake." },
-  { who: "spire", text: "Try Ascension 20. I dare you." },
   { who: "spire", text: "I've watched you fall before." },
-  { who: "spire", text: "The path is the same. You just don't see it." },
-  { who: "spire", text: "Show me your ironies." },
-  { who: "spire", text: "The Heart still beats. Listen." },
-  { who: "spire", text: "Neow's blessings expire too." },
+  { who: "spire", text: "The Heart still beats." },
+  { who: "spire", text: "Try Ascension 20. I dare you." },
+  { who: "spire", text: "Same path. Same ending." },
+  { who: "spire", text: "Try again, climber." },
   { who: "spire", text: "Floor 50 is closer than you think." },
 ];
 
-// Inline SVG silhouette used as the right-side antagonist. Hooded
-// figure with a crown of small spikes, a single glowing eye, and a
-// staff capped with a blue orb. Drawn small (64x80 viewBox) and in
-// flat shapes so it scales crisply at the diorama's avatar size.
-const SENTINEL_SVG = `
-  <svg class="scene-sentinel" viewBox="0 0 64 80" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-    <line x1="50" y1="14" x2="50" y2="76" stroke="#7a6a3e" stroke-width="2.5" stroke-linecap="round"/>
-    <circle cx="50" cy="11" r="4.5" fill="#4dc8ff"/>
-    <circle cx="50" cy="11" r="2"   fill="#bdf2ff"/>
-    <path d="M18 19 L21 9 L26 14 L30 7 L34 14 L38 8 L42 14 L46 10 L46 19 Z" fill="#d4af37"/>
-    <ellipse cx="32" cy="24" rx="11" ry="10" fill="#1a1a2e" stroke="#3d3d5e" stroke-width="1"/>
-    <circle cx="32" cy="24.5" r="2.4" fill="#ff5f6d"/>
-    <circle cx="32" cy="24.5" r="0.9" fill="#fff"/>
-    <path d="M14 34 Q16 30 22 30 L42 30 Q48 30 50 34 L52 72 Q44 78 32 78 Q20 78 12 72 Z"
-          fill="#252540" stroke="#3d3d5e" stroke-width="1"/>
-    <ellipse cx="20" cy="33" rx="6" ry="4" fill="#3d3d5e"/>
-    <ellipse cx="44" cy="33" rx="6" ry="4" fill="#3d3d5e"/>
-    <line x1="18" y1="42" x2="46" y2="42" stroke="#d4af37" stroke-width="1" opacity="0.5"/>
-  </svg>`;
-
-// What the right-side figure is called. Kept generic so we don't
-// invent a specific named STS2 enemy that could conflict with what
-// Mega Crit ships under that name.
-const SENTINEL_LABEL = "The Sentinel";
+// Right-side antagonist. Reuses the existing Regent character art
+// (already shipped at /assets/sts2/characters/regent.webp) because
+// it matches the user's prototype "Architect" silhouette: crowned,
+// robed, throne-seated. We mirror it horizontally in CSS so it
+// faces the climber. If the climber IS Regent we swap to
+// Necrobinder so we never see the same character on both sides.
+const ANTAGONIST_PRIMARY  = "regent";
+const ANTAGONIST_FALLBACK = "necrobinder";
 // Poll cadences are tuned to keep us well under Cloudflare KV's free-tier
 // daily quotas (1k writes/day, 1k list ops/day, 100k reads/day). A single
 // pair of active browsers used to burn the list-op quota in hours; new
@@ -220,6 +197,14 @@ async function loadAssetManifest() {
     }
     assetManifestLoaded = true;
     console.info(`[Vault] assets ready: ${assetManifest.cards.size} cards, ${assetManifest.relics.size} relics, ${assetManifest.characters.size} characters · ${Object.keys(assetLabels.cards).length} card labels, ${Object.keys(assetLabels.relics).length} relic labels`);
+    // Companion was rendered during boot before the manifest finished
+    // loading, which means characterImageSrc() returned null and the
+    // diorama showed letter-glyph fallbacks instead of the full-body
+    // character art. Re-render now that the manifest is populated so
+    // first paint shows the real PNGs without requiring user action.
+    if (typeof renderCompanion === "function") {
+      try { renderCompanion(); } catch (e) { console.warn("companion re-render after manifest failed", e); }
+    }
     if (parsedRuns.length > 0 && TABS_WITH_DATA.includes(activeTab) && activeTab !== "coop") {
       try { renderStatsTab(activeTab); } catch (e) { console.warn("[Vault] re-render after manifest failed", e); }
     }
@@ -1138,26 +1123,34 @@ function renderCompanion() {
   const climber = rollClimberFor(setting);
   const quote   = rollQuote(climber);
   const climberSrc = characterImageSrc(climber.id) || "";
+
+  // Right-side antagonist art. Default to Regent (matches the
+  // prototype's crowned/throne aesthetic) but pick a different
+  // character when the climber IS Regent — we never want the same
+  // figure on both sides of the diorama.
+  const antagonistId  = climber.id === ANTAGONIST_PRIMARY ? ANTAGONIST_FALLBACK : ANTAGONIST_PRIMARY;
+  const antagonistSrc = characterImageSrc(antagonistId) || "";
   const speakerIsClimber = quote.who === "climber";
 
-  // Diorama: climber on the left, sentinel on the right, speech
-  // bubble between them with its tail pointed at whoever's talking.
+  // Diorama: climber on the left (faces right), antagonist on the
+  // right (mirrored to face left), speech bubble between them with
+  // its tail pointed at whoever's talking. No name labels — the
+  // figures speak for themselves and labels were noise.
+  //
   // The climber tile is the click-target for the picker, so the
-  // existing "change companion" UX is preserved. The bubble is its
-  // own click-target that re-rolls a fresh quote (and a fresh
-  // climber if the user is on the Random setting), so people who
-  // want to see more lines don't have to refresh the page.
+  // "change companion" UX is preserved. The bubble is its own
+  // click-target that re-rolls a fresh quote (and a fresh climber
+  // if the user is on the Random setting).
   $slot.innerHTML = `
     <div class="scene" style="--scene-color:${climber.color}">
-      <button class="scene-climber" type="button"
+      <button class="scene-figure scene-figure-climber" type="button"
               data-action="companion-toggle"
               aria-label="Change companion. Current: ${esc(climber.label)}${setting.isRandom ? " (rolled randomly)" : ""}"
-              title="Change companion">
-        <span class="scene-shadow scene-shadow-l" aria-hidden="true"></span>
+              title="Change companion (currently ${esc(climber.label)})">
+        <span class="scene-shadow" aria-hidden="true"></span>
         ${climberSrc
-          ? `<img class="scene-portrait scene-portrait-climber" src="${esc(climberSrc)}" alt="" draggable="false">`
+          ? `<img class="scene-art" src="${esc(climberSrc)}" alt="${esc(climber.label)}" draggable="false">`
           : `<span class="scene-glyph">${esc(climber.label[0])}</span>`}
-        <span class="scene-name">${esc(climber.label)}</span>
       </button>
 
       <button class="scene-bubble scene-bubble-${speakerIsClimber ? "left" : "right"}"
@@ -1168,10 +1161,12 @@ function renderCompanion() {
         <span class="scene-bubble-tail" aria-hidden="true"></span>
       </button>
 
-      <div class="scene-sentinel-wrap" aria-label="${esc(SENTINEL_LABEL)}" title="${esc(SENTINEL_LABEL)}">
-        <span class="scene-shadow scene-shadow-r" aria-hidden="true"></span>
-        ${SENTINEL_SVG}
-        <span class="scene-name">${esc(SENTINEL_LABEL)}</span>
+      <div class="scene-figure scene-figure-antagonist"
+           aria-label="The Architect" title="The Architect">
+        <span class="scene-shadow" aria-hidden="true"></span>
+        ${antagonistSrc
+          ? `<img class="scene-art" src="${esc(antagonistSrc)}" alt="The Architect" draggable="false">`
+          : `<span class="scene-glyph">A</span>`}
       </div>
     </div>
 
