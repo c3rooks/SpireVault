@@ -5,7 +5,8 @@
     "cards": 1136,
     "relics": 288,
     "characters": 5,
-    "potions": 63
+    "potions": 63,
+    "bosses": 9
   },
   "cards": [
     "colorless_alchemize",
@@ -1506,5 +1507,16 @@
     "touchofinsanity",
     "vulnerablepotion",
     "weakpotion"
+  ],
+  "bosses": [
+    "doormaker",
+    "kaiser_crab",
+    "knowledge_demon",
+    "lagavulin_matriarch",
+    "soul_fysh",
+    "test_subject",
+    "the_kin",
+    "vantom",
+    "waterfall_giant"
   ]
 }

@@ -923,35 +923,65 @@ main.main-public,
   margin-left: 24px;
   flex: 1 1 auto;
   min-width: 0;
-  max-width: 560px;
+  max-width: 580px;
 }
 .companion-slot:empty { display: none; }
 
+/* Stage. Holds the climber slot, the boss slot, the floor, and the
+ * absolutely-positioned bubble. position:relative is required so the
+ * bubble (which is `position:absolute`) can anchor itself over the
+ * speaker. */
 .scene {
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
-  gap: 8px;
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  align-items: end;
+  justify-items: center;
+  column-gap: 18px;
   width: 100%;
   min-width: 0;
-  /* Subtle slide-in on every render so re-rolls and tab returns feel
-   * fresh without screaming for attention. */
+  padding: 24px 4px 8px;
+  /* Subtle slide-in on every render so re-rolls feel fresh without
+   * screaming for attention. */
   animation: sceneIn 0.42s cubic-bezier(0.2, 0.9, 0.3, 1) both;
 }
 
+/* Textured floor. Single span across both grid columns so the two
+ * figures share a single ground line — that anchoring is the whole
+ * point. Built from a faint highlight stripe at the top, a soft
+ * shadow band below, and a tiny conic dot pattern that reads as
+ * cracked stone without competing with the figures. */
+.scene-floor {
+  position: absolute;
+  left: 6%;
+  right: 6%;
+  bottom: 4px;
+  height: 14px;
+  border-radius: 50%;
+  background:
+    radial-gradient(
+      ellipse at 50% 0%,
+      color-mix(in srgb, var(--scene-color, #ffa05c) 22%, transparent) 0%,
+      rgba(0, 0, 0, 0.6) 60%,
+      transparent 100%
+    );
+  filter: blur(2px);
+  pointer-events: none;
+  z-index: 0;
+}
+
 /* Each figure is a column with the full-body art on top and a soft
- * shadow underneath. No background plate, no circle clip — the
- * source PNGs ship on transparent backgrounds so we just let them
- * stand on the panel. The climber column is a button (the picker
- * trigger); the antagonist column is non-interactive. */
+ * shadow underneath. The climber column is a button (picker
+ * trigger); the boss column is non-interactive. */
 .scene-figure {
   position: relative;
+  z-index: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
-  flex: 0 0 auto;
-  width: 86px;
-  height: 96px;
+  width: 100%;
+  max-width: 110px;
+  height: 110px;
   padding: 0;
   background: transparent;
   border: 0;
@@ -972,10 +1002,10 @@ main.main-public,
   outline-offset: 4px;
 }
 
-/* Full-body character art. object-fit:contain keeps the whole figure
- * visible; object-position:center bottom plants their feet on the
- * baseline so different poses stay aligned. drop-shadow gives them
- * an in-world glow without altering the transparent edges. */
+/* Full-body character / boss art. object-fit:contain keeps the
+ * figure visible; object-position:center bottom plants the feet on
+ * the floor so different sprite heights stay aligned. drop-shadow
+ * gives in-world depth without touching the transparent edges. */
 .scene-art {
   position: relative;
   z-index: 1;
@@ -987,15 +1017,24 @@ main.main-public,
   pointer-events: none;
   user-select: none;
 }
-.scene-figure-climber   .scene-art { animation: sceneBobClimber    2.4s ease-in-out infinite; }
-.scene-figure-antagonist .scene-art {
-  /* Mirror so the Architect faces the climber. */
-  transform: scaleX(-1);
-  animation: sceneBobAntagonist 3.2s ease-in-out infinite;
-  transform-origin: center bottom;
+
+/* Climber bobs at one cadence; boss drifts at another so the scene
+ * never feels synchronized. Bosses don't get mirrored — they're
+ * frontal-view line art and look correct facing forward. */
+.scene-figure-climber .scene-art {
+  animation: sceneBobClimber 2.4s ease-in-out infinite;
+}
+.scene-figure-boss .scene-art {
+  /* Boss line art is white on transparent — colorize slightly so it
+   * reads as menacing instead of pure-white-on-dark. invert+hue gives
+   * a cold ghostly tint without losing the line detail. */
+  filter:
+    drop-shadow(0 4px 10px rgba(0, 0, 0, 0.6))
+    drop-shadow(0 0 6px rgba(120, 90, 200, 0.18));
+  animation: sceneBobBoss 3.4s ease-in-out infinite;
 }
 
-/* Fallback glyph (shown only if the character webp fails to load). */
+/* Fallback glyph (shown only if the webp fails to load). */
 .scene-glyph {
   display: flex;
   align-items: center;
@@ -1010,34 +1049,38 @@ main.main-public,
 }
 
 /* Soft elliptical shadow under each figure. Pulses out of phase with
- * the bob so the figures look anchored rather than floating. */
+ * the bob so the figures look like they're stepping on something
+ * solid, not floating. */
 .scene-shadow {
   position: absolute;
-  bottom: 2px;
+  bottom: 4px;
   left: 50%;
   transform: translateX(-50%);
-  width: 60%;
-  height: 6px;
+  width: 64%;
+  height: 7px;
   border-radius: 50%;
   background: rgba(0, 0, 0, 0.55);
   filter: blur(4px);
   z-index: 0;
 }
-.scene-figure-climber   .scene-shadow { animation: sceneShadowClimber    2.4s ease-in-out infinite; }
-.scene-figure-antagonist .scene-shadow { animation: sceneShadowAntagonist 3.2s ease-in-out infinite; }
+.scene-figure-climber .scene-shadow { animation: sceneShadowClimber 2.4s ease-in-out infinite; }
+.scene-figure-boss    .scene-shadow { animation: sceneShadowBoss    3.4s ease-in-out infinite; }
 
-/* Speech bubble. Pill-shaped with a downward tail toward the figure
- * who's talking. Sits inline between the two figures. */
+/* Speech bubble. Anchored absolutely over whichever figure is
+ * speaking — never floating in the middle of the gap. Two variants:
+ * `.scene-bubble-climber` snaps to the left grid column;
+ * `.scene-bubble-boss` snaps to the right. The tail aims down at the
+ * speaker's head. */
 .scene-bubble {
-  flex: 0 1 auto;
-  position: relative;
+  position: absolute;
+  top: -2px;
+  z-index: 3;
   min-width: 0;
-  max-width: 240px;
-  margin-bottom: 26px;
-  padding: 8px 14px;
-  background: linear-gradient(180deg, rgba(238, 244, 255, 0.98) 0%, rgba(220, 230, 245, 0.98) 100%);
+  max-width: 220px;
+  padding: 7px 14px;
+  background: linear-gradient(180deg, rgba(244, 248, 255, 0.98) 0%, rgba(224, 232, 248, 0.98) 100%);
   color: #0a0d18;
-  border: 1px solid rgba(255, 255, 255, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.7);
   border-radius: 16px;
   font-family: 'Inter', sans-serif;
   font-size: 12px;
@@ -1045,13 +1088,24 @@ main.main-public,
   line-height: 1.35;
   text-align: center;
   cursor: pointer;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
   animation: sceneBubblePop 0.32s cubic-bezier(0.2, 1.6, 0.6, 1) both;
   transition: transform 0.15s ease, box-shadow 0.15s ease;
 }
+/* Climber speaks: pin to left half, biased a bit right of the
+ * climber's centerline so the tail can lean back over their head. */
+.scene-bubble-climber {
+  left: 8%;
+  right: auto;
+}
+/* Boss speaks: mirrored anchor on the right half. */
+.scene-bubble-boss {
+  right: 8%;
+  left: auto;
+}
 .scene-bubble:hover {
   transform: translateY(-1px);
-  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.55);
 }
 .scene-bubble:focus-visible {
   outline: 2px solid var(--scene-color, var(--accent));
@@ -1062,8 +1116,7 @@ main.main-public,
   word-break: break-word;
   hyphens: auto;
 }
-/* Tail points down-left toward the climber, or down-right toward the
- * Architect, depending on who's speaking. */
+/* Tail points straight down at the speaker's head. */
 .scene-bubble-tail {
   position: absolute;
   bottom: -6px;
@@ -1071,15 +1124,13 @@ main.main-public,
   height: 0;
   border-left: 7px solid transparent;
   border-right: 7px solid transparent;
-  border-top: 8px solid rgba(220, 230, 245, 0.98);
-  filter: drop-shadow(0 1px 0 rgba(255, 255, 255, 0.6));
+  border-top: 8px solid rgba(224, 232, 248, 0.98);
+  filter: drop-shadow(0 1px 0 rgba(255, 255, 255, 0.7));
 }
-.scene-bubble-left  .scene-bubble-tail { left:  18%; }
-.scene-bubble-right .scene-bubble-tail { right: 18%; }
+.scene-bubble-climber .scene-bubble-tail { left:  50%; transform: translateX(-50%); }
+.scene-bubble-boss    .scene-bubble-tail { right: 50%; transform: translateX(50%);  }
 
-/* Animations. Both figures bob; the Architect drifts slower so the
- * scene never feels synchronized. Shadows pulse opposite the bob so
- * the figures look like they're stepping, not floating. */
+/* Animations. */
 @keyframes sceneIn {
   0%   { opacity: 0; transform: translateY(4px); }
   100% { opacity: 1; transform: translateY(0);   }
@@ -1088,22 +1139,21 @@ main.main-public,
   0%, 100% { transform: translateY(0); }
   50%      { transform: translateY(-4px); }
 }
-@keyframes sceneBobAntagonist {
-  /* `scaleX(-1)` is preserved so the Architect stays mirrored. */
-  0%, 100% { transform: scaleX(-1) translateY(0); }
-  50%      { transform: scaleX(-1) translateY(-3px); }
+@keyframes sceneBobBoss {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-3px); }
 }
 @keyframes sceneShadowClimber {
   0%, 100% { transform: translateX(-50%) scaleX(1);    opacity: 0.55; }
   50%      { transform: translateX(-50%) scaleX(0.78); opacity: 0.32; }
 }
-@keyframes sceneShadowAntagonist {
+@keyframes sceneShadowBoss {
   0%, 100% { transform: translateX(-50%) scaleX(1);    opacity: 0.55; }
   50%      { transform: translateX(-50%) scaleX(0.86); opacity: 0.4;  }
 }
 @keyframes sceneBubblePop {
-  0%   { opacity: 0; transform: scale(0.85); }
-  100% { opacity: 1; transform: scale(1);    }
+  0%   { opacity: 0; transform: scale(0.85) translateY(2px); }
+  100% { opacity: 1; transform: scale(1)    translateY(0);   }
 }
 
 /* Popover picker — opens below the climber button. Same pattern as
@@ -1179,21 +1229,24 @@ main.main-public,
 }
 
 /* Tablet: shrink figures + bubble so the diorama stops eating
- * panel-head room around 900px. Whole scene stays inline. */
+ * panel-head room around 900px. */
 @media (max-width: 1100px) {
-  .companion-slot { max-width: 420px; }
-  .scene-figure   { width: 72px; height: 82px; }
-  .scene-bubble   { font-size: 11px; padding: 6px 12px; max-width: 200px; margin-bottom: 22px; }
+  .companion-slot { max-width: 440px; }
+  .scene          { padding: 22px 4px 6px; column-gap: 14px; }
+  .scene-figure   { max-width: 90px; height: 92px; }
+  .scene-bubble   { font-size: 11px; padding: 6px 12px; max-width: 180px; }
 }
 
-/* Mobile: the panel-head already wraps at this breakpoint, so the
- * diorama gets its own row under the title. Shrink figures + bubble
- * so a 360px phone fits everything without overflow. Picker anchors
- * to the right edge so it can't clip off-screen. */
+/* Mobile: panel-head already wraps at this breakpoint so the diorama
+ * gets its own row under the title. Shrink everything but keep the
+ * bubble anchored over the speaker. */
 @media (max-width: 720px) {
-  .companion-slot { margin-left: 0; max-width: 100%; justify-content: center; }
-  .scene-figure   { width: 60px; height: 70px; }
-  .scene-bubble   { font-size: 11px; padding: 6px 10px; max-width: none; margin-bottom: 18px; }
+  .companion-slot { margin-left: 0; max-width: 100%; }
+  .scene          { padding: 22px 0 4px; column-gap: 8px; }
+  .scene-figure   { max-width: 78px; height: 80px; }
+  .scene-bubble   { font-size: 11px; padding: 5px 10px; max-width: 140px; top: 0; }
+  .scene-bubble-climber { left: 2%; }
+  .scene-bubble-boss    { right: 2%; }
   .companion-picker { left: auto; right: 0; }
 }
 
@@ -1203,7 +1256,6 @@ main.main-public,
   .scene-shadow,
   .scene-bubble { animation: none; }
   .scene-bubble:hover, .scene-figure-climber:hover { transform: none; filter: none; }
-  .scene-figure-antagonist .scene-art { transform: scaleX(-1); }
 }
 
 /* Tighten panel chrome on mobile. The desktop padding (24/32 px) eats

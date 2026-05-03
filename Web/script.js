@@ -44,67 +44,157 @@ const COMPANIONS = [
   { id: "necrobinder",label: "Necrobinder",blurb: "Bone, blood, and will.",  color: "#9b83ff" },
 ];
 
-// Lore-flavored two-character chatter for the Overview diorama.
-// Tone rules:
+// Right-side antagonist roster. These are real STS2 act/end-bosses
+// shipped as transparent line-art webps in /assets/sts2/bosses/.
+// Each boss gets a display label (used in tooltips and a11y) plus a
+// pool of in-character taunt lines. On every render we roll a fresh
+// boss from this list — we never reuse a player character as the
+// antagonist, which was the previous (Regent-on-throne) hack.
+const BOSSES = [
+  {
+    id: "doormaker", label: "The Doormaker",
+    lines: [
+      "I open. I close. You decide which.",
+      "Every door leads back to me.",
+      "There is no path out, only further in.",
+      "Step through. I dare you.",
+    ],
+  },
+  {
+    id: "kaiser_crab", label: "Kaiser Crab",
+    lines: [
+      "Tide rises. You drown.",
+      "My shell has outlived your bloodline.",
+      "Pinch. Tear. Repeat.",
+      "Ascend? You can't even swim.",
+    ],
+  },
+  {
+    id: "knowledge_demon", label: "Knowledge Demon",
+    lines: [
+      "I have read every deck you'll ever build.",
+      "Curiosity will kill you. As intended.",
+      "Knowledge is a curse. Drink up.",
+      "Every answer costs blood.",
+    ],
+  },
+  {
+    id: "lagavulin_matriarch", label: "Lagavulin Matriarch",
+    lines: [
+      "Sleep is a kindness I no longer offer.",
+      "My daughters wait at the next floor.",
+      "Mortal. Brittle. Predictable.",
+      "I have ruled this peak for centuries.",
+    ],
+  },
+  {
+    id: "soul_fysh", label: "Soul Fysh",
+    lines: [
+      "Your soul tastes like every climber's before you.",
+      "Swim closer. The current does the rest.",
+      "Float. Drift. Forget.",
+      "I eat what the Spire discards.",
+    ],
+  },
+  {
+    id: "test_subject", label: "Test Subject",
+    lines: [
+      "Subject 47, climber. You are 48.",
+      "The trial began the moment you entered.",
+      "Adapting. Always adapting.",
+      "Failure is data. Provide more.",
+    ],
+  },
+  {
+    id: "the_kin", label: "The Kin",
+    lines: [
+      "We are many. You are one.",
+      "Family always finishes the meal.",
+      "There are more of us upstairs.",
+      "You will fit in the pile.",
+    ],
+  },
+  {
+    id: "vantom", label: "Vantom",
+    lines: [
+      "Gravity is the only god here.",
+      "I do not move. I am moved through.",
+      "You are an orbit. Briefly.",
+      "Burn out. You always do.",
+    ],
+  },
+  {
+    id: "waterfall_giant", label: "Waterfall Giant",
+    lines: [
+      "I am the floor that fell.",
+      "Climb past me, climber. I'll be waiting below.",
+      "The Spire weeps through me.",
+      "You are a stone. Stones sink.",
+    ],
+  },
+];
+
+// Lore-flavored chatter. Climber lines have an `only:` slug for
+// character-specific bravado; lines without `only:` work for any
+// climber. Tone rules:
 //   - In-universe references only (Neow, the Heart, Ascensions,
 //     real STS2 cards/relics).
 //   - Short, declarative, not cryptic. Anyone who's never played
 //     STS2 should be able to read a line without needing context.
-//     ("Skip the campfire" was an inside joke about the act-map UI;
-//     it died here.) Aim for 18–48 characters per line.
+//     Aim for 18–48 characters per line.
 //   - No fourth-wall jokes. Reads like an in-game taunt, not an
 //     internet comment.
-const SCENE_LINES = [
-  // ─── Climber, character-agnostic ───
-  { who: "climber", text: "Up we go." },
-  { who: "climber", text: "One more floor." },
-  { who: "climber", text: "Bring it." },
-  { who: "climber", text: "I've seen worse." },
-  { who: "climber", text: "I've trained for this." },
-  { who: "climber", text: "Block first. Strike harder." },
-  { who: "climber", text: "Show me the boss." },
-  { who: "climber", text: "Three acts. Easy." },
-  { who: "climber", text: "My deck is ready." },
-  { who: "climber", text: "The Spire bleeds today." },
-  { who: "climber", text: "Heart, I'm coming for you." },
+// Boss lines live on each entry in BOSSES so they stay scoped to
+// the figure that's actually on screen.
+const CLIMBER_LINES = [
+  // ─── Character-agnostic ───
+  { text: "Up we go." },
+  { text: "One more floor." },
+  { text: "Bring it." },
+  { text: "I've seen worse." },
+  { text: "I've trained for this." },
+  { text: "Block first. Strike harder." },
+  { text: "Show me the boss." },
+  { text: "Three acts. Easy." },
+  { text: "My deck is ready." },
+  { text: "The Spire bleeds today." },
+  { text: "Heart, I'm coming for you." },
+  { text: "Neow's blessing was enough." },
+  { text: "Ascension 20 or nothing." },
 
-  // ─── Climber, character-specific ───
-  { who: "climber", only: "ironclad",    text: "Anger. Steel. Repeat." },
-  { who: "climber", only: "ironclad",    text: "Burning Blood keeps me going." },
-  { who: "climber", only: "ironclad",    text: "Strength I trust." },
-  { who: "climber", only: "silent",      text: "From the shadows." },
-  { who: "climber", only: "silent",      text: "Silent. Deadly. Done." },
-  { who: "climber", only: "silent",      text: "Daggers first." },
-  { who: "climber", only: "defect",      text: "Channel. Defend. Destroy." },
-  { who: "climber", only: "defect",      text: "Three orbs. One plan." },
-  { who: "climber", only: "defect",      text: "Compute the kill." },
-  { who: "climber", only: "regent",      text: "Bow to the deck." },
-  { who: "climber", only: "regent",      text: "My court awaits." },
-  { who: "climber", only: "necrobinder", text: "Bones remember." },
-  { who: "climber", only: "necrobinder", text: "Death is a setback." },
-  { who: "climber", only: "necrobinder", text: "I bound them. They bind back." },
+  // ─── Ironclad ───
+  { only: "ironclad", text: "Anger. Steel. Repeat." },
+  { only: "ironclad", text: "Burning Blood keeps me going." },
+  { only: "ironclad", text: "Strength I trust." },
+  { only: "ironclad", text: "Bash first. Talk never." },
+  { only: "ironclad", text: "Block, anger, kill." },
 
-  // ─── The Architect (right-side figure) ───
-  { who: "spire", text: "Cursed to fight forever, aren't you?" },
-  { who: "spire", text: "Climb. The Spire welcomes you back." },
-  { who: "spire", text: "You died here last time too." },
-  { who: "spire", text: "Three acts. One end. Always." },
-  { who: "spire", text: "I've watched you fall before." },
-  { who: "spire", text: "The Heart still beats." },
-  { who: "spire", text: "Try Ascension 20. I dare you." },
-  { who: "spire", text: "Same path. Same ending." },
-  { who: "spire", text: "Try again, climber." },
-  { who: "spire", text: "Floor 50 is closer than you think." },
+  // ─── Silent ───
+  { only: "silent", text: "From the shadows." },
+  { only: "silent", text: "Silent. Deadly. Done." },
+  { only: "silent", text: "Daggers first." },
+  { only: "silent", text: "Poisons stack. So do bodies." },
+  { only: "silent", text: "Catalyst on full poison. Watch." },
+
+  // ─── Defect ───
+  { only: "defect", text: "Channel. Defend. Destroy." },
+  { only: "defect", text: "Three orbs. One plan." },
+  { only: "defect", text: "Compute the kill." },
+  { only: "defect", text: "Lightning prefers your face." },
+  { only: "defect", text: "Frost and Focus. That's all." },
+
+  // ─── Regent ───
+  { only: "regent", text: "Bow to the deck." },
+  { only: "regent", text: "My court awaits." },
+  { only: "regent", text: "The crown is heavy. So is my hammer." },
+  { only: "regent", text: "Kneel or fall. Either works." },
+
+  // ─── Necrobinder ───
+  { only: "necrobinder", text: "Bones remember." },
+  { only: "necrobinder", text: "Death is a setback." },
+  { only: "necrobinder", text: "I bound them. They bind back." },
+  { only: "necrobinder", text: "The grave has a deck list." },
 ];
-
-// Right-side antagonist. Reuses the existing Regent character art
-// (already shipped at /assets/sts2/characters/regent.webp) because
-// it matches the user's prototype "Architect" silhouette: crowned,
-// robed, throne-seated. We mirror it horizontally in CSS so it
-// faces the climber. If the climber IS Regent we swap to
-// Necrobinder so we never see the same character on both sides.
-const ANTAGONIST_PRIMARY  = "regent";
-const ANTAGONIST_FALLBACK = "necrobinder";
 // Poll cadences are tuned to keep us well under Cloudflare KV's free-tier
 // daily quotas (1k writes/day, 1k list ops/day, 100k reads/day). A single
 // pair of active browsers used to burn the list-op quota in hours; new
@@ -165,7 +255,7 @@ const HISTORY_PATH_LINUX = "~/.local/share/SlayTheSpire2";
 // the previous text-only / SVG-only renderers — assets are an enhancement,
 // not a hard dependency.
 const ASSET_BASE = "/assets/sts2";
-let assetManifest = { cards: new Set(), relics: new Set(), characters: new Set(), potions: new Set() };
+let assetManifest = { cards: new Set(), relics: new Set(), characters: new Set(), potions: new Set(), bosses: new Set() };
 // Friendly display names: { cards: { slug: "Blood Wall" }, relics: { ... } }
 // Sourced from the iOS Companion's GameDatabase by extract_sts2_labels.py.
 // The manifest tells us *what art exists*; the labels tell us *how to
@@ -190,6 +280,7 @@ async function loadAssetManifest() {
       relics:     new Set(j.relics     || []),
       characters: new Set(j.characters || []),
       potions:    new Set(j.potions    || []),
+      bosses:     new Set(j.bosses     || []),
     };
     if (labRes && labRes.ok) {
       const lj = await labRes.json();
@@ -371,6 +462,12 @@ function characterImageSrc(name) {
   const slug = String(name || "").trim().toLowerCase();
   if (!slug || !assetManifest.characters.has(slug)) return null;
   return `${ASSET_BASE}/characters/${slug}.webp`;
+}
+
+function bossImageSrc(slug) {
+  const s = String(slug || "").trim().toLowerCase();
+  if (!s || !assetManifest.bosses.has(s)) return null;
+  return `${ASSET_BASE}/bosses/${s}.webp`;
 }
 
 // ─── Module state ──────────────────────────────────────────────────────
@@ -1101,13 +1198,32 @@ function rollClimberFor(setting) {
   return setting;
 }
 
-/** Pick a quote for the diorama. We weight character-tagged climber
- *  lines toward the active climber so picking Defect actually feels
- *  like Defect — without making the spire's lines repeat constantly,
- *  we just leave them in the general pool. */
-function rollQuote(climber) {
-  const pool = SCENE_LINES.filter((q) => !q.only || q.only === climber.id);
+/** Pick a fresh boss from the BOSSES roster on every render. Pure
+ *  random; the only constraint is that we have art for it (verified
+ *  by the asset manifest). If the manifest hasn't loaded yet — first
+ *  render before fetch resolves — `bossImageSrc` returns null and the
+ *  diorama waits for the manifest-aware re-render in loadAssetManifest()
+ *  to pull a real boss. */
+function rollBoss() {
+  const ready = BOSSES.filter((b) => assetManifest.bosses.has(b.id));
+  const pool  = ready.length > 0 ? ready : BOSSES;
   return pool[Math.floor(Math.random() * pool.length)];
+}
+
+/** Pick a quote for one of the two figures. Random side, then random
+ *  line from the appropriate pool. Climber lines tagged with `only:`
+ *  are filtered to the active climber so a Defect line never comes
+ *  out of an Ironclad's mouth. Returns { who, text }. */
+function rollQuote(climber, boss) {
+  const speakerIsClimber = Math.random() < 0.5;
+  if (speakerIsClimber) {
+    const pool = CLIMBER_LINES.filter((q) => !q.only || q.only === climber.id);
+    const line = pool[Math.floor(Math.random() * pool.length)];
+    return { who: "climber", text: line.text };
+  }
+  const lines = boss.lines || [];
+  const text  = lines[Math.floor(Math.random() * lines.length)] || "Climb. The Spire welcomes you back.";
+  return { who: "boss", text };
 }
 
 function setCompanion(id) {
@@ -1121,28 +1237,28 @@ function renderCompanion() {
   if (!$slot) return;
   const setting = getCompanionSetting();
   const climber = rollClimberFor(setting);
-  const quote   = rollQuote(climber);
+  const boss    = rollBoss();
+  const quote   = rollQuote(climber, boss);
   const climberSrc = characterImageSrc(climber.id) || "";
+  const bossSrc    = bossImageSrc(boss.id) || "";
 
-  // Right-side antagonist art. Default to Regent (matches the
-  // prototype's crowned/throne aesthetic) but pick a different
-  // character when the climber IS Regent — we never want the same
-  // figure on both sides of the diorama.
-  const antagonistId  = climber.id === ANTAGONIST_PRIMARY ? ANTAGONIST_FALLBACK : ANTAGONIST_PRIMARY;
-  const antagonistSrc = characterImageSrc(antagonistId) || "";
   const speakerIsClimber = quote.who === "climber";
 
-  // Diorama: climber on the left (faces right), antagonist on the
-  // right (mirrored to face left), speech bubble between them with
-  // its tail pointed at whoever's talking. No name labels — the
-  // figures speak for themselves and labels were noise.
+  // Diorama markup: stage holds both figures side-by-side and a
+  // bubble that's *anchored to the speaker* (not centered). The
+  // bubble is `position:absolute` over the climber slot when the
+  // climber speaks, and over the boss slot when the boss speaks —
+  // never floating in the gap between them. Subtle floor texture
+  // sits below both feet so the figures look anchored, not
+  // suspended in mid-air.
   //
-  // The climber tile is the click-target for the picker, so the
-  // "change companion" UX is preserved. The bubble is its own
-  // click-target that re-rolls a fresh quote (and a fresh climber
-  // if the user is on the Random setting).
+  // The climber tile is the click-target for the companion picker;
+  // the bubble is the click-target for re-rolling a new line and a
+  // new boss (and a new climber if the user is on Random).
   $slot.innerHTML = `
-    <div class="scene" style="--scene-color:${climber.color}">
+    <div class="scene scene-${speakerIsClimber ? "climber-speaks" : "boss-speaks"}"
+         style="--scene-color:${climber.color}">
+      <div class="scene-floor" aria-hidden="true"></div>
       <button class="scene-figure scene-figure-climber" type="button"
               data-action="companion-toggle"
               aria-label="Change companion. Current: ${esc(climber.label)}${setting.isRandom ? " (rolled randomly)" : ""}"
@@ -1153,21 +1269,21 @@ function renderCompanion() {
           : `<span class="scene-glyph">${esc(climber.label[0])}</span>`}
       </button>
 
-      <button class="scene-bubble scene-bubble-${speakerIsClimber ? "left" : "right"}"
+      <div class="scene-figure scene-figure-boss"
+           aria-label="${esc(boss.label)}" title="${esc(boss.label)}">
+        <span class="scene-shadow" aria-hidden="true"></span>
+        ${bossSrc
+          ? `<img class="scene-art" src="${esc(bossSrc)}" alt="${esc(boss.label)}" draggable="false">`
+          : `<span class="scene-glyph">${esc(boss.label[0])}</span>`}
+      </div>
+
+      <button class="scene-bubble scene-bubble-${speakerIsClimber ? "climber" : "boss"}"
               type="button" data-action="scene-reroll"
-              aria-label="New line"
+              aria-label="New line. Tap for another."
               title="Tap for a new line">
         <span class="scene-bubble-text">${esc(quote.text)}</span>
         <span class="scene-bubble-tail" aria-hidden="true"></span>
       </button>
-
-      <div class="scene-figure scene-figure-antagonist"
-           aria-label="The Architect" title="The Architect">
-        <span class="scene-shadow" aria-hidden="true"></span>
-        ${antagonistSrc
-          ? `<img class="scene-art" src="${esc(antagonistSrc)}" alt="The Architect" draggable="false">`
-          : `<span class="scene-glyph">A</span>`}
-      </div>
     </div>
 
     <div class="companion-picker" id="companion-picker" hidden role="listbox" aria-label="Pick companion">
