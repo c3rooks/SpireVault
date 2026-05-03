@@ -44,95 +44,47 @@ const COMPANIONS = [
   { id: "necrobinder",label: "Necrobinder",blurb: "Bone, blood, and will.",  color: "#9b83ff" },
 ];
 
-// Right-side antagonist roster. These are real STS2 act/end-bosses
-// shipped as transparent line-art webps in /assets/sts2/bosses/.
-// Each boss gets a display label (used in tooltips and a11y) plus a
-// pool of in-character taunt lines. On every render we roll a fresh
-// boss from this list — we never reuse a player character as the
-// antagonist, which was the previous (Regent-on-throne) hack.
-const BOSSES = [
-  {
-    id: "doormaker", label: "The Doormaker",
-    lines: [
-      "I open. I close. You decide which.",
-      "Every door leads back to me.",
-      "There is no path out, only further in.",
-      "Step through. I dare you.",
-    ],
-  },
-  {
-    id: "kaiser_crab", label: "Kaiser Crab",
-    lines: [
-      "Tide rises. You drown.",
-      "My shell has outlived your bloodline.",
-      "Pinch. Tear. Repeat.",
-      "Ascend? You can't even swim.",
-    ],
-  },
-  {
-    id: "knowledge_demon", label: "Knowledge Demon",
-    lines: [
-      "I have read every deck you'll ever build.",
-      "Curiosity will kill you. As intended.",
-      "Knowledge is a curse. Drink up.",
-      "Every answer costs blood.",
-    ],
-  },
-  {
-    id: "lagavulin_matriarch", label: "Lagavulin Matriarch",
-    lines: [
-      "Sleep is a kindness I no longer offer.",
-      "My daughters wait at the next floor.",
-      "Mortal. Brittle. Predictable.",
-      "I have ruled this peak for centuries.",
-    ],
-  },
-  {
-    id: "soul_fysh", label: "Soul Fysh",
-    lines: [
-      "Your soul tastes like every climber's before you.",
-      "Swim closer. The current does the rest.",
-      "Float. Drift. Forget.",
-      "I eat what the Spire discards.",
-    ],
-  },
-  {
-    id: "test_subject", label: "Test Subject",
-    lines: [
-      "Subject 47, climber. You are 48.",
-      "The trial began the moment you entered.",
-      "Adapting. Always adapting.",
-      "Failure is data. Provide more.",
-    ],
-  },
-  {
-    id: "the_kin", label: "The Kin",
-    lines: [
-      "We are many. You are one.",
-      "Family always finishes the meal.",
-      "There are more of us upstairs.",
-      "You will fit in the pile.",
-    ],
-  },
-  {
-    id: "vantom", label: "Vantom",
-    lines: [
-      "Gravity is the only god here.",
-      "I do not move. I am moved through.",
-      "You are an orbit. Briefly.",
-      "Burn out. You always do.",
-    ],
-  },
-  {
-    id: "waterfall_giant", label: "Waterfall Giant",
-    lines: [
-      "I am the floor that fell.",
-      "Climb past me, climber. I'll be waiting below.",
-      "The Spire weeps through me.",
-      "You are a stone. Stones sink.",
-    ],
-  },
-];
+// The Architect — final Ancient at the top of Act 3 in Slay the
+// Spire 2. Fixed antagonist (he doesn't change, the climber does),
+// art scraped from slaythespire.wiki.gg under fair use as a
+// reference image for an open-source community tool.
+//
+// Lines are pulled directly from the wiki's Encounter dialogue so
+// the Architect actually says things he says in-game. Lines tagged
+// with `only:` are scoped to that climber — pick Defect and you'll
+// hear his Defect-specific taunts; pick Regent and you'll hear the
+// "loud fool returns" line.
+const ARCHITECT = {
+  id:    "architect",
+  label: "The Architect",
+  lines: [
+    // Universal — fire for any climber.
+    { text: "Cursed to fight forever, aren't you?" },
+    { text: "So the arch demon's thrall has arrived?" },
+    { text: "Do you even know your name?" },
+    { text: "I pity you. Kill..." },
+    { text: "Not even an introduction?" },
+    { text: "Where did you come from?" },
+    { text: "What are you after?" },
+    { text: "You cannot change the past with anger." },
+    { text: "I did what I must to maintain order." },
+    { text: "Annoying wretch! BE GONE!!" },
+    { text: "DIE!!" },
+
+    // Climber-specific — sourced from the wiki's encounter dialogue.
+    { only: "ironclad",    text: "Return to the bottom, Ironclad." },
+    { only: "regent",      text: "The loud fool returns?" },
+    { only: "regent",      text: "I'll teach you some manners!" },
+    { only: "necrobinder", text: "Vengeance is it? No thank you." },
+    { only: "silent",      text: "Vengeance is it? No thank you." },
+    { only: "defect",      text: "What are you doing here?" },
+    { only: "defect",      text: "Repair you? Make me." },
+    { only: "defect",      text: "You're back? Didn't I dismantle you?" },
+    { only: "defect",      text: "Fix you? Fix your friend? Ridiculous." },
+    { only: "defect",      text: "How do you keep coming back? Is this Neow's doing?" },
+    { only: "defect",      text: "Foolish." },
+  ],
+};
 
 // Lore-flavored chatter. Climber lines have an `only:` slug for
 // character-specific bravado; lines without `only:` work for any
@@ -1198,32 +1150,22 @@ function rollClimberFor(setting) {
   return setting;
 }
 
-/** Pick a fresh boss from the BOSSES roster on every render. Pure
- *  random; the only constraint is that we have art for it (verified
- *  by the asset manifest). If the manifest hasn't loaded yet — first
- *  render before fetch resolves — `bossImageSrc` returns null and the
- *  diorama waits for the manifest-aware re-render in loadAssetManifest()
- *  to pull a real boss. */
-function rollBoss() {
-  const ready = BOSSES.filter((b) => assetManifest.bosses.has(b.id));
-  const pool  = ready.length > 0 ? ready : BOSSES;
-  return pool[Math.floor(Math.random() * pool.length)];
-}
-
 /** Pick a quote for one of the two figures. Random side, then random
- *  line from the appropriate pool. Climber lines tagged with `only:`
- *  are filtered to the active climber so a Defect line never comes
- *  out of an Ironclad's mouth. Returns { who, text }. */
-function rollQuote(climber, boss) {
+ *  line from the appropriate pool. Both pools filter `only:` tags
+ *  against the active climber so a Defect-only line never comes out
+ *  of an Ironclad's mouth (and the Architect's "Return to the
+ *  bottom, Ironclad." only fires when Ironclad is on the field).
+ *  Returns { who, text }. */
+function rollQuote(climber) {
   const speakerIsClimber = Math.random() < 0.5;
   if (speakerIsClimber) {
     const pool = CLIMBER_LINES.filter((q) => !q.only || q.only === climber.id);
     const line = pool[Math.floor(Math.random() * pool.length)];
     return { who: "climber", text: line.text };
   }
-  const lines = boss.lines || [];
-  const text  = lines[Math.floor(Math.random() * lines.length)] || "Climb. The Spire welcomes you back.";
-  return { who: "boss", text };
+  const pool = ARCHITECT.lines.filter((q) => !q.only || q.only === climber.id);
+  const line = pool[Math.floor(Math.random() * pool.length)];
+  return { who: "boss", text: line.text };
 }
 
 function setCompanion(id) {
@@ -1237,28 +1179,26 @@ function renderCompanion() {
   if (!$slot) return;
   const setting = getCompanionSetting();
   const climber = rollClimberFor(setting);
-  const boss    = rollBoss();
-  const quote   = rollQuote(climber, boss);
+  const quote   = rollQuote(climber);
   const climberSrc = characterImageSrc(climber.id) || "";
-  const bossSrc    = bossImageSrc(boss.id) || "";
+  // Fixed antagonist — The Architect is *always* on the right.
+  // Player characters change; he doesn't. Matches the in-game scene
+  // where every climber on every run faces the same final Ancient.
+  const bossSrc = bossImageSrc(ARCHITECT.id) || "";
 
   const speakerIsClimber = quote.who === "climber";
 
-  // Diorama markup: stage holds both figures side-by-side and a
-  // bubble that's *anchored to the speaker* (not centered). The
-  // bubble is `position:absolute` over the climber slot when the
-  // climber speaks, and over the boss slot when the boss speaks —
-  // never floating in the gap between them. Subtle floor texture
-  // sits below both feet so the figures look anchored, not
-  // suspended in mid-air.
+  // Diorama markup: stage holds both figures side-by-side over the
+  // textured cobblestone background (set as a CSS background-image
+  // on `.scene`), with a bubble that's *anchored to the speaker*
+  // rather than centered between them.
   //
   // The climber tile is the click-target for the companion picker;
-  // the bubble is the click-target for re-rolling a new line and a
-  // new boss (and a new climber if the user is on Random).
+  // the bubble is the click-target for re-rolling a new line (and a
+  // new climber if the user is on Random).
   $slot.innerHTML = `
     <div class="scene scene-${speakerIsClimber ? "climber-speaks" : "boss-speaks"}"
          style="--scene-color:${climber.color}">
-      <div class="scene-floor" aria-hidden="true"></div>
       <button class="scene-figure scene-figure-climber" type="button"
               data-action="companion-toggle"
               aria-label="Change companion. Current: ${esc(climber.label)}${setting.isRandom ? " (rolled randomly)" : ""}"
@@ -1270,11 +1210,11 @@ function renderCompanion() {
       </button>
 
       <div class="scene-figure scene-figure-boss"
-           aria-label="${esc(boss.label)}" title="${esc(boss.label)}">
+           aria-label="${esc(ARCHITECT.label)}" title="${esc(ARCHITECT.label)}">
         <span class="scene-shadow" aria-hidden="true"></span>
         ${bossSrc
-          ? `<img class="scene-art" src="${esc(bossSrc)}" alt="${esc(boss.label)}" draggable="false">`
-          : `<span class="scene-glyph">${esc(boss.label[0])}</span>`}
+          ? `<img class="scene-art" src="${esc(bossSrc)}" alt="${esc(ARCHITECT.label)}" draggable="false">`
+          : `<span class="scene-glyph">A</span>`}
       </div>
 
       <button class="scene-bubble scene-bubble-${speakerIsClimber ? "climber" : "boss"}"

@@ -927,10 +927,16 @@ main.main-public,
 }
 .companion-slot:empty { display: none; }
 
-/* Stage. Holds the climber slot, the boss slot, the floor, and the
- * absolutely-positioned bubble. position:relative is required so the
- * bubble (which is `position:absolute`) can anchor itself over the
- * speaker. */
+/* Stage. Holds the climber slot, the boss slot, and the absolutely-
+ * positioned bubble. position:relative is required so the bubble
+ * (which is `position:absolute`) can anchor itself over the speaker.
+ *
+ * The textured cobblestone scene is a real PNG/webp set as the
+ * background-image on this container — it's the dungeon floor that
+ * both figures stand on so they no longer look like sprites
+ * floating in pure void. The image was generated on a black
+ * background and feathers to fully transparent at the edges so it
+ * blends into the panel-head without a visible seam. */
 .scene {
   position: relative;
   display: grid;
@@ -940,34 +946,19 @@ main.main-public,
   column-gap: 18px;
   width: 100%;
   min-width: 0;
-  padding: 24px 4px 8px;
+  min-height: 132px;
+  padding: 14px 4px 6px;
+  background-image: url("/assets/sts2/scene-floor.webp");
+  background-size: cover;
+  background-position: center 60%;
+  background-repeat: no-repeat;
+  border-radius: 12px;
+  /* Vignette: keep the figures hot in the middle, fade edges to
+   * black so the stage merges into the panel chrome. */
+  box-shadow: inset 0 0 32px 8px rgba(0, 0, 0, 0.85);
   /* Subtle slide-in on every render so re-rolls feel fresh without
    * screaming for attention. */
   animation: sceneIn 0.42s cubic-bezier(0.2, 0.9, 0.3, 1) both;
-}
-
-/* Textured floor. Single span across both grid columns so the two
- * figures share a single ground line — that anchoring is the whole
- * point. Built from a faint highlight stripe at the top, a soft
- * shadow band below, and a tiny conic dot pattern that reads as
- * cracked stone without competing with the figures. */
-.scene-floor {
-  position: absolute;
-  left: 6%;
-  right: 6%;
-  bottom: 4px;
-  height: 14px;
-  border-radius: 50%;
-  background:
-    radial-gradient(
-      ellipse at 50% 0%,
-      color-mix(in srgb, var(--scene-color, #ffa05c) 22%, transparent) 0%,
-      rgba(0, 0, 0, 0.6) 60%,
-      transparent 100%
-    );
-  filter: blur(2px);
-  pointer-events: none;
-  z-index: 0;
 }
 
 /* Each figure is a column with the full-body art on top and a soft
@@ -1025,12 +1016,12 @@ main.main-public,
   animation: sceneBobClimber 2.4s ease-in-out infinite;
 }
 .scene-figure-boss .scene-art {
-  /* Boss line art is white on transparent — colorize slightly so it
-   * reads as menacing instead of pure-white-on-dark. invert+hue gives
-   * a cold ghostly tint without losing the line detail. */
+  /* The Architect art ships in full color; just give him a grounding
+   * drop-shadow and a faint warm rim glow so he reads as in-scene
+   * rather than pasted on. */
   filter:
-    drop-shadow(0 4px 10px rgba(0, 0, 0, 0.6))
-    drop-shadow(0 0 6px rgba(120, 90, 200, 0.18));
+    drop-shadow(0 6px 12px rgba(0, 0, 0, 0.7))
+    drop-shadow(0 0 8px rgba(255, 200, 130, 0.15));
   animation: sceneBobBoss 3.4s ease-in-out infinite;
 }
 

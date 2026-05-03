@@ -6,7 +6,7 @@
     "relics": 288,
     "characters": 5,
     "potions": 63,
-    "bosses": 9
+    "bosses": 10
   },
   "cards": [
     "colorless_alchemize",
@@ -1509,6 +1509,7 @@
     "weakpotion"
   ],
   "bosses": [
+    "architect",
     "doormaker",
     "kaiser_crab",
     "knowledge_demon",
