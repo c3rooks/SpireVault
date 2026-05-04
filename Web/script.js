@@ -14,18 +14,57 @@
 // =========================================================================
 
 import * as Stats from "/lib/stats-engine.js?v=4";
-import * as HistoryStore from "/lib/history-store.js?v=5";
+import * as HistoryStore from "/lib/history-store.js?v=7";
 import * as InviteAPI from "/lib/invites.js?v=4";
 import * as AscInfo from "/lib/ascension-info.js?v=1";
 
 // ─── Constants ─────────────────────────────────────────────────────────
+//
+// Two backend surfaces, and we use them deliberately:
+//
+//   SERVER_URL  → direct hit on the worker. Used for things that don't
+//                 need a session cookie or where same-origin doesn't
+//                 matter: the OpenID redirect URL (which has to be the
+//                 worker's own origin so it owns its callback), the
+//                 anonymous /auth/diag funnel beacon, and public GET
+//                 reads of /presence.
+//
+//   API_BASE    → same-origin proxy at app.spirevault.app/api/*.
+//                 Pages Functions in `Web/functions/api/` forward these
+//                 requests into the worker, translating the
+//                 first-party `vault_session` cookie into the worker's
+//                 `Authorization: Bearer ...` header on the way through.
+//                 Use this for ALL authenticated calls, so:
+//                   - Cookie-only sessions (rehydrated on iOS Safari
+//                     after ITP wiped localStorage) actually carry their
+//                     credential.
+//                   - Bearer-only sessions (legacy desktop, native app)
+//                     keep working because the proxy passes through any
+//                     Authorization header verbatim.
+//                 The proxy treats `Bearer __cookie__` as "use the
+//                 cookie instead", which is what cookie-rehydrated
+//                 frontend code stamps when it doesn't know the real
+//                 token (HttpOnly).
 const SERVER_URL  = "https://vault-coop.coreycrooks.workers.dev";
+const API_BASE    = "/api";
 const RETURN_URL  = `${window.location.origin}/auth.html`;
 const STS2_APP_ID = "2868840";
 const STORAGE_SESSION       = "vault.web.session";
 const STORAGE_DRAFT         = "vault.web.presence.draft";
 const STORAGE_LAST_TAB      = "vault.web.last-tab";
-const STORAGE_COMPANION     = "vault.web.companion";
+// `.v2` suffix is a deliberate cache-bust of the localStorage key.
+// Earlier builds shipped without a "Random" option, so the first
+// release defaulted everyone to a fixed character (e.g. "defect")
+// the moment they touched the picker — and that value then stuck
+// around forever, making the diorama feel broken ("why is it
+// always Defect?"). Bumping the key resets every existing visitor
+// back to the new Random default; anyone who genuinely wanted a
+// fixed climber can re-pick it in two clicks.
+const STORAGE_COMPANION     = "vault.web.companion.v2";
+/** Last fingerprint of the linked save-folder file list — skips redundant full re-parsing when nothing changed. */
+const STORAGE_DIR_FP        = "vault.web.history.dir-fp";
+/** Display name of the linked save folder ("SlayTheSpire2", "history", …) — survives reloads so the "Linked" pill paints instantly. */
+const STORAGE_LINKED_NAME   = "vault.web.history.linked-name";
 
 // Companion options for the Overview page's animated persona picker.
 // Declared up here (not next to renderCompanion()) because boot() runs
@@ -36,55 +75,165 @@ const COMPANIONS = [
   // "random" is a meta-option: each render rolls a fresh climber from
   // the five real characters. Anyone who picks it is opting *into*
   // per-refresh variety rather than a fixed avatar.
+  //
+  // `facesLeft` flag: in the diorama, the climber lives in the LEFT
+  // grid column and the Architect lives in the RIGHT column. For the
+  // scene to read as "two characters facing each other," every
+  // climber sprite needs to be facing right. The MegaCrit source art
+  // for some characters (Silent, Necrobinder, Regent, Ironclad) is
+  // painted facing left — those get a `transform: scaleX(-1)` via
+  // the .scene-art-flip class so they look at the Architect instead
+  // of away from him. Defect's sprite is already painted facing
+  // right (legs and torso angled right) so it stays unflipped.
   { id: "random",     label: "Random",     blurb: "Surprise me.",            color: "#ffa05c", isRandom: true },
-  { id: "ironclad",   label: "Ironclad",   blurb: "Tempered steel.",         color: "#e94560" },
-  { id: "silent",     label: "Silent",     blurb: "Poisons and shadows.",    color: "#6dd97c" },
+  { id: "ironclad",   label: "Ironclad",   blurb: "Tempered steel.",         color: "#e94560", facesLeft: true },
+  { id: "silent",     label: "Silent",     blurb: "Poisons and shadows.",    color: "#6dd97c", facesLeft: true },
   { id: "defect",     label: "Defect",     blurb: "Orbs and algorithms.",    color: "#4dc8ff" },
-  { id: "regent",     label: "Regent",     blurb: "Crown and consequence.",  color: "#d4af37" },
-  { id: "necrobinder",label: "Necrobinder",blurb: "Bone, blood, and will.",  color: "#9b83ff" },
+  { id: "regent",     label: "Regent",     blurb: "Crown and consequence.",  color: "#d4af37", facesLeft: true },
+  { id: "necrobinder",label: "Necrobinder",blurb: "Bone, blood, and will.",  color: "#9b83ff", facesLeft: true },
 ];
 
-// The Architect — final Ancient at the top of Act 3 in Slay the
-// Spire 2. Fixed antagonist (he doesn't change, the climber does),
-// art scraped from slaythespire.wiki.gg under fair use as a
-// reference image for an open-source community tool.
-//
-// Lines are pulled directly from the wiki's Encounter dialogue so
-// the Architect actually says things he says in-game. Lines tagged
-// with `only:` are scoped to that climber — pick Defect and you'll
-// hear his Defect-specific taunts; pick Regent and you'll hear the
-// "loud fool returns" line.
-const ARCHITECT = {
-  id:    "architect",
-  label: "The Architect",
-  lines: [
-    // Universal — fire for any climber.
-    { text: "Cursed to fight forever, aren't you?" },
-    { text: "So the arch demon's thrall has arrived?" },
-    { text: "Do you even know your name?" },
-    { text: "I pity you. Kill..." },
-    { text: "Not even an introduction?" },
-    { text: "Where did you come from?" },
-    { text: "What are you after?" },
-    { text: "You cannot change the past with anger." },
-    { text: "I did what I must to maintain order." },
-    { text: "Annoying wretch! BE GONE!!" },
-    { text: "DIE!!" },
+// Cached diorama state. Invalidated when the user picks a different
+// companion, taps the speech bubble for a manual re-roll, or switches
+// among stats tabs (Overview / Characters / …) so each tab feels like a
+// fresh moment — new line always; climber re-rolls when the picker is set
+// to Random. Without *some* cache, every renderCompanion() during the same
+// tab would reshuffle; we only null the cache at those explicit moments.
+let companionScene = null;
 
-    // Climber-specific — sourced from the wiki's encounter dialogue.
-    { only: "ironclad",    text: "Return to the bottom, Ironclad." },
-    { only: "regent",      text: "The loud fool returns?" },
-    { only: "regent",      text: "I'll teach you some manners!" },
-    { only: "necrobinder", text: "Vengeance is it? No thank you." },
-    { only: "silent",      text: "Vengeance is it? No thank you." },
-    { only: "defect",      text: "What are you doing here?" },
-    { only: "defect",      text: "Repair you? Make me." },
-    { only: "defect",      text: "You're back? Didn't I dismantle you?" },
-    { only: "defect",      text: "Fix you? Fix your friend? Ridiculous." },
-    { only: "defect",      text: "How do you keep coming back? Is this Neow's doing?" },
-    { only: "defect",      text: "Foolish." },
-  ],
-};
+/** Best-effort guess at whether the current device is a desktop
+ *  with the Steam client probably installed and registered for
+ *  `steam://` URLs. Used to gate the "Launch STS2" deep-link
+ *  button so iOS / Android visitors don't get hit with Safari's
+ *  hard "address is invalid" error dialog. False negatives
+ *  (desktop browsers reporting a touch UA) are the safer side to
+ *  err on — they just don't see a button that wouldn't have
+ *  worked anyway. STS2 is desktop-only so we never miss a real
+ *  use case on mobile. */
+function isDesktopLikelyToHandleSteamClient() {
+  const ua = (navigator.userAgent || "").toLowerCase();
+  if (/iphone|ipad|ipod|android|mobile/.test(ua)) return false;
+  // Touch-first devices (iPad with desktop UA, Surface, etc.) are
+  // less likely to have the Steam client. Treat any coarse-pointer
+  // primary input as "probably mobile-ish."
+  if (window.matchMedia && window.matchMedia("(pointer: coarse)").matches) return false;
+  return true;
+}
+
+// Antagonist pool. Every boss has art shipped under
+// /assets/sts2/bosses/<slug>.webp, but only entries flagged
+// `colored: true` are actually rolled into the diorama right now
+// — the others are grayscale silhouettes (that's how the wiki
+// publishes them while STS2 is in early access) and they looked
+// bad against the painted scene. As we get full-color art for
+// the rest, flip their `colored` flag to true and they'll
+// automatically join the random pool.
+//
+// Per-boss `lines` arrays carry short in-character taunts. Lines
+// tagged `only:` are scoped to a specific climber — a Defect-
+// flavored Architect line won't fire when Ironclad is on the
+// field.
+const BOSSES = [
+  {
+    id: "architect", label: "The Architect", colored: true,
+    lines: [
+      { text: "Cursed to fight forever, aren't you?" },
+      { text: "Not even an introduction?" },
+      { text: "I pity you. Kill..." },
+      { text: "What are you after?" },
+      { text: "You cannot change the past with anger." },
+      { text: "Annoying wretch! BE GONE!!" },
+      { only: "ironclad",    text: "Return to the bottom, Ironclad." },
+      { only: "regent",      text: "The loud fool returns?" },
+      { only: "regent",      text: "I'll teach you some manners!" },
+      { only: "necrobinder", text: "Vengeance is it? No thank you." },
+      { only: "silent",      text: "Vengeance is it? No thank you." },
+      { only: "defect",      text: "Repair you? Make me." },
+      { only: "defect",      text: "You're back? Didn't I dismantle you?" },
+    ],
+  },
+  {
+    id: "vantom", label: "Vantom",
+    lines: [
+      { text: "The void hungers." },
+      { text: "Step closer. I insist." },
+      { text: "All paths end in me." },
+      { text: "Your soul has weight." },
+    ],
+  },
+  {
+    id: "the_kin", label: "The Kin",
+    lines: [
+      { text: "We are many." },
+      { text: "One of us. One of us." },
+      { text: "You will join the chorus." },
+      { text: "Bind your fate to ours." },
+    ],
+  },
+  {
+    id: "soul_fysh", label: "Soul Fysh",
+    lines: [
+      { text: "Bloop." },
+      { text: "Glub. Glub. Glub." },
+      { text: "Tide takes everything." },
+      { text: "Drown in starlight." },
+    ],
+  },
+  {
+    id: "kaiser_crab", label: "Kaiser Crab",
+    lines: [
+      { text: "MY tide pool." },
+      { text: "Snip. Snip." },
+      { text: "Shell out, climber." },
+      { text: "I rule this floor." },
+    ],
+  },
+  {
+    id: "knowledge_demon", label: "Knowledge Demon",
+    lines: [
+      { text: "I know your deck." },
+      { text: "I read every move." },
+      { text: "Your draw is predictable." },
+      { text: "Knowledge is leverage." },
+    ],
+  },
+  {
+    id: "lagavulin_matriarch", label: "Lagavulin Matriarch",
+    lines: [
+      { text: "Sleep was sweet." },
+      { text: "You woke me, climber." },
+      { text: "Now you'll regret it." },
+      { text: "Old debts come due." },
+    ],
+  },
+  {
+    id: "doormaker", label: "Doormaker",
+    lines: [
+      { text: "Every door leads here." },
+      { text: "Mind the threshold." },
+      { text: "I built this hallway." },
+      { text: "No exits today." },
+    ],
+  },
+  {
+    id: "test_subject", label: "Test Subject",
+    lines: [
+      { text: "Subject 0042. Live trial." },
+      { text: "The experiment continues." },
+      { text: "Adaptation observed." },
+      { text: "I am the control group." },
+    ],
+  },
+  {
+    id: "waterfall_giant", label: "Waterfall Giant",
+    lines: [
+      { text: "I AM the river." },
+      { text: "Wash over you." },
+      { text: "Stone splits eventually." },
+      { text: "Pebbles like you, all the same." },
+    ],
+  },
+];
 
 // Lore-flavored chatter. Climber lines have an `only:` slug for
 // character-specific bravado; lines without `only:` work for any
@@ -184,11 +333,11 @@ const TABS_WITH_DATA = ["overview", "characters", "ascensions", "relics", "cards
 // folder entirely with no save data. Saves live in the application-
 // support / AppData paths above.
 //
-// We expose just the `SlayTheSpire2/` parent in the UI because:
-//   1. The user doesn't have to know their numeric Steam ID
-//   2. It's the same path on a fresh install vs. a long-time player
-//   3. Multi-account households with multiple `<id>/` subfolders just
-//      work — our walker reads them all
+// We expose BOTH a "parent" path (for one-click pasting + walking the
+// tree) AND the full deep `history/` path (so the user can verify
+// they're looking at the right place). The directory walker recurses
+// through any depth, so users can pick the parent OR the deepest
+// `history/` folder and we read every `.run` file regardless.
 //
 // The legacy `history.json` rollup path
 // (`~/Library/Application Support/AscensionCompanion/vault/`) was
@@ -197,6 +346,11 @@ const TABS_WITH_DATA = ["overview", "characters", "ascensions", "relics", "cards
 const HISTORY_PATH_MAC = "~/Library/Application Support/SlayTheSpire2";
 const HISTORY_PATH_WIN = "%APPDATA%\\SlayTheSpire2";
 const HISTORY_PATH_LINUX = "~/.local/share/SlayTheSpire2";
+/** Full deep paths to the actual `.run` files. Shown as a hint so the
+ *  user knows what shape the inside of the picked folder should have. */
+const HISTORY_PATH_MAC_FULL   = "~/Library/Application Support/SlayTheSpire2/steam/<your-steam-id>/profile1/saves/history/";
+const HISTORY_PATH_WIN_FULL   = "%APPDATA%\\SlayTheSpire2\\steam\\<your-steam-id>\\profile1\\saves\\history\\";
+const HISTORY_PATH_LINUX_FULL = "~/.local/share/SlayTheSpire2/steam/<your-steam-id>/profile1/saves/history/";
 
 // ─── STS2 asset library ────────────────────────────────────────────────
 // Card / relic / character art lives under /assets/sts2/ as optimized
@@ -221,9 +375,16 @@ async function loadAssetManifest() {
   try {
     // Fetch both side-by-side; labels are best-effort (missing labels
     // gracefully fall back to prettifyId on the slug).
+    // Cache-bust the manifest fetch on each schema bump. Without
+    // this, returning visitors get stuck on a `force-cache` copy
+    // that's missing newly-shipped assets (the `architect` boss
+    // entry was the bug that made the boss render as a fallback
+    // glyph for an entire deploy cycle). Bump MANIFEST_VERSION
+    // whenever the contents of manifest.json change.
+    const MANIFEST_VERSION = 2;
     const [manRes, labRes] = await Promise.all([
-      fetch(`${ASSET_BASE}/manifest.json`, { cache: "force-cache" }),
-      fetch(`${ASSET_BASE}/labels.json`,   { cache: "force-cache" }).catch(() => null),
+      fetch(`${ASSET_BASE}/manifest.json?v=${MANIFEST_VERSION}`, { cache: "force-cache" }),
+      fetch(`${ASSET_BASE}/labels.json?v=${MANIFEST_VERSION}`,   { cache: "force-cache" }).catch(() => null),
     ]);
     if (!manRes.ok) throw new Error(`manifest ${manRes.status}`);
     const j = await manRes.json();
@@ -418,12 +579,29 @@ function characterImageSrc(name) {
 
 function bossImageSrc(slug) {
   const s = String(slug || "").trim().toLowerCase();
-  if (!s || !assetManifest.bosses.has(s)) return null;
+  if (!s) return null;
+  // The Architect is shipped as a fixed asset on every build, so
+  // resolve him without consulting the manifest. This protects the
+  // diorama from the "stale `force-cache` manifest serves an old
+  // bosses list" race that previously made the boss render as a
+  // letter glyph fallback.
+  if (s === "architect") return `${ASSET_BASE}/bosses/architect.webp`;
+  if (!assetManifest.bosses.has(s)) return null;
   return `${ASSET_BASE}/bosses/${s}.webp`;
 }
 
 // ─── Module state ──────────────────────────────────────────────────────
-const session = readSession();
+//
+// `session` starts from localStorage (synchronous, fast, works for desktop
+// and any browser that hasn't been ITP-evicted). If localStorage is empty
+// the boot path *also* tries the first-party HttpOnly cookie via
+// `/api/_session` — that's our ITP-resistant fallback for iOS Safari, which
+// silently wipes localStorage after 7 days of no interaction.
+//
+// This is `let` rather than `const` purely because of the rehydration step;
+// every other site in the file still treats it as the single source of
+// truth for "is there a logged-in user right now."
+let session = readSession();
 let parsedRuns = [];          // current normalized history runs (in memory)
 let lastFeed   = [];          // last feed snapshot
 let lastInbox  = [];          // last inbox snapshot
@@ -513,7 +691,57 @@ let isDemoMode = false;
 // Steam OAuth before they could see what the tool even does. With demo
 // data on the landing, value is visible in <1 second and Steam becomes
 // an opt-in once they've decided they like the tool.
-boot();
+//
+// Cookie rehydration runs BEFORE boot() so that an ITP-wiped localStorage
+// doesn't briefly flash the guest UI before swapping to signed-in. We cap
+// the wait at 1.5s — if the cookie endpoint is sluggish (Pages Functions
+// cold start is ~150ms, but factor in network) we'd rather show the guest
+// UI promptly and then upgrade than block the whole boot on a slow proxy.
+(async () => {
+  if (!session) {
+    try {
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), 2800);
+      const r = await fetch("/api/_session", {
+        method: "GET",
+        credentials: "include",
+        cache: "no-store",
+        signal: ctrl.signal,
+      });
+      clearTimeout(t);
+      if (r.ok) {
+        const j = await r.json();
+        // The cookie GET endpoint doesn't return the bearer (it's
+        // HttpOnly and stays in the cookie). For the legacy direct
+        // worker calls (still used until everything migrates to /api/*)
+        // we need a usable bearer in JS too — so we skip those and rely
+        // on the proxy from now on. Build a minimal session record with
+        // a synthetic flag so callers know to route through the proxy.
+        if (j && /^\d{17}$/.test(j.steamID || "")) {
+          session = {
+            steamID: j.steamID,
+            personaName: j.personaName || "Steam User",
+            avatarURL: j.avatarURL || undefined,
+            // Legacy callers expect a `sessionToken`; route via the
+            // proxy with cookie auth, so a sentinel value works for
+            // the `Authorization: Bearer ...` slot — the proxy will
+            // strip it and replace with the real cookie token. The
+            // sentinel is documented in `Web/functions/api/[[path]].js`.
+            sessionToken: "__cookie__",
+            signedInAt: new Date().toISOString(),
+            viaCookie: true,
+          };
+          // Re-stamp localStorage so the next cold load is instant
+          // even if cookies are still working.
+          try {
+            localStorage.setItem(STORAGE_SESSION, JSON.stringify(session));
+          } catch { /* private mode etc. — fine, cookie still wins */ }
+        }
+      }
+    } catch { /* offline, timeout, or proxy down — fall through */ }
+  }
+  boot();
+})();
 
 // =========================================================================
 // Sign-in click handler. Used by every "Sign in with Steam" CTA in the
@@ -817,7 +1045,15 @@ async function boot() {
         void pullInbox();
       });
     }
-    document.getElementById("signout-btn")?.addEventListener("click", () => void signOut());
+    // Reveal the desktop sidebar's "Sign out" button now that we've
+    // confirmed there's an authenticated session. The HTML defaults
+    // it to `hidden` so guests never see it (and never accidentally
+    // tap the misleading dead button).
+    const $signout = document.getElementById("signout-btn");
+    if ($signout) {
+      $signout.hidden = false;
+      $signout.addEventListener("click", () => void signOut());
+    }
     const $mobileSignout = document.getElementById("signout-btn-mobile");
     if ($mobileSignout) {
       $mobileSignout.addEventListener("click", () => void signOut());
@@ -855,14 +1091,63 @@ async function boot() {
   document.querySelectorAll('[data-action="upload"]').forEach((btn) => {
     btn.addEventListener("click", () => triggerFilePicker());
   });
-  // Export-all buttons live in the Recent Runs panel header.
-  // Wired here (during boot) instead of inside the renderer because
-  // re-rendering the panel body would otherwise stack listeners.
-  document.querySelectorAll('[data-action="export-json"]').forEach((btn) => {
-    btn.addEventListener("click", () => exportAllRuns("json"));
+  document.querySelectorAll('[data-action="reload-saves"]').forEach((btn) => {
+    btn.addEventListener("click", () => void reloadSavedHistoryInteractive());
   });
-  document.querySelectorAll('[data-action="export-csv"]').forEach((btn) => {
-    btn.addEventListener("click", () => exportAllRuns("csv"));
+  // Disconnect lives inside the dynamically-rendered Linked pill so it
+  // can't be wired by direct selector — delegate at the document level.
+  document.addEventListener("click", (e) => {
+    const btn = e.target.closest('[data-action="disconnect-saves"]');
+    if (!btn) return;
+    e.preventDefault();
+    void disconnectLinkedSaves();
+  });
+  // Export-all buttons live in the global toolbar's Export popover.
+  // We wire by document delegation so the menu rows (rendered inside a
+  // [hidden] popover) work without needing direct selectors. Same for
+  // the toggle that opens the popover.
+  document.addEventListener("click", (e) => {
+    const toggle = e.target.closest('[data-action="toggle-export"]');
+    const exportJson = e.target.closest('[data-action="export-json"]');
+    const exportCsv = e.target.closest('[data-action="export-csv"]');
+    const wrap = document.querySelector('[data-export-wrap]');
+    const menu = wrap?.querySelector('.app-toolbar-export-menu');
+    if (toggle && wrap && menu) {
+      e.preventDefault();
+      const open = menu.hidden;
+      menu.hidden = !open;
+      wrap.dataset.open = String(open);
+      toggle.setAttribute('aria-expanded', String(open));
+      return;
+    }
+    if (exportJson) {
+      exportAllRuns("json");
+      if (menu && wrap) { menu.hidden = true; wrap.dataset.open = "false"; }
+      return;
+    }
+    if (exportCsv) {
+      exportAllRuns("csv");
+      if (menu && wrap) { menu.hidden = true; wrap.dataset.open = "false"; }
+      return;
+    }
+    // Outside-click closes the export popover.
+    if (wrap && !wrap.contains(e.target) && menu && !menu.hidden) {
+      menu.hidden = true;
+      wrap.dataset.open = "false";
+      const t = wrap.querySelector('[data-action="toggle-export"]');
+      if (t) t.setAttribute('aria-expanded', 'false');
+    }
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape") return;
+    const wrap = document.querySelector('[data-export-wrap]');
+    const menu = wrap?.querySelector('.app-toolbar-export-menu');
+    if (wrap && menu && !menu.hidden) {
+      menu.hidden = true;
+      wrap.dataset.open = "false";
+      const t = wrap.querySelector('[data-action="toggle-export"]');
+      if (t) t.setAttribute('aria-expanded', 'false');
+    }
   });
   document.getElementById("history-file-input").addEventListener("change", (e) => {
     const files = e.target.files;
@@ -878,6 +1163,12 @@ async function boot() {
   }
   // Share modal works for everyone (export single run image / markdown).
   wireShareModal();
+  // Run-detail modal: click any row → full deck + relics + per-floor
+  // pick history. Filter chips and search input on the Recent Runs
+  // page are wired together so a chip click re-renders the run list
+  // immediately while preserving caret position in the search box.
+  wireRunDetailModal();
+  wireRunFilters();
 
   // Load asset manifest in parallel with the message catalog. Both are
   // best-effort: failures degrade gracefully (no card art / no preset
@@ -887,7 +1178,7 @@ async function boot() {
   // Load preset message catalog (auth-only — only signed-in users send invites).
   if (session) {
     try {
-      await InviteAPI.loadMessageCatalog(SERVER_URL);
+      await InviteAPI.loadMessageCatalog(API_BASE);
       populateInviteOptions();
     } catch (e) {
       console.warn("could not load invite messages", e);
@@ -897,12 +1188,28 @@ async function boot() {
   // Try to restore a previously uploaded history. We render whatever's in
   // IndexedDB FIRST so the UI lights up instantly with last-known stats,
   // then optionally re-pull from disk a few moments later if the user has
-  // a saved file handle. If nothing's cached, fall through to demo data
-  // so the dashboard isn't empty on first visit.
+  // a saved file handle. If nothing's cached AND there's no linked save
+  // folder, fall through to demo data so the dashboard isn't empty on
+  // first visit. (We deliberately keep demo OFF when a folder is linked
+  // even if cached IDB returned empty — the auto-reload below will fill
+  // it in within a few hundred ms, and showing demo numbers in the
+  // intermediate frame is the bug the screenshot caught.)
+  let hasLinkedSaves = false;
+  try {
+    hasLinkedSaves = !!(await HistoryStore.loadDirectoryHandle())
+                  || !!(await HistoryStore.loadHandle());
+  } catch (e) {
+    console.warn("loadDirectoryHandle/loadHandle failed at boot", e);
+  }
   try {
     const cached = await HistoryStore.loadHistory();
     if (cached?.runs?.length) {
       parsedRuns = cached.runs.map(reviveRun);
+      isDemoMode = false;
+    } else if (hasLinkedSaves) {
+      // Cached runs missing, but a folder is still linked — show empty
+      // for one frame, the upcoming auto-reload will populate it.
+      parsedRuns = [];
       isDemoMode = false;
     } else {
       const { getDemoRuns } = await import("./lib/demo-runs.js");
@@ -911,27 +1218,43 @@ async function boot() {
     }
   } catch (e) {
     console.warn("could not load cached history; falling back to demo data", e);
-    try {
-      const { getDemoRuns } = await import("./lib/demo-runs.js");
-      parsedRuns = getDemoRuns();
-      isDemoMode = true;
-    } catch {
+    if (hasLinkedSaves) {
       parsedRuns = [];
       isDemoMode = false;
+    } else {
+      try {
+        const { getDemoRuns } = await import("./lib/demo-runs.js");
+        parsedRuns = getDemoRuns();
+        isDemoMode = true;
+      } catch {
+        parsedRuns = [];
+        isDemoMode = false;
+      }
     }
   }
   renderActiveTab();
 
+  // Cross-device sync (signed-in users only): if local IndexedDB had no
+  // real runs (just demo data, or a fresh device), check the cloud copy
+  // and hydrate from there. This is what makes "log in on mobile,
+  // already see my web-uploaded runs" work without any user action.
+  // The download is async + non-blocking — the demo screen stays up
+  // for one frame, then gets replaced when the cloud copy arrives.
+  if (session && session.steamID && (isDemoMode || parsedRuns.length === 0)) {
+    void hydrateFromCloudIfAvailable();
+  }
+
 
   // Silent auto-reload from disk. If the user previously picked their
-  // history.json AND the browser remembers granting read access for this
-  // origin, we can quietly re-read the file with no user click. This is
-  // the closest thing to true "auto-scan" the web platform allows: the
-  // first pick is unavoidable (browser security), but every subsequent
-  // visit is one transparent disk-read away from being fully fresh.
-  void autoReloadHistoryIfPermitted();
-  // Background loop: every 60s, silently re-read the saved history.json
-  // from disk and refresh stats if STS2 wrote new runs.
+  // save folder (directory handle) or a single history.json (file
+  // handle) AND the browser already granted read access for this
+  // origin, we can quietly re-read with no extra click. The fingerprint
+  // check inside autoReload short-circuits if nothing on disk changed,
+  // so this is cheap on a no-op visit and only re-parses when STS2
+  // actually wrote new `.run` files since last ingest.
+  void autoReloadHistoryIfPermitted({ silent: true });
+  // Background loop: every 60s, silently re-scan the linked folder or
+  // re-read history.json when STS2 writes new runs.
   startHistoryAutoRefresh();
 
   // Authenticated-only: push presence and start polling. Guests can see
@@ -994,8 +1317,13 @@ async function boot() {
   if (session) {
     window.addEventListener("beforeunload", () => {
       try {
+        // Beacon goes through the same-origin proxy so the
+        // first-party `vault_session` cookie ships automatically.
+        // Cross-origin sendBeacon to vault-coop.* would NOT include
+        // the cookie (third-party) and the worker would reject as
+        // unauthenticated, defeating the unload signal.
         const blob = new Blob([], { type: "text/plain" });
-        navigator.sendBeacon && navigator.sendBeacon(`${SERVER_URL}/presence`, blob);
+        navigator.sendBeacon && navigator.sendBeacon(`${API_BASE}/presence`, blob);
       } catch {}
     });
   }
@@ -1102,10 +1430,14 @@ function switchTab(tab) {
   document.querySelectorAll(".tab-panel").forEach((p) => {
     p.hidden = p.dataset.tab !== tab;
   });
-  // Overview hosts the companion avatar; re-render on every switch so
-  // it picks up persona changes made from other tabs (future) without
-  // the user having to refresh.
-  if (tab === "overview") renderCompanion();
+  // Each stats tab has its own `.companion-slot` in the panel-head.
+  // Invalidate the cached scene so this navigation gets a fresh
+  // quote (and a new climber roll when Random is selected).
+  const TABS_WITH_DIORAMA = new Set(["overview", "characters", "ascensions", "relics", "cards"]);
+  if (TABS_WITH_DIORAMA.has(tab)) {
+    companionScene = null;
+    renderCompanion();
+  }
   renderActiveTab();
 }
 
@@ -1150,20 +1482,30 @@ function rollClimberFor(setting) {
   return setting;
 }
 
+/** Pick a random boss from the *colored* subset of the pool. Right
+ *  now this is just the Architect — every other boss is shipped as
+ *  a grayscale silhouette and the user explicitly said only show
+ *  full-color art. As more colored boss art lands, flip their
+ *  `colored: true` flag in BOSSES and they auto-join this pool. */
+function rollBoss() {
+  const pool = BOSSES.filter((b) => b.colored);
+  if (pool.length === 0) return BOSSES[0];
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
 /** Pick a quote for one of the two figures. Random side, then random
  *  line from the appropriate pool. Both pools filter `only:` tags
  *  against the active climber so a Defect-only line never comes out
- *  of an Ironclad's mouth (and the Architect's "Return to the
- *  bottom, Ironclad." only fires when Ironclad is on the field).
- *  Returns { who, text }. */
-function rollQuote(climber) {
+ *  of an Ironclad's mouth (and an Architect Defect-taunt only fires
+ *  when Defect is on the field facing the Architect). */
+function rollQuote(climber, boss) {
   const speakerIsClimber = Math.random() < 0.5;
   if (speakerIsClimber) {
     const pool = CLIMBER_LINES.filter((q) => !q.only || q.only === climber.id);
     const line = pool[Math.floor(Math.random() * pool.length)];
     return { who: "climber", text: line.text };
   }
-  const pool = ARCHITECT.lines.filter((q) => !q.only || q.only === climber.id);
+  const pool = boss.lines.filter((q) => !q.only || q.only === climber.id);
   const line = pool[Math.floor(Math.random() * pool.length)];
   return { who: "boss", text: line.text };
 }
@@ -1171,32 +1513,48 @@ function rollQuote(climber) {
 function setCompanion(id) {
   if (!COMPANIONS.find((c) => c.id === id)) return;
   localStorage.setItem(STORAGE_COMPANION, id);
+  // The user picked a different character — invalidate the cached
+  // roll so the next render reflects the new setting (and re-rolls
+  // the climber if they switched into Random).
+  companionScene = null;
   renderCompanion();
 }
 
-function renderCompanion() {
-  const $slot = document.getElementById("companion-slot");
-  if (!$slot) return;
+/** Roll a fresh climber+boss+quote and stash it in companionScene.
+ *  Called on first paint, after picker/bubble actions, and whenever
+ *  switchTab() clears the cache entering a stats tab. */
+function rollCompanionScene() {
   const setting = getCompanionSetting();
   const climber = rollClimberFor(setting);
-  const quote   = rollQuote(climber);
-  const climberSrc = characterImageSrc(climber.id) || "";
-  // Fixed antagonist — The Architect is *always* on the right.
-  // Player characters change; he doesn't. Matches the in-game scene
-  // where every climber on every run faces the same final Ancient.
-  const bossSrc = bossImageSrc(ARCHITECT.id) || "";
+  const boss    = rollBoss();
+  const quote   = rollQuote(climber, boss);
+  companionScene = { setting, climber, boss, quote };
+  return companionScene;
+}
 
+function renderCompanion() {
+  const slots = document.querySelectorAll(".companion-slot");
+  if (!slots.length) return;
+
+  // Use the cached scene if we have one; otherwise roll once. Cache is
+  // cleared on tab changes (stats tabs), companion picker, and bubble tap.
+  const scene = companionScene || rollCompanionScene();
+  const { setting, climber, boss, quote } = scene;
+  const climberSrc = characterImageSrc(climber.id) || "";
+  const bossSrc    = bossImageSrc(boss.id) || "";
   const speakerIsClimber = quote.who === "climber";
 
-  // Diorama markup: stage holds both figures side-by-side over the
-  // textured cobblestone background (set as a CSS background-image
-  // on `.scene`), with a bubble that's *anchored to the speaker*
-  // rather than centered between them.
+  // Build the diorama+picker markup once and write it into every
+  // `.companion-slot` on the page. Multiple stats tabs each have
+  // their own slot in the panel-head; they share one cached scene
+  // until the user changes tabs (new roll) or uses the picker /
+  // bubble.
   //
-  // The climber tile is the click-target for the companion picker;
-  // the bubble is the click-target for re-rolling a new line (and a
-  // new climber if the user is on Random).
-  $slot.innerHTML = `
+  // The picker is rendered into every slot (class-based selectors
+  // only, no id) so clicking the climber on any tab opens that
+  // tab's picker rather than trying to reach across to a hidden
+  // panel's picker.
+  const sceneHtml = `
     <div class="scene scene-${speakerIsClimber ? "climber-speaks" : "boss-speaks"}"
          style="--scene-color:${climber.color}">
       <button class="scene-figure scene-figure-climber" type="button"
@@ -1205,16 +1563,16 @@ function renderCompanion() {
               title="Change companion (currently ${esc(climber.label)})">
         <span class="scene-shadow" aria-hidden="true"></span>
         ${climberSrc
-          ? `<img class="scene-art" src="${esc(climberSrc)}" alt="${esc(climber.label)}" draggable="false">`
+          ? `<img class="scene-art${climber.facesLeft ? " scene-art-flip" : ""}" src="${esc(climberSrc)}" alt="${esc(climber.label)}" draggable="false">`
           : `<span class="scene-glyph">${esc(climber.label[0])}</span>`}
       </button>
 
       <div class="scene-figure scene-figure-boss"
-           aria-label="${esc(ARCHITECT.label)}" title="${esc(ARCHITECT.label)}">
+           aria-label="${esc(boss.label)}" title="${esc(boss.label)}">
         <span class="scene-shadow" aria-hidden="true"></span>
         ${bossSrc
-          ? `<img class="scene-art" src="${esc(bossSrc)}" alt="${esc(ARCHITECT.label)}" draggable="false">`
-          : `<span class="scene-glyph">A</span>`}
+          ? `<img class="scene-art scene-art-boss" src="${esc(bossSrc)}" alt="${esc(boss.label)}" draggable="false">`
+          : `<span class="scene-glyph">${esc(boss.label[0])}</span>`}
       </div>
 
       <button class="scene-bubble scene-bubble-${speakerIsClimber ? "climber" : "boss"}"
@@ -1224,9 +1582,10 @@ function renderCompanion() {
         <span class="scene-bubble-text">${esc(quote.text)}</span>
         <span class="scene-bubble-tail" aria-hidden="true"></span>
       </button>
-    </div>
+    </div>`;
 
-    <div class="companion-picker" id="companion-picker" hidden role="listbox" aria-label="Pick companion">
+  const pickerHtml = `
+    <div class="companion-picker" hidden role="listbox" aria-label="Pick companion">
       ${COMPANIONS.map((opt) => {
         const src = opt.isRandom ? "" : (characterImageSrc(opt.id) || "");
         const isActive = opt.id === setting.id;
@@ -1246,15 +1605,26 @@ function renderCompanion() {
           </button>`;
       }).join("")}
     </div>`;
+
+  slots.forEach((slot) => {
+    slot.innerHTML = sceneHtml + pickerHtml;
+  });
 }
 
 function wireCompanion() {
-  // Event delegation on document so re-renders don't strand listeners.
+  // Helper: every action below scopes itself to the *clicked* slot
+  // because each stats tab now has its own `.companion-slot` with
+  // its own picker. Reaching for the global picker by id would
+  // either find the wrong one (id duplication) or open one inside
+  // a hidden tab where it's invisible to the user.
+  const slotOf = (el) => el && el.closest(".companion-slot");
+
   document.addEventListener("click", (e) => {
     const toggle = e.target.closest('[data-action="companion-toggle"]');
     if (toggle) {
       e.preventDefault();
-      const $picker = document.getElementById("companion-picker");
+      const slot = slotOf(toggle);
+      const $picker = slot && slot.querySelector(".companion-picker");
       if ($picker) $picker.hidden = !$picker.hidden;
       return;
     }
@@ -1264,31 +1634,44 @@ function wireCompanion() {
       setCompanion(pick.dataset.companionId);
       return;
     }
-    // Tapping the bubble re-rolls just the diorama state — no
-    // localStorage write, no page refresh. People who like a line
-    // but want to keep the same character: works fine because the
-    // setting drives whether we re-roll the climber too.
+    // Tapping the bubble re-rolls the diorama state — invalidate
+    // the cached scene so renderCompanion() generates a fresh
+    // climber + boss + line. No localStorage write, no page refresh.
+    // (If the user's setting is a fixed character, rollClimberFor
+    //  returns that character every time, so only the line/boss
+    //  change. If they're on Random, the climber rotates too.)
     const reroll = e.target.closest('[data-action="scene-reroll"]');
     if (reroll) {
       e.preventDefault();
+      companionScene = null;
       renderCompanion();
       return;
     }
-    // Outside click — close any open picker
-    const $picker = document.getElementById("companion-picker");
-    if ($picker && !$picker.hidden && !e.target.closest(".companion-slot")) {
-      $picker.hidden = true;
+    // Outside click — close every open picker (cheap; there are at
+    // most 5 in the DOM).
+    if (!slotOf(e.target)) {
+      document
+        .querySelectorAll(".companion-picker:not([hidden])")
+        .forEach(($p) => { $p.hidden = true; });
     }
   });
-  // Esc closes the picker without losing keyboard focus context.
+  // Esc closes any open picker without losing keyboard focus context.
   document.addEventListener("keydown", (e) => {
     if (e.key !== "Escape") return;
-    const $picker = document.getElementById("companion-picker");
-    if ($picker && !$picker.hidden) $picker.hidden = true;
+    document
+      .querySelectorAll(".companion-picker:not([hidden])")
+      .forEach(($p) => { $p.hidden = true; });
   });
 }
 
 function renderActiveTab() {
+  // Toolbar status: linked-folder pill (when a folder is wired up for
+  // auto-refresh) on the left, or an amber "showing sample data" pill
+  // when the user is browsing demo data instead. Cheap on every tab
+  // switch — handful of attribute writes — and guarantees the user
+  // always knows which dataset is live.
+  renderLinkedPill();
+  renderToolbarEmptyPill();
   if (TABS_WITH_DATA.includes(activeTab)) {
     renderStatsTab(activeTab);
   } else if (activeTab === "coop") {
@@ -1299,6 +1682,38 @@ function renderActiveTab() {
     if (lastFeed.length) renderFeed(lastFeed);
     renderInbox(lastInbox);
   }
+}
+
+/** Paints the amber "Showing sample data — link your STS2 saves to see
+ *  your runs" pill in the toolbar's left slot. Visible only when there
+ *  is no linked folder AND we're showing demo data. The Linked pill
+ *  takes precedence: if a save folder is wired up, this pill stays
+ *  hidden so we don't flash both. */
+function renderToolbarEmptyPill() {
+  const $pill = document.querySelector("[data-toolbar-empty]");
+  if (!$pill) return;
+  const linked = !!getLinkedFolderName();
+  $pill.hidden = linked || !isDemoMode;
+}
+
+/** Paint every `[data-linked-pill]` slot in the panel-action bars. The
+ *  pill confirms to the user that the chosen folder is wired up for
+ *  silent auto-refresh, and provides a one-click Disconnect. */
+function renderLinkedPill() {
+  const name = getLinkedFolderName();
+  document.querySelectorAll("[data-linked-pill]").forEach((el) => {
+    if (!name) {
+      el.hidden = true;
+      el.innerHTML = "";
+      return;
+    }
+    el.hidden = false;
+    el.innerHTML = `
+      <span class="linked-pill-dot" aria-hidden="true"></span>
+      <span class="linked-pill-text" title="Auto-refresh from this folder is on.">Linked: ${esc(name)}</span>
+      <button class="linked-pill-disconnect" type="button" data-action="disconnect-saves" title="Stop auto-refreshing from this folder">Disconnect</button>
+    `;
+  });
 }
 
 // =========================================================================
@@ -1346,8 +1761,9 @@ async function pushNow(silent) {
   saveDraft(body);
   if (!silent) showPushingPill(true);
   try {
-    const resp = await fetch(`${SERVER_URL}/presence`, {
+    const resp = await fetch(`${API_BASE}/presence`, {
       method: "POST",
+      credentials: "include",
       headers: {
         "content-type": "application/json",
         authorization: `Bearer ${session.sessionToken}`,
@@ -1399,7 +1815,7 @@ async function pullFeed() {
 
 async function pullInbox() {
   try {
-    const r = await InviteAPI.fetchInbox(SERVER_URL, session.sessionToken);
+    const r = await InviteAPI.fetchInbox(API_BASE, session.sessionToken);
     if (!r.ok) return;
     const previousInbox = lastInbox;
     lastInbox = r.invites ?? [];
@@ -1496,7 +1912,13 @@ function fireOSNotification(invite) {
 }
 
 async function fetchFeed() {
-  const r = await fetch(`${SERVER_URL}/presence`, { cache: "no-store" });
+  const r = await fetch(`${API_BASE}/presence`, {
+    cache: "no-store",
+    credentials: "include",
+    headers: session?.sessionToken
+      ? { authorization: `Bearer ${session.sessionToken}` }
+      : {},
+  });
   if (!r.ok) throw new Error("HTTP " + r.status);
   const list = await r.json();
   return Array.isArray(list) ? list : [];
@@ -1521,12 +1943,26 @@ function updateCoopBadge() {
 }
 
 async function signOut() {
-  try {
-    await fetch(`${SERVER_URL}/presence`, {
+  // Three teardown calls in parallel — none of them block sign-out, so
+  // wrapping them in Promise.allSettled means a single failure (worker
+  // down, cookie endpoint 500'd) doesn't strand the user signed-in:
+  //
+  //   1. DELETE /presence  → drop them from the public roster
+  //   2. DELETE /api/_session → clear the first-party cookie AND tell
+  //      the worker to invalidate the session token KV row, so a stolen
+  //      bearer can't be replayed even within its 30-day TTL.
+  //   3. (in clearSessionAndReload below) wipe localStorage + reload.
+  await Promise.allSettled([
+    fetch(`${API_BASE}/presence`, {
       method: "DELETE",
+      credentials: "include",
       headers: { authorization: `Bearer ${session.sessionToken}` },
-    });
-  } catch {}
+    }),
+    fetch("/api/_session", {
+      method: "DELETE",
+      credentials: "include",
+    }),
+  ]);
   localStorage.removeItem(STORAGE_DRAFT);
   // Keep cached history.json. That's the user's data, sign-out shouldn't nuke it.
   clearSessionAndReload();
@@ -1657,8 +2093,17 @@ function renderRow(p) {
   })();
 
   const sid = /^\d{17}$/.test(p.steamID) ? p.steamID : "";
+  // Use the steamcommunity.com web URL universally — never the
+  // `steam://` deep link. The deep link is a Windows-client-only
+  // protocol; on iOS Safari it triggers a hard "Safari cannot
+  // open the page because the address is invalid" dialog (the
+  // iOS Steam app does not register `steam://url/SteamIDPage/`).
+  // The web URL works on every browser AND, when the user has
+  // the Steam mobile app installed, iOS / Android automatically
+  // open it inside that app via Universal Links / App Links — so
+  // we get the "open in Steam client" UX on mobile for free
+  // without breaking the page for everyone else.
   const steamProfileWeb = sid ? `https://steamcommunity.com/profiles/${sid}` : "#";
-  const steamProfileDeep = sid ? `steam://url/SteamIDPage/${sid}` : "#";
 
   const persona = p.personaName || "Steam User";
   const lastActive = formatRelativeActive(p.updatedAt);
@@ -1678,8 +2123,7 @@ function renderRow(p) {
       </div>
       <div class="actions">
         <button class="btn-primary sm" data-act="invite" data-id="${esc(sid)}" data-name="${esc(persona)}">Invite to play</button>
-        <a class="action-link" target="_blank" rel="noopener" href="${esc(steamProfileWeb)}" title="Open Steam profile in browser">Profile</a>
-        <a class="action-link" href="${esc(steamProfileDeep)}" title="Open in Steam client">Steam</a>
+        <a class="action-link" target="_blank" rel="noopener" href="${esc(steamProfileWeb)}" title="Open Steam profile">Steam profile</a>
         ${p.discordHandle ? `<button class="action-link" data-act="discord" data-handle="${esc(p.discordHandle)}">Copy Discord</button>` : ""}
       </div>
     </article>`;
@@ -1705,7 +2149,7 @@ function renderInbox(invites) {
       const id = btn.dataset.id;
       const action = btn.dataset.inviteAct;
       btn.disabled = true;
-      const r = await InviteAPI.respondToInvite(SERVER_URL, session.sessionToken, id, action);
+      const r = await InviteAPI.respondToInvite(API_BASE, session.sessionToken, id, action);
       btn.disabled = false;
       if (!r.ok) {
         toast(`Couldn't ${action}: ${r.error ?? "unknown error"}`);
@@ -1726,8 +2170,18 @@ function renderInboxRow(invite) {
   })();
   const messageText = InviteAPI.getMessageText(invite.messageId) ?? "Wants to play.";
   const sid = invite.fromID;
-  const steamDeep = `steam://url/SteamIDPage/${esc(sid)}`;
+  // Always use the web profile URL — works on every browser AND
+  // auto-deep-links into the Steam mobile app via Universal Links.
+  // Earlier this rendered `steam://url/SteamIDPage/<sid>` which on
+  // iOS Safari fired "the address is invalid" and stranded the
+  // user mid-flow.
+  const steamProfileWeb = `https://steamcommunity.com/profiles/${esc(sid)}`;
+  // The Steam client `run` deep-link only resolves on desktops with
+  // the Steam client installed (Windows / macOS / Linux). On
+  // mobile, STS2 isn't available anyway, so we hide the button
+  // entirely instead of showing one that errors out.
   const launchSTS = `steam://run/${STS2_APP_ID}`;
+  const desktopLikely = isDesktopLikelyToHandleSteamClient();
 
   if (invite.status === "accepted") {
     // Brief "accepted — here are the deep-links" state.
@@ -1736,11 +2190,11 @@ function renderInboxRow(invite) {
         <img class="avatar" alt="" src="${esc(safeAvatar)}" />
         <div class="invite-meta">
           <strong>You accepted ${esc(invite.fromPersona)}'s invite</strong>
-          <p class="muted small">Add them on Steam, then launch STS2 from this browser.</p>
+          <p class="muted small">Add them on Steam${desktopLikely ? ", then launch STS2 from this browser" : ""}.</p>
         </div>
         <div class="invite-actions">
-          <a class="btn-primary sm" href="${steamDeep}" title="Open in Steam client">Open Steam profile</a>
-          <a class="btn-ghost sm" href="${launchSTS}" title="Launch Slay the Spire 2 via Steam">Launch STS2</a>
+          <a class="btn-primary sm" target="_blank" rel="noopener" href="${steamProfileWeb}" title="Open Steam profile">Open Steam profile</a>
+          ${desktopLikely ? `<a class="btn-ghost sm" href="${launchSTS}" title="Launch Slay the Spire 2 via Steam">Launch STS2</a>` : ""}
         </div>
       </div>`;
   }
@@ -1806,7 +2260,7 @@ function closeInviteModal() {
 
 async function sendInviteFromModal(messageId) {
   if (!pendingInviteToID) return closeInviteModal();
-  const r = await InviteAPI.sendInvite(SERVER_URL, session.sessionToken, pendingInviteToID, messageId);
+  const r = await InviteAPI.sendInvite(API_BASE, session.sessionToken, pendingInviteToID, messageId);
   closeInviteModal();
   if (!r.ok) {
     if (r.error === "recipient_offline") {
@@ -1992,6 +2446,58 @@ function triggerFilePicker() {
  *   3. SAFARI / FIREFOX — no File System Access API, so silent reload is
  *      impossible. Always falls through to a plain <input type="file">.
  */
+
+/** Stable fingerprint of a `.run` tree so the background loop skips work when nothing changed. */
+function fingerprintFromFiles(files) {
+  return Array.from(files || [])
+    .map((f) => `${f.webkitRelativePath || f.name}:${f.size}:${f.lastModified}`)
+    .sort()
+    .join("\n");
+}
+
+let lastDirectoryFingerprint = "";
+try {
+  lastDirectoryFingerprint = localStorage.getItem(STORAGE_DIR_FP) || "";
+} catch { /* private mode */ }
+
+// Last seen file.lastModified for the saved single-file FSA handle
+// (legacy `history.json` rollup path). Skips redundant re-reads when
+// the file is unchanged. Folder-mode imports use lastDirectoryFingerprint.
+let lastIngestedMTime = 0;
+
+function persistDirectoryFingerprint(fp) {
+  lastDirectoryFingerprint = fp;
+  try { localStorage.setItem(STORAGE_DIR_FP, fp); } catch { /* private mode */ }
+}
+
+/** Persist the linked folder's display name so the "Linked" status pill
+ *  in the panel-head can render synchronously without waiting for an
+ *  IndexedDB round-trip. Called whenever a directory is picked / cleared. */
+function rememberLinkedFolderName(name) {
+  try {
+    if (name) localStorage.setItem(STORAGE_LINKED_NAME, name);
+    else localStorage.removeItem(STORAGE_LINKED_NAME);
+  } catch { /* private mode */ }
+}
+function getLinkedFolderName() {
+  try { return localStorage.getItem(STORAGE_LINKED_NAME) || ""; }
+  catch { return ""; }
+}
+
+/** Drop the persistent link entirely (handle + fingerprint + cached
+ *  display name). Used by the "Disconnect" control in the panel-head
+ *  when the user wants to point at a different save folder. */
+async function disconnectLinkedSaves() {
+  try { await HistoryStore.clearDirectoryHandle(); } catch (e) { console.warn("clearDirectoryHandle failed", e); }
+  try { await HistoryStore.clearHandle(); }          catch (e) { console.warn("clearHandle failed", e); }
+  try { localStorage.removeItem(STORAGE_DIR_FP); }   catch { /* private mode */ }
+  rememberLinkedFolderName("");
+  lastDirectoryFingerprint = "";
+  lastIngestedMTime = 0;
+  toast("Disconnected. Stats stay loaded; pick a folder again to re-enable auto-refresh.");
+  try { renderActiveTab(); } catch { /* defensive */ }
+}
+
 async function scanForHistory() {
   // Best path: directory picker (Chromium, Edge, Brave). One click, the
   // user picks `Slay the Spire 2/` (or any parent of the actual `runs/`
@@ -2051,7 +2557,15 @@ async function scanForHistoryViaDirectoryPicker() {
 
   let dirHandle;
   try {
-    dirHandle = await window.showDirectoryPicker({ mode: "read", startIn: "documents" });
+    dirHandle = await window.showDirectoryPicker({
+      mode: "read",
+      // `id` opts the picker into Chrome's per-id "remember last
+      // location" feature so a returning user lands on the folder
+      // they picked last time, even when the saved handle was
+      // wiped (e.g. after a clear-site-data).
+      id: "sts2-saves",
+      startIn: "documents",
+    });
   } catch (e) {
     if (e?.name !== "AbortError") {
       console.warn("directory picker failed", e);
@@ -2060,14 +2574,45 @@ async function scanForHistoryViaDirectoryPicker() {
     return;
   }
 
+  // Persist the handle FIRST — before the (possibly slow) recursive
+  // walk and parse. This way, even if scanning crashes mid-flight or
+  // the user closes the tab during ingest, the next visit can still
+  // re-read silently. Without this, a single failed ingest meant
+  // forever re-prompting the user with the picker.
+  try {
+    await HistoryStore.saveDirectoryHandle(dirHandle);
+  } catch (e) {
+    console.warn("saveDirectoryHandle (early) failed", e);
+  }
+
+  // Upgrade to PERSISTENT permission while we still hold the user
+  // gesture from showDirectoryPicker. Chrome 122+ shows a 3-way
+  // prompt with "Allow on every visit" — granting that is what
+  // makes auto-refresh work on subsequent tab loads. Without this
+  // call, queryPermission returns "prompt" forever after a reload.
+  try {
+    if (typeof dirHandle.requestPermission === "function") {
+      await dirHandle.requestPermission({ mode: "read" });
+    }
+  } catch (e) {
+    console.warn("requestPermission on directory failed", e);
+  }
+  try {
+    rememberLinkedFolderName(dirHandle.name || "STS2 saves");
+  } catch { /* private mode */ }
+
   // Walk the directory recursively, collect every `.run` (or .json) file.
   toast("Scanning folder…");
   const files = await collectFilesFromDirectoryHandle(dirHandle);
   if (files.length === 0) {
-    toast(`No .run or .json files found inside ${dirHandle.name || "that folder"}.`);
+    toast(`No .run or .json files found inside ${dirHandle.name || "that folder"}. Make sure you picked the SlayTheSpire2 save folder, not the install folder.`);
     return;
   }
-  await ingestHistoryFiles(files);
+  const ok = await ingestHistoryFiles(files);
+  if (!ok) return;
+  persistDirectoryFingerprint(fingerprintFromFiles(files));
+  // Re-render headers so the "Linked" pill shows up immediately.
+  try { renderActiveTab(); } catch { /* defensive */ }
 }
 
 /**
@@ -2075,7 +2620,7 @@ async function scanForHistoryViaDirectoryPicker() {
  * directory-picker path so the periodic auto-refresh loop can re-walk
  * the same folder later without prompting the user again.
  */
-async function collectFilesFromDirectoryHandle(dirHandle, depth = 0) {
+async function collectFilesFromDirectoryHandle(dirHandle) {
   const out = [];
   // Same safety cap as the drag-drop walker. Caps an accidental drop
   // of the entire user home dir from filling memory with millions of
@@ -2083,7 +2628,7 @@ async function collectFilesFromDirectoryHandle(dirHandle, depth = 0) {
   const MAX_FILES = 5000;
   const allowedExt = /\.(run|json|save)$/i;
 
-  async function walk(handle, prefix) {
+  async function walk(handle, prefix, depth) {
     if (out.length >= MAX_FILES) return;
     if (depth > 8) return; // sanity: STS2 saves are at most 4 deep
     for await (const [name, entry] of handle.entries()) {
@@ -2103,11 +2648,11 @@ async function collectFilesFromDirectoryHandle(dirHandle, depth = 0) {
         // Skip Steam's `cloud/` subfolder which holds dummy backup
         // copies that aren't real runs.
         if (name === "cloud" || name === "screenshots") continue;
-        await walk(entry, `${prefix}${name}/`);
+        await walk(entry, `${prefix}${name}/`, depth + 1);
       }
     }
   }
-  await walk(dirHandle, "");
+  await walk(dirHandle, "", 0);
   return out;
 }
 
@@ -2124,6 +2669,7 @@ async function scanForHistoryViaFilePicker() {
       ],
       multiple: true,
       excludeAcceptAllOption: false,
+      id: "sts2-saves",
       startIn: "documents",
     });
   } catch (e) {
@@ -2133,17 +2679,32 @@ async function scanForHistoryViaFilePicker() {
     }
     return;
   }
+
+  // Save the FIRST file handle eagerly + upgrade to persistent
+  // permission while we still own the user gesture. Mirrors what we
+  // do in the directory-picker path; without this the file-handle
+  // path quietly degrades to "import every time, no auto refresh".
+  if (pickedHandles.length === 1) {
+    try { await HistoryStore.saveHandle(pickedHandles[0]); }
+    catch (e) { console.warn("saveHandle (early) failed", e); }
+    try {
+      if (typeof pickedHandles[0].requestPermission === "function") {
+        await pickedHandles[0].requestPermission({ mode: "read" });
+      }
+    } catch (e) { console.warn("requestPermission on file failed", e); }
+    try { localStorage.removeItem(STORAGE_DIR_FP); } catch { /* private mode */ }
+    lastDirectoryFingerprint = "";
+    rememberLinkedFolderName(pickedHandles[0].name || "history.json");
+  }
+
   const files = [];
   for (const h of pickedHandles) {
     try { files.push(await h.getFile()); } catch (e) { console.warn("getFile failed", e); }
   }
   if (files.length === 0) return;
   const ok = await ingestHistoryFiles(files);
-  // Save the first file's handle so the auto-refresh loop has at least
-  // one anchor to silently re-read later. (For the directory picker we'd
-  // save the directory handle; that's done in the dir picker path.)
-  if (ok && pickedHandles.length === 1) {
-    try { await HistoryStore.saveHandle(pickedHandles[0]); } catch (e) { console.warn("saveHandle failed", e); }
+  if (ok) {
+    try { renderActiveTab(); } catch { /* defensive */ }
   }
 }
 
@@ -2160,46 +2721,99 @@ async function scanForHistoryViaFilePicker() {
  * Designed to never throw to the boot path. Any failure is logged and
  * swallowed so a flaky filesystem can't break the rest of the app.
  */
-// Last seen file.lastModified for the saved FSA handle. Used by the
-// periodic auto-refresh path to skip re-ingesting the same bytes over and
-// over: ingestHistoryFile is cheap but the toast is annoying when nothing
-// has actually changed on disk.
-let lastIngestedMTime = 0;
+async function autoReloadHistoryIfPermitted({
+  silent = false,
+  allowPermissionPrompt = false,
+  bypassFingerprint = false,
+} = {}) {
+  let dirHandle = null;
+  try {
+    dirHandle = await HistoryStore.loadDirectoryHandle();
+  } catch (e) {
+    console.warn("autoReloadHistoryIfPermitted: loadDirectoryHandle failed", e);
+  }
+  if (dirHandle) {
+    return autoReloadHistoryFromDirectory(dirHandle, { silent, allowPermissionPrompt, bypassFingerprint });
+  }
+  return autoReloadHistoryFromFileHandle({ silent, allowPermissionPrompt });
+}
 
-async function autoReloadHistoryIfPermitted({ silent = false } = {}) {
+async function autoReloadHistoryFromDirectory(dirHandle, { silent, allowPermissionPrompt, bypassFingerprint }) {
+  let perm = "prompt";
+  try {
+    perm = await dirHandle.queryPermission({ mode: "read" });
+  } catch (e) {
+    console.warn("autoReloadHistoryFromDirectory: queryPermission failed", e);
+    return false;
+  }
+  if (perm !== "granted") {
+    if (!allowPermissionPrompt) return false;
+    try {
+      perm = await dirHandle.requestPermission({ mode: "read" });
+    } catch (e) {
+      console.warn("autoReloadHistoryFromDirectory: requestPermission failed", e);
+      return false;
+    }
+    if (perm !== "granted") return false;
+  }
+
+  let files;
+  try {
+    files = await collectFilesFromDirectoryHandle(dirHandle);
+  } catch (e) {
+    console.warn("autoReloadHistoryFromDirectory: collect failed", e);
+    return false;
+  }
+  if (files.length === 0) return false;
+
+  const fp = fingerprintFromFiles(files);
+  if (silent && !bypassFingerprint && lastDirectoryFingerprint && fp === lastDirectoryFingerprint) {
+    return false;
+  }
+
+  const ok = await ingestHistoryFiles(files, { silent });
+  if (ok) persistDirectoryFingerprint(fp);
+  return ok;
+}
+
+async function autoReloadHistoryFromFileHandle({ silent, allowPermissionPrompt }) {
   if (!HistoryStore.supportsFSA()) return false;
   let handle;
   try {
     handle = await HistoryStore.loadHandle();
   } catch (e) {
-    console.warn("autoReloadHistoryIfPermitted: loadHandle failed", e);
+    console.warn("autoReloadHistoryFromFileHandle: loadHandle failed", e);
     return false;
   }
   if (!handle) return false;
 
-  // queryPermission is the silent variant; requestPermission would prompt.
-  // We want truly invisible auto-reload, so we only proceed on "granted".
   let perm = "prompt";
   try {
     perm = await handle.queryPermission({ mode: "read" });
   } catch (e) {
-    console.warn("autoReloadHistoryIfPermitted: queryPermission failed", e);
+    console.warn("autoReloadHistoryFromFileHandle: queryPermission failed", e);
     return false;
   }
-  if (perm !== "granted") return false;
+  if (perm !== "granted") {
+    if (!allowPermissionPrompt) return false;
+    try {
+      perm = await handle.requestPermission({ mode: "read" });
+    } catch (e) {
+      console.warn("autoReloadHistoryFromFileHandle: requestPermission failed", e);
+      return false;
+    }
+    if (perm !== "granted") return false;
+  }
 
   let file;
   try {
     file = await handle.getFile();
   } catch (e) {
-    // File was renamed, deleted, or moved since last visit.
-    console.warn("autoReloadHistoryIfPermitted: getFile failed", e);
+    console.warn("autoReloadHistoryFromFileHandle: getFile failed", e);
     return false;
   }
-  // Skip if file hasn't changed since last ingest. Prevents the periodic
-  // background refresh from spamming a "Loaded N runs" toast every 90s.
   const mtime = file.lastModified || 0;
-  if (silent && mtime > 0 && mtime === lastIngestedMTime) {
+  if (silent && !allowPermissionPrompt && mtime > 0 && mtime === lastIngestedMTime) {
     return false;
   }
   const ok = await ingestHistoryFile(file, { silent });
@@ -2207,16 +2821,50 @@ async function autoReloadHistoryIfPermitted({ silent = false } = {}) {
   return ok;
 }
 
-// How often the auto-refresh loop checks the saved history.json on disk
-// for new runs. 60s is a reasonable balance between "feels live" and not
-// hammering the disk while the user is in a different app.
+/**
+ * Header "Refresh" control: re-read the linked save folder or rollup file,
+ * prompting for permission if the tab never got a persistent grant.
+ */
+async function reloadSavedHistoryInteractive() {
+  let hasDir = null;
+  let hasFile = null;
+  try {
+    hasDir = await HistoryStore.loadDirectoryHandle();
+  } catch { /* ignore */ }
+  try {
+    hasFile = await HistoryStore.loadHandle();
+  } catch { /* ignore */ }
+  if (!hasDir && !hasFile) {
+    toast("Nothing linked yet. Use Find my STS2 saves or Import first.");
+    return;
+  }
+  const before = new Set(parsedRuns.map((r) => r.id));
+  const ok = await autoReloadHistoryIfPermitted({
+    silent: true,
+    allowPermissionPrompt: true,
+    bypassFingerprint: true,
+  });
+  if (!ok) {
+    toast("Could not read your saves. Grant access if the browser asks, or pick the folder again.");
+    return;
+  }
+  let newRuns = 0;
+  for (const r of parsedRuns) {
+    if (!before.has(r.id)) newRuns += 1;
+  }
+  if (newRuns === 0 && !isDemoMode) {
+    toast("Already up to date.");
+  }
+}
+
+// How often the auto-refresh loop re-checks linked saves (folder or
+// history.json) for new runs. 60s balances "feels live" vs. disk churn.
 const HISTORY_REREAD_INTERVAL_MS = 60_000;
 let historyRereadTimer = null;
 
-/** Start the periodic background auto-refresh loop. Runs only on Chromium
- *  browsers with a saved FSA handle and granted read permission; on
- *  Safari / Firefox this is a no-op and the user has to click Import to
- *  pull in new runs after playing.
+/** Start the periodic background auto-refresh loop. Runs on Chromium-class
+ *  browsers (File System Access API); on Safari / Firefox this is a no-op
+ *  and the user has to click Import to pull in new runs after playing.
  *
  *  Triggered events:
  *   - setInterval every HISTORY_REREAD_INTERVAL_MS
@@ -2225,7 +2873,9 @@ let historyRereadTimer = null;
  *   - pageshow with persisted=true (back/forward cache restore)
  */
 function startHistoryAutoRefresh() {
-  if (!HistoryStore.supportsFSA()) return; // Safari / Firefox skip path
+  const canFSA =
+    HistoryStore.supportsFSA() || typeof window.showDirectoryPicker === "function";
+  if (!canFSA) return;
   if (historyRereadTimer) return;
   historyRereadTimer = setInterval(() => {
     void autoReloadHistoryIfPermitted({ silent: true });
@@ -2462,6 +3112,13 @@ async function commitParsedRuns(runs, sourceName, { silent, fileCount = 1 }) {
     if (!silent) toast("Loaded runs but couldn't cache them locally. Stats will work this visit.");
   }
 
+  // Cross-device sync: fire-and-forget upload to the Steam-ID-keyed
+  // cloud copy so this user's other devices (mobile app, second browser)
+  // pick up the new runs on next boot. No-op for guests. Internal
+  // memoization prevents identical bodies from being re-uploaded on
+  // an auto-refresh that turned up no new runs.
+  CloudRuns.upload(runs);
+
   if (silent) {
     // Suppress the "N new runs" toast when transitioning from demo to
     // real data — the diff would always say "everything is new" and
@@ -2503,6 +3160,198 @@ function reviveRun(r) {
     endedAt:   r.endedAt   ? new Date(r.endedAt)   : null,
   };
 }
+
+/** Boot-time cloud rehydration. Pulls the user's cloud-copy run set
+ *  (if any) and replaces the in-memory state when it has more runs
+ *  than what's currently rendered (i.e. demo data on a fresh device).
+ *  Persists to IndexedDB on success so the next cold load reads
+ *  locally instead of round-tripping the network. */
+async function hydrateFromCloudIfAvailable() {
+  try {
+    const blob = await CloudRuns.download();
+    if (!blob || !Array.isArray(blob.runs) || blob.runs.length === 0) return;
+    // Only replace state when the cloud copy is meaningfully larger than
+    // what's already in memory — guards against "I had 50 local runs,
+    // cloud only has 3 from a stale upload" smashing the local set.
+    const localRealRuns = isDemoMode ? 0 : parsedRuns.length;
+    if (blob.runs.length <= localRealRuns) return;
+
+    const revived = blob.runs.map((r) => reviveRun(r));
+    revived.sort((a, b) => (b.endedAt?.getTime?.() || 0) - (a.endedAt?.getTime?.() || 0));
+    parsedRuns = revived;
+    isDemoMode = false;
+    sendBeacon("cloud-runs-hydrated", `count=${revived.length}`);
+
+    // Persist to IndexedDB so the next cold load is instant.
+    try {
+      await HistoryStore.saveHistory({
+        savedAt: new Date().toISOString(),
+        sourceFilename: "cloud-sync",
+        runs: revived.map(serializeRun),
+      });
+    } catch { /* IDB failure is non-fatal; we still have it in memory */ }
+
+    toast(`Synced ${revived.length} run${revived.length === 1 ? "" : "s"} from your other device.`);
+    renderActiveTab();
+  } catch (e) {
+    console.warn("[Vault] cloud rehydrate failed", e);
+  }
+}
+
+// =========================================================================
+// Cross-device run sync (Steam-ID keyed cloud copy of run history).
+//
+// Web client uploads its full local run set to /api/runs after every
+// successful import + on every auto-refresh that finds new runs.
+// Mobile (iOS) reads the SAME endpoint to populate its history view.
+//
+// Storage on the server: keyed by Steam ID, deduped by run id, capped at
+// 2,000 runs. The full sanitization + merge logic lives in
+// Backend/src/runs.ts; this client-side module is purely a thin upload
+// layer that fires-and-forgets after the user has data worth saving.
+//
+// Privacy: only signed-in users sync. Guests stay 100% local. The user
+// can clear the cloud copy at any time with HistoryStore.clearCloud().
+// =========================================================================
+const CloudRuns = (() => {
+  // Track the last upload signature so a no-op refresh (auto-poll, no
+  // new runs) doesn't spam the backend with identical bodies. Using
+  // "count + most-recent endedAt" as a cheap fingerprint — every time
+  // the user finishes a new run, both will change.
+  let lastUploadFingerprint = "";
+  let inflightUpload = null;
+
+  function fingerprintForRuns(runs) {
+    if (!Array.isArray(runs) || runs.length === 0) return "0:";
+    let latest = 0;
+    for (const r of runs) {
+      const t = r?.endedAt?.getTime?.() ?? 0;
+      if (t > latest) latest = t;
+    }
+    return `${runs.length}:${latest}`;
+  }
+
+  // Marshal the rich in-memory run shape down to the lean wire format
+  // documented in Backend/src/runs.ts. Strips Date objects (→ ISO),
+  // drops fields the server doesn't need, and trims arrays to
+  // sanitization-friendly bounds.
+  function toWire(r) {
+    return {
+      id: String(r.id || ""),
+      character: String(r.character || ""),
+      ascension: Number(r.ascension) || 0,
+      floorReached: Number(r.floorReached) || 0,
+      won: r.won === true,
+      playTimeSeconds: Number(r.playTimeSeconds) || 0,
+      endedAt: r.endedAt ? new Date(r.endedAt).toISOString() : new Date().toISOString(),
+      startedAt: r.startedAt ? new Date(r.startedAt).toISOString() : undefined,
+      seed: r.seed ? String(r.seed) : undefined,
+      killedBy: r.killedBy ? String(r.killedBy) : undefined,
+      relics: Array.isArray(r.relics) ? r.relics.slice(0, 64).map(String) : [],
+      deckAtEnd: Array.isArray(r.deckAtEnd) ? r.deckAtEnd.slice(0, 256).map(String) : [],
+      cardChoices: Array.isArray(r.cardChoices)
+        ? r.cardChoices.slice(0, 60).map((c) => ({
+            floor: Number(c?.floor) || 0,
+            picked: c?.picked ? String(c.picked) : undefined,
+            skipped: Array.isArray(c?.skipped) ? c.skipped.slice(0, 8).map(String) : [],
+          }))
+        : undefined,
+      neowBonus: r.neowBonus ? String(r.neowBonus) : undefined,
+    };
+  }
+
+  /** Fire-and-forget upload of the current local run set to the cloud.
+   *  Skipped when not signed in, when there's nothing to upload, or
+   *  when an upload is already inflight for the same fingerprint. */
+  async function upload(runs) {
+    if (!session || !session.steamID) return;
+    const fp = fingerprintForRuns(runs);
+    if (fp === lastUploadFingerprint) return;
+    if (inflightUpload) return;
+
+    const body = JSON.stringify({ runs: runs.map(toWire) });
+    inflightUpload = (async () => {
+      try {
+        const r = await fetch("/api/runs", {
+          method: "POST",
+          credentials: "include",
+          cache: "no-store",
+          headers: {
+            "content-type": "application/json",
+            "x-vault-source": "web",
+            authorization: `Bearer ${session.sessionToken || "__cookie__"}`,
+          },
+          body,
+        });
+        if (r.ok) {
+          lastUploadFingerprint = fp;
+          const j = await r.json().catch(() => ({}));
+          sendBeacon("cloud-runs-uploaded",
+            `count=${j.count || 0} added=${j.added || 0} truncated=${j.truncated ? 1 : 0}`);
+        } else {
+          sendBeacon("cloud-runs-upload-failed", `status=${r.status}`);
+        }
+      } catch (e) {
+        sendBeacon("cloud-runs-upload-error", String(e?.message || e).slice(0, 80));
+      } finally {
+        inflightUpload = null;
+      }
+    })();
+  }
+
+  /** Pull the cloud copy. Returns { runs, count, updatedAt } or null
+   *  on auth/network failure. The runs come back as wire-format objects
+   *  (ISO date strings, no Date instances) — caller should revive
+   *  them via reviveRun() before mixing with parsedRuns. */
+  async function download() {
+    if (!session || !session.steamID) return null;
+    try {
+      const r = await fetch("/api/runs", {
+        method: "GET",
+        credentials: "include",
+        cache: "no-store",
+        headers: {
+          authorization: `Bearer ${session.sessionToken || "__cookie__"}`,
+        },
+      });
+      if (!r.ok) {
+        sendBeacon("cloud-runs-download-failed", `status=${r.status}`);
+        return null;
+      }
+      const j = await r.json();
+      return j;
+    } catch (e) {
+      sendBeacon("cloud-runs-download-error", String(e?.message || e).slice(0, 80));
+      return null;
+    }
+  }
+
+  /** Clear the cloud copy. Idempotent. Surfaces as 200 even if the
+   *  KV key was already absent. */
+  async function clearCloud() {
+    if (!session || !session.steamID) return;
+    try {
+      await fetch("/api/runs", {
+        method: "DELETE",
+        credentials: "include",
+        cache: "no-store",
+        headers: {
+          authorization: `Bearer ${session.sessionToken || "__cookie__"}`,
+        },
+      });
+      lastUploadFingerprint = "";
+    } catch { /* best effort */ }
+  }
+
+  /** Reset upload memoization. Call after a sign-in event so the next
+   *  upload fires for the now-bound Steam ID even if the run set is
+   *  identical to what was last uploaded under the previous identity. */
+  function resetFingerprint() {
+    lastUploadFingerprint = "";
+  }
+
+  return { upload, download, clearCloud, resetFingerprint };
+})();
 
 // =========================================================================
 // Export — bulk (all runs) + single-run share are split. This block handles
@@ -2637,12 +3486,13 @@ function renderStatsTab(tab) {
     return;
   }
   const report = Stats.summarize(parsedRuns);
-  // When the runs in memory came from getDemoRuns(), prefix every panel
-  // body with a clearly-labeled "Sample data" banner so visitors don't
-  // confuse the curated demo numbers with their own runs. The banner has
-  // a primary CTA that fires the same drag-drop / file-picker the empty
-  // state uses, so swapping in real data is one click away.
-  const banner = isDemoMode ? renderDemoBanner() : "";
+  // The compact "Sample data" strip only ships above the OVERVIEW tab
+  // body when isDemoMode is true. Other tabs would just stack a
+  // duplicate banner above their own content; the global toolbar's
+  // amber pill carries the same "showing sample data" signal on every
+  // tab, so the user always knows what they're looking at without the
+  // banner dominating every fold.
+  const banner = isDemoMode && tab === "overview" ? renderDemoBanner() : "";
   // Schema warning — surfaces above stats when any real run uses an STS2
   // schema_version we haven't explicitly tested. Lets the user know the
   // game just shipped a build we're still catching up to, instead of
@@ -2690,17 +3540,18 @@ function renderStatsTab(tab) {
 }
 
 /**
- * "Sample data" banner shown above every stats tab when isDemoMode is true.
- * This is the primary UX surface for new visitors, so it has to do double
- * duty: signal that the numbers are demo, AND explain how to swap in real
- * data without sending the user to a separate page.
- *
- * It includes:
- *  - The platform-detected save folder path with a copy button
- *  - "Find / Pick" CTAs that route to the same flow as the empty state
- *  - A collapsible "Where is my save folder?" panel with the Steam Library
- *    warning, alternate paths, and a description of what a `.run` file
- *    looks like — answers everything users actually ask.
+ * Compact "Sample data" strip shown above the Overview body when
+ * isDemoMode is true. The previous version was a 250px-tall card that
+ * we rendered above EVERY stats tab body — it stole the fold on every
+ * single navigation. The new design is:
+ *   - A thin one-line strip with the eyebrow + a one-sentence pitch +
+ *     the two primary CTAs (Find folder / Pick files), only on Overview.
+ *   - The amber status pill in the global toolbar carries the same
+ *     "showing sample data" signal on every tab so the user always
+ *     knows what they're looking at.
+ *   - The platform path block, deep-path hint, Steam Library warning,
+ *     and FAQ list move behind a "Where are my saves?" `<details>` so
+ *     they're one click away when needed and zero pixels otherwise.
  */
 function renderDemoBanner() {
   const hasDirPicker = typeof window.showDirectoryPicker === "function";
@@ -2714,6 +3565,10 @@ function renderDemoBanner() {
     platform === "windows" ? HISTORY_PATH_WIN
     : platform === "linux" ? HISTORY_PATH_LINUX
     : HISTORY_PATH_MAC; // mac + unknown both use Mac path as the visible default
+  const fullPath =
+    platform === "windows" ? HISTORY_PATH_WIN_FULL
+    : platform === "linux" ? HISTORY_PATH_LINUX_FULL
+    : HISTORY_PATH_MAC_FULL;
   const platformLabel =
     platform === "windows" ? "Windows" : platform === "linux" ? "Linux" : "macOS";
   const pasteHint =
@@ -2726,33 +3581,41 @@ function renderDemoBanner() {
     platform === "windows" ? "win" : platform === "linux" ? "linux" : "mac";
 
   return `
-    <div class="demo-banner" role="region" aria-label="Sample data notice">
-      <div class="demo-banner-row">
-        <div class="demo-banner-text">
-          <strong>Sample data</strong>
-          <span>Drop your STS2 save folder (or any <code>.run</code> files) to see your own runs — nothing uploads, everything stays in your browser.</span>
-        </div>
-        <div class="demo-banner-actions">${primaryCTAs}</div>
+    <div class="demo-banner is-compact" role="region" aria-label="Sample data notice">
+      <div class="demo-strip-row">
+        <span class="demo-strip-eyebrow">Sample data</span>
+        <span class="demo-strip-text">Drop your STS2 save folder to see your own runs &mdash; nothing uploads, everything stays in your browser.</span>
+        <div class="demo-strip-actions">${primaryCTAs}</div>
       </div>
-      <div class="demo-banner-path">
-        <span class="path-label">Your STS2 save folder on ${platformLabel}</span>
-        <code class="path-value">${esc(path)}</code>
-        <button class="btn-ghost btn-sm" data-action="copy-path" data-path-key="${pathKey}" title="Copy path. Then ${pasteHint}.">Copy path</button>
-      </div>
-      <details class="demo-banner-hints">
-        <summary>I can't find my saves</summary>
-        <div class="hints-body">
-          <div class="hints-warning">
-            <strong>⚠ Steam Library → Browse Local Files won't work.</strong>
-            That opens the game's <em>install</em> folder (the .app / .exe). Your saves live in a different place — the path above.
+      <details class="demo-strip-help">
+        <summary>Where are my saves?</summary>
+        <div class="demo-strip-help-body">
+          <div class="demo-banner-path">
+            <span class="path-label">Your STS2 save folder on ${platformLabel}</span>
+            <code class="path-value">${esc(path)}</code>
+            <button class="btn-ghost btn-sm" data-action="copy-path" data-path-key="${pathKey}" title="Copy path. Then ${pasteHint}.">Copy path</button>
           </div>
-          <ul class="hints-list">
-            <li><strong>macOS:</strong> <code>${esc(HISTORY_PATH_MAC)}</code> — Cmd+Shift+G in the picker, paste, Enter.</li>
-            <li><strong>Windows:</strong> <code>${esc(HISTORY_PATH_WIN)}</code> — paste into File Explorer's address bar.</li>
-            <li><strong>Linux / Steam Deck:</strong> <code>${esc(HISTORY_PATH_LINUX)}</code>.</li>
-            <li><strong>Steam Cloud (Mac fallback):</strong> if the path above is empty, your saves may be at <code>~/Library/Application Support/Steam/userdata/&lt;your-id&gt;/2868840/remote/</code>.</li>
-          </ul>
-          <p class="hints-tip">Inside the folder you'll see files named like <code>1735689420.run</code> — one per run, raw JSON. Pick the parent folder and we read every <code>.run</code> file in one pass.</p>
+          <p class="demo-banner-deep">
+            Your <code>.run</code> files live deeper inside, at:
+            <code class="path-value path-value-sub">${esc(fullPath)}</code>
+            Pick the <code>SlayTheSpire2</code> parent and we'll walk into <code>history/</code> for you.
+          </p>
+          <div class="demo-banner-hints" open>
+            <div class="hints-body">
+              <div class="hints-warning">
+                <strong>⚠ Steam Library → Browse Local Files won't work.</strong>
+                That opens the game's <em>install</em> folder (the .app / .exe). Your saves live in a different place &mdash; the path above.
+              </div>
+              <ul class="hints-list">
+                <li><strong>macOS:</strong> <code>${esc(HISTORY_PATH_MAC_FULL)}</code></li>
+                <li><strong>Windows:</strong> <code>${esc(HISTORY_PATH_WIN_FULL)}</code></li>
+                <li><strong>Linux / Steam Deck:</strong> <code>${esc(HISTORY_PATH_LINUX_FULL)}</code></li>
+                <li><strong>Steam Cloud (Mac fallback):</strong> if the path above is empty, your saves may be at <code>~/Library/Application Support/Steam/userdata/&lt;your-id&gt;/2868840/remote/</code>.</li>
+                <li>On Chrome / Edge / Brave / Arc, the picker remembers your folder for next time &mdash; look for the green <em>Linked:</em> pill in the toolbar to confirm.</li>
+              </ul>
+              <p class="hints-tip">Inside the <code>history/</code> folder you'll see files named like <code>1735689420.run</code> &mdash; one per game, raw JSON. Pick any ancestor and we read every <code>.run</code> file in one pass.</p>
+            </div>
+          </div>
         </div>
       </details>
     </div>`;
@@ -2826,7 +3689,7 @@ function renderEmptyState() {
         <button class="btn-ghost btn-sm" data-action="copy-path" data-path-key="mac" title="Copy path. Paste with Cmd+Shift+G inside the picker.">Copy path</button>
       </div>
       <p class="empty-state-tip muted">
-        After the picker opens, press <kbd>Cmd</kbd>+<kbd>Shift</kbd>+<kbd>G</kbd>, paste, and hit Enter.
+        After the picker opens, press <kbd>Cmd</kbd>+<kbd>Shift</kbd>+<kbd>G</kbd>, paste, and hit Enter. Your <code>.run</code> files are inside <code>${esc(HISTORY_PATH_MAC_FULL)}</code> — pick any ancestor and we walk into <code>history/</code> for you.
       </p>`;
   } else if (platform === "windows") {
     pathBlock = `
@@ -2836,7 +3699,7 @@ function renderEmptyState() {
         <button class="btn-ghost btn-sm" data-action="copy-path" data-path-key="win" title="Copy path. Paste it into File Explorer's address bar.">Copy path</button>
       </div>
       <p class="empty-state-tip muted">
-        Paste this path into File Explorer's address bar to land directly on the folder.
+        Paste this path into File Explorer's address bar. Your <code>.run</code> files are in <code>${esc(HISTORY_PATH_WIN_FULL)}</code> — pick the <code>SlayTheSpire2</code> parent and we walk into <code>history\\</code> for you.
       </p>`;
   } else if (platform === "linux") {
     pathBlock = `
@@ -2844,7 +3707,10 @@ function renderEmptyState() {
         <span class="path-label">Your STS2 save folder on Linux</span>
         <code class="path-value">${esc(HISTORY_PATH_LINUX)}</code>
         <button class="btn-ghost btn-sm" data-action="copy-path" data-path-key="linux" title="Copy path. Paste it into your file manager.">Copy path</button>
-      </div>`;
+      </div>
+      <p class="empty-state-tip muted">
+        Your <code>.run</code> files are inside <code>${esc(HISTORY_PATH_LINUX_FULL)}</code> — pick any ancestor and we walk into <code>history/</code> for you.
+      </p>`;
   }
 
   // Two CTAs: the smart one (folder picker) for Chromium, and the
@@ -2873,12 +3739,12 @@ function renderEmptyState() {
       <details class="empty-state-hints">
         <summary>I still can't find them</summary>
         <ul>
-          <li><strong>macOS:</strong> <code>${esc(HISTORY_PATH_MAC)}</code> — Cmd+Shift+G in the picker, paste, Enter.</li>
-          <li><strong>Windows:</strong> <code>${esc(HISTORY_PATH_WIN)}</code> — paste into File Explorer's address bar.</li>
-          <li><strong>Linux / Steam Deck:</strong> <code>${esc(HISTORY_PATH_LINUX)}</code>.</li>
+          <li><strong>macOS:</strong> <code>${esc(HISTORY_PATH_MAC_FULL)}</code></li>
+          <li><strong>Windows:</strong> <code>${esc(HISTORY_PATH_WIN_FULL)}</code></li>
+          <li><strong>Linux / Steam Deck:</strong> <code>${esc(HISTORY_PATH_LINUX_FULL)}</code></li>
           <li><strong>Steam Cloud fallback (Mac):</strong> if the path above is empty, try <code>~/Library/Application Support/Steam/userdata/&lt;your-id&gt;/2868840/remote/</code>.</li>
-          <li>Inside the folder you'll see files named like <code>1735689420.run</code> — one per run. Pick the parent and we read all of them in one pass; you don't need to pick individually.</li>
-          <li>Browsers can't scan disk silently, so this is a one-time gesture per visit. On Chromium-based browsers (Chrome, Edge, Brave, Arc) we'll re-read silently on later visits.</li>
+          <li>Inside the <code>history/</code> folder you'll see files named like <code>1735689420.run</code> — one per game. Pick the <code>SlayTheSpire2</code> parent and we walk in; or pick the <code>history/</code> folder directly. Either works.</li>
+          <li>On Chrome / Edge / Brave / Arc, picking the folder once enables silent auto-refresh on every later visit. The "Linked: <em>folder</em>" pill in the header confirms it.</li>
           <li>Already have a <code>history.json</code> rollup from the macOS Vault CLI? That still works — just drop it in.</li>
         </ul>
       </details>
@@ -2951,6 +3817,372 @@ function secTitle(text, icon = "list", tone = "") {
         <span class="sec-title-text">${esc(text)}</span>
       </div>
       <div class="sec-title-rule"></div>
+    </div>`;
+}
+
+// =========================================================================
+// KPI strip + analytics charts (Overview)
+// -------------------------------------------------------------------------
+// New value-prop layer added in v49. The Overview previously answered
+// only "what's my lifetime winrate?". The KPI strip answers six more
+// questions every session: am I on a streak, what's my last-10 form,
+// have I been playing this week, what's my personal-best floor, my
+// best-ever streak, and my fastest win? The two charts that follow
+// (rolling winrate over time + floor-death histogram) answer "am I
+// improving" and "where do I die" respectively.
+//
+// Pure functions of `parsedRuns`. Cheap (O(n) once) and side-effect
+// free, so they re-run on every render without a dirty cache.
+// =========================================================================
+
+/** Sort runs newest → oldest. Some parsers return runs in different
+ *  orders depending on FS iteration; sort defensively so streaks /
+ *  recent form are deterministic. */
+function runsByDateDesc(runs) {
+  return runs.slice().sort((a, b) => {
+    const ta = a.endedAt ? a.endedAt.getTime() : (a.startedAt ? a.startedAt.getTime() : 0);
+    const tb = b.endedAt ? b.endedAt.getTime() : (b.startedAt ? b.startedAt.getTime() : 0);
+    return tb - ta;
+  });
+}
+
+/** Current streak = number of consecutive most-recent runs with the same
+ *  outcome. Returns { kind: "win"|"loss"|"none", count: number }. */
+function currentStreak(runs) {
+  const sorted = runsByDateDesc(runs);
+  if (!sorted.length) return { kind: "none", count: 0 };
+  const kind = sorted[0].won ? "win" : "loss";
+  let count = 0;
+  for (const r of sorted) {
+    if ((r.won === true) === (kind === "win")) count += 1;
+    else break;
+  }
+  return { kind, count };
+}
+
+/** Longest win streak ever. Walks chronologically and tracks max. */
+function longestWinStreak(runs) {
+  const sorted = runs.slice().sort((a, b) => {
+    const ta = a.endedAt ? a.endedAt.getTime() : 0;
+    const tb = b.endedAt ? b.endedAt.getTime() : 0;
+    return ta - tb;
+  });
+  let max = 0;
+  let cur = 0;
+  for (const r of sorted) {
+    if (r.won) { cur += 1; if (cur > max) max = cur; }
+    else cur = 0;
+  }
+  return max;
+}
+
+/** Returns the run with the highest floor reached. Ties broken by win
+ *  status (wins beat losses), then by ascension level. */
+function pbFloorRun(runs) {
+  let best = null;
+  for (const r of runs) {
+    if (!Number.isFinite(r.floorReached)) continue;
+    if (!best
+      || r.floorReached > best.floorReached
+      || (r.floorReached === best.floorReached && r.won && !best.won)
+      || (r.floorReached === best.floorReached && r.won === best.won && (r.ascension ?? 0) > (best.ascension ?? 0))
+    ) best = r;
+  }
+  return best;
+}
+
+/** Fastest win across the dataset (smallest playTimeSeconds among wins). */
+function fastestWinRun(runs) {
+  let best = null;
+  for (const r of runs) {
+    if (!r.won || !Number.isFinite(r.playTimeSeconds) || r.playTimeSeconds <= 0) continue;
+    if (!best || r.playTimeSeconds < best.playTimeSeconds) best = r;
+  }
+  return best;
+}
+
+/** Run counts in the rolling 7-day window vs. the previous 7-day window.
+ *  Used to render the "This week" delta. */
+function weeklyCadence(runs) {
+  const now = Date.now();
+  const oneDay = 24 * 60 * 60 * 1000;
+  let thisWeek = 0;
+  let prevWeek = 0;
+  for (const r of runs) {
+    const t = r.endedAt ? r.endedAt.getTime() : (r.startedAt ? r.startedAt.getTime() : 0);
+    if (!t) continue;
+    const ageDays = (now - t) / oneDay;
+    if (ageDays >= 0 && ageDays < 7) thisWeek += 1;
+    else if (ageDays >= 7 && ageDays < 14) prevWeek += 1;
+  }
+  return { thisWeek, prevWeek, delta: thisWeek - prevWeek };
+}
+
+/** Tiny SVG sparkline path (last N runs as W/L points → a normalized
+ *  cumulative winrate line). Returns an inline <svg>. */
+function sparklineLastN(runs, n = 10) {
+  const last = runsByDateDesc(runs).slice(0, n).reverse();
+  if (last.length < 2) return "";
+  const w = 56;
+  const h = 22;
+  const stepX = w / (last.length - 1);
+  let cumWins = 0;
+  const pts = last.map((r, i) => {
+    cumWins += r.won ? 1 : 0;
+    const wr = cumWins / (i + 1);
+    const x = i * stepX;
+    const y = h - (wr * h);
+    return [x, y];
+  });
+  const d = pts.map((p, i) => (i === 0 ? `M${p[0].toFixed(1)} ${p[1].toFixed(1)}` : `L${p[0].toFixed(1)} ${p[1].toFixed(1)}`)).join(" ");
+  const lastPt = pts[pts.length - 1];
+  return `<svg class="kpi-card-spark" viewBox="0 0 ${w} ${h}" aria-hidden="true">
+    <path d="${d}"></path>
+    <circle class="pt" cx="${lastPt[0].toFixed(1)}" cy="${lastPt[1].toFixed(1)}" r="2"></circle>
+  </svg>`;
+}
+
+function renderKPIStrip(runs) {
+  const total = runs.length;
+  if (total === 0) return "";
+  const sortedRecent = runsByDateDesc(runs);
+  const last10 = sortedRecent.slice(0, 10);
+  const last10Wins = last10.filter((r) => r.won).length;
+  const last10Pct = last10.length ? Math.round((last10Wins / last10.length) * 100) : 0;
+  const lifetimeWins = runs.filter((r) => r.won).length;
+  const lifetimePct = Math.round((lifetimeWins / total) * 100);
+  const last10Tone = last10Pct >= lifetimePct ? "win" : (last10Pct + 5 < lifetimePct ? "loss" : "accent");
+  const trend = last10Pct - lifetimePct;
+  const trendLabel = total < 11 ? "Need more runs" : `${trend >= 0 ? "▲" : "▼"} ${Math.abs(trend)}pt vs. lifetime`;
+
+  const streak = currentStreak(runs);
+  const streakTone = streak.kind === "win" ? "win" : (streak.kind === "loss" ? "loss" : "accent");
+  const streakValue = streak.kind === "none" ? "0" : `${streak.count}${streak.kind === "win" ? "W" : "L"}`;
+  const streakSub = streak.kind === "win"
+    ? "Current win streak — keep climbing"
+    : streak.kind === "loss"
+      ? "On a losing skid — refresh & retry"
+      : "No runs yet";
+
+  const longest = longestWinStreak(runs);
+
+  const pb = pbFloorRun(runs);
+  const pbValue = pb ? `F${pb.floorReached}` : "—";
+  const pbSub = pb
+    ? `<strong>${esc(capitalize(pb.character || "Unknown"))}</strong>${Number.isFinite(pb.ascension) ? ` · A${pb.ascension}` : ""}${pb.won ? " · Victory" : ""}`
+    : "Play one run to set this";
+
+  const fastest = fastestWinRun(runs);
+  const fastestValue = fastest
+    ? formatPlayTimeStrict(fastest.playTimeSeconds) || `${Math.round(fastest.playTimeSeconds / 60)}m`
+    : "—";
+  const fastestSub = fastest
+    ? `<strong>${esc(capitalize(fastest.character || "Unknown"))}</strong>${Number.isFinite(fastest.ascension) ? ` · A${fastest.ascension}` : ""}`
+    : "No wins yet";
+
+  const cadence = weeklyCadence(runs);
+  const cadenceTone = cadence.thisWeek >= cadence.prevWeek ? "accent" : "loss";
+  const cadenceSub = cadence.prevWeek === 0 && cadence.thisWeek > 0
+    ? "First runs in two weeks"
+    : cadence.delta > 0
+      ? `<strong>+${cadence.delta}</strong> vs. last week`
+      : cadence.delta < 0
+        ? `<strong>${cadence.delta}</strong> vs. last week`
+        : "Same as last week";
+
+  return `
+    <div class="kpi-strip" role="list" aria-label="At-a-glance KPIs">
+      <div class="kpi-card" role="listitem" data-tone="${last10Tone}">
+        <span class="kpi-card-label">${SEC_ICONS.bolt} Last 10</span>
+        <span class="kpi-card-value">${last10Wins}<span style="font-size:18px; opacity:0.55">W·</span>${last10.length - last10Wins}<span style="font-size:18px; opacity:0.55">L</span></span>
+        <span class="kpi-card-sub">${esc(trendLabel)}</span>
+        ${sparklineLastN(runs, 10)}
+      </div>
+      <div class="kpi-card" role="listitem" data-tone="${streakTone}">
+        <span class="kpi-card-label">${SEC_ICONS.sparkles} Current streak</span>
+        <span class="kpi-card-value">${esc(streakValue)}</span>
+        <span class="kpi-card-sub">${esc(streakSub)}</span>
+      </div>
+      <div class="kpi-card" role="listitem" data-tone="gold">
+        <span class="kpi-card-label">${SEC_ICONS.bars} Best streak</span>
+        <span class="kpi-card-value">${longest}<span style="font-size:18px; opacity:0.55">W</span></span>
+        <span class="kpi-card-sub">Longest win streak ever</span>
+      </div>
+      <div class="kpi-card" role="listitem" data-tone="accent">
+        <span class="kpi-card-label">${SEC_ICONS.bars} PB floor</span>
+        <span class="kpi-card-value">${esc(pbValue)}</span>
+        <span class="kpi-card-sub">${pbSub}</span>
+      </div>
+      <div class="kpi-card" role="listitem" data-tone="win">
+        <span class="kpi-card-label">${SEC_ICONS.clock} Fastest win</span>
+        <span class="kpi-card-value">${esc(fastestValue)}</span>
+        <span class="kpi-card-sub">${fastestSub}</span>
+      </div>
+      <div class="kpi-card" role="listitem" data-tone="${cadenceTone}">
+        <span class="kpi-card-label">${SEC_ICONS.clock} This week</span>
+        <span class="kpi-card-value">${cadence.thisWeek}<span style="font-size:18px; opacity:0.55">${cadence.thisWeek === 1 ? " run" : " runs"}</span></span>
+        <span class="kpi-card-sub">${cadenceSub}</span>
+      </div>
+    </div>`;
+}
+
+/**
+ * Rolling-10 winrate line over chronological run index. The Y-axis is
+ * 0–100% winrate of the trailing 10-run window. Helps the user see
+ * *trends* — am I getting better, plateauing, or sliding back? — that
+ * no lifetime average can show. Pure SVG, no dependency.
+ */
+function renderWinrateChart(runs) {
+  const sorted = runs.slice().sort((a, b) => {
+    const ta = a.endedAt ? a.endedAt.getTime() : 0;
+    const tb = b.endedAt ? b.endedAt.getTime() : 0;
+    return ta - tb;
+  });
+  if (sorted.length < 5) {
+    return `
+      <div class="chart-panel">
+        <div class="chart-panel-head">
+          <h3 class="chart-panel-title">Winrate trend</h3>
+        </div>
+        <p class="chart-empty">Play at least 5 runs to see your rolling winrate over time.</p>
+      </div>`;
+  }
+  const window = Math.min(10, Math.max(3, Math.floor(sorted.length / 4)));
+  const points = [];
+  for (let i = 0; i < sorted.length; i += 1) {
+    const start = Math.max(0, i - window + 1);
+    const slice = sorted.slice(start, i + 1);
+    const wins = slice.filter((r) => r.won).length;
+    points.push({ idx: i, wr: wins / slice.length, won: !!sorted[i].won });
+  }
+  const lifetime = sorted.filter((r) => r.won).length / sorted.length;
+
+  const w = 760;
+  const h = 180;
+  const padL = 36, padR = 12, padT = 12, padB = 28;
+  const innerW = w - padL - padR;
+  const innerH = h - padT - padB;
+  const stepX = points.length > 1 ? innerW / (points.length - 1) : 0;
+  const yFor = (v) => padT + (1 - v) * innerH;
+  const xFor = (i) => padL + i * stepX;
+
+  const dLine = points.map((p, i) => `${i === 0 ? "M" : "L"}${xFor(i).toFixed(1)} ${yFor(p.wr).toFixed(1)}`).join(" ");
+  const dArea = `${dLine} L${xFor(points.length - 1).toFixed(1)} ${(padT + innerH).toFixed(1)} L${xFor(0).toFixed(1)} ${(padT + innerH).toFixed(1)} Z`;
+
+  const grid = [0, 0.25, 0.5, 0.75, 1].map((v) => `
+    <line class="grid-line" x1="${padL}" x2="${padL + innerW}" y1="${yFor(v)}" y2="${yFor(v)}"></line>
+    <text class="axis-label" x="${padL - 6}" y="${yFor(v) + 3}" text-anchor="end">${Math.round(v * 100)}%</text>
+  `).join("");
+  const baseline = `<line class="baseline" x1="${padL}" x2="${padL + innerW}" y1="${yFor(lifetime)}" y2="${yFor(lifetime)}"></line>
+    <text class="axis-label" x="${padL + innerW}" y="${(yFor(lifetime) - 4).toFixed(1)}" text-anchor="end">lifetime ${(lifetime * 100).toFixed(0)}%</text>`;
+  const axis = `
+    <line class="axis-line" x1="${padL}" x2="${padL + innerW}" y1="${padT + innerH}" y2="${padT + innerH}"></line>
+    <text class="axis-label" x="${padL}" y="${h - 8}">Run #1</text>
+    <text class="axis-label" x="${padL + innerW}" y="${h - 8}" text-anchor="end">Run #${sorted.length}</text>`;
+  const lineColor = "var(--accent, #ffa05c)";
+  const lastPt = points[points.length - 1];
+
+  return `
+    <div class="chart-panel">
+      <div class="chart-panel-head">
+        <div>
+          <h3 class="chart-panel-title">Winrate trend</h3>
+          <p class="chart-panel-sub">Rolling ${window}-run winrate over your full run history. Dashed line = lifetime average.</p>
+        </div>
+      </div>
+      <svg class="chart-svg" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">
+        ${grid}
+        ${baseline}
+        <path class="series-fill" d="${dArea}" fill="${lineColor}"></path>
+        <path class="series-line" d="${dLine}" stroke="${lineColor}"></path>
+        <circle class="series-pt" cx="${xFor(points.length - 1).toFixed(1)}" cy="${yFor(lastPt.wr).toFixed(1)}" r="3.5" fill="${lineColor}"></circle>
+        ${axis}
+      </svg>
+    </div>`;
+}
+
+/**
+ * Floor distribution histogram. One bar per "floor reached" value; each
+ * bar is split into the wins fraction (green, bottom) and the losses
+ * fraction (red, top). Helps the user see *where they die most* at a
+ * glance — usually a tall red bar at floor 17 (Act 2 boss) or 34 (Act 3
+ * boss). Bins tightly when run count > 60 to keep the chart readable.
+ */
+function renderDeathHistogram(runs) {
+  const floors = runs
+    .filter((r) => Number.isFinite(r.floorReached) && r.floorReached > 0)
+    .map((r) => ({ floor: r.floorReached, won: !!r.won }));
+  if (floors.length < 5) {
+    return `
+      <div class="chart-panel">
+        <div class="chart-panel-head">
+          <h3 class="chart-panel-title">Where you end up</h3>
+        </div>
+        <p class="chart-empty">Play at least 5 runs to see your floor distribution.</p>
+      </div>`;
+  }
+  const maxFloor = Math.max(...floors.map((f) => f.floor));
+  const minFloor = Math.min(...floors.map((f) => f.floor));
+  // Bin if needed. Keep ~30 bars max so chart stays readable.
+  const span = maxFloor - minFloor + 1;
+  const binSize = Math.max(1, Math.ceil(span / 30));
+  const bins = new Map();
+  for (const f of floors) {
+    const key = Math.floor((f.floor - minFloor) / binSize) * binSize + minFloor;
+    const bin = bins.get(key) || { floor: key, wins: 0, losses: 0 };
+    if (f.won) bin.wins += 1; else bin.losses += 1;
+    bins.set(key, bin);
+  }
+  const series = [...bins.values()].sort((a, b) => a.floor - b.floor);
+  const maxCount = Math.max(...series.map((b) => b.wins + b.losses), 1);
+
+  const w = 760;
+  const h = 180;
+  const padL = 28, padR = 12, padT = 14, padB = 28;
+  const innerW = w - padL - padR;
+  const innerH = h - padT - padB;
+  const barGap = 2;
+  const barW = Math.max(3, (innerW - (series.length - 1) * barGap) / series.length);
+
+  const yFor = (v) => padT + (1 - v / maxCount) * innerH;
+
+  const bars = series.map((b, i) => {
+    const x = padL + i * (barW + barGap);
+    const total = b.wins + b.losses;
+    const yTop = yFor(total);
+    const heightTotal = (padT + innerH) - yTop;
+    const winsHeight = total > 0 ? heightTotal * (b.wins / total) : 0;
+    const lossHeight = heightTotal - winsHeight;
+    const showLabel = series.length <= 16 || i % Math.ceil(series.length / 12) === 0;
+    return `
+      <g>
+        <rect class="bar-bg" x="${x.toFixed(1)}" y="${padT}" width="${barW.toFixed(1)}" height="${innerH}" rx="1.5"></rect>
+        <rect class="bar-loss" x="${x.toFixed(1)}" y="${yTop.toFixed(1)}" width="${barW.toFixed(1)}" height="${lossHeight.toFixed(1)}" rx="1.5"></rect>
+        <rect class="bar-win"  x="${x.toFixed(1)}" y="${(yTop + lossHeight).toFixed(1)}" width="${barW.toFixed(1)}" height="${winsHeight.toFixed(1)}" rx="1.5"></rect>
+        ${showLabel ? `<text class="bar-label" x="${(x + barW / 2).toFixed(1)}" y="${(h - 10)}">${b.floor}${binSize > 1 ? `–${b.floor + binSize - 1}` : ""}</text>` : ""}
+        <title>${binSize > 1 ? `Floors ${b.floor}–${b.floor + binSize - 1}` : `Floor ${b.floor}`}: ${b.wins}W / ${b.losses}L</title>
+      </g>`;
+  }).join("");
+
+  // Legend chips
+  const legend = `
+    <div class="chart-panel-chips" aria-hidden="true">
+      <span class="chart-chip" style="border-color: rgba(95,224,154,0.5); color: #6fe091; background: rgba(95,224,154,0.12); cursor: default;">Victories</span>
+      <span class="chart-chip" style="border-color: rgba(255,107,107,0.5); color: #ff8888; background: rgba(255,107,107,0.12); cursor: default;">Defeats</span>
+    </div>`;
+
+  return `
+    <div class="chart-panel">
+      <div class="chart-panel-head">
+        <div>
+          <h3 class="chart-panel-title">Where you end up</h3>
+          <p class="chart-panel-sub">Floor reached, colored by outcome. Tall red bars = your typical wall.</p>
+        </div>
+        ${legend}
+      </div>
+      <svg class="chart-svg" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">
+        ${bars}
+      </svg>
     </div>`;
 }
 
@@ -3078,8 +4310,23 @@ function renderOverview(report) {
   // tab pick up the same character-portrait art treatment.
   const charCards = renderCharCards(report.byCharacter);
 
+  // KPI strip + analytics charts (added in v49). Reasoned about as
+  // "answers to the questions a player asks every session": am I on a
+  // streak, am I getting better, where do I die, what's my PB, when
+  // did I last play. The strip gives a 6-card snapshot above the hero
+  // donut; the two charts unpack trend (winrate over time) and habit
+  // (floor distribution by outcome). All three render from
+  // `parsedRuns` directly so they live in the same data lifecycle.
+  const kpiStrip = renderKPIStrip(parsedRuns);
+  const winrateChart = renderWinrateChart(parsedRuns);
+  const deathChart = renderDeathHistogram(parsedRuns);
+
   return `
+    ${kpiStrip}
     ${heroPanel}
+    ${secTitle("Trends", "bars")}
+    ${winrateChart}
+    ${deathChart}
     ${secTitle("Per character", "people")}
     ${charCards}
     ${secTitle("Top relics", "sparkles", "gold")}
@@ -3405,19 +4652,135 @@ function renderCards(report) {
  *  rounded square, character name + ascension pill + floor pill, date
  *  underneath, then duration / outcome badge on the right. Hover changes
  *  the border color to the character's color. */
+/**
+ * Recent Runs filter state. Lives in module scope (re-rendered on
+ * every state mutation) so flipping a chip doesn't blow away the
+ * surrounding content. Persisted to localStorage so the user's
+ * filters survive a refresh — power users tend to settle on
+ * "show me only my A20 wins" or similar.
+ */
+const STORAGE_RUN_FILTERS = "vault.web.runfilters.v1";
+let runFilters = (() => {
+  try {
+    const raw = localStorage.getItem(STORAGE_RUN_FILTERS);
+    if (raw) {
+      const j = JSON.parse(raw);
+      return {
+        character: j.character || "all",      // all | ironclad | silent | ...
+        outcome: j.outcome || "all",          // all | wins | losses
+        ascensionTier: j.ascensionTier || "all", // all | low | mid | high
+        search: j.search || "",
+      };
+    }
+  } catch {}
+  return { character: "all", outcome: "all", ascensionTier: "all", search: "" };
+})();
+
+function persistRunFilters() {
+  try { localStorage.setItem(STORAGE_RUN_FILTERS, JSON.stringify(runFilters)); } catch {}
+}
+
+function applyRunFilters(runs) {
+  const q = (runFilters.search || "").toLowerCase().trim();
+  return runs.filter((r) => {
+    if (runFilters.character !== "all" && r.character !== runFilters.character) return false;
+    if (runFilters.outcome === "wins" && !r.won) return false;
+    if (runFilters.outcome === "losses" && r.won) return false;
+    if (runFilters.ascensionTier !== "all") {
+      const a = Number.isFinite(r.ascension) ? r.ascension : -1;
+      if (runFilters.ascensionTier === "low"  && !(a >= 0 && a <= 4))  return false;
+      if (runFilters.ascensionTier === "mid"  && !(a >= 5 && a <= 14)) return false;
+      if (runFilters.ascensionTier === "high" && !(a >= 15)) return false;
+    }
+    if (q) {
+      const hay = [r.character, r.seed, r.sourceFile, r.won ? "victory win" : "defeat loss"]
+        .filter(Boolean).join(" ").toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
+}
+
+const RUN_FILTER_CHARACTERS = ["ironclad", "silent", "defect", "regent", "necrobinder"];
+const RUN_FILTER_TIERS = [
+  { id: "all",  label: "All Asc" },
+  { id: "low",  label: "A0–A4" },
+  { id: "mid",  label: "A5–A14" },
+  { id: "high", label: "A15+"  },
+];
+const RUN_FILTER_OUTCOMES = [
+  { id: "all",    label: "All" },
+  { id: "wins",   label: "Wins" },
+  { id: "losses", label: "Losses" },
+];
+
+function renderRunFilters(allRuns, filteredCount) {
+  // Per-character chips only show characters the user has actually
+  // played, plus "All". Avoids listing Necrobinder if you've never
+  // touched them, which would just be visual noise.
+  const playedChars = new Set(allRuns.map((r) => r.character).filter(Boolean));
+  const charsToShow = RUN_FILTER_CHARACTERS.filter((c) => playedChars.has(c));
+  const charChips = [
+    `<button class="chart-chip" type="button" data-filter-kind="character" data-filter-value="all" aria-pressed="${runFilters.character === "all"}">All</button>`,
+    ...charsToShow.map((c) => {
+      const theme = charTheme(c);
+      return `<button class="chart-chip" type="button" data-char data-filter-kind="character" data-filter-value="${esc(c)}" aria-pressed="${runFilters.character === c}" style="--char-color:${theme.color}">${esc(capitalize(c))}</button>`;
+    }),
+  ].join("");
+
+  const outcomeChips = RUN_FILTER_OUTCOMES.map((o) => `
+    <button class="chart-chip" type="button" data-filter-kind="outcome" data-filter-value="${esc(o.id)}" aria-pressed="${runFilters.outcome === o.id}">${esc(o.label)}</button>
+  `).join("");
+
+  const tierChips = RUN_FILTER_TIERS.map((t) => `
+    <button class="chart-chip" type="button" data-filter-kind="ascensionTier" data-filter-value="${esc(t.id)}" aria-pressed="${runFilters.ascensionTier === t.id}">${esc(t.label)}</button>
+  `).join("");
+
+  const isFiltered = runFilters.character !== "all" || runFilters.outcome !== "all" || runFilters.ascensionTier !== "all" || (runFilters.search || "").trim() !== "";
+  const summary = isFiltered
+    ? `Showing <strong>${filteredCount}</strong> of <strong>${allRuns.length}</strong> runs after filters. <button class="run-filter-clear" type="button" data-action="clear-filters">Clear all</button>`
+    : `Showing all <strong>${allRuns.length}</strong> runs.`;
+
+  return `
+    <div class="run-filters" role="region" aria-label="Filter runs">
+      <div class="run-filter-group">
+        <span class="run-filter-label">Outcome</span>
+        ${outcomeChips}
+      </div>
+      <div class="run-filter-group">
+        <span class="run-filter-label">Ascension</span>
+        ${tierChips}
+      </div>
+      <div class="run-filter-group">
+        <span class="run-filter-label">Character</span>
+        ${charChips}
+      </div>
+      <label class="run-filter-search" aria-label="Search runs">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input type="search" placeholder="Search seed, character, win/loss…" value="${esc(runFilters.search || "")}" data-filter-kind="search" />
+      </label>
+      <p class="run-filter-summary">${summary}</p>
+    </div>`;
+}
+
 function renderRecentRuns(runs) {
-  const sorted = runs.slice().sort((a, b) => {
+  const filtered = applyRunFilters(runs);
+  const sorted = filtered.slice().sort((a, b) => {
     const at = a.endedAt?.getTime() ?? 0;
     const bt = b.endedAt?.getTime() ?? 0;
     return bt - at;
   });
-  const slice = sorted.slice(0, 120);
+  const slice = sorted.slice(0, 200);
+  const filtersHTML = renderRunFilters(runs, filtered.length);
+
   if (!slice.length) {
     return `
+      ${filtersHTML}
       ${secTitle("Recent runs", "clock")}
-      <p class="muted">No runs match the current filters.</p>`;
+      <p class="muted">No runs match the current filters. <button class="run-filter-clear" type="button" data-action="clear-filters">Clear filters</button></p>`;
   }
   return `
+    ${filtersHTML}
     ${secTitle("Recent runs", "clock")}
     <div class="run-list">
       ${slice.map((r) => {
@@ -3427,8 +4790,9 @@ function renderRecentRuns(runs) {
         const durStr = formatPlayTimeStrict(r.playTimeSeconds);
         const wonClass = r.won ? "is-victory" : "is-defeat";
         const outcomeText = r.won ? "VICTORY" : "DEFEAT";
+        const runId = esc(String(r.id ?? ""));
         return `
-          <div class="run-row" style="--char-color:${theme.color}" data-run-id="${esc(String(r.id ?? ""))}">
+          <div class="run-row" style="--char-color:${theme.color}" data-run-id="${runId}" tabindex="0" role="button" aria-label="Open run details: ${esc(charName)} ${r.won ? "victory" : "defeat"}${Number.isFinite(r.floorReached) ? ` on floor ${r.floorReached}` : ""}">
             <div class="run-stripe"></div>
             <div class="run-row-body">
               <div class="run-icon">${charPortraitOrIcon(r.character, theme)}</div>
@@ -3447,7 +4811,7 @@ function renderRecentRuns(runs) {
                   <span>DURATION</span>
                 </div>` : ""}
               <span class="run-outcome ${wonClass}">${outcomeText}</span>
-              <button class="run-share-btn" type="button" data-action="share-run" data-run-id="${esc(String(r.id ?? ""))}" title="Share this run" aria-label="Share this run">
+              <button class="run-share-btn" type="button" data-action="share-run" data-run-id="${runId}" title="Share this run" aria-label="Share this run">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                   <path d="M4 12v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7"/>
                   <polyline points="16 6 12 2 8 6"/>
@@ -3609,6 +4973,290 @@ function randomNonce() {
 // shipping in the last decade.
 // =========================================================================
 
+// =========================================================================
+// Run detail modal
+// -------------------------------------------------------------------------
+// Click any row in Recent Runs (anywhere except the Share icon) to open a
+// detailed read-only inspection of that single run: hero (character +
+// outcome + KPIs), final deck (with upgrade markers), relics, per-floor
+// pick history, and source file. Built on the same backdrop pattern as
+// the share modal so dismissal feels consistent.
+// =========================================================================
+
+function wireRunDetailModal() {
+  const $modal = document.getElementById("run-detail-modal");
+  const $close = document.getElementById("run-detail-close");
+  if (!$modal || !$close) {
+    console.warn("[Vault] run detail modal elements missing — detail UI disabled");
+    return;
+  }
+  $close.addEventListener("click", closeRunDetailModal);
+  $modal.addEventListener("click", (e) => {
+    if (e.target.id === "run-detail-modal") closeRunDetailModal();
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !$modal.hidden) closeRunDetailModal();
+  });
+
+  // Row click → open detail. We use document delegation so re-renders
+  // (filter chip flips) don't lose the listener, and the share button
+  // stops propagation in its own handler so this never fires on Share.
+  document.addEventListener("click", (e) => {
+    if (e.target.closest('[data-action="share-run"]')) return;
+    if (e.target.closest('[data-action="open-run"]')) {
+      const id = e.target.closest('[data-action="open-run"]').dataset.runId;
+      const run = parsedRuns.find((r) => String(r.id) === String(id));
+      if (run) openRunDetailModal(run);
+      return;
+    }
+    const row = e.target.closest('.run-row');
+    if (!row) return;
+    const id = row.dataset.runId;
+    const run = parsedRuns.find((r) => String(r.id) === String(id));
+    if (run) openRunDetailModal(run);
+  });
+
+  // Keyboard: Enter / Space on a focused row also opens it.
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    const row = document.activeElement?.closest?.('.run-row');
+    if (!row) return;
+    e.preventDefault();
+    const run = parsedRuns.find((r) => String(r.id) === String(row.dataset.runId));
+    if (run) openRunDetailModal(run);
+  });
+}
+
+function openRunDetailModal(run) {
+  const $modal = document.getElementById("run-detail-modal");
+  const $body  = document.getElementById("run-detail-body");
+  if (!$modal || !$body) return;
+  $body.innerHTML = renderRunDetail(run);
+  // Wire the in-modal Share button to forward into the existing share
+  // canvas flow. Same handler the row Share button uses.
+  $body.querySelectorAll('[data-action="share-from-detail"]').forEach((btn) => {
+    btn.addEventListener("click", () => {
+      closeRunDetailModal();
+      openShareModal(run);
+    });
+  });
+  $body.querySelectorAll('[data-action="close-detail"]').forEach((btn) => {
+    btn.addEventListener("click", closeRunDetailModal);
+  });
+  $modal.hidden = false;
+  document.body.style.overflow = "hidden";
+}
+
+function closeRunDetailModal() {
+  const $modal = document.getElementById("run-detail-modal");
+  if (!$modal) return;
+  $modal.hidden = true;
+  document.body.style.overflow = "";
+}
+
+function renderRunDetail(r) {
+  const theme = charTheme(r.character);
+  const charName = r.character ? capitalize(r.character) : "Unknown";
+  const outcomeText = r.won ? "VICTORY" : "DEFEAT";
+  const outcomeClass = r.won ? "is-victory" : "is-defeat";
+  const dateStr = r.endedAt
+    ? formatRunDate(r.endedAt)
+    : (r.startedAt ? formatRunDate(r.startedAt) : "—");
+  const durStr = formatPlayTime(r.playTimeSeconds);
+  const cardCount = Array.isArray(r.deckAtEnd) ? r.deckAtEnd.length : 0;
+  const relicCount = Array.isArray(r.relics) ? r.relics.length : 0;
+  const pickCount = Array.isArray(r.cardPicks) ? r.cardPicks.length : 0;
+
+  const portrait = (() => {
+    const src = characterImageSrc(r.character);
+    if (src) return `<img src="${esc(src)}" alt="${esc(charName)}">`;
+    return charIcon(theme.icon || "shield");
+  })();
+
+  const heroHTML = `
+    <div class="run-detail-hero" style="--char-color:${theme.color}">
+      <div class="run-detail-portrait">${portrait}</div>
+      <div class="run-detail-id">
+        <div class="run-detail-name">
+          <span>${esc(charName)}</span>
+          ${Number.isFinite(r.ascension) ? `<span class="pill pill-gold">A${r.ascension}</span>` : ""}
+        </div>
+        <div class="run-detail-meta">
+          <span>${esc(dateStr)}</span>
+          ${r.seed ? `<span>Seed <strong>${esc(r.seed)}</strong></span>` : ""}
+          ${r.sourceFile ? `<span>From <strong>${esc(r.sourceFile)}</strong></span>` : ""}
+        </div>
+      </div>
+      <span class="run-detail-outcome ${outcomeClass}">${outcomeText}</span>
+    </div>`;
+
+  const statsHTML = `
+    <div class="run-detail-stats">
+      <div class="run-detail-stat">
+        <span class="run-detail-stat-label">Floor reached</span>
+        <span class="run-detail-stat-value">${Number.isFinite(r.floorReached) ? `Floor ${r.floorReached}` : "—"}</span>
+      </div>
+      <div class="run-detail-stat">
+        <span class="run-detail-stat-label">Duration</span>
+        <span class="run-detail-stat-value">${esc(durStr)}</span>
+      </div>
+      <div class="run-detail-stat">
+        <span class="run-detail-stat-label">Final deck</span>
+        <span class="run-detail-stat-value">${cardCount} card${cardCount === 1 ? "" : "s"}</span>
+      </div>
+      <div class="run-detail-stat">
+        <span class="run-detail-stat-label">Relics</span>
+        <span class="run-detail-stat-value">${relicCount}</span>
+      </div>
+      <div class="run-detail-stat">
+        <span class="run-detail-stat-label">Choices made</span>
+        <span class="run-detail-stat-value">${pickCount}</span>
+      </div>
+    </div>`;
+
+  const relicsHTML = relicCount > 0
+    ? `
+      <div class="run-detail-section">
+        <div class="run-detail-section-head">
+          <h3 class="run-detail-section-title">Relics</h3>
+          <span class="run-detail-section-count">${relicCount}</span>
+        </div>
+        <div class="run-detail-grid">
+          ${r.relics.map((id) => {
+            const src = relicImageSrc(id);
+            const label = relicLabel(id);
+            return `
+              <div class="run-detail-relic" title="${esc(label)}">
+                ${src ? `<img src="${esc(src)}" alt="${esc(label)}" loading="lazy" decoding="async">` : `<svg viewBox="0 0 24 24" width="48" height="48" fill="${theme.color}"><path d="M12 1.5l1.5 5L18.5 8 14 11l1.5 5L12 13l-3.5 3L10 11 5.5 8l5-1.5z"/></svg>`}
+                <span class="run-detail-relic-name">${esc(label)}</span>
+              </div>`;
+          }).join("")}
+        </div>
+      </div>`
+    : "";
+
+  const deckHTML = cardCount > 0
+    ? `
+      <div class="run-detail-section">
+        <div class="run-detail-section-head">
+          <h3 class="run-detail-section-title">Final deck</h3>
+          <span class="run-detail-section-count">${cardCount} cards</span>
+        </div>
+        <div class="run-detail-grid">
+          ${r.deckAtEnd.map((id) => {
+            const upgraded = id.includes("+");
+            const baseId = upgraded ? id.split("+")[0] : id;
+            const src = cardImageSrc(baseId);
+            const label = cardLabel(baseId);
+            return `
+              <div class="run-detail-card${upgraded ? " is-upgraded" : ""}" title="${esc(label)}${upgraded ? " (upgraded)" : ""}">
+                ${src ? `<img src="${esc(src)}" alt="${esc(label)}" loading="lazy" decoding="async">` : `<svg viewBox="0 0 16 16" width="48" height="48" fill="${theme.color}"><rect x="3" y="2" width="10" height="12" rx="1.5"/></svg>`}
+                <span class="run-detail-card-name">${esc(label)}</span>
+              </div>`;
+          }).join("")}
+        </div>
+      </div>`
+    : "";
+
+  const picksHTML = pickCount > 0
+    ? `
+      <div class="run-detail-section">
+        <div class="run-detail-section-head">
+          <h3 class="run-detail-section-title">Card picks by floor</h3>
+          <span class="run-detail-section-count">${pickCount} choice${pickCount === 1 ? "" : "s"}</span>
+        </div>
+        ${r.cardPicks.slice(0, 60).map((p) => {
+          const offered = (p.offered || []).map((c) => cardLabel(c));
+          const picked = p.picked ? cardLabel(p.picked) : null;
+          const skipped = offered.filter((c) => c !== picked);
+          return `
+            <div class="run-detail-pickrow">
+              <span class="run-detail-pickrow-floor">F${p.floor}</span>
+              <div class="run-detail-pickrow-body">
+                ${picked ? `<span class="picked">${esc(picked)}</span>` : `<span class="run-detail-empty">Skipped all</span>`}
+                ${skipped.length ? ` <span class="run-detail-empty">·</span> <span class="skipped">${skipped.map(esc).join(" · ")}</span>` : ""}
+              </div>
+            </div>`;
+        }).join("")}
+      </div>`
+    : "";
+
+  const actionsHTML = `
+    <div class="run-detail-actions">
+      <button class="btn-primary btn-icon-text" type="button" data-action="share-from-detail">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M4 12v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7"/>
+          <polyline points="16 6 12 2 8 6"/>
+          <line x1="12" y1="2" x2="12" y2="15"/>
+        </svg>
+        <span>Share this run</span>
+      </button>
+      <button class="btn-ghost btn-icon-text" type="button" data-action="close-detail">
+        Close
+      </button>
+    </div>`;
+
+  return heroHTML + statsHTML + relicsHTML + deckHTML + picksHTML + actionsHTML;
+}
+
+// =========================================================================
+// Recent Runs filters
+// =========================================================================
+function wireRunFilters() {
+  document.addEventListener("click", (e) => {
+    const chip = e.target.closest('[data-filter-kind]');
+    if (chip && chip.tagName === "BUTTON") {
+      const kind = chip.dataset.filterKind;
+      const value = chip.dataset.filterValue;
+      if (kind && value && (kind === "character" || kind === "outcome" || kind === "ascensionTier")) {
+        runFilters[kind] = value;
+        persistRunFilters();
+        if (activeTab === "runs") renderStatsTab("runs");
+      }
+      return;
+    }
+    const clear = e.target.closest('[data-action="clear-filters"]');
+    if (clear) {
+      e.preventDefault();
+      runFilters = { character: "all", outcome: "all", ascensionTier: "all", search: "" };
+      persistRunFilters();
+      if (activeTab === "runs") renderStatsTab("runs");
+    }
+  });
+
+  // Search input is debounced to keep typing snappy without re-renders
+  // on every keystroke, but still feels responsive.
+  let searchTimer = null;
+  document.addEventListener("input", (e) => {
+    const input = e.target.closest('input[data-filter-kind="search"]');
+    if (!input) return;
+    clearTimeout(searchTimer);
+    const value = input.value;
+    searchTimer = setTimeout(() => {
+      runFilters.search = value;
+      persistRunFilters();
+      if (activeTab === "runs") {
+        // Surgical update: only re-render the run list and the summary
+        // line, NOT the entire filter strip — so the input keeps focus
+        // and the caret position. Falls back to full re-render if the
+        // surgical path can't find the elements.
+        const $body = document.getElementById("runs-body");
+        if (!$body) return;
+        // Easiest correct option: full re-render then re-focus the
+        // input. Fast enough for the dataset sizes we deal with
+        // (~hundreds of runs at most).
+        const caret = input.selectionStart;
+        renderStatsTab("runs");
+        const refocus = document.querySelector('input[data-filter-kind="search"]');
+        if (refocus) {
+          refocus.focus();
+          try { refocus.setSelectionRange(caret, caret); } catch {}
+        }
+      }
+    }, 180);
+  });
+}
+
 let currentShareRun = null;
 
 function wireShareModal() {
@@ -3710,27 +5358,72 @@ function openShareModal(run) {
   const $modal = document.getElementById("share-modal");
   setShareHint("Drop the image straight into Discord, Reddit, or X.", "");
   // First draw with whatever's already cached (typically nothing on the
-  // first share of a session). Then async-load the character portrait
-  // and re-draw with it once it's ready, so the canvas updates from the
-  // text-only fallback to the polished art version.
+  // first share of a session). Then async-load the character portrait,
+  // every relic icon, and the highlighted card art in parallel and
+  // re-draw with the images embedded once they're ready, so the canvas
+  // updates from the text-only fallback to the polished art version.
   drawShareCard(run);
   void preloadAndRedrawShareCard(run);
   $modal.hidden = false;
   document.body.style.overflow = "hidden";
 }
 
-async function preloadAndRedrawShareCard(run) {
-  const src = characterImageSrc(run.character);
-  if (!src) return;
+/** Module-scoped image cache so a second share within the same session
+ *  paints the rich version instantly instead of re-fetching the WebPs.
+ *  Keyed by URL so it survives across runs that share relics/cards. */
+const SHARE_IMAGE_CACHE = new Map();
+
+async function loadImageCached(src) {
+  if (!src) return null;
+  if (SHARE_IMAGE_CACHE.has(src)) return SHARE_IMAGE_CACHE.get(src);
   try {
     const img = await loadImage(src);
-    // If the user closed the modal mid-load, ignore this redraw.
-    if (currentShareRun !== run) return;
-    drawShareCard(run, { characterPortrait: img });
-  } catch (e) {
-    console.warn("[Vault] share card portrait failed to load", e);
+    SHARE_IMAGE_CACHE.set(src, img);
+    return img;
+  } catch {
+    SHARE_IMAGE_CACHE.set(src, null);
+    return null;
   }
 }
+
+/** Preload character portrait + every relic icon + every highlighted
+ *  card art in parallel, then redraw the share canvas with the image
+ *  maps embedded. Keys are the original ids (relic id, card id) so the
+ *  draw routine can look them up in O(1) per row.
+ *
+ *  Failed loads silently degrade to the text-only fallback for that
+ *  individual row (the share canvas as a whole still renders), which
+ *  matters because the asset manifest may legitimately not have art
+ *  for a brand-new card the user is the first to play. */
+async function preloadAndRedrawShareCard(run) {
+  const relicIds = (run.relics || []).slice(0, SHARE_RELICS_MAX);
+  const cardIds  = highlightCards(run).slice(0, SHARE_CARDS_MAX);
+
+  const [portrait, relicImgs, cardImgs] = await Promise.all([
+    loadImageCached(characterImageSrc(run.character)),
+    Promise.all(relicIds.map((id) => loadImageCached(relicImageSrc(id)))),
+    Promise.all(cardIds.map((id)  => loadImageCached(cardImageSrc(id)))),
+  ]);
+  // Bail if the user closed the modal mid-load.
+  if (currentShareRun !== run) return;
+
+  const relicImages = new Map();
+  relicIds.forEach((id, i) => { if (relicImgs[i]) relicImages.set(id, relicImgs[i]); });
+  const cardImages = new Map();
+  cardIds.forEach((id, i)  => { if (cardImgs[i])  cardImages.set(id,  cardImgs[i]); });
+
+  drawShareCard(run, {
+    characterPortrait: portrait,
+    relicImages,
+    cardImages,
+  });
+}
+
+/** Max items per column on the share card. Set so 8 image rows + the
+ *  "+ N more" overflow line all fit inside the column body without
+ *  overlapping the brand footer. */
+const SHARE_RELICS_MAX = 8;
+const SHARE_CARDS_MAX  = 8;
 
 function loadImage(src) {
   return new Promise((resolve, reject) => {
@@ -3815,7 +5508,11 @@ function highlightCards(run) {
 function drawShareCard(run, opts = {}) {
   const canvas = document.getElementById("share-canvas");
   if (!canvas) return;
-  const W = 880, H = 540;
+  // v50: bumped from 880x540 to 880x620 to fit the new image-rich
+  // columns (8 rows × 38px tall thumbs + headers + "+ N more" overflow
+  // + footer). The visible aspect ratio in CSS (.share-preview-wrap)
+  // is updated in lockstep so the preview never letterboxes.
+  const W = 880, H = 620;
   const dpr = 2;
   // Resize the backing store for retina-crisp downloads. We deliberately
   // do NOT set canvas.style.width/height — the stylesheet handles fitting
@@ -3943,12 +5640,25 @@ function drawShareCard(run, opts = {}) {
   ctx.stroke();
 
   // ── Two columns: Relics (gold) | Deck (char color) ──
+  // v50: each row is now an image+label pair so a viewer can recognize
+  // the relic/card at a glance, not just read its name. The image
+  // maps are pre-loaded in preloadAndRedrawShareCard (text-only
+  // fallback paints first, then the full version overwrites once art
+  // lands).
   const colsTop = dividerY + 18;
   const colW = (W - PAD * 2 - 24) / 2;
-  drawListColumn(ctx, PAD,                colsTop, colW, "RELICS",
-    run.relics || [], "#d4af37", false, relicLabel);
-  drawListColumn(ctx, PAD + colW + 24,    colsTop, colW, `DECK · ${(run.deckAtEnd || []).length} CARDS`,
-    highlightCards(run), charColor, true, cardLabel);
+  drawListColumn(ctx, PAD,                colsTop, colW,
+    "RELICS",
+    (run.relics || []).slice(0, SHARE_RELICS_MAX),
+    (run.relics || []).length,
+    "#d4af37", false, relicLabel,
+    opts.relicImages || null, /* isCard */ false);
+  drawListColumn(ctx, PAD + colW + 24,    colsTop, colW,
+    `DECK · ${(run.deckAtEnd || []).length} CARDS`,
+    highlightCards(run).slice(0, SHARE_CARDS_MAX),
+    highlightCards(run).length,
+    charColor, true, cardLabel,
+    opts.cardImages || null,  /* isCard */ true);
 
   // ── Footer ─────────────────────────────────────────────────────
   // This is the sole piece of branding on a card that gets screenshot,
@@ -4036,11 +5746,27 @@ function drawPill(ctx, x, y, text, color, bold) {
   return w;
 }
 
-/** Renders one of the two list columns (relics or deck) — header, bullet
- *  list, "+ N more" if truncated. accentIsCharColor switches the bullet
- *  color (and gold-highlights upgraded cards) for the deck column.
- *  `labelFn` resolves an item id to its friendly display name. */
-function drawListColumn(ctx, x, y, w, header, items, accent, accentIsCharColor, labelFn) {
+/** Renders one of the two list columns on the share card — image-rich
+ *  header + image+label rows + "+ N more" overflow line.
+ *
+ *  v50: switched from text-only bullet rows to actual relic/card art
+ *  pulled from the asset library. `images` is a Map<id, HTMLImageElement>
+ *  populated by `preloadAndRedrawShareCard`. Rows where the image is
+ *  missing fall back to a tinted placeholder tile so the column always
+ *  reads as a uniform grid even when the manifest is missing one
+ *  brand-new card.
+ *
+ *  `isCard` switches the thumbnail crop algorithm: relics are square
+ *  icons rendered with `cover` to fill the tile, while cards are tall
+ *  portraits rendered with a top-biased `cover` so the recognizable
+ *  art (which sits in the upper third of the card frame) is what
+ *  shows in the 36×36 slot — not the lower half of the card body. */
+function drawListColumn(
+  ctx, x, y, w,
+  header, shown, totalCount,
+  accent, accentIsCharColor, labelFn,
+  images, isCard
+) {
   // Header row: small dot icon + label
   ctx.fillStyle = accent;
   ctx.beginPath();
@@ -4051,30 +5777,67 @@ function drawListColumn(ctx, x, y, w, header, items, accent, accentIsCharColor, 
   ctx.font = "900 11px 'Inter', sans-serif";
   ctx.fillText(header, x + 16, y + 10);
 
-  // Items
-  const startY = y + 32;
-  const lineH = 22;
-  const maxItems = 8;
-  const shown = items.slice(0, maxItems);
-  for (let i = 0; i < shown.length; i++) {
+  // Items — each row is [thumb][gap][label]
+  const startY = y + 28;
+  const rowH   = 38;     // 32px thumb + 6px gap to next
+  const thumb  = 32;
+  const gap    = 12;
+  const maxItems = Math.min(shown.length, 8);
+  const labelX = x + thumb + gap;
+  const labelMaxW = w - thumb - gap;
+  for (let i = 0; i < maxItems; i++) {
     const id = shown[i];
-    const ly = startY + i * lineH;
-    // bullet
-    ctx.fillStyle = accent;
-    ctx.beginPath();
-    ctx.arc(x + 4, ly + 1, 2.5, 0, Math.PI * 2);
-    ctx.fill();
-    // text
+    const ty = startY + i * rowH;
+    // Thumbnail tile — tinted background so a transparent-edged WebP
+    // doesn't look like it's floating, and a subtle accent border so
+    // the column reads as a deliberate grid.
+    roundRectFill(ctx, x, ty, thumb, thumb, 7, hexA(accent, 0.10));
+    roundRectStroke(ctx, x, ty, thumb, thumb, 7, hexA(accent, 0.35), 1);
+    const img = images && images.get(id);
+    if (img) {
+      // Clip to the rounded thumb so card / relic art doesn't poke
+      // outside the tile, then draw with `cover` semantics. Cards get
+      // a top-biased crop because their recognizable art sits in the
+      // upper portion of the frame.
+      ctx.save();
+      roundRectPath(ctx, x + 1, ty + 1, thumb - 2, thumb - 2, 6);
+      ctx.clip();
+      const iw = img.width, ih = img.height;
+      const scale = Math.max(thumb / iw, thumb / ih);
+      const dw = iw * scale, dh = ih * scale;
+      const dx = x + (thumb - dw) / 2;
+      const dy = isCard
+        ? ty + (thumb - dh) * 0.18  // top-biased for card portraits
+        : ty + (thumb - dh) / 2;
+      ctx.drawImage(img, dx, dy, dw, dh);
+      ctx.restore();
+    } else {
+      // Fallback: first letter of the friendly name in the column
+      // accent — keeps the row visually balanced even when art is
+      // unavailable for a brand-new card.
+      ctx.fillStyle = accent;
+      ctx.font = "900 14px 'Inter', sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      const fallbackLabel = (labelFn ? labelFn(id) : prettifyId(id));
+      ctx.fillText((fallbackLabel[0] || "?").toUpperCase(),
+                   x + thumb / 2, ty + thumb / 2 + 1);
+      ctx.textAlign = "left";
+      ctx.textBaseline = "alphabetic";
+    }
+    // Label text — centered vertically against the thumb.
     ctx.fillStyle = (accentIsCharColor && id.includes("+")) ? "#d4af37" : "#f4f6fa";
-    ctx.font = "600 13px 'Inter', sans-serif";
+    ctx.font = "700 13px 'Inter', sans-serif";
+    ctx.textBaseline = "middle";
     const label = (labelFn ? labelFn(id) : prettifyId(id));
-    drawTruncated(ctx, label, x + 14, ly + 4, w - 14);
+    drawTruncated(ctx, label, labelX, ty + thumb / 2 + 1, labelMaxW);
+    ctx.textBaseline = "alphabetic";
   }
-  if (items.length > maxItems) {
-    const ly = startY + maxItems * lineH;
+  if (totalCount > maxItems) {
+    const ty = startY + maxItems * rowH;
     ctx.fillStyle = "#6b7280";
-    ctx.font = "500 11px 'Inter', sans-serif";
-    ctx.fillText(`+ ${items.length - maxItems} more`, x + 14, ly + 4);
+    ctx.font = "600 11px 'Inter', sans-serif";
+    ctx.fillText(`+ ${totalCount - maxItems} more`, labelX, ty + 12);
   }
 }
 

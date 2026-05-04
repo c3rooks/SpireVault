@@ -15,6 +15,8 @@ const STORE = "history";
 const HANDLES_STORE = "handles";
 const KEY = "current";
 const HANDLE_KEY = "history-file";
+/** Saved `FileSystemDirectoryHandle` from showDirectoryPicker — enables silent re-scan. */
+const HANDLE_KEY_DIR = "history-directory";
 
 function open() {
   return new Promise((resolve, reject) => {
@@ -38,8 +40,14 @@ export async function saveHistory(record) {
   await new Promise((res, rej) => {
     const tx = db.transaction(STORE, "readwrite");
     tx.objectStore(STORE).put(record, KEY);
-    tx.oncomplete = res;
-    tx.onerror = () => rej(tx.error);
+    // `oncomplete` is the only signal that data is durably committed.
+    // `onerror` and `onabort` both indicate the write was rolled back
+    // (quota exceeded, low storage, browser killed the txn, …) so
+    // we surface them as rejected promises and the caller can warn
+    // the user instead of pretending the save succeeded.
+    tx.oncomplete = () => res();
+    tx.onerror    = () => rej(tx.error || new Error("saveHistory tx errored"));
+    tx.onabort    = () => rej(tx.error || new Error("saveHistory tx aborted"));
   });
   db.close();
 }
@@ -68,25 +76,30 @@ export async function clearHistory() {
 }
 
 // =========================================================================
-// FileSystemFileHandle persistence (Chromium browsers only)
+// FileSystemAccess handle persistence (Chromium browsers only)
 //
 // When the user picks history.json via showOpenFilePicker(), we stash the
-// returned handle here. On future visits we can re-read the same file with
-// one click + a permission prompt, instead of forcing the user to navigate
-// the file picker every single time.
+// returned FileSystemFileHandle. When they pick a save folder via
+// showDirectoryPicker(), we store the FileSystemDirectoryHandle instead.
+// Only one anchor is active at a time (folder import clears the file key
+// and vice versa). On future visits we can re-read with queryPermission
+// / requestPermission instead of forcing a new picker every time.
 //
 // Handles are structured-cloneable across IndexedDB. They survive page
-// reloads, but the *permission* attached to them is per-origin and is
-// re-prompted on each session (you can't silently keep file access).
+// reloads, but the *permission* attached to them is per-origin and may
+// return to "prompt" until the user grants again.
 // =========================================================================
 
 export async function saveHandle(handle) {
   const db = await open();
   await new Promise((res, rej) => {
     const tx = db.transaction(HANDLES_STORE, "readwrite");
-    tx.objectStore(HANDLES_STORE).put(handle, HANDLE_KEY);
-    tx.oncomplete = res;
-    tx.onerror = () => rej(tx.error);
+    const store = tx.objectStore(HANDLES_STORE);
+    store.put(handle, HANDLE_KEY);
+    store.delete(HANDLE_KEY_DIR);
+    tx.oncomplete = () => res();
+    tx.onerror    = () => rej(tx.error || new Error("saveHandle tx errored"));
+    tx.onabort    = () => rej(tx.error || new Error("saveHandle tx aborted"));
   });
   db.close();
 }
@@ -108,6 +121,43 @@ export async function clearHandle() {
   await new Promise((res, rej) => {
     const tx = db.transaction(HANDLES_STORE, "readwrite");
     tx.objectStore(HANDLES_STORE).delete(HANDLE_KEY);
+    tx.oncomplete = res;
+    tx.onerror = () => rej(tx.error);
+  });
+  db.close();
+}
+
+export async function saveDirectoryHandle(handle) {
+  const db = await open();
+  await new Promise((res, rej) => {
+    const tx = db.transaction(HANDLES_STORE, "readwrite");
+    const store = tx.objectStore(HANDLES_STORE);
+    store.put(handle, HANDLE_KEY_DIR);
+    store.delete(HANDLE_KEY);
+    tx.oncomplete = () => res();
+    tx.onerror    = () => rej(tx.error || new Error("saveDirectoryHandle tx errored"));
+    tx.onabort    = () => rej(tx.error || new Error("saveDirectoryHandle tx aborted"));
+  });
+  db.close();
+}
+
+export async function loadDirectoryHandle() {
+  const db = await open();
+  const value = await new Promise((res, rej) => {
+    const tx = db.transaction(HANDLES_STORE, "readonly");
+    const req = tx.objectStore(HANDLES_STORE).get(HANDLE_KEY_DIR);
+    req.onsuccess = () => res(req.result ?? null);
+    req.onerror = () => rej(req.error);
+  });
+  db.close();
+  return value;
+}
+
+export async function clearDirectoryHandle() {
+  const db = await open();
+  await new Promise((res, rej) => {
+    const tx = db.transaction(HANDLES_STORE, "readwrite");
+    tx.objectStore(HANDLES_STORE).delete(HANDLE_KEY_DIR);
     tx.oncomplete = res;
     tx.onerror = () => rej(tx.error);
   });

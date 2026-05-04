@@ -25,7 +25,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Playfair+Display:wght@700;900&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/styles.css?v=6" />
+  <link rel="stylesheet" href="/styles.css?v=7" />
 </head>
 <body>
   <!-- Background ornament -->
@@ -88,8 +88,8 @@
             <span class="hero-window-title">The Vault</span>
           </div>
           <img
-            src="/assets/screenshots/mac-overview.png?v=4"
-            alt="The Vault running on macOS — Overview tab with real run history, winrate, and per-character stats"
+            src="/assets/screenshots/web-overview.png?v=5"
+            alt="The Vault Overview tab — compact painted banner, KPI strip with current streak / last-10 form / PB floor / fastest win, winrate hero, per-character breakdown"
             class="hero-window-shot"
             loading="eager"
             decoding="async"
@@ -154,8 +154,8 @@
       </article>
       <article class="feature-card">
         <div class="feature-icon" data-color="ember">🎴</div>
-        <h3>Share-Run cards</h3>
-        <p>One-click PNG and Markdown summaries of any run. Drop them straight into Discord, Reddit, or X. Looks polished, takes ten seconds.</p>
+        <h3>Image-rich Share-Run cards</h3>
+        <p>One-click PNG of any run with the actual relic icons and card art baked in — not just text. Drop straight into Discord, Reddit, or X. Markdown export ships in the same modal.</p>
       </article>
       <article class="feature-card">
         <div class="feature-icon" data-color="ascend">🤝</div>
@@ -165,7 +165,7 @@
       <article class="feature-card">
         <div class="feature-icon" data-color="silent">📊</div>
         <h3>Real stats, not vibes</h3>
-        <p>Per-character winrate, ascension progression chart, top picked relics and cards across your runs. Filter by date window or outcome. Export to CSV anytime.</p>
+        <p>Six-card KPI strip (current streak, last-10 form, PB floor, fastest win, this week, best streak), winrate-over-time chart, floor-death histogram. Filter chips on Recent Runs by character, outcome, ascension. Export to CSV anytime.</p>
       </article>
       <article class="feature-card">
         <div class="feature-icon" data-color="defect">🔒</div>
@@ -186,27 +186,37 @@
       <span class="eyebrow">Looks the part</span>
       <h2>Design that doesn't fight you.</h2>
       <p class="section-sub">
-        Real captures from the Vault running on macOS and the web companion at
-        <a href="https://app.spirevault.app">app.spirevault.app</a>. The
-        Overview shot below is from a real save with 388 runs of history.
+        Real captures from the web companion at
+        <a href="https://app.spirevault.app">app.spirevault.app</a>. Every
+        screenshot below is the actual app rendering sample data — including
+        the image-rich Share-Run card with real relic icons and card art
+        baked into the canvas.
       </p>
     </div>
     <div class="showcase-rail">
       <figure class="screenshot is-live">
-        <img src="/assets/screenshots/mac-overview.png?v=4" alt="The Vault Overview tab — 5.7% winrate over 388 runs, per-character breakdown for Ironclad, Defect, Silent, Regent, Necrobinder" loading="lazy" />
-        <figcaption>macOS · Overview · <strong>real capture from a 388-run save</strong></figcaption>
+        <img src="/assets/screenshots/web-overview.png?v=5" alt="Overview tab — compact painted banner, 6 KPI cards (current streak, last-10 form, PB floor, fastest win, this week, best streak), winrate hero, highest ascension panel" loading="lazy" />
+        <figcaption>Overview · <strong>KPI strip + winrate hero + highest-ascension panel</strong></figcaption>
       </figure>
       <figure class="screenshot is-live">
-        <img src="/assets/screenshots/web-coop-live.png?v=3" alt="Live capture of the web companion at app.spirevault.app" loading="lazy" />
-        <figcaption>Web companion · <strong>real capture from app.spirevault.app</strong></figcaption>
+        <img src="/assets/screenshots/web-share.png?v=5" alt="Image-rich Share-Run card with actual relic icons and card art for every entry, character portrait, victory/defeat badge, and platform-recognizable Spire Vault footer" loading="lazy" />
+        <figcaption>Share card · <strong>real relic icons + card art, drop into Discord/Reddit/X</strong></figcaption>
       </figure>
-      <figure class="screenshot">
-        <img src="/assets/screenshot-coop.svg?v=3" alt="Co-op tab with the live presence feed" loading="lazy" />
-        <figcaption>macOS · Co-op tab — render, real capture lands with v0.2</figcaption>
+      <figure class="screenshot is-live">
+        <img src="/assets/screenshots/web-run-detail.png?v=5" alt="Run detail modal — character portrait, full stats, every relic with its icon, every card in the final deck with its art" loading="lazy" />
+        <figcaption>Run detail · <strong>relics + final deck rendered with real art</strong></figcaption>
       </figure>
-      <figure class="screenshot">
-        <img src="/assets/screenshot-share.svg?v=3" alt="Share-run card" loading="lazy" />
-        <figcaption>Share-Run card — render, real capture lands with v0.2</figcaption>
+      <figure class="screenshot is-live">
+        <img src="/assets/screenshots/web-characters.png?v=5" alt="Characters tab — winrate cards for every STS2 character with run counts and per-character winrate trend" loading="lazy" />
+        <figcaption>Characters · <strong>per-character winrate at a glance</strong></figcaption>
+      </figure>
+      <figure class="screenshot is-live">
+        <img src="/assets/screenshots/web-runs.png?v=5" alt="Recent Runs tab — filter chips by character/outcome/ascension, search, sortable run list" loading="lazy" />
+        <figcaption>Recent Runs · <strong>filter chips + click-to-inspect modal</strong></figcaption>
+      </figure>
+      <figure class="screenshot is-live">
+        <img src="/assets/screenshots/web-coop-live.png?v=3" alt="Live capture of the co-op presence feed at app.spirevault.app" loading="lazy" />
+        <figcaption>Co-op feed · <strong>live presence at app.spirevault.app</strong></figcaption>
       </figure>
     </div>
   </section>
@@ -309,10 +319,10 @@
           </div>
         </div>
         <ul class="feature-list">
-          <li>Sign in with Steam — same OpenID flow, same identity</li>
-          <li>Same live feed, same Steam + Discord reach-outs</li>
+          <li>Full run tracker — points at your STS2 save folder, parses every <code>.run</code></li>
+          <li>KPI strip + winrate chart + image-rich Share-Run cards</li>
+          <li>Sign in with Steam — same OpenID flow, same identity, same live feed</li>
           <li>Zero install, zero download, works on Chromebooks</li>
-          <li>Run tracker not here yet (needs local file access)</li>
         </ul>
         <a class="btn-primary inline full-width alt" href="https://app.spirevault.app">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 5l7 7-7 7"/></svg>

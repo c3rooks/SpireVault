@@ -248,7 +248,11 @@ export async function putSessionProfile(
   );
 }
 
-async function getSessionProfile(env: Env, steamID: string): Promise<SessionProfile | null> {
+// Exported so the `/me` route can rehydrate (steamID, persona, avatar)
+// for a request that only carried a session bearer/cookie. Keeping reads
+// of session-profile rows centralized here makes it easier to evolve the
+// stored shape without combing through call sites.
+export async function getSessionProfile(env: Env, steamID: string): Promise<SessionProfile | null> {
   const raw = await env.LOBBIES.get(`${SESSION_PROFILE_PREFIX}${steamID}`);
   if (!raw) return null;
   try { return JSON.parse(raw) as SessionProfile; } catch { return null; }

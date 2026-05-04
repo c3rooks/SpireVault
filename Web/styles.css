@@ -874,6 +874,215 @@ main.main-public,
 }
 .tab-panel { padding: 0; }
 
+/* ─────────────────────────────────────────────────────────────────
+ * Per-tab atmospheric scene backdrops
+ *
+ * The painted scene now spans the ENTIRE panel-head as a banner
+ * background, not just the small diorama box. Title text, the
+ * companion slot (climber + boss + bubble), and the Import button
+ * all sit on top of the painting. A horizontal dark gradient on
+ * `.panel-head::before` keeps the title legible on the left while
+ * the right side stays bright enough for the diorama to feel like
+ * it's set into the scene.
+ *
+ * Recent Runs and Co-op are intentionally excluded — both are
+ * utility surfaces where a decorative header would hurt the
+ * scanability of the list rows beneath them.
+ * ───────────────────────────────────────────────────────────────── */
+.tab-panel[data-tab="overview"],
+.tab-panel[data-tab="characters"],
+.tab-panel[data-tab="ascensions"],
+.tab-panel[data-tab="relics"],
+.tab-panel[data-tab="cards"] {
+  /* Hook for tab-specific .panel-head selectors below. */
+}
+.tab-panel[data-tab="overview"]   > .panel-head { background-image: url("/assets/sts2/scene-floor.webp"); }
+.tab-panel[data-tab="characters"] > .panel-head { background-image: url("/assets/sts2/scene-characters.webp"); }
+.tab-panel[data-tab="ascensions"] > .panel-head { background-image: url("/assets/sts2/scene-ascensions.webp"); }
+.tab-panel[data-tab="relics"]     > .panel-head { background-image: url("/assets/sts2/scene-relics.webp"); }
+.tab-panel[data-tab="cards"]      > .panel-head { background-image: url("/assets/sts2/scene-cards.webp"); }
+
+/* Themed panel-heads adopt hero-banner styling.
+ *
+ * Layout:
+ *   [ title block ]   [ diorama ]   [ actions ]
+ *   align-items: center → everything sits on the same vertical
+ *   axis through the painting, so title + figures + Import button
+ *   read as one coherent banner row instead of three disconnected
+ *   pieces stacked at different heights.
+ *
+ * Anti-clip notes:
+ *   - We do NOT set `overflow: hidden` here. The companion picker
+ *     popover lives inside this panel-head and would be clipped
+ *     if overflow were hidden. The painting still respects
+ *     `border-radius` (background images do natively); the dark
+ *     `::before` gradient is given `border-radius: inherit` so
+ *     its sharp corners don't poke past the rounded chrome.
+ *
+ * Background composition:
+ *   - `background-size: cover` with `background-position: center
+ *     65%` shows the focal middle-bottom of each painting (where
+ *     the floor / wall transition lives) so figures look planted
+ *     in the scene instead of floating in an empty middle slice.
+ *   - Inner vignette + horizontal dark-fade gradient (`::before`)
+ *     keeps the LEFT third of the banner dark enough for crisp
+ *     title text and the RIGHT two-thirds bright enough for the
+ *     diorama art to pop. */
+.tab-panel[data-tab="overview"]   > .panel-head,
+.tab-panel[data-tab="characters"] > .panel-head,
+.tab-panel[data-tab="ascensions"] > .panel-head,
+.tab-panel[data-tab="relics"]     > .panel-head,
+.tab-panel[data-tab="cards"]      > .panel-head {
+  position: relative;
+  isolation: isolate;
+  /* Override the base `.panel-head` flex layout with a 3-column grid:
+   *   [ title  ]  [ diorama  ]  [ actions  ]
+   * The middle column is `1fr` and the two side columns are `auto`
+   * width, BUT we set `min-content`/`auto` widths and use grid's
+   * `place-items: end center` to keep the diorama in the TRUE
+   * horizontal center of the banner regardless of how wide / narrow
+   * the title or actions get. Without this fix, a long title pushed
+   * the flex-centered diorama 100+px left of center on every tab. */
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: end;
+  justify-content: stretch;
+  justify-items: stretch;
+  gap: 16px;
+  background-size: cover;
+  background-position: center 70%;
+  background-repeat: no-repeat;
+  border-radius: 14px;
+  box-shadow: inset 0 0 60px 10px rgba(0, 0, 0, 0.7);
+  /* v51: cut another ~40% off the v50 height — banner is now a
+   * compact 110px-ish strip with the title pinned to the bottom-left
+   * corner and the diorama as a small detail vignette to the right.
+   * The painting is still legible end-to-end; the diorama figures
+   * (.scene) are scaled in lockstep just below. */
+  min-height: 100px;
+  padding: 6px 28px 6px;
+}
+/* Title block hugs the LEFT column, diorama claims center, actions
+ * row hugs the RIGHT column. Each cell sits on the bottom edge so
+ * the figures' feet, the page title baseline, and the Import button
+ * all share the painted floor as their shared baseline. */
+.tab-panel[data-tab="overview"]   > .panel-head > div:first-child,
+.tab-panel[data-tab="characters"] > .panel-head > div:first-child,
+.tab-panel[data-tab="ascensions"] > .panel-head > div:first-child,
+.tab-panel[data-tab="relics"]     > .panel-head > div:first-child,
+.tab-panel[data-tab="cards"]      > .panel-head > div:first-child {
+  grid-column: 1;
+  justify-self: start;
+  align-self: end;
+  min-width: 0;
+}
+.tab-panel[data-tab="overview"]   > .panel-head > .companion-slot,
+.tab-panel[data-tab="characters"] > .panel-head > .companion-slot,
+.tab-panel[data-tab="ascensions"] > .panel-head > .companion-slot,
+.tab-panel[data-tab="relics"]     > .panel-head > .companion-slot,
+.tab-panel[data-tab="cards"]      > .panel-head > .companion-slot {
+  grid-column: 2;
+  justify-self: center;
+  align-self: end;
+}
+.tab-panel[data-tab="overview"]   > .panel-head > .panel-actions,
+.tab-panel[data-tab="characters"] > .panel-head > .panel-actions,
+.tab-panel[data-tab="ascensions"] > .panel-head > .panel-actions,
+.tab-panel[data-tab="relics"]     > .panel-head > .panel-actions,
+.tab-panel[data-tab="cards"]      > .panel-head > .panel-actions {
+  grid-column: 3;
+  justify-self: end;
+  align-self: end;
+}
+/* Themed-banner title typography. Slightly larger + a strong
+ * text-shadow so the headline reads cleanly over any painted
+ * scene without depending on the gradient overlay alone. */
+.tab-panel[data-tab="overview"]   > .panel-head h2,
+.tab-panel[data-tab="characters"] > .panel-head h2,
+.tab-panel[data-tab="ascensions"] > .panel-head h2,
+.tab-panel[data-tab="relics"]     > .panel-head h2,
+.tab-panel[data-tab="cards"]      > .panel-head h2 {
+  /* v51: 22px — sized for the new compact ~110px banner. The title
+   * block is anchored to the bottom-left corner via absolute
+   * positioning below so it doesn't get vertically pushed by the
+   * tiny diorama vignette. */
+  font-size: 22px;
+  margin: 0 0 1px;
+  letter-spacing: -0.015em;
+  text-shadow:
+    0 2px 8px rgba(0, 0, 0, 0.92),
+    0 1px 2px rgba(0, 0, 0, 0.95);
+}
+.tab-panel[data-tab="overview"]   > .panel-head .panel-sub,
+.tab-panel[data-tab="characters"] > .panel-head .panel-sub,
+.tab-panel[data-tab="ascensions"] > .panel-head .panel-sub,
+.tab-panel[data-tab="relics"]     > .panel-head .panel-sub,
+.tab-panel[data-tab="cards"]      > .panel-head .panel-sub {
+  color: rgba(232, 226, 240, 0.95);
+  font-size: 13px;
+  margin: 0;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.95);
+}
+/* v51: pin the title block to the bottom-left corner of the painted
+ * banner. With the diorama now a small corner vignette, anchoring
+ * the title lets it sit cleanly at the bottom-left no matter what
+ * height the diorama settles at. */
+.tab-panel[data-tab="overview"]   > .panel-head > div:first-child,
+.tab-panel[data-tab="characters"] > .panel-head > div:first-child,
+.tab-panel[data-tab="ascensions"] > .panel-head > div:first-child,
+.tab-panel[data-tab="relics"]     > .panel-head > div:first-child,
+.tab-panel[data-tab="cards"]      > .panel-head > div:first-child {
+  position: absolute;
+  left: 28px;
+  bottom: 10px;
+  z-index: 2;
+  /* Cap the width so a long title can never crash into the diorama
+   * silhouette in the middle of the banner. */
+  max-width: calc(100% - 240px);
+}
+/* Dark gradient overlay: heavier on the left (where the title sits)
+ * lighter on the right (where the diorama art is). Text reads, art
+ * shines. */
+.tab-panel[data-tab="overview"]   > .panel-head::before,
+.tab-panel[data-tab="characters"] > .panel-head::before,
+.tab-panel[data-tab="ascensions"] > .panel-head::before,
+.tab-panel[data-tab="relics"]     > .panel-head::before,
+.tab-panel[data-tab="cards"]      > .panel-head::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  /* Inherit the parent's rounded corners so the dark overlay
+   * doesn't paint sharp corners outside the rounded banner box. */
+  border-radius: inherit;
+  background: linear-gradient(
+    90deg,
+    rgba(8, 8, 16, 0.85) 0%,
+    rgba(8, 8, 16, 0.55) 35%,
+    rgba(8, 8, 16, 0.18) 65%,
+    rgba(8, 8, 16, 0.05) 100%
+  );
+  pointer-events: none;
+  z-index: 0;
+}
+/* Lift every direct child of the themed panel-head above the
+ * gradient overlay so titles, the diorama slot, and the Import
+ * button all stay clickable and visible. */
+.tab-panel[data-tab="overview"]   > .panel-head > *,
+.tab-panel[data-tab="characters"] > .panel-head > *,
+.tab-panel[data-tab="ascensions"] > .panel-head > *,
+.tab-panel[data-tab="relics"]     > .panel-head > *,
+.tab-panel[data-tab="cards"]      > .panel-head > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* (Legacy gradient-only panel-head rule was removed here — themed
+ * panel-heads now paint the actual scene image as their background
+ * via the rules higher up in the "Per-tab atmospheric scene
+ * backdrops" block. The dark left-fade gradient lives on the
+ * `::before` pseudo-element so it composites on TOP of the painting
+ * without overwriting `background-image`.) */
+
 .panel-head {
   display: flex;
   align-items: flex-end;
@@ -897,8 +1106,71 @@ main.main-public,
   color: var(--text);
 }
 .panel-sub { margin: 0; color: var(--text-2); font-size: 13px; }
-.panel-actions { display: flex; gap: 8px; }
+.panel-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
 .panel-body { padding: 24px 32px 60px; }
+
+/* "Linked: <folder name>" pill in the panel-actions row. Confirms that
+ * a save folder is wired up for silent auto-refresh and exposes a one-
+ * click Disconnect. Painted on every visit by renderLinkedPill() so the
+ * confirmation survives reloads even if the IndexedDB read is async. */
+.linked-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px 6px 12px;
+  background: rgba(80, 220, 130, 0.10);
+  border: 1px solid rgba(80, 220, 130, 0.35);
+  border-radius: 999px;
+  color: rgba(220, 255, 230, 0.95);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  max-width: 320px;
+  /* Sit slightly above the dark banner so the green ring reads on
+   * top of the painted scene without competing with the title text. */
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+.linked-pill[hidden] { display: none; }
+.linked-pill-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #5fe09a;
+  box-shadow: 0 0 8px rgba(95, 224, 154, 0.85);
+  flex: 0 0 auto;
+  animation: linkedPillPulse 2.4s ease-in-out infinite;
+}
+.linked-pill-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.linked-pill-disconnect {
+  margin-left: 4px;
+  padding: 2px 8px;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 999px;
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+.linked-pill-disconnect:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.35);
+}
+.linked-pill-disconnect:focus-visible {
+  outline: 2px solid var(--accent, #ffa05c);
+  outline-offset: 2px;
+}
+@keyframes linkedPillPulse {
+  0%, 100% { transform: scale(1);    opacity: 1;   }
+  50%      { transform: scale(1.25); opacity: 0.7; }
+}
 
 /* ─── Companion diorama (Overview panel-head) ─────────────────────
  * A small two-character "scene" between the page title and the
@@ -918,14 +1190,42 @@ main.main-public,
 .companion-slot {
   position: relative;
   display: flex;
-  align-items: center;
-  margin-right: auto;
-  margin-left: 24px;
-  flex: 1 1 auto;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  /* Width control comes from the parent grid column (`auto` width in
+   * the themed `.panel-head`). Diorama is true-centered there, no
+   * margin tricks needed. */
+  flex: 0 1 auto;
   min-width: 0;
-  max-width: 580px;
 }
 .companion-slot:empty { display: none; }
+
+/* "Your contribution to the Architect" tagline. Sits directly under
+ * the diorama, visually anchoring the scene to the user's actual
+ * stats. The metric (clashes = runs that reached floor 31+) is the
+ * most honest "you faced him" number we can derive without the
+ * unobservable game score. */
+.scene-tagline {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text-2, #c8c2d8);
+  text-align: center;
+  padding: 0 6px;
+  line-height: 1.4;
+  cursor: help;
+}
+.scene-tagline-strong {
+  font-weight: 800;
+  font-size: 13px;
+  color: #ffd470;
+  text-shadow: 0 0 6px rgba(255, 200, 100, 0.35);
+}
+.scene-tagline-muted {
+  color: var(--text-3, #8a8499);
+  font-weight: 500;
+}
 
 /* Stage. Holds the climber slot, the boss slot, and the absolutely-
  * positioned bubble. position:relative is required so the bubble
@@ -940,25 +1240,49 @@ main.main-public,
 .scene {
   position: relative;
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  /* Asymmetric duel: smallish climber (left) vs imposing boss (right).
+   * 1 : 1.7 ratio so the Architect's staff + robes silhouette dominates
+   * the frame, the way a final-floor encounter actually reads in-game.
+   *
+   * v51 scale-down: column widths trimmed from 200/340 → 80/120, total
+   * footprint roughly 30% of the original. The diorama is now a tiny
+   * corner vignette; the painted backdrop carries the visual weight.
+   * Boss still dominates the climber proportionally. */
+  grid-template-columns: 80px 120px;
+  grid-template-rows: auto 1fr;
+  justify-content: center;
   align-items: end;
   justify-items: center;
-  column-gap: 18px;
+  /* Tight horizontal gap — "square off" energy, not a wide arena. */
+  column-gap: 6px;
+  row-gap: 0;
   width: 100%;
   min-width: 0;
-  min-height: 132px;
-  padding: 14px 4px 6px;
-  background-image: url("/assets/sts2/scene-floor.webp");
-  background-size: cover;
-  background-position: center 60%;
-  background-repeat: no-repeat;
-  border-radius: 12px;
-  /* Vignette: keep the figures hot in the middle, fade edges to
-   * black so the stage merges into the panel chrome. */
-  box-shadow: inset 0 0 32px 8px rgba(0, 0, 0, 0.85);
-  /* Subtle slide-in on every render so re-rolls feel fresh without
-   * screaming for attention. */
+  min-height: 90px;
+  padding: 0 2px 2px;
+  background: transparent;
   animation: sceneIn 0.42s cubic-bezier(0.2, 0.9, 0.3, 1) both;
+}
+/* Soft shared ground plane — sells weight / contact with the painted
+ * floor beneath the sprites (they're still 2D art, but the gradient
+ * stitches them to the banner visually). */
+.scene::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: 0;
+  width: min(520px, 100%);
+  height: 18px;
+  pointer-events: none;
+  z-index: 0;
+  background: radial-gradient(
+    ellipse 85% 100% at 50% 100%,
+    rgba(0, 0, 0, 0.55) 0%,
+    rgba(0, 0, 0, 0.22) 55%,
+    rgba(0, 0, 0, 0) 78%
+  );
+  filter: blur(5px);
 }
 
 /* Each figure is a column with the full-body art on top and a soft
@@ -966,18 +1290,35 @@ main.main-public,
  * trigger); the boss column is non-interactive. */
 .scene-figure {
   position: relative;
-  z-index: 1;
+  z-index: 2;
   display: flex;
   flex-direction: column;
   align-items: center;
   width: 100%;
-  max-width: 110px;
-  height: 110px;
+  /* Climber slot — intentionally narrower than the boss column so the
+   * Architect dominates the right side of the banner. v51: shrunk from
+   * 96/102 → 64/72 — pure decorative scale, the painted backdrop is
+   * the real banner now. */
+  max-width: 64px;
+  height: 72px;
   padding: 0;
   background: transparent;
   border: 0;
   cursor: default;
   color: var(--text);
+  /* Anchor figures to row 2 of the .scene grid. Row 1 is reserved
+   * for the speech bubble so the two never collide. */
+  grid-row: 2;
+}
+.scene-figure-climber { grid-column: 1; }
+.scene-figure-boss    { grid-column: 2; }
+/* Boss column: noticeably wider AND taller than the climber. The
+ * Architect's silhouette (floating, staff overhead, billowing robes)
+ * needs vertical canvas to read as a boss, not a sidekick. v51:
+ * shrunk from 168/140 → 108/90 — corner vignette scale. */
+.scene-figure-boss {
+  max-width: 108px;
+  height: 90px;
 }
 .scene-figure-climber {
   cursor: pointer;
@@ -1007,7 +1348,18 @@ main.main-public,
   filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.55));
   pointer-events: none;
   user-select: none;
+  /* Default sprite orientation. Climbers painted facing-left flip
+   * to -1 via .scene-art-flip below; the bob keyframe reads this
+   * variable so it can compose its translateY with the X scale
+   * without one transform clobbering the other. */
+  --sprite-flip: 1;
 }
+/* Mirror climbers whose source art is painted facing left so they
+ * actually face the Architect on the right. Four of the five
+ * sprites need this (see COMPANIONS in script.js for the
+ * `facesLeft: true` flags). Defect already faces right and stays
+ * unflipped. */
+.scene-art-flip { --sprite-flip: -1; }
 
 /* Climber bobs at one cadence; boss drifts at another so the scene
  * never feels synchronized. Bosses don't get mirrored — they're
@@ -1016,9 +1368,10 @@ main.main-public,
   animation: sceneBobClimber 2.4s ease-in-out infinite;
 }
 .scene-figure-boss .scene-art {
-  /* The Architect art ships in full color; just give him a grounding
-   * drop-shadow and a faint warm rim glow so he reads as in-scene
-   * rather than pasted on. */
+  /* Architect art has transparent padding above the mask — nudge down;
+   * scale up so his silhouette dominates the climber's screen presence. */
+  --boss-scale: 1.22;
+  object-position: center 100%;
   filter:
     drop-shadow(0 6px 12px rgba(0, 0, 0, 0.7))
     drop-shadow(0 0 8px rgba(255, 200, 130, 0.15));
@@ -1041,59 +1394,79 @@ main.main-public,
 
 /* Soft elliptical shadow under each figure. Pulses out of phase with
  * the bob so the figures look like they're stepping on something
- * solid, not floating. */
+ * solid, not floating. Wider and softer than the prior version —
+ * a tight blob shadow under a 200px figure read as a sticker
+ * cutout; this radial gradient feathers out so it visually
+ * blends into the painted ground beneath. */
 .scene-shadow {
   position: absolute;
-  bottom: 4px;
+  bottom: 6px;
   left: 50%;
   transform: translateX(-50%);
-  width: 64%;
-  height: 7px;
+  width: 78%;
+  height: 14px;
   border-radius: 50%;
-  background: rgba(0, 0, 0, 0.55);
+  background: radial-gradient(
+    ellipse at center,
+    rgba(0, 0, 0, 0.65) 0%,
+    rgba(0, 0, 0, 0.35) 45%,
+    rgba(0, 0, 0, 0) 75%
+  );
   filter: blur(4px);
   z-index: 0;
 }
 .scene-figure-climber .scene-shadow { animation: sceneShadowClimber 2.4s ease-in-out infinite; }
 .scene-figure-boss    .scene-shadow { animation: sceneShadowBoss    3.4s ease-in-out infinite; }
 
-/* Speech bubble. Anchored absolutely over whichever figure is
- * speaking — never floating in the middle of the gap. Two variants:
- * `.scene-bubble-climber` snaps to the left grid column;
- * `.scene-bubble-boss` snaps to the right. The tail aims down at the
- * speaker's head. */
+/* Speech bubble. Lives in row 1 of the .scene grid, in the speaker's
+ * column. Grid placement keeps it naturally centered above the
+ * speaker — no absolute positioning, no `translateX(-50%)` to
+ * fight the bubble's own pop / hover transforms. The tail at the
+ * bubble's bottom-center then points straight down at the
+ * speaker's head sitting in row 2 of the same column. */
 .scene-bubble {
-  position: absolute;
-  top: -2px;
-  z-index: 3;
+  position: relative;
+  z-index: 4;
+  justify-self: center;
+  align-self: end;
   min-width: 0;
-  max-width: 220px;
-  padding: 7px 14px;
-  background: linear-gradient(180deg, rgba(244, 248, 255, 0.98) 0%, rgba(224, 232, 248, 0.98) 100%);
+  /* v51: tightened to 180px and 1-line clamp so the bubble fits in
+   * the new compact ~110px banner without forcing the diorama down.
+   * Multi-line taunts truncate with ellipsis. */
+  max-width: 180px;
+  margin-bottom: 2px;
+  padding: 5px 12px;
+  /* Single-line clamp keeps the bubble at predictable height. */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  /* Cleaner, slightly cooler off-white. Old build used a vertical
+   * blue tint that read as "default Apple modal" — replaced with
+   * a near-white with a hairline gradient so it pops on the
+   * painted scene without looking like generic chrome. */
+  background: linear-gradient(180deg, #fbfbfd 0%, #eef0f6 100%);
   color: #0a0d18;
-  border: 1px solid rgba(255, 255, 255, 0.7);
-  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.85);
+  border-radius: 14px;
   font-family: 'Inter', sans-serif;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
-  line-height: 1.35;
+  line-height: 1.25;
+  letter-spacing: -0.005em;
   text-align: center;
   cursor: pointer;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+  /* Layered shadow: tight inner ambient + wider diffuse drop for
+   * a real "floating above the scene" feeling rather than a flat
+   * stamp. Same visual language Apple uses for modal dialogs. */
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.6) inset,
+    0 2px 4px rgba(0, 0, 0, 0.25),
+    0 12px 24px rgba(0, 0, 0, 0.45);
   animation: sceneBubblePop 0.32s cubic-bezier(0.2, 1.6, 0.6, 1) both;
   transition: transform 0.15s ease, box-shadow 0.15s ease;
 }
-/* Climber speaks: pin to left half, biased a bit right of the
- * climber's centerline so the tail can lean back over their head. */
-.scene-bubble-climber {
-  left: 8%;
-  right: auto;
-}
-/* Boss speaks: mirrored anchor on the right half. */
-.scene-bubble-boss {
-  right: 8%;
-  left: auto;
-}
+.scene-bubble-climber { grid-column: 1; grid-row: 1; }
+.scene-bubble-boss    { grid-column: 2; grid-row: 1; }
 .scene-bubble:hover {
   transform: translateY(-1px);
   box-shadow: 0 8px 22px rgba(0, 0, 0, 0.55);
@@ -1118,8 +1491,14 @@ main.main-public,
   border-top: 8px solid rgba(224, 232, 248, 0.98);
   filter: drop-shadow(0 1px 0 rgba(255, 255, 255, 0.7));
 }
-.scene-bubble-climber .scene-bubble-tail { left:  50%; transform: translateX(-50%); }
-.scene-bubble-boss    .scene-bubble-tail { right: 50%; transform: translateX(50%);  }
+/* Tail centered under the bubble for both speakers — the bubble
+ * itself is now centered above its speaker via grid placement so
+ * we no longer need to bias the tail to one side. */
+.scene-bubble-climber .scene-bubble-tail,
+.scene-bubble-boss    .scene-bubble-tail {
+  left: 50%;
+  transform: translateX(-50%);
+}
 
 /* Animations. */
 @keyframes sceneIn {
@@ -1127,12 +1506,17 @@ main.main-public,
   100% { opacity: 1; transform: translateY(0);   }
 }
 @keyframes sceneBobClimber {
-  0%, 100% { transform: translateY(0); }
-  50%      { transform: translateY(-4px); }
+  /* Compose the X-axis flip (-1 for left-facing sprites we mirror,
+   * +1 for already-correct sprites) with the Y bob. Without this
+   * the keyframe would set `transform: translateY(...)` and wipe
+   * out any `scaleX(-1)` we tried to apply via .scene-art-flip,
+   * leaving the mirrored climbers facing the wrong way again. */
+  0%, 100% { transform: scaleX(var(--sprite-flip, 1)) translateY(0); }
+  50%      { transform: scaleX(var(--sprite-flip, 1)) translateY(-4px); }
 }
 @keyframes sceneBobBoss {
-  0%, 100% { transform: translateY(0); }
-  50%      { transform: translateY(-3px); }
+  0%, 100% { transform: scale(var(--boss-scale, 1)) translateY(0); }
+  50%      { transform: scale(var(--boss-scale, 1)) translateY(-3px); }
 }
 @keyframes sceneShadowClimber {
   0%, 100% { transform: translateX(-50%) scaleX(1);    opacity: 0.55; }
@@ -1219,25 +1603,48 @@ main.main-public,
   color: var(--text);
 }
 
-/* Tablet: shrink figures + bubble so the diorama stops eating
- * panel-head room around 900px. */
+/* Tablet (v51): tiny corner-vignette diorama matched to desktop. */
 @media (max-width: 1100px) {
-  .companion-slot { max-width: 440px; }
-  .scene          { padding: 22px 4px 6px; column-gap: 14px; }
-  .scene-figure   { max-width: 90px; height: 92px; }
-  .scene-bubble   { font-size: 11px; padding: 6px 12px; max-width: 180px; }
+  .companion-slot { max-width: 240px; }
+  .scene {
+    grid-template-columns: 70px 100px;
+    min-height: 84px;
+    padding: 0 2px 2px;
+    column-gap: 6px;
+  }
+  .scene-figure-climber {
+    max-width: 56px;
+    height: 64px;
+  }
+  .scene-figure-boss {
+    max-width: 96px;
+    height: 80px;
+  }
+  .scene-figure-boss .scene-art { --boss-scale: 1.16; }
+  .scene-bubble   { font-size: 10px; padding: 4px 10px; max-width: 160px; }
 }
 
-/* Mobile: panel-head already wraps at this breakpoint so the diorama
- * gets its own row under the title. Shrink everything but keep the
- * bubble anchored over the speaker. */
+/* Mobile (v51): panel-head wraps to a stacked layout. Title stays
+ * absolute-positioned (handled by the themed-mobile rule below) so
+ * the diorama can sit small and centered under it. */
 @media (max-width: 720px) {
   .companion-slot { margin-left: 0; max-width: 100%; }
-  .scene          { padding: 22px 0 4px; column-gap: 8px; }
-  .scene-figure   { max-width: 78px; height: 80px; }
-  .scene-bubble   { font-size: 11px; padding: 5px 10px; max-width: 140px; top: 0; }
-  .scene-bubble-climber { left: 2%; }
-  .scene-bubble-boss    { right: 2%; }
+  .scene {
+    grid-template-columns: 60px 88px;
+    min-height: 78px;
+    padding: 0 0 2px;
+    column-gap: 4px;
+  }
+  .scene-figure-climber {
+    max-width: 52px;
+    height: 60px;
+  }
+  .scene-figure-boss {
+    max-width: 84px;
+    height: 76px;
+  }
+  .scene-figure-boss .scene-art { --boss-scale: 1.16; }
+  .scene-bubble   { font-size: 10px; padding: 4px 8px; max-width: 140px; }
   .companion-picker { left: auto; right: 0; }
 }
 
@@ -1263,8 +1670,75 @@ main.main-public,
        at the top, a second sticky element behind it stacks the colors
        and looks like a UI seam. */
     position: relative;
-    background: transparent;
+    /* Only clear the panel-head's own dark backdrop-color; keep
+       any themed background-image intact (using `background:
+       transparent` here was a shorthand foot-gun that wiped the
+       per-tab scene painting on mobile). */
+    background-color: transparent;
     backdrop-filter: none;
+  }
+  /* On mobile, the banner is shorter (panel-head wraps to multiple
+     rows, so vertical real estate fills naturally) and the
+     gradient overlay flips to a top-to-bottom darken so titles in
+     row 1 stay legible while the diorama in row 2 sits over the
+     bright bottom of the painting. */
+  .tab-panel[data-tab="overview"]   > .panel-head,
+  .tab-panel[data-tab="characters"] > .panel-head,
+  .tab-panel[data-tab="ascensions"] > .panel-head,
+  .tab-panel[data-tab="relics"]     > .panel-head,
+  .tab-panel[data-tab="cards"]      > .panel-head {
+    /* Collapse the desktop 3-column grid to a single-column stack on
+     * mobile. Order: title, diorama, actions. The grid layout would
+     * try to fit three side-by-side on a 414px viewport and overlap. */
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+    min-height: 0;
+    padding: 14px 16px;
+  }
+  .tab-panel[data-tab="overview"]   > .panel-head > .companion-slot,
+  .tab-panel[data-tab="characters"] > .panel-head > .companion-slot,
+  .tab-panel[data-tab="ascensions"] > .panel-head > .companion-slot,
+  .tab-panel[data-tab="relics"]     > .panel-head > .companion-slot,
+  .tab-panel[data-tab="cards"]      > .panel-head > .companion-slot {
+    width: 100%;
+    align-self: center;
+    justify-self: center;
+  }
+  /* v51: Reset the desktop absolute-positioned title back to flow on
+   * mobile so it stacks above the diorama (instead of overlapping).
+   * The mobile banner is already short via the flex-column layout. */
+  .tab-panel[data-tab="overview"]   > .panel-head > div:first-child,
+  .tab-panel[data-tab="characters"] > .panel-head > div:first-child,
+  .tab-panel[data-tab="ascensions"] > .panel-head > div:first-child,
+  .tab-panel[data-tab="relics"]     > .panel-head > div:first-child,
+  .tab-panel[data-tab="cards"]      > .panel-head > div:first-child {
+    position: static;
+    left: auto;
+    bottom: auto;
+    max-width: 100%;
+  }
+  .tab-panel[data-tab="overview"]   > .panel-head > .panel-actions,
+  .tab-panel[data-tab="characters"] > .panel-head > .panel-actions,
+  .tab-panel[data-tab="ascensions"] > .panel-head > .panel-actions,
+  .tab-panel[data-tab="relics"]     > .panel-head > .panel-actions,
+  .tab-panel[data-tab="cards"]      > .panel-head > .panel-actions {
+    align-self: stretch;
+    justify-self: stretch;
+    justify-content: flex-end;
+  }
+  .tab-panel[data-tab="overview"]   > .panel-head::before,
+  .tab-panel[data-tab="characters"] > .panel-head::before,
+  .tab-panel[data-tab="ascensions"] > .panel-head::before,
+  .tab-panel[data-tab="relics"]     > .panel-head::before,
+  .tab-panel[data-tab="cards"]      > .panel-head::before {
+    background: linear-gradient(
+      180deg,
+      rgba(8, 8, 16, 0.78) 0%,
+      rgba(8, 8, 16, 0.45) 45%,
+      rgba(8, 8, 16, 0.15) 100%
+    );
   }
   .panel-head h1,
   .panel-head h2 {
@@ -2076,10 +2550,29 @@ main.main-public,
 .run-share-btn svg { flex-shrink: 0; }
 
 /* ─── Share modal (per-run preview + export) ──────────────────────
-   Wider than the invite modal so the 880x540 share card preview can
-   render at a sensible scale without horizontal scrolling. */
-.modal.modal-share { max-width: 720px; width: calc(100% - 48px); }
-.share-body { display: flex; flex-direction: column; gap: 16px; }
+   v50: Now image-rich. The canvas is taller (880×620) so the image
+   thumbnails for relics + cards have room to breathe. The modal
+   itself is capped at 92vh and the body scrolls so the action
+   buttons (Download / Copy / Markdown) are ALWAYS reachable — the
+   previous static layout pushed the buttons below the fold on
+   shorter laptop displays. */
+.modal.modal-share {
+  max-width: 760px;
+  width: calc(100% - 48px);
+  max-height: 92vh;
+  display: flex;
+  flex-direction: column;
+}
+.modal.modal-share .modal-body {
+  overflow-y: auto;
+  /* Soft inertia scroll on iOS Safari so a long preview doesn't
+     trap users at the top of the modal. */
+  -webkit-overflow-scrolling: touch;
+  /* Bottom padding so the last interactive row never hugs the
+     modal's bottom edge. */
+  padding-bottom: 14px;
+}
+.share-body { display: flex; flex-direction: column; gap: 14px; }
 .share-preview-wrap {
   width: 100%;
   border-radius: 12px;
@@ -2094,14 +2587,24 @@ main.main-public,
   width: 100%;
   height: auto;
   display: block;
-  /* Keep the 880x540 aspect ratio when the modal is narrow. */
-  aspect-ratio: 880 / 540;
+  /* v50 aspect ratio matches the new 880×620 share card. */
+  aspect-ratio: 880 / 620;
 }
 .share-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
   align-items: center;
+  /* Keep actions visually anchored at the bottom of the modal so
+     they read as the primary CTAs even when the body scrolls. */
+  position: sticky;
+  bottom: 0;
+  padding: 10px 0 4px;
+  background: linear-gradient(180deg,
+    rgba(13, 16, 22, 0) 0%,
+    rgba(13, 16, 22, 0.9) 30%,
+    rgba(13, 16, 22, 1) 100%);
+  z-index: 2;
 }
 .share-actions button { font-size: 12px; }
 .share-hint {
@@ -3201,6 +3704,28 @@ select#me-note option { background: var(--bg-deep); color: var(--text); }
   padding: 5px 10px;
 }
 
+/* Secondary "deep" path note: shows where .run files actually live so
+ * the user can verify they picked the right ancestor folder. Sits
+ * directly below the parent-path callout in a quieter typography. */
+.demo-banner-deep {
+  margin: 0;
+  padding: 6px 12px 0;
+  color: var(--text-2);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.demo-banner-deep .path-value-sub {
+  display: inline-block;
+  margin: 0 4px;
+  padding: 2px 6px;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 4px;
+  font-size: 11px;
+  color: var(--text-1);
+  word-break: break-all;
+  overflow-wrap: anywhere;
+}
+
 /* Collapsible "I can't find my saves" hints inside the banner */
 .demo-banner-hints {
   margin: 0;
@@ -3603,5 +4128,772 @@ select#me-note option { background: var(--bg-deep); color: var(--text); }
   }
   .dot-pulse,
   .status-dot::after { animation: none !important; }
+}
+
+/* =====================================================================
+ * v49 — Global toolbar, compact demo strip, KPI strip, charts,
+ *       Recent Runs filters, Run detail modal.
+ *
+ * Why all in one block: this batch of UI cleanup ships together; if
+ * any single piece needs to be reverted, you can scope the cherry-pick
+ * to this section without touching the rest of the stylesheet. Newer
+ * features get appended; older marquee features (panel-head themed
+ * banner, companion diorama) are left intact above.
+ * =================================================================== */
+
+/* ── Global toolbar (sticky strip above tab panels) ───────────────── */
+.app-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  /* Same horizontal padding as panel-head so toolbar contents line up
+   * with the title baseline visually rather than floating off-grid. */
+  padding: 10px 32px;
+  background: rgba(12, 10, 20, 0.92);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+  /* Pull below the painted banner via z-index so the diorama's hover
+   * popovers (companion picker, share modal trigger) stay above the
+   * toolbar's flat surface — which is what we want, since both are
+   * user-initiated actions. */
+}
+.app-toolbar-left,
+.app-toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.app-toolbar-left {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.app-toolbar-right {
+  flex: 0 0 auto;
+}
+/* The "no folder linked, showing sample data" status pill that lives
+ * in the toolbar-left slot when isDemoMode is true. Matches the visual
+ * weight of the linked-pill so the toolbar reads "always one chip on
+ * the left, telling you what data you're looking at". */
+.app-toolbar-empty {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  background: rgba(255, 198, 92, 0.10);
+  border: 1px solid rgba(255, 198, 92, 0.32);
+  border-radius: 999px;
+  color: rgba(255, 230, 180, 0.95);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+.app-toolbar-empty[hidden] { display: none; }
+.app-toolbar-empty-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--gold, #ffc65c);
+  box-shadow: 0 0 8px rgba(255, 198, 92, 0.7);
+  flex: 0 0 auto;
+}
+.app-toolbar-empty-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+/* Toolbar buttons: smaller padding than .btn-primary defaults to keep
+ * the strip thin. Icon + label sit side-by-side. */
+.btn-icon-text {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px !important;
+  font-size: 12px !important;
+  white-space: nowrap;
+}
+.btn-icon-text svg { flex: 0 0 auto; }
+.btn-icon-text .caret {
+  margin-left: 2px;
+  opacity: 0.7;
+  transition: transform 0.15s ease;
+}
+.app-toolbar-export {
+  position: relative;
+}
+.app-toolbar-export[data-open="true"] .caret { transform: rotate(180deg); }
+.app-toolbar-export-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 240px;
+  padding: 6px;
+  background: rgba(20, 16, 30, 0.98);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.55);
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.app-toolbar-export-menu[hidden] { display: none; }
+.app-toolbar-menu-row {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+  padding: 8px 10px;
+  text-align: left;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  color: var(--text-1);
+  transition: background-color 0.12s ease;
+}
+.app-toolbar-menu-row:hover { background: rgba(255, 255, 255, 0.06); }
+.app-toolbar-menu-row strong {
+  font-size: 13px;
+  font-weight: 700;
+}
+.app-toolbar-menu-row span {
+  font-size: 11px;
+  color: var(--text-2);
+}
+/* Linked pill lives in the toolbar now — slightly tweak the
+ * positional context so it reads on the dark toolbar background
+ * rather than the painted banner. The pulse animation, dot color,
+ * and disconnect button all come from the original .linked-pill
+ * styles above; only the surrounding context changes here. */
+.app-toolbar .linked-pill {
+  text-shadow: none;
+  margin: 0;
+}
+/* Old per-panel `.panel-actions` block: kept for the Co-op panel
+ * (which still has its own tiny refresh button and is unaffected
+ * by the toolbar refactor). For every other tab the toolbar
+ * supersedes it. */
+
+/* Make the panel-head non-sticky so it can scroll away as you read
+ * (the toolbar handles "always-available actions" now). Themed
+ * banner heads are large hero artwork — there's no benefit to
+ * pinning them at the top. */
+.panel-head { position: static; }
+
+/* The painted banner now sits flush against the sticky toolbar.
+ * Round only its bottom corners to imply "this is one continuous
+ * header" while letting the toolbar own the page edge. */
+.tab-panel[data-tab="overview"]   > .panel-head,
+.tab-panel[data-tab="characters"] > .panel-head,
+.tab-panel[data-tab="ascensions"] > .panel-head,
+.tab-panel[data-tab="relics"]     > .panel-head,
+.tab-panel[data-tab="cards"]      > .panel-head {
+  border-radius: 0 0 14px 14px;
+}
+
+/* ── Compact demo strip (replaces the giant per-tab demo card) ────── */
+/* Old behavior: a 250px-tall sample-data card was rendered above
+ * EVERY stats tab body. New behavior: a slim one-line strip on
+ * Overview only, with the deep details tucked behind a "Help" toggle.
+ * The toolbar's amber empty-status pill mirrors the same message,
+ * so the user always knows what data they're looking at without the
+ * banner stealing real estate. */
+.demo-banner.is-compact {
+  margin: 0 0 18px;
+  padding: 0;
+  background: transparent;
+  border: 1px solid rgba(255, 198, 92, 0.18);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.demo-banner.is-compact .demo-strip-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: linear-gradient(135deg, rgba(255, 198, 92, 0.10), rgba(255, 107, 26, 0.04));
+  flex-wrap: wrap;
+}
+.demo-banner.is-compact .demo-strip-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  background: rgba(255, 198, 92, 0.20);
+  border-radius: 999px;
+  color: var(--gold, #ffc65c);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  flex: 0 0 auto;
+}
+.demo-banner.is-compact .demo-strip-text {
+  flex: 1 1 240px;
+  min-width: 0;
+  color: var(--text-1);
+  font-size: 13px;
+  line-height: 1.45;
+}
+.demo-banner.is-compact .demo-strip-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+.demo-banner.is-compact .demo-strip-actions .btn-primary,
+.demo-banner.is-compact .demo-strip-actions .btn-ghost {
+  padding: 7px 14px;
+  font-size: 12px;
+}
+/* The Help toggle is a normal `<details>` whose summary acts as a
+ * compact "Where are my saves?" button. Open state expands the full
+ * platform-aware path block, deep-path explainer, and FAQ list — same
+ * content as the old big banner, just hidden until asked for. */
+.demo-banner.is-compact .demo-strip-help {
+  border-top: 1px solid rgba(255, 198, 92, 0.18);
+  background: rgba(0, 0, 0, 0.16);
+}
+.demo-banner.is-compact .demo-strip-help summary {
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+.demo-banner.is-compact .demo-strip-help summary::-webkit-details-marker { display: none; }
+.demo-banner.is-compact .demo-strip-help summary::before {
+  content: "▸";
+  display: inline-block;
+  width: 10px;
+  transition: transform 0.15s ease;
+  color: var(--gold, #ffc65c);
+}
+.demo-banner.is-compact .demo-strip-help[open] summary::before { transform: rotate(90deg); }
+.demo-banner.is-compact .demo-strip-help-body {
+  padding: 10px 16px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* ── KPI strip on Overview top ────────────────────────────────────── */
+/* Six compact value cards above the hero panel. Each card is one KPI
+ * with a tiny supporting line. Designed for "at-a-glance every visit"
+ * — streak, recent form, weekly cadence, PB floor, fastest win,
+ * highest ascension. Cards are uniform width and snap-scrollable on
+ * mobile so they don't reflow into a huge stacked column. */
+.kpi-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+  margin: 0 0 18px;
+}
+.kpi-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px 16px;
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  min-width: 0;
+  overflow: hidden;
+}
+.kpi-card-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-2);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.kpi-card-label svg {
+  width: 12px;
+  height: 12px;
+  flex: 0 0 auto;
+  opacity: 0.85;
+}
+.kpi-card-value {
+  font-family: 'Playfair Display', serif;
+  font-size: 26px;
+  font-weight: 900;
+  line-height: 1;
+  color: var(--text-1);
+  letter-spacing: -0.01em;
+  margin-top: 4px;
+}
+.kpi-card-sub {
+  color: var(--text-2);
+  font-size: 11px;
+  line-height: 1.4;
+}
+.kpi-card-sub strong { color: var(--text-1); font-weight: 700; }
+/* Tonal variants that color the value and a thin left bar. */
+.kpi-card[data-tone="win"]    { border-left: 3px solid #4ad06e; }
+.kpi-card[data-tone="win"]    .kpi-card-value { color: #6fe091; }
+.kpi-card[data-tone="loss"]   { border-left: 3px solid #ff6b6b; }
+.kpi-card[data-tone="loss"]   .kpi-card-value { color: #ff8888; }
+.kpi-card[data-tone="gold"]   { border-left: 3px solid var(--gold, #ffc65c); }
+.kpi-card[data-tone="gold"]   .kpi-card-value { color: var(--gold, #ffc65c); }
+.kpi-card[data-tone="accent"] { border-left: 3px solid var(--accent, #ffa05c); }
+.kpi-card[data-tone="accent"] .kpi-card-value { color: var(--accent, #ffa05c); }
+/* Tiny inline sparkline next to the recent-form card (scaled-down
+ * SVG path). Uses currentColor so the stroke matches the value tone. */
+.kpi-card-spark {
+  position: absolute;
+  right: 14px;
+  top: 14px;
+  width: 56px;
+  height: 22px;
+  opacity: 0.85;
+}
+.kpi-card-spark path { fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.kpi-card-spark .pt {
+  fill: currentColor;
+}
+
+/* ── Chart panel (winrate-over-time + floor-death histogram) ──────── */
+.chart-panel {
+  margin: 0 0 18px;
+  padding: 18px 20px 16px;
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.chart-panel + .chart-panel { margin-top: -6px; }
+.chart-panel-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+.chart-panel-title {
+  font-family: 'Playfair Display', serif;
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--text-1);
+  margin: 0;
+}
+.chart-panel-sub {
+  color: var(--text-2);
+  font-size: 12px;
+  margin: 0;
+}
+.chart-panel-chips {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.chart-chip {
+  appearance: none;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-2);
+  cursor: pointer;
+  transition: background-color 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+}
+.chart-chip:hover { color: var(--text-1); background: rgba(255, 255, 255, 0.08); }
+.chart-chip[aria-pressed="true"] {
+  background: rgba(255, 160, 92, 0.18);
+  border-color: rgba(255, 160, 92, 0.5);
+  color: var(--accent, #ffa05c);
+}
+.chart-svg {
+  display: block;
+  width: 100%;
+  height: 180px;
+  overflow: visible;
+}
+.chart-svg .axis-line { stroke: rgba(255, 255, 255, 0.08); stroke-width: 1; }
+.chart-svg .axis-label { fill: var(--text-2); font-size: 10px; font-family: 'Inter', sans-serif; }
+.chart-svg .grid-line { stroke: rgba(255, 255, 255, 0.04); stroke-width: 1; stroke-dasharray: 2 3; }
+.chart-svg .series-fill { opacity: 0.18; }
+.chart-svg .series-line { fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.chart-svg .series-pt { stroke: rgba(12, 10, 20, 0.95); stroke-width: 1.5; }
+.chart-svg .baseline { stroke: rgba(255, 255, 255, 0.16); stroke-width: 1; stroke-dasharray: 4 3; }
+.chart-svg .bar-loss { fill: rgba(255, 107, 107, 0.55); }
+.chart-svg .bar-win  { fill: rgba(95, 224, 154, 0.85); }
+.chart-svg .bar-bg   { fill: rgba(255, 255, 255, 0.025); }
+.chart-svg .bar-label { fill: var(--text-2); font-size: 9px; font-family: 'Inter', sans-serif; text-anchor: middle; }
+.chart-empty {
+  padding: 24px 12px;
+  text-align: center;
+  color: var(--text-2);
+  font-size: 13px;
+}
+
+/* ── Recent Runs filter strip ─────────────────────────────────────── */
+.run-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px 18px;
+  align-items: center;
+  padding: 14px 18px;
+  margin: 0 0 18px;
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.run-filter-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.run-filter-label {
+  color: var(--text-2);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin-right: 4px;
+  flex: 0 0 auto;
+}
+.run-filter-search {
+  flex: 1 1 200px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.run-filter-search svg { flex: 0 0 auto; opacity: 0.6; }
+.run-filter-search input {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  outline: 0;
+  color: var(--text-1);
+  font: inherit;
+  font-size: 13px;
+  width: 100%;
+  min-width: 0;
+}
+.run-filter-search input::placeholder { color: var(--text-2); }
+.run-filter-clear {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 6px;
+  flex: 0 0 auto;
+}
+.run-filter-clear:hover { color: var(--text-1); background: rgba(255, 255, 255, 0.05); }
+.run-filter-summary {
+  flex: 1 1 100%;
+  margin: 0;
+  color: var(--text-2);
+  font-size: 12px;
+  border-top: 1px dashed rgba(255, 255, 255, 0.06);
+  padding-top: 10px;
+}
+.run-filter-summary strong { color: var(--text-1); font-weight: 700; }
+
+/* Make filter chips reuse .chart-chip styling for consistency. */
+.run-filter-group .chart-chip[data-char] {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding-left: 6px;
+}
+.run-filter-group .chart-chip[data-char]::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--char-color, var(--accent, #ffa05c));
+  flex: 0 0 auto;
+}
+
+/* Run row clickability — hover + keyboard focus polish. */
+.run-row {
+  cursor: pointer;
+  transition: transform 0.12s ease, background-color 0.12s ease, border-color 0.12s ease;
+}
+.run-row:hover {
+  transform: translateY(-1px);
+  background: rgba(255, 255, 255, 0.035);
+}
+.run-row:focus-visible {
+  outline: 2px solid var(--accent, #ffa05c);
+  outline-offset: 2px;
+}
+
+/* ── Run detail modal ─────────────────────────────────────────────── */
+.modal-run-detail {
+  width: min(880px, 96vw);
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+}
+.modal-run-detail .modal-body {
+  overflow-y: auto;
+  padding: 0;
+}
+.run-detail-hero {
+  position: relative;
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: center;
+  padding: 18px 22px;
+  border-bottom: 1px solid var(--border);
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.01));
+}
+.run-detail-portrait {
+  width: 88px;
+  height: 88px;
+  border-radius: 14px;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.4);
+  border: 2px solid var(--char-color, var(--accent, #ffa05c));
+  box-shadow: 0 0 0 4px rgba(0, 0, 0, 0.3),
+              0 0 18px rgba(0, 0, 0, 0.5),
+              0 0 24px var(--char-color, var(--accent, #ffa05c));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.run-detail-portrait img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.run-detail-portrait .char-icon {
+  width: 64px;
+  height: 64px;
+  color: var(--char-color, var(--accent, #ffa05c));
+}
+.run-detail-id {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.run-detail-name {
+  font-family: 'Playfair Display', serif;
+  font-size: 24px;
+  font-weight: 900;
+  color: var(--text-1);
+  letter-spacing: -0.01em;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.run-detail-meta {
+  color: var(--text-2);
+  font-size: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+}
+.run-detail-meta strong { color: var(--text-1); font-weight: 700; }
+.run-detail-outcome {
+  padding: 6px 14px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.run-detail-outcome.is-victory {
+  background: rgba(95, 224, 154, 0.16);
+  border: 1px solid rgba(95, 224, 154, 0.4);
+  color: #6fe091;
+}
+.run-detail-outcome.is-defeat {
+  background: rgba(255, 107, 107, 0.14);
+  border: 1px solid rgba(255, 107, 107, 0.38);
+  color: #ff8888;
+}
+.run-detail-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 10px;
+  padding: 14px 22px;
+  background: rgba(0, 0, 0, 0.18);
+  border-bottom: 1px solid var(--border);
+}
+.run-detail-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.run-detail-stat-label {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-2);
+}
+.run-detail-stat-value {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-1);
+}
+.run-detail-section {
+  padding: 18px 22px;
+  border-bottom: 1px solid var(--border);
+}
+.run-detail-section:last-child { border-bottom: 0; }
+.run-detail-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.run-detail-section-title {
+  font-family: 'Playfair Display', serif;
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--text-1);
+  margin: 0;
+}
+.run-detail-section-count {
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 700;
+}
+.run-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(74px, 1fr));
+  gap: 8px;
+}
+.run-detail-card,
+.run-detail-relic {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 6px;
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  text-align: center;
+  min-width: 0;
+}
+.run-detail-card img,
+.run-detail-relic img {
+  width: 100%;
+  height: 56px;
+  object-fit: contain;
+}
+.run-detail-card-name,
+.run-detail-relic-name {
+  font-size: 10px;
+  color: var(--text-2);
+  line-height: 1.2;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+.run-detail-card.is-upgraded { border-color: rgba(95, 224, 154, 0.45); }
+.run-detail-card.is-upgraded .run-detail-card-name::after {
+  content: " +";
+  color: #6fe091;
+  font-weight: 900;
+}
+.run-detail-pickrow {
+  display: grid;
+  grid-template-columns: 60px 1fr;
+  gap: 8px;
+  padding: 8px 0;
+  border-top: 1px dashed rgba(255, 255, 255, 0.05);
+  font-size: 12px;
+  align-items: baseline;
+}
+.run-detail-pickrow:first-child { border-top: 0; }
+.run-detail-pickrow-floor {
+  color: var(--text-2);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.run-detail-pickrow-body {
+  color: var(--text-1);
+}
+.run-detail-pickrow-body .picked {
+  color: #6fe091;
+  font-weight: 700;
+}
+.run-detail-pickrow-body .skipped {
+  color: var(--text-2);
+  text-decoration: line-through;
+  text-decoration-color: rgba(255, 255, 255, 0.2);
+}
+.run-detail-actions {
+  display: flex;
+  gap: 8px;
+  padding: 14px 22px;
+  background: rgba(0, 0, 0, 0.2);
+  flex-wrap: wrap;
+}
+.run-detail-empty {
+  color: var(--text-2);
+  font-size: 12px;
+  font-style: italic;
+}
+
+/* ── Mobile fallbacks ─────────────────────────────────────────────── */
+@media (max-width: 880px) {
+  .app-toolbar {
+    padding: 8px 16px;
+    gap: 8px;
+  }
+  .app-toolbar-empty-text {
+    /* Truncate harder on mobile so the right-side actions don't wrap. */
+    max-width: 200px;
+  }
+  /* Hide button labels on small screens; icons remain. Saves ~140px
+   * of horizontal space which lets the toolbar stay one line. */
+  .app-toolbar .btn-icon-text span:not(.linked-pill-text):not(.linked-pill-disconnect):not(.app-toolbar-empty-text) {
+    display: none;
+  }
+  .app-toolbar .btn-icon-text {
+    padding: 8px 10px !important;
+    min-width: 36px;
+    justify-content: center;
+  }
+  .app-toolbar .btn-icon-text .caret { display: none; }
+  .app-toolbar-export-menu { right: 0; left: auto; min-width: 220px; }
+  .panel-body { padding: 18px 18px 60px; }
+  .kpi-strip { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
+  .run-filters { padding: 12px 14px; gap: 10px 12px; }
+  .modal-run-detail { width: 100vw; max-width: 100vw; max-height: 100dvh; border-radius: 0; }
+  .run-detail-hero { grid-template-columns: 64px 1fr; padding: 14px; }
+  .run-detail-hero .run-detail-portrait { width: 64px; height: 64px; }
+  .run-detail-outcome { grid-column: 1 / -1; justify-self: start; }
+  .run-detail-stats, .run-detail-section, .run-detail-actions { padding: 12px 14px; }
 }
 

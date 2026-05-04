@@ -5,6 +5,79 @@ Dates in YYYY-MM-DD. The project follows [Semantic Versioning](https://semver.or
 loosely — patch bumps for fixes, minor for features, major if I ever
 break the wire format.
 
+## v0.5.0 — 2026-05-04
+
+The "stop scrolling, start reading" release. Most of the visible
+surface of the web companion got rebuilt around what people actually
+do with their run data, plus the long-asked-for cross-device sync.
+
+**New: cross-device run sync via Steam ID.**
+
+- Backend now exposes `GET / POST / DELETE /runs`, all session-bound
+  to your Steam ID. Web client uploads the parsed run set after every
+  successful import (signed-in users only, guests stay 100% local).
+- Mobile / second-browser cold-load reads the cloud copy automatically
+  when local IndexedDB is empty — sign in on iOS and your web-uploaded
+  runs are already there. No QR pairing, no separate account.
+- Server merges deduped by run id, last-write-wins on duplicate ids,
+  capped at 2k runs per user. Wire format documented in
+  `Backend/src/runs.ts`.
+
+**New: image-rich Share-Run cards.**
+
+- Share modal now loads actual relic icons + card art into the canvas,
+  not just text bullets. Pre-loads in parallel with a session-scoped
+  cache so a second share is instant. Card thumbnails get a top-biased
+  crop so the recognizable art shows, not the description box.
+- Modal layout reworked so Download PNG / Copy image / Copy markdown
+  stay reachable on every viewport (sticky-bottom action row).
+
+**New: KPI strip + analytics on Overview.**
+
+- Six KPI cards above the winrate hero: current streak, last-10 form
+  with sparkline, best streak, PB floor, fastest win, this week with
+  delta vs last week.
+- New "Trends" panel: rolling-10-run winrate sparkline + floor-death
+  histogram showing where runs end most often.
+
+**New: Recent Runs tab.**
+
+- Filter chips (character, outcome, ascension band) + search field.
+- Click any run row to open a detail modal with character portrait,
+  full stats, every relic with its icon, every card in the final deck
+  with its art, and the per-floor card-pick history.
+
+**Major UI redesign.**
+
+- Painted banner shrunk from 400 px → 130 px (~67% smaller). Title
+  pinned to bottom-left corner; diorama figures reduced to a small
+  detail vignette so the actual content (KPIs, charts, run rows) lives
+  above the fold instead of below it.
+- Persistent global toolbar above the painted banner: Import, Refresh,
+  Export (JSON + CSV), and the linked-folder pill in one always-visible
+  row. No more duplicate Import buttons hiding inside individual tabs.
+- Compact demo strip on Overview replaces the giant Sample Data card
+  that used to repeat on every stats tab. Hides entirely once a save
+  folder is linked.
+
+**Auto-refresh fixes.**
+
+- Picking a save folder once is enough; the web companion silently
+  re-reads every 60 s when STS2 writes new `.run` files. No more
+  re-clicking Import after every game.
+- Folder-link state survives reloads (IndexedDB persistence) so the
+  "Showing sample data" pill flips to "Linked: <folder>" within one
+  frame on cold load.
+
+**Marketing site refresh.**
+
+- Every screenshot on `spirevault.app` re-captured against the v0.5
+  redesign. Showcase rail now shows Overview, Share card, Run detail,
+  Characters, Recent Runs, and the live co-op feed.
+- Feature copy updated to reflect that the web companion now has the
+  full run tracker — no more "needs local file access, can't do it in
+  the browser" footnote.
+
 ## v0.1.0 — 2026-04-30
 
 First public release. Cut the GitHub repo, attached the DMG, pointed

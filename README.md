@@ -6,10 +6,10 @@ other players who are online and looking for a co-op partner right now.
 
 <p align="center">
   <a href="https://app.spirevault.app">
-    <img src="Site/assets/screenshots/mac-overview.png" width="85%" alt="Vault Overview tab. 5.7% winrate over 388 real runs with per-character breakdown for Ironclad, Defect, Silent, Regent, and Necrobinder." />
+    <img src="Site/assets/screenshots/web-overview.png" width="85%" alt="Vault Overview tab — compact painted banner with title pinned bottom-left, 6-card KPI strip (current streak, last-10 form, PB floor, fastest win, this week, best streak), winrate hero, highest-ascension panel" />
   </a>
   <br />
-  <sub><em>Live capture from a real save. Click the screenshot to try the web version.</em></sub>
+  <sub><em>Click the screenshot to try the web version.</em></sub>
 </p>
 
 <p align="center">
@@ -34,28 +34,46 @@ flowchart LR
     subgraph clients["Clients"]
       Mac["Vault.app<br/>SwiftUI · macOS"]
       Web["Web companion<br/>app.spirevault.app"]
+      Mob["Mobile (iOS)<br/>SwiftUI · iPhone/iPad"]
     end
 
     subgraph cf["Cloudflare edge"]
       Pages["Pages<br/>static HTML/CSS/JS"]
-      Worker["Worker · TypeScript<br/>presence · invites · auth"]
-      KV[("KV namespace<br/>roster · invites · sessions")]
+      Worker["Worker · TypeScript<br/>presence · invites · auth · runs"]
+      KV[("KV namespace<br/>roster · invites · sessions · runs")]
     end
 
     Steam[("Steam OpenID 2.0<br/>Valve hosted")]
-    Disk[("Local save folder<br/>history.json")]
-    IDB[("IndexedDB<br/>history.json")]
+    Disk[("Local save folder<br/>.run files")]
+    IDB[("IndexedDB<br/>cached runs")]
 
     Mac -- reads --> Disk
-    Web -- drag-drop or picker --> IDB
-    Mac -- presence + invites --> Worker
-    Web -- presence + invites --> Worker
+    Web -- file picker --> IDB
+    Web -- cached --> IDB
+    Mac -- "presence · invites · runs sync" --> Worker
+    Web -- "presence · invites · runs sync" --> Worker
+    Mob -- "presence · invites · runs sync" --> Worker
     Pages -- serves --> Web
     Worker -- verify signature --> Steam
     Worker --> KV
     Mac -. sign in once .-> Steam
     Web -. sign in once .-> Steam
+    Mob -. sign in once .-> Steam
+
+    classDef ext fill:#1a1525,stroke:#5b4080,color:#d8c8ff;
+    classDef store fill:#161220,stroke:#3d3458,color:#c8c0d8;
+    class Steam ext
+    class Disk,IDB store
 ```
+
+**Cross-device run sync (v0.5).** When you sign in with Steam, the web
+companion uploads your parsed run history to a Steam-ID-keyed cloud
+copy. Open the iOS app on the same Steam account and your runs are
+already there — no re-import, no QR-code pairing, no separate account.
+Storage is the merged set across every device that ever uploaded for
+your Steam ID, deduped by run id, last-write-wins on duplicate ids,
+capped at 2,000 runs. Guests stay 100% local; no cloud copy is
+created until you explicitly sign in.
 
 Two clients (native macOS, browser) parse the same canonical `history.json`
 schema and share a stats engine: Swift on macOS, a JavaScript port in the
@@ -102,28 +120,38 @@ data in a clean UI was a few extra weekends of work.
 
 ## More screens
 
-The Overview screen at the top of this README is a live capture from my
-real save (388 runs, 5.7% winrate, every character actually played). The
-web companion screenshot below is also a live capture. The Co-op and
-Share-Run screens are still renders for now; they'll be replaced with
-real captures alongside the v0.2 release.
+Every screenshot below is a real capture of the v0.5 web companion
+running on `app.spirevault.app` against sample data — same UI you get
+once you sign in and import your `.run` files.
 
 <p align="center">
-  <img src="Site/assets/screenshots/web-coop-live.png" width="80%" alt="Live capture of the web companion at app.spirevault.app" />
+  <img src="Site/assets/screenshots/web-share.png" width="80%" alt="Image-rich Share-Run card. Character portrait, victory/defeat badge, ascension/floor/duration pills, two columns of relics + final-deck cards rendered with their actual icons and art, branded Spire Vault footer." />
   <br />
-  <sub><em>Web companion, live capture from <a href="https://app.spirevault.app">app.spirevault.app</a></em></sub>
+  <sub><em>Share-Run card with real relic icons + card art baked into the canvas. Drop straight into Discord, Reddit, or X.</em></sub>
 </p>
 
 <p align="center">
-  <img src="Site/assets/screenshot-coop.svg" width="80%" alt="Co-op tab with the live presence feed (render)" />
+  <img src="Site/assets/screenshots/web-run-detail.png" width="80%" alt="Run detail modal — character portrait, ascension/floor/duration/seed stats, every relic with its icon, every card in the final deck with its art." />
   <br />
-  <sub><em>macOS Co-op tab (render, real capture coming with v0.2)</em></sub>
+  <sub><em>Click any run row to inspect the full deck and relic loadout.</em></sub>
 </p>
 
 <p align="center">
-  <img src="Site/assets/screenshot-share.svg" width="60%" alt="Share-Run card (render)" />
+  <img src="Site/assets/screenshots/web-characters.png" width="80%" alt="Characters tab — winrate cards for Ironclad, Silent, Defect, Regent, Necrobinder with run counts and per-character winrate." />
   <br />
-  <sub><em>Share-Run card (render, real capture coming with v0.2)</em></sub>
+  <sub><em>Characters tab — per-character winrate at a glance.</em></sub>
+</p>
+
+<p align="center">
+  <img src="Site/assets/screenshots/web-runs.png" width="80%" alt="Recent Runs tab — filter chips by character / outcome / ascension, search field, sortable run list." />
+  <br />
+  <sub><em>Recent Runs with filter chips + click-to-inspect detail modal.</em></sub>
+</p>
+
+<p align="center">
+  <img src="Site/assets/screenshots/web-coop-live.png" width="80%" alt="Live capture of the co-op presence feed at app.spirevault.app" />
+  <br />
+  <sub><em>Live co-op presence feed at <a href="https://app.spirevault.app">app.spirevault.app</a></em></sub>
 </p>
 
 ## Install
@@ -145,11 +173,17 @@ Co-op is one click away under the **Co-op** tab when you're ready.
 
 ### Web companion (Windows, Linux, Chromebooks, anywhere)
 
-If you're not on a Mac, open **<https://app.spirevault.app>** in any modern
-browser and click *Sign in with Steam*. You get the entire co-op finder
-with no install, no download, no account. The run-tracker isn't there
-because it needs read access to your local save folder, which the browser
-sandbox doesn't allow. That's a real limitation, not a deliberate one.
+Open **<https://app.spirevault.app>** in any modern browser. The web
+companion has the full feature set — co-op finder, run tracker (point it
+at your STS2 save folder via the File System Access API), KPI strip,
+winrate chart, image-rich Share-Run cards, and cross-device sync once
+you sign in with Steam.
+
+The first import uses a one-time folder picker (browsers require
+explicit consent to read local files). After that, the same browser
+auto-refreshes silently every 60s when STS2 writes new `.run` files,
+and signed-in users get a Steam-ID-keyed cloud copy that any other
+device on the same Steam account can read on next launch.
 
 A native Windows build is on the roadmap but it's a full rewrite (the Mac
 app is SwiftUI, which is Apple-only), so for now the web companion is the

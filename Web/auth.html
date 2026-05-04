@@ -123,7 +123,36 @@
         sessionToken: session,
         signedInAt: new Date().toISOString(),
       };
+      // Persist to localStorage as the legacy/fallback path. Many
+      // mobile browsers (especially in-app browsers) wipe localStorage
+      // aggressively, but desktop and standalone Safari keep it long
+      // enough that doing both is cheap insurance.
       localStorage.setItem("vault.web.session", JSON.stringify(profile));
+      // Promote the session to a first-party HttpOnly cookie via the
+      // Pages Function on this same origin. Survives iOS Safari ITP
+      // (which deletes localStorage after 7 days of no interaction)
+      // because the cookie is set by a *server* on the same host as the
+      // page. Retried with backoff — mobile networks sometimes drop the
+      // first POST during the redirect storm right after Steam returns.
+      async function stampSessionCookie(token) {
+        for (let attempt = 0; attempt < 3; attempt++) {
+          try {
+            const r = await fetch("/api/_session", {
+              method: "POST",
+              credentials: "include",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ token }),
+            });
+            if (r.ok) return;
+          } catch (err) {
+            if (attempt === 2) {
+              beacon("cookie-set-failed", String((err && err.message) || err).slice(0, 120));
+            }
+          }
+          await new Promise((res) => setTimeout(res, 350 * (attempt + 1)));
+        }
+      }
+      await stampSessionCookie(session);
       // Success beacon too, so the funnel can show "client confirmed
       // landing" vs "server thinks they auth'd but they never made it".
       beacon("client-landed", `persona=${persona.slice(0,32)}`);

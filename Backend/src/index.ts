@@ -1,11 +1,17 @@
 import type { Env, PresenceUpsert } from "./types";
-import { upsertPresence, deletePresence, listPresence } from "./presence";
+import {
+  upsertPresence,
+  deletePresence,
+  listPresence,
+  getSessionProfile,
+} from "./presence";
 import {
   steamAuthStart,
   steamAuthCallback,
   requireSession,
   refreshSessionTTL,
   bearerTokenFromRequest,
+  cookieSessionToken,
 } from "./auth";
 import {
   handleAdmin,
@@ -22,6 +28,11 @@ import {
   withdrawInvite,
   INVITE_MESSAGES,
 } from "./invites";
+import {
+  getRuns,
+  uploadRuns,
+  deleteRuns,
+} from "./runs";
 import { checkAndConsume, clientIP, hashID } from "./ratelimit";
 
 /**
@@ -208,6 +219,49 @@ async function handle(
         return steamAuthCallback(req, env, ctx);
       }
 
+      // Session rehydration. Reads the session credential off the request
+      // (Authorization: Bearer ... OR vault_session cookie via the Pages
+      // proxy) and returns the bound SteamID + cached persona/avatar. The
+      // web client calls this on boot through `/api/_session` so it can
+      // restore a logged-in session purely from a HttpOnly cookie — the
+      // localStorage path remains as fallback for legacy clients and
+      // browsers where cookies are blocked.
+      //
+      // 200: { steamID, personaName, avatarURL }
+      // 401: missing/invalid/expired session
+      // Hard sign-out — invalidates the session token server-side so a
+      // stolen/leaked token can't be replayed even within the 30-day TTL.
+      // Idempotent: succeeds whether the token is valid, expired, or
+      // missing entirely (so the client can fire-and-forget on logout).
+      if (method === "DELETE" && pathname === "/me") {
+        const token = bearerTokenFromRequest(req) ?? cookieSessionToken(req);
+        if (token) {
+          // Best-effort delete; we don't care if KV says the key is gone.
+          bg(ctx, env.LOBBIES.delete(`session:${token}`));
+        }
+        return json({ ok: true });
+      }
+
+      if (method === "GET" && pathname === "/me") {
+        const auth = await requireSession(req, env);
+        if (auth instanceof Response) return auth;
+        // Sliding TTL on every /me hit so any active client (desktop tab
+        // open, mobile background poll) keeps the session warm without
+        // having to wait for a presence heartbeat. Token can come from
+        // either the bearer header (legacy clients, native app, proxy)
+        // or a cookie when the request hits the worker directly.
+        const token = bearerTokenFromRequest(req) ?? cookieSessionToken(req);
+        if (token) {
+          bg(ctx, refreshSessionTTL(env, token, auth.steamID));
+        }
+        const profile = await getSessionProfile(env, auth.steamID);
+        return json({
+          steamID: auth.steamID,
+          personaName: profile?.personaName ?? "Steam User",
+          avatarURL: profile?.avatarURL ?? "",
+        });
+      }
+
       // Client-side diagnostic beacon. Public POST. The browser reaches this
       // when it can see something the server can't: nonce missing after the
       // OpenID round-trip (in-app browsers strip sessionStorage), session
@@ -274,6 +328,46 @@ async function handle(
         const [, id] = inviteIdMatch;
         const result = await withdrawInvite(env, id, auth.steamID);
         if (!result.ok) return json({ error: result.error }, { status: result.status });
+        return json({ ok: true });
+      }
+
+      // ----- Cross-device run history sync (Steam-ID keyed) -----
+      // The user uploads from web (after parsing their .run files) and
+      // reads from mobile (or vice versa). Storage is the merged set of
+      // every device that ever uploaded for this Steam ID, deduped by
+      // run id, sorted by endedAt desc, capped at 2k runs.
+      //
+      // GET    /runs    → { runs, updatedAt, count }
+      // POST   /runs    → { count, updatedAt, added, truncated }
+      // DELETE /runs    → { ok: true }
+      //
+      // All three require a verified session — there is no public read
+      // surface for someone else's run history. The Steam ID comes
+      // straight off the bound session, never the request body, so a
+      // user can only see/modify their own runs.
+      if (pathname === "/runs" && method === "GET") {
+        const auth = await requireSession(req, env);
+        if (auth instanceof Response) return auth;
+        return json(await getRuns(env, auth.steamID));
+      }
+      if (pathname === "/runs" && method === "POST") {
+        const auth = await requireSession(req, env);
+        if (auth instanceof Response) return auth;
+        // Tighter throttle than presence — uploads are larger and rarer
+        // by design. 6/min covers "imported from web, then mobile, then
+        // web again on a refresh" without enabling abuse.
+        const ipLimit = await ipWriteLimit(env, req, "runs-upload", 6, 60);
+        if (!ipLimit.ok) return ipLimit.resp;
+        const body = await req.json().catch(() => null);
+        const source = req.headers.get("x-vault-source") ?? undefined;
+        const result = await uploadRuns(env, auth.steamID, body, source);
+        if (!result.ok) return json({ error: result.error }, { status: result.status });
+        return json(result.result);
+      }
+      if (pathname === "/runs" && method === "DELETE") {
+        const auth = await requireSession(req, env);
+        if (auth instanceof Response) return auth;
+        await deleteRuns(env, auth.steamID);
         return json({ ok: true });
       }
 

@@ -9,7 +9,10 @@ let messageCatalog = null;
 
 export async function loadMessageCatalog(serverURL) {
   if (messageCatalog) return messageCatalog;
-  const r = await fetch(`${serverURL}/invites/messages`, { cache: "no-store" });
+  const r = await fetch(`${serverURL}/invites/messages`, {
+    cache: "no-store",
+    credentials: "include",
+  });
   if (!r.ok) throw new Error("messages http " + r.status);
   const data = await r.json();
   messageCatalog = data?.messages ?? {};
@@ -27,6 +30,7 @@ export function getMessageCatalog() {
 export async function sendInvite(serverURL, sessionToken, toID, messageId) {
   const r = await fetch(`${serverURL}/invites`, {
     method: "POST",
+    credentials: "include",
     headers: { "content-type": "application/json", authorization: `Bearer ${sessionToken}` },
     body: JSON.stringify({ toID, messageId }),
   });
@@ -35,6 +39,7 @@ export async function sendInvite(serverURL, sessionToken, toID, messageId) {
 
 export async function fetchInbox(serverURL, sessionToken) {
   const r = await fetch(`${serverURL}/invites/inbox`, {
+    credentials: "include",
     headers: { authorization: `Bearer ${sessionToken}` },
     cache: "no-store",
   });
@@ -45,6 +50,7 @@ export async function fetchInbox(serverURL, sessionToken) {
 
 export async function fetchOutbox(serverURL, sessionToken) {
   const r = await fetch(`${serverURL}/invites/outbox`, {
+    credentials: "include",
     headers: { authorization: `Bearer ${sessionToken}` },
     cache: "no-store",
   });
@@ -56,6 +62,7 @@ export async function fetchOutbox(serverURL, sessionToken) {
 export async function respondToInvite(serverURL, sessionToken, inviteId, action) {
   const r = await fetch(`${serverURL}/invites/${inviteId}/${action}`, {
     method: "POST",
+    credentials: "include",
     headers: { authorization: `Bearer ${sessionToken}` },
   });
   return parseJSON(r);
@@ -64,6 +71,7 @@ export async function respondToInvite(serverURL, sessionToken, inviteId, action)
 export async function withdrawInvite(serverURL, sessionToken, inviteId) {
   const r = await fetch(`${serverURL}/invites/${inviteId}`, {
     method: "DELETE",
+    credentials: "include",
     headers: { authorization: `Bearer ${sessionToken}` },
   });
   return parseJSON(r);

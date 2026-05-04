@@ -238,15 +238,20 @@ export async function steamAuthCallback(req: Request, env: Env, ctx: ExecutionCo
 }
 
 /**
- * Resolve `Authorization: Bearer <session>` into a verified SteamID, or
- * `null` if the session is missing/expired/invalid. Used by all write
- * routes (`requireSession`).
+ * Resolve a request's session credential — either an
+ * `Authorization: Bearer <token>` header (legacy localStorage clients,
+ * native macOS app) OR a `vault_session=<token>` cookie (new web flow,
+ * survives iOS Safari ITP because it's first-party HttpOnly on
+ * app.spirevault.app, served via the Pages Functions proxy that
+ * forwards the cookie to the worker as a bearer header) — into a
+ * verified SteamID. Returns `null` if missing/expired/invalid.
+ *
+ * Both surfaces fall through the same KV lookup, so legacy and new
+ * clients coexist on the same backend.
  */
 export async function steamIDForRequest(req: Request, env: Env): Promise<string | null> {
-  const auth = req.headers.get("authorization") ?? "";
-  const m = auth.match(/^Bearer\s+([A-Za-z0-9_-]{16,128})$/i);
-  if (!m) return null;
-  const token = m[1]!;
+  const token = bearerTokenFromRequest(req) ?? cookieSessionToken(req);
+  if (!token) return null;
   const sid = await env.LOBBIES.get(`session:${token}`);
   return sid && /^\d{17}$/.test(sid) ? sid : null;
 }
@@ -327,4 +332,36 @@ export function bearerTokenFromRequest(req: Request): string | null {
   const auth = req.headers.get("authorization") ?? "";
   const m = auth.match(/^Bearer\s+([A-Za-z0-9_-]{16,128})$/i);
   return m ? m[1]! : null;
+}
+
+/**
+ * Pull the session token out of the `vault_session` cookie, if any. Returns
+ * null on missing/malformed cookies. Same lexical shape as the bearer:
+ * 16-128 chars from `[A-Za-z0-9_-]`, which matches `newSessionToken`'s 48
+ * lowercase hex chars and is restrictive enough that we never need to
+ * reject for shape downstream.
+ *
+ * Why a separate cookie path on top of the bearer header: iOS Safari's ITP
+ * expires JS-set localStorage entries after 7 days of no interaction with
+ * the site, which manifested as users being silently signed out across
+ * sessions. A first-party HttpOnly cookie set on app.spirevault.app
+ * (forwarded into the worker by the Pages Functions proxy in
+ * `Web/functions/api/`) survives ITP indefinitely as long as the user
+ * keeps visiting.
+ */
+export function cookieSessionToken(req: Request): string | null {
+  const raw = req.headers.get("cookie") ?? "";
+  if (!raw) return null;
+  // Cheap parse — `cookie` is a list of `name=value; name=value`. We don't
+  // need a full RFC parser; we just need to find `vault_session` if
+  // present and pluck its value.
+  for (const part of raw.split(/;\s*/)) {
+    const eq = part.indexOf("=");
+    if (eq < 0) continue;
+    const name = part.slice(0, eq).trim();
+    if (name !== "vault_session") continue;
+    const val = part.slice(eq + 1).trim();
+    return /^[A-Za-z0-9_-]{16,128}$/.test(val) ? val : null;
+  }
+  return null;
 }
