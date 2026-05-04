@@ -1,12 +1,9 @@
 // Sanity-check the latest hero-banner rework against three concrete
 // promises made to the user:
 //
-//   1. Import / Refresh / Export live in the GLOBAL toolbar above the
-//      tab panels (not inside any individual tab's panel-head). No
-//      tab body should contain a duplicate Import button. This avoids
-//      the v48-and-earlier behavior where the button sat ON TOP of
-//      the painted banner art and was missing from four out of five
-//      stats tabs.
+//   1. Import / Refresh / Export live in each stats tab's painted
+//      banner (`.panel-head-toprow`), not in a separate global strip
+//      above the tab panels and not buried in legacy `.panel-actions`.
 //   2. The diorama scene (climber + boss + line) re-rolls on tab
 //      switch (intentional — gives the page a sense of life). Each
 //      tab's diorama renders, with both a climber sprite and a
@@ -36,12 +33,9 @@ async function snapTab(page, tab) {
     const speakerCol = bubble?.classList.contains("scene-bubble-climber") ? "climber" : "boss";
     const speakerEl  = slot.querySelector(`.scene-figure-${speakerCol}`);
     const r = (n) => { const x = n.getBoundingClientRect(); return { left: x.left, width: x.width }; };
-    // Import button must NOT live inside the panel-head anymore — it
-    // moved to the global app-toolbar, which is a sibling of the
-    // tab-panel articles. Anything still inside `.panel-actions` would
-    // be a regression.
     return {
-      hasImportInPanelHead: !!head.querySelector('.panel-actions [data-action="upload"]'),
+      hasImportInToprow: !!head?.querySelector('.panel-head-toprow [data-action="upload"]'),
+      hasImportInPanelActions: !!head?.querySelector('.panel-actions [data-action="upload"]'),
       climberSrc: climberImg?.getAttribute("src") || null,
       bubbleText: bubble?.textContent.trim().slice(0, 60) || null,
       speaker: speakerCol,
@@ -66,18 +60,19 @@ async function main() {
   const snaps = {};
   for (const t of TABS) snaps[t] = await snapTab(page, t);
 
-  // ─── 1. Import button lives in the GLOBAL TOOLBAR, not in any
-  //         tab's panel-head. Per-panel duplicates are a regression. ───
-  const toolbarImport = await page.$('#app-toolbar [data-action="upload"]');
-  if (toolbarImport) pass("global toolbar has the Import button");
-  else fail("global toolbar is missing the Import button (regression)");
-  const toolbarRefresh = await page.$('#app-toolbar [data-action="reload-saves"]');
-  if (toolbarRefresh) pass("global toolbar has the Refresh button");
-  else fail("global toolbar is missing the Refresh button (regression)");
+  // ─── 1. Import / Refresh / Export live in each banner top row ───
+  const toolbarImport = await page.$('.tab-panel[data-tab="overview"] .panel-head-toprow [data-action="upload"]');
+  if (toolbarImport) pass("overview banner has the Import button");
+  else fail("overview banner is missing the Import button (regression)");
+  const toolbarRefresh = await page.$('.tab-panel[data-tab="overview"] .panel-head-toprow [data-action="reload-saves"]');
+  if (toolbarRefresh) pass("overview banner has the Refresh button");
+  else fail("overview banner is missing the Refresh button (regression)");
 
   for (const t of TABS) {
-    if (!snaps[t]?.hasImportInPanelHead) pass(`${t}: no duplicate Import in panel-head`);
-    else                                  fail(`${t}: panel-head still has a duplicate Import button`);
+    if (snaps[t]?.hasImportInToprow) pass(`${t}: Import in banner toolbar`);
+    else fail(`${t}: missing Import in panel-head top row`);
+    if (!snaps[t]?.hasImportInPanelActions) pass(`${t}: no legacy Import in panel-actions`);
+    else fail(`${t}: duplicate Import still in .panel-actions`);
   }
 
   // ─── 2. Each stats tab renders a diorama (figures + speech line) ───

@@ -1102,52 +1102,70 @@ async function boot() {
     e.preventDefault();
     void disconnectLinkedSaves();
   });
-  // Export-all buttons live in the global toolbar's Export popover.
-  // We wire by document delegation so the menu rows (rendered inside a
-  // [hidden] popover) work without needing direct selectors. Same for
-  // the toggle that opens the popover.
+  // Export-all popover: each stats banner has its own `[data-export-wrap]`.
+  // Delegate with closest() so the correct menu opens per toolbar instance.
   document.addEventListener("click", (e) => {
+    const wrapHit = e.target.closest("[data-export-wrap]");
     const toggle = e.target.closest('[data-action="toggle-export"]');
     const exportJson = e.target.closest('[data-action="export-json"]');
     const exportCsv = e.target.closest('[data-action="export-csv"]');
-    const wrap = document.querySelector('[data-export-wrap]');
-    const menu = wrap?.querySelector('.app-toolbar-export-menu');
-    if (toggle && wrap && menu) {
-      e.preventDefault();
-      const open = menu.hidden;
-      menu.hidden = !open;
-      wrap.dataset.open = String(open);
-      toggle.setAttribute('aria-expanded', String(open));
-      return;
+    if (wrapHit) {
+      const menu = wrapHit.querySelector(".app-toolbar-export-menu");
+      if (toggle && menu) {
+        e.preventDefault();
+        if (menu.hidden) {
+          document.querySelectorAll("[data-export-wrap]").forEach((w) => {
+            if (w === wrapHit) return;
+            const m = w.querySelector(".app-toolbar-export-menu");
+            const t = w.querySelector('[data-action="toggle-export"]');
+            if (m && !m.hidden) {
+              m.hidden = true;
+              w.dataset.open = "false";
+              t?.setAttribute("aria-expanded", "false");
+            }
+          });
+        }
+        const open = menu.hidden;
+        menu.hidden = !open;
+        wrapHit.dataset.open = String(open);
+        toggle.setAttribute("aria-expanded", String(open));
+        return;
+      }
+      if (exportJson && menu) {
+        exportAllRuns("json");
+        menu.hidden = true;
+        wrapHit.dataset.open = "false";
+        wrapHit.querySelector('[data-action="toggle-export"]')?.setAttribute("aria-expanded", "false");
+        return;
+      }
+      if (exportCsv && menu) {
+        exportAllRuns("csv");
+        menu.hidden = true;
+        wrapHit.dataset.open = "false";
+        wrapHit.querySelector('[data-action="toggle-export"]')?.setAttribute("aria-expanded", "false");
+        return;
+      }
     }
-    if (exportJson) {
-      exportAllRuns("json");
-      if (menu && wrap) { menu.hidden = true; wrap.dataset.open = "false"; }
-      return;
-    }
-    if (exportCsv) {
-      exportAllRuns("csv");
-      if (menu && wrap) { menu.hidden = true; wrap.dataset.open = "false"; }
-      return;
-    }
-    // Outside-click closes the export popover.
-    if (wrap && !wrap.contains(e.target) && menu && !menu.hidden) {
+    // Outside every export wrap — close all open menus (hidden tabs may
+    // still carry stale [data-open="true"] from a prior interaction).
+    document.querySelectorAll("[data-export-wrap]").forEach((wrap) => {
+      const menu = wrap.querySelector(".app-toolbar-export-menu");
+      if (!menu || menu.hidden) return;
+      if (wrap.contains(e.target)) return;
       menu.hidden = true;
       wrap.dataset.open = "false";
-      const t = wrap.querySelector('[data-action="toggle-export"]');
-      if (t) t.setAttribute('aria-expanded', 'false');
-    }
+      wrap.querySelector('[data-action="toggle-export"]')?.setAttribute("aria-expanded", "false");
+    });
   });
   document.addEventListener("keydown", (e) => {
     if (e.key !== "Escape") return;
-    const wrap = document.querySelector('[data-export-wrap]');
-    const menu = wrap?.querySelector('.app-toolbar-export-menu');
-    if (wrap && menu && !menu.hidden) {
+    document.querySelectorAll("[data-export-wrap]").forEach((wrap) => {
+      const menu = wrap.querySelector(".app-toolbar-export-menu");
+      if (!menu || menu.hidden) return;
       menu.hidden = true;
       wrap.dataset.open = "false";
-      const t = wrap.querySelector('[data-action="toggle-export"]');
-      if (t) t.setAttribute('aria-expanded', 'false');
-    }
+      wrap.querySelector('[data-action="toggle-export"]')?.setAttribute("aria-expanded", "false");
+    });
   });
   document.getElementById("history-file-input").addEventListener("change", (e) => {
     const files = e.target.files;
@@ -1690,10 +1708,10 @@ function renderActiveTab() {
  *  takes precedence: if a save folder is wired up, this pill stays
  *  hidden so we don't flash both. */
 function renderToolbarEmptyPill() {
-  const $pill = document.querySelector("[data-toolbar-empty]");
-  if (!$pill) return;
-  const linked = !!getLinkedFolderName();
-  $pill.hidden = linked || !isDemoMode;
+  document.querySelectorAll("[data-toolbar-empty]").forEach(($pill) => {
+    const linked = !!getLinkedFolderName();
+    $pill.hidden = linked || !isDemoMode;
+  });
 }
 
 /** Paint every `[data-linked-pill]` slot in the panel-action bars. The
@@ -3936,7 +3954,7 @@ function sparklineLastN(runs, n = 10) {
   });
   const d = pts.map((p, i) => (i === 0 ? `M${p[0].toFixed(1)} ${p[1].toFixed(1)}` : `L${p[0].toFixed(1)} ${p[1].toFixed(1)}`)).join(" ");
   const lastPt = pts[pts.length - 1];
-  return `<svg class="kpi-card-spark" viewBox="0 0 ${w} ${h}" aria-hidden="true">
+  return `<svg class="kpi-card-spark" viewBox="0 0 ${w} ${h}" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
     <path d="${d}"></path>
     <circle class="pt" cx="${lastPt[0].toFixed(1)}" cy="${lastPt[1].toFixed(1)}" r="2"></circle>
   </svg>`;
@@ -4058,8 +4076,8 @@ function renderWinrateChart(runs) {
   const lifetime = sorted.filter((r) => r.won).length / sorted.length;
 
   const w = 760;
-  const h = 180;
-  const padL = 36, padR = 12, padT = 12, padB = 28;
+  const h = 200;
+  const padL = 40, padR = 14, padT = 16, padB = 34;
   const innerW = w - padL - padR;
   const innerH = h - padT - padB;
   const stepX = points.length > 1 ? innerW / (points.length - 1) : 0;
@@ -4087,10 +4105,11 @@ function renderWinrateChart(runs) {
       <div class="chart-panel-head">
         <div>
           <h3 class="chart-panel-title">Winrate trend</h3>
-          <p class="chart-panel-sub">Rolling ${window}-run winrate over your full run history. Dashed line = lifetime average.</p>
+          <p class="chart-panel-sub">Trailing ${window}-run win rate across your history. Dashed line: lifetime average.</p>
         </div>
       </div>
-      <svg class="chart-svg" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">
+      <div class="chart-svg-wrap">
+      <svg class="chart-svg" viewBox="0 0 ${w} ${h}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Rolling win rate over time">
         ${grid}
         ${baseline}
         <path class="series-fill" d="${dArea}" fill="${lineColor}"></path>
@@ -4098,6 +4117,7 @@ function renderWinrateChart(runs) {
         <circle class="series-pt" cx="${xFor(points.length - 1).toFixed(1)}" cy="${yFor(lastPt.wr).toFixed(1)}" r="3.5" fill="${lineColor}"></circle>
         ${axis}
       </svg>
+      </div>
     </div>`;
 }
 
@@ -4137,8 +4157,8 @@ function renderDeathHistogram(runs) {
   const maxCount = Math.max(...series.map((b) => b.wins + b.losses), 1);
 
   const w = 760;
-  const h = 180;
-  const padL = 28, padR = 12, padT = 14, padB = 28;
+  const h = 200;
+  const padL = 32, padR = 14, padT = 16, padB = 34;
   const innerW = w - padL - padR;
   const innerH = h - padT - padB;
   const barGap = 2;
@@ -4153,7 +4173,8 @@ function renderDeathHistogram(runs) {
     const heightTotal = (padT + innerH) - yTop;
     const winsHeight = total > 0 ? heightTotal * (b.wins / total) : 0;
     const lossHeight = heightTotal - winsHeight;
-    const showLabel = series.length <= 16 || i % Math.ceil(series.length / 12) === 0;
+    const labelStep = Math.max(1, Math.ceil(series.length / 20));
+    const showLabel = i % labelStep === 0 || i === series.length - 1;
     return `
       <g>
         <rect class="bar-bg" x="${x.toFixed(1)}" y="${padT}" width="${barW.toFixed(1)}" height="${innerH}" rx="1.5"></rect>
@@ -4176,13 +4197,15 @@ function renderDeathHistogram(runs) {
       <div class="chart-panel-head">
         <div>
           <h3 class="chart-panel-title">Where you end up</h3>
-          <p class="chart-panel-sub">Floor reached, colored by outcome. Tall red bars = your typical wall.</p>
+          <p class="chart-panel-sub">Floors where runs end (wins green, losses red). Hover a bar for exact counts.</p>
         </div>
         ${legend}
       </div>
-      <svg class="chart-svg" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">
+      <div class="chart-svg-wrap">
+      <svg class="chart-svg" viewBox="0 0 ${w} ${h}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Floor outcome histogram">
         ${bars}
       </svg>
+      </div>
     </div>`;
 }
 

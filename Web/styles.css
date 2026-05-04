@@ -902,32 +902,9 @@ main.main-public,
 .tab-panel[data-tab="relics"]     > .panel-head { background-image: url("/assets/sts2/scene-relics.webp"); }
 .tab-panel[data-tab="cards"]      > .panel-head { background-image: url("/assets/sts2/scene-cards.webp"); }
 
-/* Themed panel-heads adopt hero-banner styling.
- *
- * Layout:
- *   [ title block ]   [ diorama ]   [ actions ]
- *   align-items: center → everything sits on the same vertical
- *   axis through the painting, so title + figures + Import button
- *   read as one coherent banner row instead of three disconnected
- *   pieces stacked at different heights.
- *
- * Anti-clip notes:
- *   - We do NOT set `overflow: hidden` here. The companion picker
- *     popover lives inside this panel-head and would be clipped
- *     if overflow were hidden. The painting still respects
- *     `border-radius` (background images do natively); the dark
- *     `::before` gradient is given `border-radius: inherit` so
- *     its sharp corners don't poke past the rounded chrome.
- *
- * Background composition:
- *   - `background-size: cover` with `background-position: center
- *     65%` shows the focal middle-bottom of each painting (where
- *     the floor / wall transition lives) so figures look planted
- *     in the scene instead of floating in an empty middle slice.
- *   - Inner vignette + horizontal dark-fade gradient (`::before`)
- *     keeps the LEFT third of the banner dark enough for crisp
- *     title text and the RIGHT two-thirds bright enough for the
- *     diorama art to pop. */
+/* Themed panel-heads: painted banner + in-banner toolbar row (Export /
+ * Refresh / Import) + a bottom row with title + diorama. No separate
+ * sticky strip above the tab — actions read as part of the scene. */
 .tab-panel[data-tab="overview"]   > .panel-head,
 .tab-panel[data-tab="characters"] > .panel-head,
 .tab-panel[data-tab="ascensions"] > .panel-head,
@@ -935,77 +912,57 @@ main.main-public,
 .tab-panel[data-tab="cards"]      > .panel-head {
   position: relative;
   isolation: isolate;
-  /* Override the base `.panel-head` flex layout with a 3-column grid:
-   *   [ title  ]  [ diorama  ]  [ actions  ]
-   * The middle column is `1fr` and the two side columns are `auto`
-   * width, BUT we set `min-content`/`auto` widths and use grid's
-   * `place-items: end center` to keep the diorama in the TRUE
-   * horizontal center of the banner regardless of how wide / narrow
-   * the title or actions get. Without this fix, a long title pushed
-   * the flex-centered diorama 100+px left of center on every tab. */
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
-  align-items: end;
-  justify-content: stretch;
-  justify-items: stretch;
-  gap: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
   background-size: cover;
   background-position: center 70%;
   background-repeat: no-repeat;
   border-radius: 14px;
   box-shadow: inset 0 0 60px 10px rgba(0, 0, 0, 0.7);
-  /* v51: cut another ~40% off the v50 height — banner is now a
-   * compact 110px-ish strip with the title pinned to the bottom-left
-   * corner and the diorama as a small detail vignette to the right.
-   * The painting is still legible end-to-end; the diorama figures
-   * (.scene) are scaled in lockstep just below. */
-  min-height: 100px;
-  padding: 6px 28px 6px;
+  min-height: 0;
+  padding: 8px 28px 8px;
 }
-/* Title block hugs the LEFT column, diorama claims center, actions
- * row hugs the RIGHT column. Each cell sits on the bottom edge so
- * the figures' feet, the page title baseline, and the Import button
- * all share the painted floor as their shared baseline. */
-.tab-panel[data-tab="overview"]   > .panel-head > div:first-child,
-.tab-panel[data-tab="characters"] > .panel-head > div:first-child,
-.tab-panel[data-tab="ascensions"] > .panel-head > div:first-child,
-.tab-panel[data-tab="relics"]     > .panel-head > div:first-child,
-.tab-panel[data-tab="cards"]      > .panel-head > div:first-child {
-  grid-column: 1;
-  justify-self: start;
-  align-self: end;
+.tab-panel[data-tab="overview"]   > .panel-head > .panel-head-stage,
+.tab-panel[data-tab="characters"] > .panel-head > .panel-head-stage,
+.tab-panel[data-tab="ascensions"] > .panel-head > .panel-head-stage,
+.tab-panel[data-tab="relics"]     > .panel-head > .panel-head-stage,
+.tab-panel[data-tab="cards"]      > .panel-head > .panel-head-stage {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
   min-width: 0;
+  min-height: 118px;
+  flex: 1 1 auto;
 }
-.tab-panel[data-tab="overview"]   > .panel-head > .companion-slot,
-.tab-panel[data-tab="characters"] > .panel-head > .companion-slot,
-.tab-panel[data-tab="ascensions"] > .panel-head > .companion-slot,
-.tab-panel[data-tab="relics"]     > .panel-head > .companion-slot,
-.tab-panel[data-tab="cards"]      > .panel-head > .companion-slot {
-  grid-column: 2;
-  justify-self: center;
-  align-self: end;
+.tab-panel[data-tab="overview"]   > .panel-head .panel-head-title-wrap,
+.tab-panel[data-tab="characters"] > .panel-head .panel-head-title-wrap,
+.tab-panel[data-tab="ascensions"] > .panel-head .panel-head-title-wrap,
+.tab-panel[data-tab="relics"]     > .panel-head .panel-head-title-wrap,
+.tab-panel[data-tab="cards"]      > .panel-head .panel-head-title-wrap {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: min(48%, 400px);
+  z-index: 2;
 }
-.tab-panel[data-tab="overview"]   > .panel-head > .panel-actions,
-.tab-panel[data-tab="characters"] > .panel-head > .panel-actions,
-.tab-panel[data-tab="ascensions"] > .panel-head > .panel-actions,
-.tab-panel[data-tab="relics"]     > .panel-head > .panel-actions,
-.tab-panel[data-tab="cards"]      > .panel-head > .panel-actions {
-  grid-column: 3;
-  justify-self: end;
-  align-self: end;
+.tab-panel[data-tab="overview"]   > .panel-head .panel-head-stage > .companion-slot,
+.tab-panel[data-tab="characters"] > .panel-head .panel-head-stage > .companion-slot,
+.tab-panel[data-tab="ascensions"] > .panel-head .panel-head-stage > .companion-slot,
+.tab-panel[data-tab="relics"]     > .panel-head .panel-head-stage > .companion-slot,
+.tab-panel[data-tab="cards"]      > .panel-head .panel-head-stage > .companion-slot {
+  flex: 0 0 auto;
+  align-self: flex-end;
 }
-/* Themed-banner title typography. Slightly larger + a strong
- * text-shadow so the headline reads cleanly over any painted
- * scene without depending on the gradient overlay alone. */
-.tab-panel[data-tab="overview"]   > .panel-head h2,
-.tab-panel[data-tab="characters"] > .panel-head h2,
-.tab-panel[data-tab="ascensions"] > .panel-head h2,
-.tab-panel[data-tab="relics"]     > .panel-head h2,
-.tab-panel[data-tab="cards"]      > .panel-head h2 {
-  /* v51: 22px — sized for the new compact ~110px banner. The title
-   * block is anchored to the bottom-left corner via absolute
-   * positioning below so it doesn't get vertically pushed by the
-   * tiny diorama vignette. */
+/* Themed-banner title typography. */
+.tab-panel[data-tab="overview"]   > .panel-head .panel-head-title-wrap h2,
+.tab-panel[data-tab="characters"] > .panel-head .panel-head-title-wrap h2,
+.tab-panel[data-tab="ascensions"] > .panel-head .panel-head-title-wrap h2,
+.tab-panel[data-tab="relics"]     > .panel-head .panel-head-title-wrap h2,
+.tab-panel[data-tab="cards"]      > .panel-head .panel-head-title-wrap h2 {
   font-size: 22px;
   margin: 0 0 1px;
   letter-spacing: -0.015em;
@@ -1013,32 +970,15 @@ main.main-public,
     0 2px 8px rgba(0, 0, 0, 0.92),
     0 1px 2px rgba(0, 0, 0, 0.95);
 }
-.tab-panel[data-tab="overview"]   > .panel-head .panel-sub,
-.tab-panel[data-tab="characters"] > .panel-head .panel-sub,
-.tab-panel[data-tab="ascensions"] > .panel-head .panel-sub,
-.tab-panel[data-tab="relics"]     > .panel-head .panel-sub,
-.tab-panel[data-tab="cards"]      > .panel-head .panel-sub {
+.tab-panel[data-tab="overview"]   > .panel-head .panel-head-title-wrap .panel-sub,
+.tab-panel[data-tab="characters"] > .panel-head .panel-head-title-wrap .panel-sub,
+.tab-panel[data-tab="ascensions"] > .panel-head .panel-head-title-wrap .panel-sub,
+.tab-panel[data-tab="relics"]     > .panel-head .panel-head-title-wrap .panel-sub,
+.tab-panel[data-tab="cards"]      > .panel-head .panel-head-title-wrap .panel-sub {
   color: rgba(232, 226, 240, 0.95);
   font-size: 13px;
   margin: 0;
   text-shadow: 0 1px 4px rgba(0, 0, 0, 0.95);
-}
-/* v51: pin the title block to the bottom-left corner of the painted
- * banner. With the diorama now a small corner vignette, anchoring
- * the title lets it sit cleanly at the bottom-left no matter what
- * height the diorama settles at. */
-.tab-panel[data-tab="overview"]   > .panel-head > div:first-child,
-.tab-panel[data-tab="characters"] > .panel-head > div:first-child,
-.tab-panel[data-tab="ascensions"] > .panel-head > div:first-child,
-.tab-panel[data-tab="relics"]     > .panel-head > div:first-child,
-.tab-panel[data-tab="cards"]      > .panel-head > div:first-child {
-  position: absolute;
-  left: 28px;
-  bottom: 10px;
-  z-index: 2;
-  /* Cap the width so a long title can never crash into the diorama
-   * silhouette in the middle of the banner. */
-  max-width: calc(100% - 240px);
 }
 /* Dark gradient overlay: heavier on the left (where the title sits)
  * lighter on the right (where the diorama art is). Text reads, art
@@ -1075,7 +1015,26 @@ main.main-public,
   position: relative;
   z-index: 1;
 }
-
+.panel-head-stage--text-only {
+  min-height: 0;
+  flex: 0 1 auto;
+  padding-bottom: 2px;
+}
+.tab-panel[data-tab="runs"] > .panel-head,
+.tab-panel[data-tab="coop"] > .panel-head {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+.panel-head-coop-row {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  width: 100%;
+}
 /* (Legacy gradient-only panel-head rule was removed here — themed
  * panel-heads now paint the actual scene image as their background
  * via the rules higher up in the "Per-tab atmospheric scene
@@ -1248,18 +1207,18 @@ main.main-public,
    * footprint roughly 30% of the original. The diorama is now a tiny
    * corner vignette; the painted backdrop carries the visual weight.
    * Boss still dominates the climber proportionally. */
-  grid-template-columns: 80px 120px;
+  grid-template-columns: 104px 158px;
   grid-template-rows: auto 1fr;
   justify-content: center;
   align-items: end;
   justify-items: center;
   /* Tight horizontal gap — "square off" energy, not a wide arena. */
-  column-gap: 6px;
+  column-gap: 8px;
   row-gap: 0;
   width: 100%;
   min-width: 0;
-  min-height: 90px;
-  padding: 0 2px 2px;
+  min-height: 108px;
+  padding: 0 4px 4px;
   background: transparent;
   animation: sceneIn 0.42s cubic-bezier(0.2, 0.9, 0.3, 1) both;
 }
@@ -1299,8 +1258,8 @@ main.main-public,
    * Architect dominates the right side of the banner. v51: shrunk from
    * 96/102 → 64/72 — pure decorative scale, the painted backdrop is
    * the real banner now. */
-  max-width: 64px;
-  height: 72px;
+  max-width: 84px;
+  height: 92px;
   padding: 0;
   background: transparent;
   border: 0;
@@ -1317,8 +1276,8 @@ main.main-public,
  * needs vertical canvas to read as a boss, not a sidekick. v51:
  * shrunk from 168/140 → 108/90 — corner vignette scale. */
 .scene-figure-boss {
-  max-width: 108px;
-  height: 90px;
+  max-width: 136px;
+  height: 112px;
 }
 .scene-figure-climber {
   cursor: pointer;
@@ -1370,7 +1329,7 @@ main.main-public,
 .scene-figure-boss .scene-art {
   /* Architect art has transparent padding above the mask — nudge down;
    * scale up so his silhouette dominates the climber's screen presence. */
-  --boss-scale: 1.22;
+  --boss-scale: 1.32;
   object-position: center 100%;
   filter:
     drop-shadow(0 6px 12px rgba(0, 0, 0, 0.7))
@@ -1607,20 +1566,20 @@ main.main-public,
 @media (max-width: 1100px) {
   .companion-slot { max-width: 240px; }
   .scene {
-    grid-template-columns: 70px 100px;
-    min-height: 84px;
-    padding: 0 2px 2px;
+    grid-template-columns: 92px 138px;
+    min-height: 98px;
+    padding: 0 3px 3px;
     column-gap: 6px;
   }
   .scene-figure-climber {
-    max-width: 56px;
-    height: 64px;
-  }
-  .scene-figure-boss {
-    max-width: 96px;
+    max-width: 72px;
     height: 80px;
   }
-  .scene-figure-boss .scene-art { --boss-scale: 1.16; }
+  .scene-figure-boss {
+    max-width: 118px;
+    height: 98px;
+  }
+  .scene-figure-boss .scene-art { --boss-scale: 1.26; }
   .scene-bubble   { font-size: 10px; padding: 4px 10px; max-width: 160px; }
 }
 
@@ -1630,20 +1589,20 @@ main.main-public,
 @media (max-width: 720px) {
   .companion-slot { margin-left: 0; max-width: 100%; }
   .scene {
-    grid-template-columns: 60px 88px;
-    min-height: 78px;
-    padding: 0 0 2px;
-    column-gap: 4px;
+    grid-template-columns: 78px 118px;
+    min-height: 90px;
+    padding: 0 0 3px;
+    column-gap: 5px;
   }
   .scene-figure-climber {
-    max-width: 52px;
-    height: 60px;
+    max-width: 66px;
+    height: 74px;
   }
   .scene-figure-boss {
-    max-width: 84px;
-    height: 76px;
+    max-width: 102px;
+    height: 88px;
   }
-  .scene-figure-boss .scene-art { --boss-scale: 1.16; }
+  .scene-figure-boss .scene-art { --boss-scale: 1.22; }
   .scene-bubble   { font-size: 10px; padding: 4px 8px; max-width: 140px; }
   .companion-picker { left: auto; right: 0; }
 }
@@ -1697,36 +1656,33 @@ main.main-public,
     min-height: 0;
     padding: 14px 16px;
   }
-  .tab-panel[data-tab="overview"]   > .panel-head > .companion-slot,
-  .tab-panel[data-tab="characters"] > .panel-head > .companion-slot,
-  .tab-panel[data-tab="ascensions"] > .panel-head > .companion-slot,
-  .tab-panel[data-tab="relics"]     > .panel-head > .companion-slot,
-  .tab-panel[data-tab="cards"]      > .panel-head > .companion-slot {
-    width: 100%;
-    align-self: center;
-    justify-self: center;
+  .tab-panel[data-tab="overview"]   > .panel-head > .panel-head-stage,
+  .tab-panel[data-tab="characters"] > .panel-head > .panel-head-stage,
+  .tab-panel[data-tab="ascensions"] > .panel-head > .panel-head-stage,
+  .tab-panel[data-tab="relics"]     > .panel-head > .panel-head-stage,
+  .tab-panel[data-tab="cards"]      > .panel-head > .panel-head-stage {
+    flex-direction: column;
+    align-items: stretch;
+    min-height: 0;
+    gap: 10px;
   }
-  /* v51: Reset the desktop absolute-positioned title back to flow on
-   * mobile so it stacks above the diorama (instead of overlapping).
-   * The mobile banner is already short via the flex-column layout. */
-  .tab-panel[data-tab="overview"]   > .panel-head > div:first-child,
-  .tab-panel[data-tab="characters"] > .panel-head > div:first-child,
-  .tab-panel[data-tab="ascensions"] > .panel-head > div:first-child,
-  .tab-panel[data-tab="relics"]     > .panel-head > div:first-child,
-  .tab-panel[data-tab="cards"]      > .panel-head > div:first-child {
+  .tab-panel[data-tab="overview"]   > .panel-head .panel-head-title-wrap,
+  .tab-panel[data-tab="characters"] > .panel-head .panel-head-title-wrap,
+  .tab-panel[data-tab="ascensions"] > .panel-head .panel-head-title-wrap,
+  .tab-panel[data-tab="relics"]     > .panel-head .panel-head-title-wrap,
+  .tab-panel[data-tab="cards"]      > .panel-head .panel-head-title-wrap {
     position: static;
     left: auto;
     bottom: auto;
     max-width: 100%;
   }
-  .tab-panel[data-tab="overview"]   > .panel-head > .panel-actions,
-  .tab-panel[data-tab="characters"] > .panel-head > .panel-actions,
-  .tab-panel[data-tab="ascensions"] > .panel-head > .panel-actions,
-  .tab-panel[data-tab="relics"]     > .panel-head > .panel-actions,
-  .tab-panel[data-tab="cards"]      > .panel-head > .panel-actions {
-    align-self: stretch;
-    justify-self: stretch;
-    justify-content: flex-end;
+  .tab-panel[data-tab="overview"]   > .panel-head > .panel-head-stage > .companion-slot,
+  .tab-panel[data-tab="characters"] > .panel-head > .panel-head-stage > .companion-slot,
+  .tab-panel[data-tab="ascensions"] > .panel-head > .panel-head-stage > .companion-slot,
+  .tab-panel[data-tab="relics"]     > .panel-head > .panel-head-stage > .companion-slot,
+  .tab-panel[data-tab="cards"]      > .panel-head > .panel-head-stage > .companion-slot {
+    width: 100%;
+    align-self: center;
   }
   .tab-panel[data-tab="overview"]   > .panel-head::before,
   .tab-panel[data-tab="characters"] > .panel-head::before,
@@ -4141,26 +4097,24 @@ select#me-note option { background: var(--bg-deep); color: var(--text); }
  * banner, companion diorama) are left intact above.
  * =================================================================== */
 
-/* ── Global toolbar (sticky strip above tab panels) ───────────────── */
+/* ── Save toolbar (Export / Refresh / Import) — lives inside each
+   painted banner `.panel-head-toprow`, not a separate sticky strip. ─ */
 .app-toolbar {
-  position: sticky;
-  top: 0;
-  z-index: 6;
+  position: relative;
+  z-index: 4;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  /* Same horizontal padding as panel-head so toolbar contents line up
-   * with the title baseline visually rather than floating off-grid. */
-  padding: 10px 32px;
-  background: rgba(12, 10, 20, 0.92);
-  backdrop-filter: blur(10px);
-  border-bottom: 1px solid var(--border);
-  font-size: 13px;
-  /* Pull below the painted banner via z-index so the diorama's hover
-   * popovers (companion picker, share modal trigger) stay above the
-   * toolbar's flat surface — which is what we want, since both are
-   * user-initiated actions. */
+  gap: 10px;
+  flex-wrap: wrap;
+  width: 100%;
+  padding: 0;
+  margin: 0;
+  background: transparent;
+  border: 0;
+  border-bottom: 0;
+  backdrop-filter: none;
+  font-size: 12px;
 }
 .app-toolbar-left,
 .app-toolbar-right {
@@ -4270,11 +4224,7 @@ select#me-note option { background: var(--bg-deep); color: var(--text); }
   font-size: 11px;
   color: var(--text-2);
 }
-/* Linked pill lives in the toolbar now — slightly tweak the
- * positional context so it reads on the dark toolbar background
- * rather than the painted banner. The pulse animation, dot color,
- * and disconnect button all come from the original .linked-pill
- * styles above; only the surrounding context changes here. */
+/* Linked pill in the in-banner toolbar row (reads on scene + gradient). */
 .app-toolbar .linked-pill {
   text-shadow: none;
   margin: 0;
@@ -4284,21 +4234,13 @@ select#me-note option { background: var(--bg-deep); color: var(--text); }
  * by the toolbar refactor). For every other tab the toolbar
  * supersedes it. */
 
-/* Make the panel-head non-sticky so it can scroll away as you read
- * (the toolbar handles "always-available actions" now). Themed
- * banner heads are large hero artwork — there's no benefit to
- * pinning them at the top. */
-.panel-head { position: static; }
-
-/* The painted banner now sits flush against the sticky toolbar.
- * Round only its bottom corners to imply "this is one continuous
- * header" while letting the toolbar own the page edge. */
+/* Themed stats banners: full rounded corners (save actions live inside). */
 .tab-panel[data-tab="overview"]   > .panel-head,
 .tab-panel[data-tab="characters"] > .panel-head,
 .tab-panel[data-tab="ascensions"] > .panel-head,
 .tab-panel[data-tab="relics"]     > .panel-head,
 .tab-panel[data-tab="cards"]      > .panel-head {
-  border-radius: 0 0 14px 14px;
+  border-radius: 14px;
 }
 
 /* ── Compact demo strip (replaces the giant per-tab demo card) ────── */
@@ -4465,7 +4407,7 @@ select#me-note option { background: var(--bg-deep); color: var(--text); }
   height: 22px;
   opacity: 0.85;
 }
-.kpi-card-spark path { fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.kpi-card-spark path { fill: none; stroke: currentColor; stroke-width: 2.25; stroke-linecap: round; stroke-linejoin: round; }
 .kpi-card-spark .pt {
   fill: currentColor;
 }
@@ -4481,23 +4423,42 @@ select#me-note option { background: var(--bg-deep); color: var(--text); }
 .chart-panel + .chart-panel { margin-top: -6px; }
 .chart-panel-head {
   display: flex;
-  align-items: baseline;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
   margin-bottom: 10px;
   flex-wrap: wrap;
 }
 .chart-panel-title {
-  font-family: 'Playfair Display', serif;
-  font-size: 16px;
+  font-family: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: 13px;
   font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
   color: var(--text-1);
   margin: 0;
 }
 .chart-panel-sub {
+  font-family: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   color: var(--text-2);
   font-size: 12px;
+  line-height: 1.45;
   margin: 0;
+  font-weight: 500;
+}
+.chart-svg-wrap {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 760 / 200;
+  margin-top: 4px;
+}
+.chart-svg-wrap .chart-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  overflow: visible;
 }
 .chart-panel-chips {
   display: flex;
@@ -4522,23 +4483,17 @@ select#me-note option { background: var(--bg-deep); color: var(--text); }
   border-color: rgba(255, 160, 92, 0.5);
   color: var(--accent, #ffa05c);
 }
-.chart-svg {
-  display: block;
-  width: 100%;
-  height: 180px;
-  overflow: visible;
-}
 .chart-svg .axis-line { stroke: rgba(255, 255, 255, 0.08); stroke-width: 1; }
-.chart-svg .axis-label { fill: var(--text-2); font-size: 10px; font-family: 'Inter', sans-serif; }
-.chart-svg .grid-line { stroke: rgba(255, 255, 255, 0.04); stroke-width: 1; stroke-dasharray: 2 3; }
-.chart-svg .series-fill { opacity: 0.18; }
-.chart-svg .series-line { fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.chart-svg .axis-label { fill: var(--text-2); font-size: 11px; font-family: "Inter", ui-sans-serif, system-ui, sans-serif; font-weight: 600; }
+.chart-svg .grid-line { stroke: rgba(255, 255, 255, 0.06); stroke-width: 1; stroke-dasharray: 3 4; }
+.chart-svg .series-fill { opacity: 0.22; }
+.chart-svg .series-line { fill: none; stroke-width: 2.25; stroke-linecap: round; stroke-linejoin: round; }
 .chart-svg .series-pt { stroke: rgba(12, 10, 20, 0.95); stroke-width: 1.5; }
-.chart-svg .baseline { stroke: rgba(255, 255, 255, 0.16); stroke-width: 1; stroke-dasharray: 4 3; }
-.chart-svg .bar-loss { fill: rgba(255, 107, 107, 0.55); }
-.chart-svg .bar-win  { fill: rgba(95, 224, 154, 0.85); }
-.chart-svg .bar-bg   { fill: rgba(255, 255, 255, 0.025); }
-.chart-svg .bar-label { fill: var(--text-2); font-size: 9px; font-family: 'Inter', sans-serif; text-anchor: middle; }
+.chart-svg .baseline { stroke: rgba(255, 255, 255, 0.28); stroke-width: 1.25; stroke-dasharray: 5 4; }
+.chart-svg .bar-loss { fill: rgba(255, 107, 107, 0.62); }
+.chart-svg .bar-win  { fill: rgba(95, 224, 154, 0.88); }
+.chart-svg .bar-bg   { fill: rgba(255, 255, 255, 0.03); }
+.chart-svg .bar-label { fill: var(--text-2); font-size: 10px; font-family: "Inter", ui-sans-serif, system-ui, sans-serif; font-weight: 600; text-anchor: middle; }
 .chart-empty {
   padding: 24px 12px;
   text-align: center;

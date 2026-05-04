@@ -23,7 +23,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Playfair+Display:wght@700;900&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/styles.css?v=52" />
+  <link rel="stylesheet" href="/styles.css?v=54" />
 </head>
 <body>
   <div class="bg-glow" aria-hidden="true"></div>
@@ -209,67 +209,53 @@
     </aside>
 
     <main id="app-content" class="content" role="main">
-      <!-- =================== Global toolbar =================== -->
-      <!-- Persistent strip across every tab. Holds the "Linked: <folder>"
-           pill on the left (auto-refresh status + one-click disconnect)
-           and the destructive/global actions on the right (Import,
-           Refresh, Export). Sticky to the top of the scroll container so
-           power users always have one-tap access to a fresh re-read,
-           regardless of which tab they're on. Replaces the old per-panel
-           `.panel-actions` blocks that overlapped the painted banners
-           and were missing on Characters / Ascensions / Relics / Cards.
-           See styles.css `.app-toolbar` for layout & sticky behavior. -->
-      <header class="app-toolbar" id="app-toolbar" role="toolbar" aria-label="Save data actions">
-        <div class="app-toolbar-left">
-          <span class="linked-pill" data-linked-pill hidden></span>
-          <span class="app-toolbar-empty" data-toolbar-empty hidden>
-            <span class="app-toolbar-empty-dot" aria-hidden="true"></span>
-            <span class="app-toolbar-empty-text">Showing sample data — link your STS2 saves to see your runs.</span>
-          </span>
-        </div>
-        <div class="app-toolbar-right">
-          <div class="app-toolbar-export" data-export-wrap>
-            <button class="btn-ghost btn-icon-text" type="button" data-action="toggle-export"
-                    aria-haspopup="menu" aria-expanded="false" title="Download all runs">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><polyline points="7 10 12 15 17 10"/><path d="M5 21h14"/></svg>
-              <span>Export</span>
-              <svg class="caret" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
-            </button>
-            <div class="app-toolbar-export-menu" role="menu" hidden>
-              <button class="app-toolbar-menu-row" type="button" role="menuitem" data-action="export-json">
-                <strong>Download JSON</strong>
-                <span>Full normalized data — every field we parse.</span>
-              </button>
-              <button class="app-toolbar-menu-row" type="button" role="menuitem" data-action="export-csv">
-                <strong>Download CSV</strong>
-                <span>Flat spreadsheet — one row per run.</span>
-              </button>
-            </div>
-          </div>
-          <button class="btn-ghost btn-icon-text" type="button" data-action="reload-saves" title="Re-read linked save folder from disk">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15A9 9 0 1 1 18.36 5.64L23 10"/></svg>
-            <span>Refresh</span>
-          </button>
-          <button class="btn-primary btn-icon-text" type="button" data-action="upload" title="Import .run files or a history.json rollup">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21V9"/><polyline points="7 14 12 9 17 14"/><path d="M5 3h14"/></svg>
-            <span>Import</span>
-          </button>
-        </div>
-      </header>
-
       <!-- =================== Overview =================== -->
       <article class="tab-panel" data-tab="overview" aria-labelledby="tab-overview-title" hidden>
         <div class="panel-head">
-          <div>
-            <h2 id="tab-overview-title">Overview</h2>
-            <p class="panel-sub" id="overview-sub">Your run history at a glance.</p>
+          <div class="panel-head-toprow app-toolbar" role="toolbar" aria-label="Save data actions">
+            <div class="app-toolbar-left">
+              <span class="linked-pill" data-linked-pill hidden></span>
+              <span class="app-toolbar-empty" data-toolbar-empty hidden>
+                <span class="app-toolbar-empty-dot" aria-hidden="true"></span>
+                <span class="app-toolbar-empty-text">Showing sample data — link your STS2 saves to see your runs.</span>
+              </span>
+            </div>
+            <div class="app-toolbar-right">
+              <div class="app-toolbar-export" data-export-wrap>
+                <button class="btn-ghost btn-icon-text" type="button" data-action="toggle-export"
+                        aria-haspopup="menu" aria-expanded="false" title="Download all runs">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><polyline points="7 10 12 15 17 10"/><path d="M5 21h14"/></svg>
+                  <span>Export</span>
+                  <svg class="caret" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+                </button>
+                <div class="app-toolbar-export-menu" role="menu" hidden>
+                  <button class="app-toolbar-menu-row" type="button" role="menuitem" data-action="export-json">
+                    <strong>Download JSON</strong>
+                    <span>Full normalized data — every field we parse.</span>
+                  </button>
+                  <button class="app-toolbar-menu-row" type="button" role="menuitem" data-action="export-csv">
+                    <strong>Download CSV</strong>
+                    <span>Flat spreadsheet — one row per run.</span>
+                  </button>
+                </div>
+              </div>
+              <button class="btn-ghost btn-icon-text" type="button" data-action="reload-saves" title="Re-read linked save folder from disk">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15A9 9 0 1 1 18.36 5.64L23 10"/></svg>
+                <span>Refresh</span>
+              </button>
+              <button class="btn-primary btn-icon-text" type="button" data-action="upload" title="Import .run files or a history.json rollup">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21V9"/><polyline points="7 14 12 9 17 14"/><path d="M5 3h14"/></svg>
+                <span>Import</span>
+              </button>
+            </div>
           </div>
-          <!-- Companion slot. Rendered by renderCompanion() in script.js.
-               Lives between the title and the action button so it reads
-               as a quiet personal touch, not a UI element. Clicking it
-               opens a picker popover; selection is stored in
-               localStorage under vault.web.companion. -->
-          <div class="companion-slot" aria-live="polite"></div>
+          <div class="panel-head-stage">
+            <div class="panel-head-title-wrap">
+              <h2 id="tab-overview-title">Overview</h2>
+              <p class="panel-sub" id="overview-sub">Your run history at a glance.</p>
+            </div>
+            <div class="companion-slot" aria-live="polite"></div>
+          </div>
         </div>
         <div class="panel-body" id="overview-body">
           <!-- Filled by renderer when history is loaded; empty state otherwise -->
@@ -281,16 +267,49 @@
            renderCompanion() in script.js fills each `.companion-slot` when
            you open that tab — line + (with Random selected) climber refresh
            on tab change so each header feels alive. -->
-      <!-- Note on missing Import button: only Overview gets one. The
-           four secondary stats tabs (Characters, Ascensions, Top
-           Relics, Cards) all show *the same* underlying run history,
-           so a per-tab Import would just be four buttons that do the
-           identical thing. Drop the duplicate; the diorama gets the
-           full right-hand banner space, which reads cleaner. -->
       <article class="tab-panel" data-tab="characters" aria-labelledby="tab-characters-title" hidden>
         <div class="panel-head">
-          <div><h2 id="tab-characters-title">Characters</h2><p class="panel-sub">Win rate by character.</p></div>
-          <div class="companion-slot" aria-live="polite"></div>
+          <div class="panel-head-toprow app-toolbar" role="toolbar" aria-label="Save data actions">
+            <div class="app-toolbar-left">
+              <span class="linked-pill" data-linked-pill hidden></span>
+              <span class="app-toolbar-empty" data-toolbar-empty hidden>
+                <span class="app-toolbar-empty-dot" aria-hidden="true"></span>
+                <span class="app-toolbar-empty-text">Showing sample data — link your STS2 saves to see your runs.</span>
+              </span>
+            </div>
+            <div class="app-toolbar-right">
+              <div class="app-toolbar-export" data-export-wrap>
+                <button class="btn-ghost btn-icon-text" type="button" data-action="toggle-export"
+                        aria-haspopup="menu" aria-expanded="false" title="Download all runs">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><polyline points="7 10 12 15 17 10"/><path d="M5 21h14"/></svg>
+                  <span>Export</span>
+                  <svg class="caret" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+                </button>
+                <div class="app-toolbar-export-menu" role="menu" hidden>
+                  <button class="app-toolbar-menu-row" type="button" role="menuitem" data-action="export-json">
+                    <strong>Download JSON</strong>
+                    <span>Full normalized data — every field we parse.</span>
+                  </button>
+                  <button class="app-toolbar-menu-row" type="button" role="menuitem" data-action="export-csv">
+                    <strong>Download CSV</strong>
+                    <span>Flat spreadsheet — one row per run.</span>
+                  </button>
+                </div>
+              </div>
+              <button class="btn-ghost btn-icon-text" type="button" data-action="reload-saves" title="Re-read linked save folder from disk">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15A9 9 0 1 1 18.36 5.64L23 10"/></svg>
+                <span>Refresh</span>
+              </button>
+              <button class="btn-primary btn-icon-text" type="button" data-action="upload" title="Import .run files or a history.json rollup">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21V9"/><polyline points="7 14 12 9 17 14"/><path d="M5 3h14"/></svg>
+                <span>Import</span>
+              </button>
+            </div>
+          </div>
+          <div class="panel-head-stage">
+            <div class="panel-head-title-wrap"><h2 id="tab-characters-title">Characters</h2><p class="panel-sub">Win rate by character.</p></div>
+            <div class="companion-slot" aria-live="polite"></div>
+          </div>
         </div>
         <div class="panel-body" id="characters-body"></div>
       </article>
@@ -298,8 +317,47 @@
       <!-- =================== Ascensions =================== -->
       <article class="tab-panel" data-tab="ascensions" aria-labelledby="tab-ascensions-title" hidden>
         <div class="panel-head">
-          <div><h2 id="tab-ascensions-title">Ascensions</h2><p class="panel-sub">Win rate by ascension level.</p></div>
-          <div class="companion-slot" aria-live="polite"></div>
+          <div class="panel-head-toprow app-toolbar" role="toolbar" aria-label="Save data actions">
+            <div class="app-toolbar-left">
+              <span class="linked-pill" data-linked-pill hidden></span>
+              <span class="app-toolbar-empty" data-toolbar-empty hidden>
+                <span class="app-toolbar-empty-dot" aria-hidden="true"></span>
+                <span class="app-toolbar-empty-text">Showing sample data — link your STS2 saves to see your runs.</span>
+              </span>
+            </div>
+            <div class="app-toolbar-right">
+              <div class="app-toolbar-export" data-export-wrap>
+                <button class="btn-ghost btn-icon-text" type="button" data-action="toggle-export"
+                        aria-haspopup="menu" aria-expanded="false" title="Download all runs">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><polyline points="7 10 12 15 17 10"/><path d="M5 21h14"/></svg>
+                  <span>Export</span>
+                  <svg class="caret" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+                </button>
+                <div class="app-toolbar-export-menu" role="menu" hidden>
+                  <button class="app-toolbar-menu-row" type="button" role="menuitem" data-action="export-json">
+                    <strong>Download JSON</strong>
+                    <span>Full normalized data — every field we parse.</span>
+                  </button>
+                  <button class="app-toolbar-menu-row" type="button" role="menuitem" data-action="export-csv">
+                    <strong>Download CSV</strong>
+                    <span>Flat spreadsheet — one row per run.</span>
+                  </button>
+                </div>
+              </div>
+              <button class="btn-ghost btn-icon-text" type="button" data-action="reload-saves" title="Re-read linked save folder from disk">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15A9 9 0 1 1 18.36 5.64L23 10"/></svg>
+                <span>Refresh</span>
+              </button>
+              <button class="btn-primary btn-icon-text" type="button" data-action="upload" title="Import .run files or a history.json rollup">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21V9"/><polyline points="7 14 12 9 17 14"/><path d="M5 3h14"/></svg>
+                <span>Import</span>
+              </button>
+            </div>
+          </div>
+          <div class="panel-head-stage">
+            <div class="panel-head-title-wrap"><h2 id="tab-ascensions-title">Ascensions</h2><p class="panel-sub">Win rate by ascension level.</p></div>
+            <div class="companion-slot" aria-live="polite"></div>
+          </div>
         </div>
         <div class="panel-body" id="ascensions-body"></div>
       </article>
@@ -307,8 +365,47 @@
       <!-- =================== Relics =================== -->
       <article class="tab-panel" data-tab="relics" aria-labelledby="tab-relics-title" hidden>
         <div class="panel-head">
-          <div><h2 id="tab-relics-title">Top Relics</h2><p class="panel-sub">Best relics by win rate (min. 3 runs).</p></div>
-          <div class="companion-slot" aria-live="polite"></div>
+          <div class="panel-head-toprow app-toolbar" role="toolbar" aria-label="Save data actions">
+            <div class="app-toolbar-left">
+              <span class="linked-pill" data-linked-pill hidden></span>
+              <span class="app-toolbar-empty" data-toolbar-empty hidden>
+                <span class="app-toolbar-empty-dot" aria-hidden="true"></span>
+                <span class="app-toolbar-empty-text">Showing sample data — link your STS2 saves to see your runs.</span>
+              </span>
+            </div>
+            <div class="app-toolbar-right">
+              <div class="app-toolbar-export" data-export-wrap>
+                <button class="btn-ghost btn-icon-text" type="button" data-action="toggle-export"
+                        aria-haspopup="menu" aria-expanded="false" title="Download all runs">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><polyline points="7 10 12 15 17 10"/><path d="M5 21h14"/></svg>
+                  <span>Export</span>
+                  <svg class="caret" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+                </button>
+                <div class="app-toolbar-export-menu" role="menu" hidden>
+                  <button class="app-toolbar-menu-row" type="button" role="menuitem" data-action="export-json">
+                    <strong>Download JSON</strong>
+                    <span>Full normalized data — every field we parse.</span>
+                  </button>
+                  <button class="app-toolbar-menu-row" type="button" role="menuitem" data-action="export-csv">
+                    <strong>Download CSV</strong>
+                    <span>Flat spreadsheet — one row per run.</span>
+                  </button>
+                </div>
+              </div>
+              <button class="btn-ghost btn-icon-text" type="button" data-action="reload-saves" title="Re-read linked save folder from disk">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15A9 9 0 1 1 18.36 5.64L23 10"/></svg>
+                <span>Refresh</span>
+              </button>
+              <button class="btn-primary btn-icon-text" type="button" data-action="upload" title="Import .run files or a history.json rollup">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21V9"/><polyline points="7 14 12 9 17 14"/><path d="M5 3h14"/></svg>
+                <span>Import</span>
+              </button>
+            </div>
+          </div>
+          <div class="panel-head-stage">
+            <div class="panel-head-title-wrap"><h2 id="tab-relics-title">Top Relics</h2><p class="panel-sub">Best relics by win rate (min. 3 runs).</p></div>
+            <div class="companion-slot" aria-live="polite"></div>
+          </div>
         </div>
         <div class="panel-body" id="relics-body"></div>
       </article>
@@ -316,23 +413,96 @@
       <!-- =================== Cards =================== -->
       <article class="tab-panel" data-tab="cards" aria-labelledby="tab-cards-title" hidden>
         <div class="panel-head">
-          <div><h2 id="tab-cards-title">Cards</h2><p class="panel-sub">Most picked vs. most skipped.</p></div>
-          <div class="companion-slot" aria-live="polite"></div>
+          <div class="panel-head-toprow app-toolbar" role="toolbar" aria-label="Save data actions">
+            <div class="app-toolbar-left">
+              <span class="linked-pill" data-linked-pill hidden></span>
+              <span class="app-toolbar-empty" data-toolbar-empty hidden>
+                <span class="app-toolbar-empty-dot" aria-hidden="true"></span>
+                <span class="app-toolbar-empty-text">Showing sample data — link your STS2 saves to see your runs.</span>
+              </span>
+            </div>
+            <div class="app-toolbar-right">
+              <div class="app-toolbar-export" data-export-wrap>
+                <button class="btn-ghost btn-icon-text" type="button" data-action="toggle-export"
+                        aria-haspopup="menu" aria-expanded="false" title="Download all runs">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><polyline points="7 10 12 15 17 10"/><path d="M5 21h14"/></svg>
+                  <span>Export</span>
+                  <svg class="caret" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+                </button>
+                <div class="app-toolbar-export-menu" role="menu" hidden>
+                  <button class="app-toolbar-menu-row" type="button" role="menuitem" data-action="export-json">
+                    <strong>Download JSON</strong>
+                    <span>Full normalized data — every field we parse.</span>
+                  </button>
+                  <button class="app-toolbar-menu-row" type="button" role="menuitem" data-action="export-csv">
+                    <strong>Download CSV</strong>
+                    <span>Flat spreadsheet — one row per run.</span>
+                  </button>
+                </div>
+              </div>
+              <button class="btn-ghost btn-icon-text" type="button" data-action="reload-saves" title="Re-read linked save folder from disk">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15A9 9 0 1 1 18.36 5.64L23 10"/></svg>
+                <span>Refresh</span>
+              </button>
+              <button class="btn-primary btn-icon-text" type="button" data-action="upload" title="Import .run files or a history.json rollup">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21V9"/><polyline points="7 14 12 9 17 14"/><path d="M5 3h14"/></svg>
+                <span>Import</span>
+              </button>
+            </div>
+          </div>
+          <div class="panel-head-stage">
+            <div class="panel-head-title-wrap"><h2 id="tab-cards-title">Cards</h2><p class="panel-sub">Most picked vs. most skipped.</p></div>
+            <div class="companion-slot" aria-live="polite"></div>
+          </div>
         </div>
         <div class="panel-body" id="cards-body"></div>
       </article>
 
       <!-- =================== Recent Runs =================== -->
-      <!-- Note on missing panel-actions block: Import / Refresh /
-           Export JSON / Export CSV all live in the global
-           `<header class="app-toolbar">` at the top of the main
-           panel now (above the tab-panel articles). Keeping per-panel
-           duplicates created drift (Recent Runs had Export but the
-           stats tabs didn't) and stacking ambiguity when both bars
-           were visible. Single source of truth → toolbar. -->
+      <!-- Import / Refresh / Export live in the painted banner top row
+           (same as other stats tabs) so there is no orphaned header strip. -->
       <article class="tab-panel" data-tab="runs" aria-labelledby="tab-runs-title" hidden>
         <div class="panel-head">
-          <div><h2 id="tab-runs-title">Recent Runs</h2><p class="panel-sub">Latest runs from your history. Auto-refreshes from disk.</p></div>
+          <div class="panel-head-toprow app-toolbar" role="toolbar" aria-label="Save data actions">
+            <div class="app-toolbar-left">
+              <span class="linked-pill" data-linked-pill hidden></span>
+              <span class="app-toolbar-empty" data-toolbar-empty hidden>
+                <span class="app-toolbar-empty-dot" aria-hidden="true"></span>
+                <span class="app-toolbar-empty-text">Showing sample data — link your STS2 saves to see your runs.</span>
+              </span>
+            </div>
+            <div class="app-toolbar-right">
+              <div class="app-toolbar-export" data-export-wrap>
+                <button class="btn-ghost btn-icon-text" type="button" data-action="toggle-export"
+                        aria-haspopup="menu" aria-expanded="false" title="Download all runs">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><polyline points="7 10 12 15 17 10"/><path d="M5 21h14"/></svg>
+                  <span>Export</span>
+                  <svg class="caret" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+                </button>
+                <div class="app-toolbar-export-menu" role="menu" hidden>
+                  <button class="app-toolbar-menu-row" type="button" role="menuitem" data-action="export-json">
+                    <strong>Download JSON</strong>
+                    <span>Full normalized data — every field we parse.</span>
+                  </button>
+                  <button class="app-toolbar-menu-row" type="button" role="menuitem" data-action="export-csv">
+                    <strong>Download CSV</strong>
+                    <span>Flat spreadsheet — one row per run.</span>
+                  </button>
+                </div>
+              </div>
+              <button class="btn-ghost btn-icon-text" type="button" data-action="reload-saves" title="Re-read linked save folder from disk">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15A9 9 0 1 1 18.36 5.64L23 10"/></svg>
+                <span>Refresh</span>
+              </button>
+              <button class="btn-primary btn-icon-text" type="button" data-action="upload" title="Import .run files or a history.json rollup">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21V9"/><polyline points="7 14 12 9 17 14"/><path d="M5 3h14"/></svg>
+                <span>Import</span>
+              </button>
+            </div>
+          </div>
+          <div class="panel-head-stage panel-head-stage--text-only">
+            <div class="panel-head-title-wrap"><h2 id="tab-runs-title">Recent Runs</h2><p class="panel-sub">Latest runs from your history. Auto-refreshes from disk.</p></div>
+          </div>
         </div>
         <div class="panel-body" id="runs-body"></div>
       </article>
@@ -340,12 +510,51 @@
       <!-- =================== Co-op =================== -->
       <article class="tab-panel" data-tab="coop" aria-labelledby="tab-coop-title" hidden>
         <div class="panel-head">
-          <div>
-            <h2 id="tab-coop-title">Who's around right now</h2>
-            <p class="panel-sub" id="online-summary">Loading…</p>
+          <div class="panel-head-toprow app-toolbar" role="toolbar" aria-label="Save data actions">
+            <div class="app-toolbar-left">
+              <span class="linked-pill" data-linked-pill hidden></span>
+              <span class="app-toolbar-empty" data-toolbar-empty hidden>
+                <span class="app-toolbar-empty-dot" aria-hidden="true"></span>
+                <span class="app-toolbar-empty-text">Showing sample data — link your STS2 saves to see your runs.</span>
+              </span>
+            </div>
+            <div class="app-toolbar-right">
+              <div class="app-toolbar-export" data-export-wrap>
+                <button class="btn-ghost btn-icon-text" type="button" data-action="toggle-export"
+                        aria-haspopup="menu" aria-expanded="false" title="Download all runs">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><polyline points="7 10 12 15 17 10"/><path d="M5 21h14"/></svg>
+                  <span>Export</span>
+                  <svg class="caret" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+                </button>
+                <div class="app-toolbar-export-menu" role="menu" hidden>
+                  <button class="app-toolbar-menu-row" type="button" role="menuitem" data-action="export-json">
+                    <strong>Download JSON</strong>
+                    <span>Full normalized data — every field we parse.</span>
+                  </button>
+                  <button class="app-toolbar-menu-row" type="button" role="menuitem" data-action="export-csv">
+                    <strong>Download CSV</strong>
+                    <span>Flat spreadsheet — one row per run.</span>
+                  </button>
+                </div>
+              </div>
+              <button class="btn-ghost btn-icon-text" type="button" data-action="reload-saves" title="Re-read linked save folder from disk">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15A9 9 0 1 1 18.36 5.64L23 10"/></svg>
+                <span>Refresh</span>
+              </button>
+              <button class="btn-primary btn-icon-text" type="button" data-action="upload" title="Import .run files or a history.json rollup">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21V9"/><polyline points="7 14 12 9 17 14"/><path d="M5 3h14"/></svg>
+                <span>Import</span>
+              </button>
+            </div>
           </div>
-          <div class="panel-actions">
-            <button class="btn-ghost" id="refresh-btn" title="Refresh">↻ Refresh</button>
+          <div class="panel-head-coop-row">
+            <div>
+              <h2 id="tab-coop-title">Who's around right now</h2>
+              <p class="panel-sub" id="online-summary">Loading…</p>
+            </div>
+            <div class="panel-actions">
+              <button class="btn-ghost" id="refresh-btn" title="Refresh">↻ Refresh</button>
+            </div>
           </div>
         </div>
         <div class="panel-body">
@@ -495,6 +704,6 @@
     </div>
   </footer>
 
-  <script src="/script.js?v=58" type="module"></script>
+  <script src="/script.js?v=60" type="module"></script>
 </body>
 </html>
