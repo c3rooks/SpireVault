@@ -140,14 +140,38 @@ export function parseSTS2Run(obj, sourceName = "unknown.run") {
         .filter(Boolean)
     : [];
 
-  // Per-floor card picks. Same shape extractRuns/normalizeRun expect.
+  // Per-floor card picks AND act-by-act path. Both walk the same
+  // `map_point_history` so we do them in one pass.
+  //
+  // pathByAct shape:
+  //   [
+  //     { act: 1, nodes: [{ floor: 1, type: "combat" }, ...] },
+  //     { act: 2, nodes: [...] },
+  //     { act: 3, nodes: [...] },
+  //     ... (architect / sub-acts if STS2 ships more)
+  //   ]
+  //
+  // `type` is one of: "combat" | "elite" | "shop" | "rest" | "event"
+  //                 | "chest" | "boss" | "unknown"
+  //
+  // This is what powers the "Act Timeline" view in the run-detail
+  // modal — a faithful representation of the linear path the player
+  // walked, not a fabricated branching map. The .run file does NOT
+  // contain unvisited nodes or branch points, so we cannot draw a
+  // full STS map without making things up. Every node in pathByAct
+  // is a node the player physically visited.
   const cardPicks = [];
+  const pathByAct = [];
   let floor = 0;
   if (Array.isArray(obj.map_point_history)) {
-    for (const act of obj.map_point_history) {
-      if (!Array.isArray(act)) continue;
+    obj.map_point_history.forEach((act, actIdx) => {
+      if (!Array.isArray(act)) return;
+      const actNodes = [];
       for (const point of act) {
         floor += 1;
+        const type = pickSource(point);
+        actNodes.push({ floor, type });
+
         if (!point || typeof point !== "object") continue;
         const stats = Array.isArray(point.player_stats) ? point.player_stats[0] : null;
         if (!stats) continue;
@@ -166,10 +190,11 @@ export function parseSTS2Run(obj, sourceName = "unknown.run") {
           return typeof id === "string" ? stripPrefix("CARD.", id).toLowerCase() : null;
         })();
         if (offered.length || picked) {
-          cardPicks.push({ floor, offered, picked, source: pickSource(point) });
+          cardPicks.push({ floor, offered, picked, source: type });
         }
       }
-    }
+      pathByAct.push({ act: actIdx + 1, nodes: actNodes });
+    });
   }
 
   // Record the schema version we saw on this run. Used by the stats
@@ -192,6 +217,7 @@ export function parseSTS2Run(obj, sourceName = "unknown.run") {
     relics,
     deckAtEnd,
     cardPicks,
+    pathByAct,
     sourceFile: sourceName,
     schemaVersion,
     buildId,
@@ -216,16 +242,18 @@ function parseCharacter(raw) {
 
 function pickSource(point) {
   const mapType = (point?.map_point_type ?? "").toLowerCase();
-  if (mapType === "boss") return "boss";
-  if (mapType === "elite") return "elite";
-  if (mapType === "shop") return "shop";
+  if (mapType === "boss")     return "boss";
+  if (mapType === "elite")    return "elite";
+  if (mapType === "shop")     return "shop";
+  if (mapType === "rest" || mapType === "campfire") return "rest";
   const room = Array.isArray(point?.rooms) ? point.rooms[0] : null;
   const roomType = (room?.room_type ?? "").toLowerCase();
   if (roomType === "monster" || roomType === "combat") return "combat";
-  if (roomType === "elite") return "elite";
-  if (roomType === "boss") return "boss";
-  if (roomType === "shop") return "shop";
-  if (roomType === "event") return "event";
+  if (roomType === "elite")    return "elite";
+  if (roomType === "boss")     return "boss";
+  if (roomType === "shop")     return "shop";
+  if (roomType === "event")    return "event";
+  if (roomType === "rest" || roomType === "campfire") return "rest";
   if (roomType === "ancient" || roomType === "treasure") return "chest";
   return "unknown";
 }

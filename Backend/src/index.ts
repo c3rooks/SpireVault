@@ -3,6 +3,7 @@ import {
   upsertPresence,
   deletePresence,
   listPresence,
+  listPresencePublic,
   getSessionProfile,
 } from "./presence";
 import {
@@ -28,6 +29,7 @@ import {
   withdrawInvite,
   INVITE_MESSAGES,
 } from "./invites";
+import { unpair } from "./pairs";
 import {
   getRuns,
   uploadRuns,
@@ -162,14 +164,40 @@ async function handle(
       }
 
       // ----- Presence feed -----
-      // Reads are public so the UI can render the gate before sign-in.
       //
-      // Edge-cached for 8 s on the worker's CF colo. KV reads are abundant
-      // (100k/day) compared to writes (1k/day), but with multiple browsers
-      // polling the feed every 30 s we'd still rather collapse identical
-      // requests at the edge before they hit KV at all.
+      // Two-tier privacy model:
+      //
+      //   GET /presence         → PUBLIC, sanitized list (no Steam IDs,
+      //                           no personas, no avatars). Used by
+      //                           guest/landing UI for accurate social
+      //                           proof without letting strangers
+      //                           harvest Steam handles from the feed.
+      //                           Edge-cached for 15s.
+      //
+      //   GET /presence/roster  → AUTH-REQUIRED, full roster with
+      //                           identity fields. Only signed-in
+      //                           Steam users can see who's looking
+      //                           and send them invites. Never cached
+      //                           (each user's view is identical for
+      //                           a given roster state, but we'd
+      //                           rather not risk a wrong 15s-old
+      //                           avatar for a user who just rejoined).
+      //
+      // Writes (`POST /presence`, `DELETE /presence`) still require a
+      // session — unchanged.
       if (method === "GET" && pathname === "/presence") {
         return getPresenceCached(req, env, ctx);
+      }
+      if (method === "GET" && pathname === "/presence/roster") {
+        const auth = await requireSession(req, env);
+        if (auth instanceof Response) return auth;
+        try {
+          const data = await listPresence(env);
+          return json(data);
+        } catch (err) {
+          bg(ctx, recordClientDiagnostic(env, "presence-roster-read-failed", String((err as Error)?.message ?? err)));
+          return json([]);
+        }
       }
       if (method === "POST" && pathname === "/presence") {
         const auth = await requireSession(req, env);
@@ -319,6 +347,12 @@ async function handle(
         const [, id, action] = inviteRespondMatch;
         const result = await respondToInvite(env, id, auth.steamID, action === "accept");
         if (!result.ok) return json({ error: result.error }, { status: result.status });
+        // Accept creates a pair on both sides; bust the public feed cache
+        // so the "Playing with @X" pill appears on the next roster fetch
+        // without waiting out the 15s edge cache.
+        if (action === "accept") {
+          await purgePresenceFeedCache();
+        }
         return json({ invite: result.invite });
       }
       const inviteIdMatch = pathname.match(/^\/invites\/([0-9a-f]{32})$/);
@@ -329,6 +363,21 @@ async function handle(
         const result = await withdrawInvite(env, id, auth.steamID);
         if (!result.ok) return json({ error: result.error }, { status: result.status });
         return json({ ok: true });
+      }
+
+      // ----- Co-op pair (auth-required) -----
+      // Manual unpair. Fires both sides — caller's row AND their partner's
+      // row stop showing the "Playing with X" pill. Idempotent: returns
+      // `{ ok: true }` even if the caller wasn't paired.
+      if (pathname === "/pair" && method === "DELETE") {
+        const auth = await requireSession(req, env);
+        if (auth instanceof Response) return auth;
+        const wasPaired = await unpair(env, auth.steamID);
+        // Ensure the next /presence/roster fetch reflects the unpair
+        // immediately — the public feed is sanitized so it doesn't expose
+        // pair state, but the authed roster does and we want it fresh.
+        await purgePresenceFeedCache();
+        return json({ ok: true, wasPaired });
       }
 
       // ----- Cross-device run history sync (Steam-ID keyed) -----
@@ -404,8 +453,13 @@ async function handle(
  */
 const PRESENCE_EDGE_CACHE_S = 15;
 
-/** Synthetic cache key — must match `purgePresenceFeedCache`. */
-const PRESENCE_FEED_CACHE_KEY = new Request("https://presence.cache/feed/v3", {
+/** Synthetic cache key — must match `purgePresenceFeedCache`.
+ *
+ *  `/feed/v4` bump: the response shape of `/presence` changed from
+ *  `PresenceEntry[]` (identity-heavy) to `PublicPresenceEntry[]`
+ *  (sanitized). Old cached body shape must never be served under
+ *  the new privacy contract, so rotate the cache key alongside. */
+const PRESENCE_FEED_CACHE_KEY = new Request("https://presence.cache/feed/v4", {
   method: "GET",
 });
 
@@ -429,9 +483,9 @@ async function getPresenceCached(_req: Request, env: Env, ctx: ExecutionContext)
   const hit = await cache.match(PRESENCE_FEED_CACHE_KEY);
   if (hit) return hit;
 
-  let data: Awaited<ReturnType<typeof listPresence>>;
+  let data: Awaited<ReturnType<typeof listPresencePublic>>;
   try {
-    data = await listPresence(env);
+    data = await listPresencePublic(env);
   } catch (err) {
     // KV outage on the read side — the most user-visible failure mode
     // (everyone sees an empty feed even though the roster is fine).

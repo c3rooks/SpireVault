@@ -4,7 +4,65 @@
   Referrer-Policy: strict-origin-when-cross-origin
   Permissions-Policy: camera=(), microphone=(), geolocation=(), interest-cohort=()
   Strict-Transport-Security: max-age=63072000; includeSubDomains; preload
-  Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline' https://static.cloudflareinsights.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: https://avatars.steamstatic.com https://steamcdn-a.akamaihd.net https://*.steamstatic.com; font-src https://fonts.gstatic.com; connect-src 'self' https://vault-coop.coreycrooks.workers.dev https://cloudflareinsights.com; frame-ancestors 'none'
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline' https://static.cloudflareinsights.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https://avatars.steamstatic.com https://steamcdn-a.akamaihd.net https://*.steamstatic.com; font-src https://fonts.gstatic.com; connect-src 'self' https://vault-coop.coreycrooks.workers.dev https://cloudflareinsights.com https://api.openai.com; frame-ancestors 'none'
 
 /assets/*
   Cache-Control: public, max-age=31536000, immutable
+
+# =============================================================================
+# Strict no-cache for HTML and entry bundle.
+#
+# Earlier we used `max-age=0, must-revalidate`, but the live response was
+# coming back with `max-age=14400` (4 hours) because Cloudflare Pages was
+# applying its default rule and ignoring our overrides — possibly due to
+# rule precedence under wildcard matching. Result: users in normal browser
+# windows kept seeing old UI for 4 hours after every deploy, while Private
+# windows (no disk cache) saw the new build immediately. That's the exact
+# "incognito works, normal doesn't" symptom we kept chasing.
+#
+# The fix: use `no-store` (strictly stronger than `max-age=0`) PLUS an
+# `Expires: 0` header for older HTTP caches that don't honor Cache-Control
+# semantics. This guarantees:
+#   - Browsers never serve a stale entry-point bundle from disk cache
+#   - CDN/proxy nodes always go to origin
+#   - bfcache (Safari/Chrome) is invalidated on every load
+#
+# Asset files under /assets/* keep `immutable, max-age=1y` because their
+# URLs include version tokens (architect-wiki.webp, etc.). When we rev
+# an asset, the URL changes and the cache is bypassed naturally.
+# =============================================================================
+
+/
+  Cache-Control: no-store, no-cache, must-revalidate, max-age=0
+  Expires: 0
+  Pragma: no-cache
+
+/index.html
+  Cache-Control: no-store, no-cache, must-revalidate, max-age=0
+  Expires: 0
+  Pragma: no-cache
+
+/overlay
+  Cache-Control: no-store, no-cache, must-revalidate, max-age=0
+  Expires: 0
+  Pragma: no-cache
+
+/auth.html
+  Cache-Control: no-store, no-cache, must-revalidate, max-age=0
+  Expires: 0
+  Pragma: no-cache
+
+/styles.css
+  Cache-Control: no-store, no-cache, must-revalidate, max-age=0
+  Expires: 0
+  Pragma: no-cache
+
+/script.js
+  Cache-Control: no-store, no-cache, must-revalidate, max-age=0
+  Expires: 0
+  Pragma: no-cache
+
+/lib/*
+  Cache-Control: no-store, no-cache, must-revalidate, max-age=0
+  Expires: 0
+  Pragma: no-cache

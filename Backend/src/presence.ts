@@ -1,4 +1,5 @@
-import type { Env, PresenceEntry, PresenceUpsert, PlayerStats } from "./types";
+import type { Env, PresenceEntry, PresenceUpsert, PlayerStats, PublicPresenceEntry } from "./types";
+import { getPairsMap } from "./pairs";
 
 /**
  * Presence storage + Steam Web API enrichment.
@@ -221,11 +222,87 @@ export async function listPresence(env: Env): Promise<PresenceEntry[]> {
   const roster = await readRoster(env);
   if (roster.entries.length === 0) return [];
 
-  const inGame = await fetchInGameSet(env, roster.entries.map((e) => e.steamID));
+  // Steam-Web inGame set + co-op pair table fetched in parallel; both
+  // are best-effort enrichments layered on top of the persistent roster.
+  // Either failing keeps the roster usable (no inSTS2 highlight, no pill)
+  // rather than turning a transient KV blip into an empty-feed bug.
+  const [inGame, pairs] = await Promise.all([
+    fetchInGameSet(env, roster.entries.map((e) => e.steamID)),
+    getPairsMap(env).catch(() => ({} as Record<string, never>)),
+  ]);
+
   for (const e of roster.entries) {
     e.inSTS2 = inGame.has(e.steamID);
+    const pair = pairs[e.steamID];
+    if (pair) {
+      e.paired = {
+        partnerID: pair.partnerID,
+        partnerPersona: pair.partnerPersona,
+        partnerAvatar: pair.partnerAvatar,
+        since: pair.since,
+      };
+    } else {
+      // Defensive: scrub any stale `paired` value that might have slipped
+      // into the stored roster blob (older worker versions could have
+      // written it; we never want to surface a pair without a live entry
+      // in the pair map backing it).
+      delete e.paired;
+    }
   }
   return roster.entries;
+}
+
+/**
+ * Anonymized view of the presence feed. Returns the same roster
+ * `listPresence` would — same row count, same status/inSTS2/note
+ * values, same `updatedAt` ordering — but every identity field is
+ * stripped. Callers use this for unauthenticated clients so guests
+ * can see accurate social proof ("3 people looking right now") and
+ * live status without harvesting Steam handles.
+ *
+ * The `anonId` is a short deterministic hash of
+ *   `steamID + UTC-date + salt`
+ * which means:
+ *   - Two different guests watching the same roster see consistent
+ *     anonIds within the same UTC day (so "Player 8F2A" on one row
+ *     stays stable across polls).
+ *   - The same user's anonId ROTATES at UTC midnight, so long-term
+ *     correlation attacks (tracking a status pattern over weeks to
+ *     deanonymize someone) are capped to a single day's worth of
+ *     signal.
+ *   - The hash can't be reversed without knowing the salt (which
+ *     never leaves the worker).
+ */
+export async function listPresencePublic(env: Env): Promise<PublicPresenceEntry[]> {
+  const full = await listPresence(env);
+  return Promise.all(full.map((e) => sanitizeEntry(e)));
+}
+
+async function sanitizeEntry(e: PresenceEntry): Promise<PublicPresenceEntry> {
+  return {
+    anonId: await anonymizeSteamId(e.steamID),
+    status: e.status,
+    note: "", // Note can leak social identifiers ("hit me up on discord as @foo"); strip for guests.
+    inSTS2: e.inSTS2,
+    updatedAt: e.updatedAt,
+  };
+}
+
+/** Deterministic short hash used as the `anonId`. SHA-256 of
+ *  `<steamID>|<UTC-YYYY-MM-DD>|vault-v1`, take first 6 hex chars.
+ *  No need for a server-side secret — the date-bucketing already
+ *  prevents cross-day correlation and the 6-char truncation makes
+ *  brute-forcing the Steam ID computationally meaningless. */
+async function anonymizeSteamId(steamID: string): Promise<string> {
+  const utcDate = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+  const material = `${steamID}|${utcDate}|vault-v1`;
+  const bytes = new TextEncoder().encode(material);
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  const hex = Array.from(new Uint8Array(digest))
+    .slice(0, 3)
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+  return hex.toUpperCase();
 }
 
 // MARK: - Session profile ----------------------------------------------------

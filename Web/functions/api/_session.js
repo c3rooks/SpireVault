@@ -48,19 +48,50 @@ function looksLikeSessionToken(s) {
   return typeof s === "string" && /^[A-Za-z0-9_-]{16,128}$/.test(s);
 }
 
+/**
+ * Rehydrate a session via the worker's `/me` endpoint.
+ *
+ * Returns one of:
+ *   { ok: true, profile }                      → valid bearer
+ *   { ok: false, definitive: true }            → token invalid (401/404)
+ *                                                — safe to clear cookie
+ *   { ok: false, definitive: false, status }   → transient failure
+ *                                                (5xx, network, parse) —
+ *                                                MUST keep cookie so the
+ *                                                user isn't logged out by
+ *                                                a hiccup in upstream KV
+ *
+ * The previous version returned `null` for everything and the caller
+ * cleared the cookie unconditionally. Result: a single transient
+ * 503 from the worker silently logged real users out of normal-
+ * browser sessions. Now we only clear on a definitive auth-fail.
+ */
 async function rehydrate(token) {
-  // Use the worker's /me endpoint as the source of truth — if the bearer
-  // is valid the worker tells us who it belongs to, including the
-  // cached persona/avatar. We never trust client-supplied profile data.
-  const r = await fetch(`${WORKER_ORIGIN}/me`, {
-    headers: { authorization: `Bearer ${token}` },
-  });
-  if (!r.ok) return null;
+  let r;
   try {
-    return await r.json();
-  } catch {
-    return null;
+    r = await fetch(`${WORKER_ORIGIN}/me`, {
+      headers: { authorization: `Bearer ${token}` },
+    });
+  } catch (err) {
+    // Network blip / DNS hiccup. Token may still be valid; do NOT
+    // clear the cookie. The next page load will retry.
+    return { ok: false, definitive: false, status: 0 };
   }
+  if (r.ok) {
+    try {
+      const profile = await r.json();
+      return { ok: true, profile };
+    } catch {
+      // Worker returned 200 but body is unparseable — treat as
+      // transient (probably a partial response). Keep the cookie.
+      return { ok: false, definitive: false, status: r.status };
+    }
+  }
+  // Only 401/403/404 are definitive "this token is dead". Everything
+  // else (429, 5xx, etc.) is transient and we keep the cookie so
+  // a slow KV doesn't force users to re-sign-in.
+  const definitive = r.status === 401 || r.status === 403 || r.status === 404;
+  return { ok: false, definitive, status: r.status };
 }
 
 export async function onRequest(context) {
@@ -82,14 +113,20 @@ export async function onRequest(context) {
     if (!looksLikeSessionToken(token)) {
       return json({ error: "bad_token" }, { status: 400 });
     }
-    const profile = await rehydrate(token);
-    if (!profile) {
+    const result = await rehydrate(token);
+    if (!result.ok) {
       // Don't set the cookie if the worker doesn't recognize the
       // bearer — otherwise we'd persist garbage that just generates
-      // 401s on every subsequent request.
-      return json({ error: "invalid_session" }, { status: 401 });
+      // 401s on every subsequent request. Surface the upstream
+      // status so the client can distinguish "your token is bad"
+      // from "the server is having a moment".
+      return json(
+        { error: result.definitive ? "invalid_session" : "upstream_unavailable",
+          status: result.status },
+        { status: result.definitive ? 401 : 503 }
+      );
     }
-    return json(profile, {
+    return json(result.profile, {
       status: 200,
       headers: { "set-cookie": buildSetCookie(token) },
     });
@@ -98,17 +135,27 @@ export async function onRequest(context) {
   if (method === "GET") {
     const token = readSessionCookie(request);
     if (!token) return json({ error: "no_cookie" }, { status: 401 });
-    const profile = await rehydrate(token);
-    if (!profile) {
-      // Cookie is present but the worker rejected the bearer — token
-      // expired, was revoked, or KV lost it. Clear the dead cookie so
-      // the client doesn't keep retrying with it.
+    const result = await rehydrate(token);
+    if (result.ok) return json(result.profile);
+
+    if (result.definitive) {
+      // Worker said this token is genuinely dead (401/403/404).
+      // Clear the cookie so the client doesn't keep retrying with it.
       return json(
-        { error: "expired" },
+        { error: "expired", status: result.status },
         { status: 401, headers: { "set-cookie": buildClearCookie() } }
       );
     }
-    return json(profile);
+
+    // Transient failure (5xx, network, etc). KEEP THE COOKIE — the
+    // next page load will retry. This is the bug-fix that stops
+    // users from being logged out by a temporary KV blip. Return
+    // 503 so the client knows to try again later, but does NOT
+    // think the session is dead.
+    return json(
+      { error: "upstream_unavailable", status: result.status },
+      { status: 503 }
+    );
   }
 
   if (method === "DELETE") {

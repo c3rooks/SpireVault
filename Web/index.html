@@ -3,6 +3,14 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <!-- Defense-in-depth cache busting. The HTTP `Cache-Control: no-store`
+       header in `_headers` is the primary mechanism, but Safari's
+       in-tab memory cache and bfcache occasionally serve a stale page
+       on tab restore. These three meta tags trigger Safari/Chrome's
+       legacy HTML cache invalidation as a belt-and-suspenders. -->
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
   <title>Spire Vault · Slay the Spire 2 stats &amp; co-op (web)</title>
   <meta name="description" content="See your Slay the Spire 2 stats in your browser. Drop your STS2 save folder (.run files) — nothing uploads, everything stays local. Optional Steam sign-in unlocks the co-op partner feed." />
   <meta name="theme-color" content="#0c0a14" />
@@ -23,7 +31,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Playfair+Display:wght@700;900&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/styles.css?v=54" />
+  <link rel="stylesheet" href="/styles.css?v=91" />
 </head>
 <body>
   <div class="bg-glow" aria-hidden="true"></div>
@@ -156,6 +164,16 @@
             <span class="nav-label">Co-op</span>
             <span class="nav-badge" id="nav-coop-count" hidden></span>
           </button>
+          <button class="nav-row" data-tab="news">
+            <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M4 4h12a2 2 0 012 2v12a3 3 0 003 3H6a2 2 0 01-2-2V4zm2 2v13h12.17A1 1 0 0118 18V6H6zm2 3h8v2H8V9zm0 4h8v2H8v-2zm0 4h5v2H8v-2z"/></svg></span>
+            <span class="nav-label">News</span>
+            <span class="nav-badge nav-badge--new" id="nav-news-count" hidden>NEW</span>
+          </button>
+          <button class="nav-row" data-tab="overlay" id="nav-overlay-btn" hidden>
+            <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 4h18v14H3zM7 8h10v2H7zm0 4h7v2H7zm14 10H3v-2h18z"/></svg></span>
+            <span class="nav-label">Overlay</span>
+            <span class="nav-badge nav-badge--new">BETA</span>
+          </button>
         </div>
       </nav>
 
@@ -168,6 +186,10 @@
             <strong id="me-pill-name">…</strong>
             <span id="me-pill-tier">Steam connected</span>
           </div>
+        </div>
+        <div class="me-pill-status-row" id="me-pill-status-row" hidden>
+          <span class="me-pill-status-pill" id="me-pill-status-pill" data-status="looking">Looking</span>
+          <button class="me-pill-invites" id="me-pill-invites" type="button" hidden title="Open Co-op tab to view invites">0</button>
         </div>
         <div class="sidebar-status">
           <span class="status-dot" id="status-dot"></span>
@@ -215,6 +237,7 @@
           <div class="panel-head-toprow app-toolbar" role="toolbar" aria-label="Save data actions">
             <div class="app-toolbar-left">
               <span class="linked-pill" data-linked-pill hidden></span>
+              <span class="sync-pill" data-sync-pill hidden></span>
               <span class="app-toolbar-empty" data-toolbar-empty hidden>
                 <span class="app-toolbar-empty-dot" aria-hidden="true"></span>
                 <span class="app-toolbar-empty-text">Showing sample data — link your STS2 saves to see your runs.</span>
@@ -272,6 +295,7 @@
           <div class="panel-head-toprow app-toolbar" role="toolbar" aria-label="Save data actions">
             <div class="app-toolbar-left">
               <span class="linked-pill" data-linked-pill hidden></span>
+              <span class="sync-pill" data-sync-pill hidden></span>
               <span class="app-toolbar-empty" data-toolbar-empty hidden>
                 <span class="app-toolbar-empty-dot" aria-hidden="true"></span>
                 <span class="app-toolbar-empty-text">Showing sample data — link your STS2 saves to see your runs.</span>
@@ -320,6 +344,7 @@
           <div class="panel-head-toprow app-toolbar" role="toolbar" aria-label="Save data actions">
             <div class="app-toolbar-left">
               <span class="linked-pill" data-linked-pill hidden></span>
+              <span class="sync-pill" data-sync-pill hidden></span>
               <span class="app-toolbar-empty" data-toolbar-empty hidden>
                 <span class="app-toolbar-empty-dot" aria-hidden="true"></span>
                 <span class="app-toolbar-empty-text">Showing sample data — link your STS2 saves to see your runs.</span>
@@ -368,6 +393,7 @@
           <div class="panel-head-toprow app-toolbar" role="toolbar" aria-label="Save data actions">
             <div class="app-toolbar-left">
               <span class="linked-pill" data-linked-pill hidden></span>
+              <span class="sync-pill" data-sync-pill hidden></span>
               <span class="app-toolbar-empty" data-toolbar-empty hidden>
                 <span class="app-toolbar-empty-dot" aria-hidden="true"></span>
                 <span class="app-toolbar-empty-text">Showing sample data — link your STS2 saves to see your runs.</span>
@@ -416,6 +442,7 @@
           <div class="panel-head-toprow app-toolbar" role="toolbar" aria-label="Save data actions">
             <div class="app-toolbar-left">
               <span class="linked-pill" data-linked-pill hidden></span>
+              <span class="sync-pill" data-sync-pill hidden></span>
               <span class="app-toolbar-empty" data-toolbar-empty hidden>
                 <span class="app-toolbar-empty-dot" aria-hidden="true"></span>
                 <span class="app-toolbar-empty-text">Showing sample data — link your STS2 saves to see your runs.</span>
@@ -466,6 +493,7 @@
           <div class="panel-head-toprow app-toolbar" role="toolbar" aria-label="Save data actions">
             <div class="app-toolbar-left">
               <span class="linked-pill" data-linked-pill hidden></span>
+              <span class="sync-pill" data-sync-pill hidden></span>
               <span class="app-toolbar-empty" data-toolbar-empty hidden>
                 <span class="app-toolbar-empty-dot" aria-hidden="true"></span>
                 <span class="app-toolbar-empty-text">Showing sample data — link your STS2 saves to see your runs.</span>
@@ -513,6 +541,7 @@
           <div class="panel-head-toprow app-toolbar" role="toolbar" aria-label="Save data actions">
             <div class="app-toolbar-left">
               <span class="linked-pill" data-linked-pill hidden></span>
+              <span class="sync-pill" data-sync-pill hidden></span>
               <span class="app-toolbar-empty" data-toolbar-empty hidden>
                 <span class="app-toolbar-empty-dot" aria-hidden="true"></span>
                 <span class="app-toolbar-empty-text">Showing sample data — link your STS2 saves to see your runs.</span>
@@ -610,6 +639,165 @@
           <p class="muted small footnote" id="last-updated">…</p>
         </div>
       </article>
+
+      <!-- News tab. Static for now — every post lives directly in the
+           markup. When we have more than ~5 posts we'll move them to a
+           data file and render in JS, but for the launch cadence (one
+           or two posts a week) the markup approach has zero overhead
+           and keeps the post body fully editable in any text editor. -->
+      <article class="tab-panel news-panel" data-tab="news" aria-labelledby="tab-news-title" hidden>
+        <div class="panel-head">
+          <div class="panel-head-coop-row">
+            <div>
+              <h2 id="tab-news-title">News &amp; updates</h2>
+              <p class="panel-sub">Notes from Corey, the human behind the app. Bug fixes, new features, and what's coming next.</p>
+            </div>
+          </div>
+        </div>
+        <div class="panel-body">
+          <div class="news-feed">
+
+            <!-- ====== Post 001 — Bug fixes &amp; updates · May 5 2026 ====== -->
+            <article class="news-post" id="news-001" aria-labelledby="news-001-title">
+              <figure class="news-post-banner">
+                <picture>
+                  <source media="(max-width: 720px)" srcset="/assets/news/post-001-banner-1x.webp?v=2" />
+                  <img src="/assets/news/post-001-banner.webp?v=2" alt="The Regent, the Defect, the Silent, and the Necrobinder gathered around a glowing brazier in a candlelit spire — painted illustration matching the in-game art style." loading="lazy" decoding="async" />
+                </picture>
+              </figure>
+              <header class="news-post-head">
+                <span class="news-post-eyebrow">Update · May 5, 2026</span>
+                <h3 class="news-post-title" id="news-001-title">Bug fixes &amp; updates &mdash; thank you for using Spire Vault</h3>
+                <p class="news-post-byline">
+                  Corey
+                  <span class="news-post-byline-sep">·</span>
+                  <span class="news-post-byline-meta">~4 min read</span>
+                </p>
+              </header>
+
+              <div class="news-post-body">
+                <p class="news-lede">
+                  First, the obvious thing: thank you for being here. Spire Vault went from "weird side project" to "people are actually using this" because of you, and I don't take that lightly. So before anything else &mdash; thanks. Genuinely.
+                </p>
+
+                <p>
+                  This past week was mostly fixes that should have worked the first time, plus a couple of new features that have been on my list for a while. Quick rundown of what's new, then a few things I'm working on next.
+                </p>
+
+                <h4 class="news-post-section">What's new</h4>
+
+                <div class="news-feature-block">
+                  <h5>Co-op pairing &mdash; you can now see who's playing with who</h5>
+                  <p>
+                    When you and another player both accept an invite, both of your rows on the roster pick up a green <em>"Co-op &mdash; w/ @PartnerName"</em> pill. Anyone scrolling the feed can see at a glance which pairs are already matched up, so they don't waste a click trying to invite someone who's mid-session. The invite button on a paired row turns into a friendly "Busy" tag instead of a dead button.
+                  </p>
+                  <p>
+                    You also get an "End co-op" button on your own status card while paired &mdash; one click and both sides drop the pill. If you forget, the pair auto-clears after 4 hours so you don't show up as "still co-oping with that person from yesterday morning."
+                  </p>
+                </div>
+
+                <div class="news-feature-block">
+                  <h5>The cache &amp; reload mess is finally fixed</h5>
+                  <p>
+                    For a while, every time I shipped a new version, half of you would have to open the app in private mode to see the change. That was bad. The root cause was three layers of cache fighting each other: Cloudflare's edge, your browser's disk cache, and Safari's in-tab memory cache, which ignores cache headers entirely while a tab is alive.
+                  </p>
+                  <p>
+                    There's now a small banner at the top of the app that appears when a newer version is out: <em>"A newer version of Spire Vault is available &mdash; Reload now."</em> Click it whenever you're ready. Your sign-in and stats stick. No more force-reload mid-typing.
+                  </p>
+                </div>
+
+                <div class="news-feature-block">
+                  <h5>Run paths, but readable</h5>
+                  <p>
+                    The Recent Runs modal now shows your full path through every act with proper map icons &mdash; campfire, treasure chest, elite, boss, shop, the works &mdash; pulled in to actually look like the game's map instead of a generic icon set. Each act starts collapsed; the act where you died (or won) gets a red <strong>DIED HERE</strong> or green <strong>VICTORY</strong> chip on the closed header so you don't have to expand all three to find the moment.
+                  </p>
+                </div>
+
+                <div class="news-feature-block">
+                  <h5>The painted banner up top is bigger and better-balanced</h5>
+                  <p>
+                    The companion character on the left of the duel scene was way too small &mdash; you could barely tell who it was. Bumped them up about 25%, which makes the boss-on-the-right composition feel like an actual face-off instead of a sidebar token next to a giant. Also normalized every character sprite so Regent, Defect, Silent, and Necrobinder all fill the frame consistently. No more "wait, why does my Regent look tiny."
+                  </p>
+                </div>
+
+                <div class="news-feature-block">
+                  <h5>Privacy lockdown on the public feed</h5>
+                  <p>
+                    Anyone visiting <a href="https://app.spirevault.app">app.spirevault.app</a> as a guest can still see the live count of who's around, but Steam IDs, persona names, avatars, and Discord handles are stripped before the data leaves the server. Only signed-in users get the full roster. If you weren't comfortable with strangers being able to harvest your handle off the homepage, that's no longer a concern.
+                  </p>
+                </div>
+
+                <div class="news-feature-block">
+                  <h5>Cross-device run history that actually syncs</h5>
+                  <p>
+                    Your run history is keyed to your Steam ID and synced to the cloud. Sign in on your laptop, import your saves once, then open the app on your phone &mdash; everything's already there. There's a small "Synced N runs · last sync 2 min ago" pill in the toolbar so you can see at a glance whether your latest run made it up.
+                  </p>
+                </div>
+
+                <h4 class="news-post-section">What I'm working on next</h4>
+
+                <p>
+                  Honest order of operations &mdash; some of these are days, some are weeks. None of them are guaranteed. Roadmap, not promises.
+                </p>
+
+                <ol class="news-roadmap">
+                  <li>
+                    <strong>Community Highlights.</strong> A simple opt-in: any run you're proud of, hit a "share to the community" button on the run detail and it appears on a public highlights feed. Per-run, never automatic, always yours to unshare. Card-pack layout with the actual deck and relics &mdash; the same Share-Run card you'd post to Reddit, just visible inside the app. Designed to celebrate runs, not surveil people.
+                  </li>
+                  <li>
+                    <strong>A real Windows app.</strong> The browser version works fine on Windows today, but a downloadable <code>SpireVault.exe</code> would be a much cleaner experience for people who don't want to think about which browser tab their stats live in. Targeting a Tauri build &mdash; same backend, same UI, native window.
+                  </li>
+                  <li>
+                    <strong>iOS Companion sync.</strong> The Ascension Companion app on the App Store still uses an older data shape than the web. Bringing them into alignment so a run uploaded from web shows up in the iOS app immediately.
+                  </li>
+                  <li>
+                    <strong>"What changed since last week" digest.</strong> An optional weekly email summarizing your wins, your best run, your character mix, and any new community highlights from people you've co-oped with. Off by default. Probably the smallest possible footprint &mdash; one email a week, plain text, an unsubscribe link.
+                  </li>
+                </ol>
+
+                <h4 class="news-post-section">A small ask</h4>
+
+                <p>
+                  If something feels broken, weird, or just unfinished &mdash; please tell me. <a href="https://github.com/c3rooks/SpireVault/issues/new" target="_blank" rel="noopener">File an issue on GitHub</a>, or hit me up on the co-op feed (you can see when I'm online, my Steam handle's the same as yours: I sign in with mine and use the app like you do). I read every issue. Most of the fixes above started as one-line bug reports from one of you.
+                </p>
+
+                <p>
+                  And if Spire Vault has saved you a Discord scroll, helped you find a co-op partner, or just been nice to look at while reviewing a long run &mdash; that's the whole point. Thanks for being here.
+                </p>
+
+                <p class="news-post-signoff">
+                  &mdash; Corey
+                </p>
+              </div>
+
+              <footer class="news-post-foot">
+                <div class="news-post-foot-meta">
+                  <span class="news-post-tag">Update</span>
+                  <span class="news-post-tag">Bug fixes</span>
+                  <span class="news-post-tag">Roadmap</span>
+                </div>
+                <div class="news-post-foot-actions">
+                  <a class="action-link" href="https://github.com/c3rooks/SpireVault/issues/new" target="_blank" rel="noopener">Report an issue &rarr;</a>
+                  <a class="action-link" href="https://github.com/c3rooks/SpireVault/blob/main/CHANGELOG.md" target="_blank" rel="noopener">Full changelog &rarr;</a>
+                </div>
+              </footer>
+            </article>
+
+          </div>
+        </div>
+      </article>
+
+      <article class="tab-panel overlay-panel" data-tab="overlay" aria-labelledby="tab-overlay-title" hidden>
+        <div class="panel-head">
+          <div class="panel-head-coop-row">
+            <div>
+              <h2 id="tab-overlay-title">Run Companion Overlay</h2>
+              <p class="panel-sub">Decision support while you play - local-first, optional, and built around trust.</p>
+            </div>
+          </div>
+        </div>
+        <div class="panel-body" id="overlay-body"></div>
+      </article>
     </main>
   </div>
 
@@ -687,7 +875,14 @@
        file in their STS2 save folder. `.run` extension intentionally
        included so macOS Finder doesn't grey them out — the OS treats
        .run as foreign by default. -->
-  <input type="file" id="history-file-input" accept=".json,.run,.save,application/json" multiple hidden />
+  <!-- File / folder inputs MUST NOT use the `hidden` attribute (which
+       sets display:none). Safari silently no-ops `.click()` on inputs
+       that are display:none — meaning Import would fire scanForHistory,
+       fall to webkitdirectory, call $input.click(), and absolutely
+       nothing would happen. Instead we visually hide them while keeping
+       them in the layout/event tree. -->
+  <input type="file" id="history-file-input" accept=".json,.run,.save,application/json" multiple class="visually-hidden-input" />
+  <input type="file" id="history-folder-input" webkitdirectory directory multiple class="visually-hidden-input" />
 
   <footer class="footer">
     <div class="footer-inner">
@@ -704,6 +899,6 @@
     </div>
   </footer>
 
-  <script src="/script.js?v=60" type="module"></script>
+  <script src="/script.js?v=111" type="module"></script>
 </body>
 </html>

@@ -32,7 +32,7 @@ export interface PresenceUpsert {
   stats?: PlayerStats;
 }
 
-/** Stored shape per user (KV `presence:<steamID>`) and what the list returns. */
+/** Stored shape per user (KV `presence:<steamID>`) and what the AUTHED list returns. */
 export interface PresenceEntry {
   steamID: string;
   personaName: string;
@@ -44,6 +44,54 @@ export interface PresenceEntry {
   /** Server-derived from Steam Web API at fetch time when an API key is set. */
   inSTS2: boolean;
   updatedAt: string; // ISO8601
+  /**
+   * Server-derived at roster-list time. Populated when the user has an
+   * active co-op pairing (created by accepting an invite). Stays absent
+   * for solo users. Drives the green "Playing with @X" pill on the
+   * roster row. Auto-clears after `PAIR_DURATION_SECONDS` or when
+   * either side hits `DELETE /pair`.
+   */
+  paired?: PairedPartner;
+}
+
+/**
+ * Wire-format slice of a co-op pair. Mirrors the relevant fields of
+ * `PairInfo` in `pairs.ts` (we deliberately omit `expiresAt` from the
+ * wire — the client doesn't need to think about pair TTLs, the row
+ * just appears or doesn't).
+ */
+export interface PairedPartner {
+  partnerID: string;
+  partnerPersona: string;
+  partnerAvatar?: string;
+  since: string;
+}
+
+/**
+ * Public, privacy-safe shape returned by `GET /presence` to
+ * unauthenticated clients. Deliberately strips every identity field
+ * (steamID, personaName, avatarURL, discordHandle, stats) so a guest
+ * — or a scraper — cannot harvest Steam handles from the feed.
+ *
+ * `anonId` is a short opaque identifier (6-char hash of the Steam
+ * ID + a rotating salt) so the UI can still show distinct rows and
+ * render status dots, but there's no way to correlate anonId back
+ * to a Steam account without the server's salt. Rotated daily so
+ * even within a single guest's session the same anonId never ties
+ * to a tracked identity long-term.
+ *
+ * `inSTS2` / `status` / `note` are preserved — those are public
+ * signals the player explicitly advertised to the community feed,
+ * and they're what makes the count meaningful ("3 looking right
+ * now, 2 in game"). The guest sees accurate social proof without
+ * any personal data.
+ */
+export interface PublicPresenceEntry {
+  anonId: string;
+  status: PresenceStatus;
+  note: string;
+  inSTS2: boolean;
+  updatedAt: string;
 }
 
 export interface Env {

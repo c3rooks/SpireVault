@@ -152,6 +152,57 @@ function buildCardPicks(charKey, won) {
 
 const KILLED_BY = ["Time Eater", "Awakened One", "Champ", "Bronze Automaton", "The Guardian", "Slime Boss", "Lagavulin", "Hexaghost", "Sentries"];
 
+/** Build a synthetic per-act path that matches STS2's actual floor
+ *  layout. STS2 has THREE acts in Early Access (no separate
+ *  "Architect" act 4 — the Architect is encountered as the act 3
+ *  boss / endgame, not its own zone). Each act is ~17 nodes,
+ *  ending with a boss tile.
+ *
+ *  Floor caps:
+ *    Act 1:  1–17 (boss at 17)
+ *    Act 2: 18–34 (boss at 34)
+ *    Act 3: 35–51 (Architect/final boss at 51)
+ *
+ *  Demo runs are truncated to the floor they reached (with a hard
+ *  cap of 51 = full game complete). The Act Timeline never
+ *  fabricates a phantom 4th act. */
+function buildPathByAct(floor, victory) {
+  const STS2_MAX_FLOOR = 51;       // act 3 boss
+  const nodesPerAct    = 17;
+  const cappedFloor    = Math.min(floor, STS2_MAX_FLOOR);
+  const acts = [];
+  let currentFloor = 0;
+  let actNum = 1;
+  while (currentFloor < cappedFloor && actNum <= 3) {
+    const remaining     = cappedFloor - currentFloor;
+    const thisActNodes  = Math.min(nodesPerAct, remaining);
+    const isCompleteAct = thisActNodes === nodesPerAct;
+    const actNodes = [];
+    for (let i = 0; i < thisActNodes; i += 1) {
+      currentFloor += 1;
+      // Last node of a complete act is the boss (floor 17, 34, 51).
+      // Mid-act distribution: ~50% combat, 18% elite, 12% event,
+      // 10% rest, 6% shop, 4% chest. Roughly matches in-game pacing.
+      let type;
+      if (i === thisActNodes - 1 && isCompleteAct) {
+        type = "boss";
+      } else {
+        const r = r01();
+        if (r < 0.50)      type = "combat";
+        else if (r < 0.68) type = "elite";
+        else if (r < 0.80) type = "event";
+        else if (r < 0.90) type = "rest";
+        else if (r < 0.96) type = "shop";
+        else               type = "chest";
+      }
+      actNodes.push({ floor: currentFloor, type });
+    }
+    acts.push({ act: actNum, nodes: actNodes });
+    actNum += 1;
+  }
+  return acts;
+}
+
 function makeRun({ character, ascension, victory, floor, daysAgo, durationSec }) {
   const charKey = character;  // already lowercase canonical
   const startedAt = new Date(NOW - daysAgo * DAY + 18 * 3600_000 - durationSec * 1000);
@@ -169,64 +220,62 @@ function makeRun({ character, ascension, victory, floor, daysAgo, durationSec })
     relics: buildRelics(victory, ascension),
     deckAtEnd: buildDeck(charKey, victory),
     cardPicks: buildCardPicks(charKey, victory),
+    pathByAct: buildPathByAct(floor, victory),
     killedBy: victory ? null : pickFrom(KILLED_BY),
   };
 }
 
-// ─── the actual demo runs (~118 runs across 5 characters, A0–A18) ────
+// ─── the actual demo runs (~95 runs across 5 characters, A0–A9) ──────
 //
-// Tuned to feel like a real STS2 player ~120 hours in: a lot of losses
-// at high ascensions, a comfortable win rate at low ones, recent runs
-// pushing into the late teens. Overall win rate ~28%, which mirrors
-// what an active ladder-pusher actually has on the books. A flashy 70%
-// rate would smell like cherry-picked screenshot bait — credibility
-// here matters more than aspiration.
+// STS2 Early Access caps ascension at A9 ("combined challenges stack")
+// — the previous A10–A18 entries were aspirational sample data from
+// when we modeled this on STS1. Trimmed to the real game's range so
+// the dashboard never shows ascensions that don't exist in the live
+// game. Tuned to feel like a real STS2 player ~80 hours in: heavy
+// losses at A7–A9, mixed at A4–A6, comfortable wins at A0–A3. Overall
+// win rate ~33% — credible for an active ladder-pusher.
 const DEMO_RUNS = [];
 const SCHEDULE = {
   ironclad: [
-    // A18 — 6 attempts, 1 win (recent)
-    [18, false, 47, 0],  [18, false, 28, 1],  [18, false, 51, 3],
-    [18, true,  57, 4],  [18, false, 39, 6],  [18, false, 33, 8],
-    // A17 — 5 attempts, 2 wins
-    [17, true,  57, 9],  [17, false, 41, 10], [17, false, 35, 11],
-    [17, true,  57, 12], [17, false, 44, 13],
-    // A16 — 5 attempts, 2 wins
-    [16, true,  57, 14], [16, false, 38, 15], [16, false, 30, 16],
-    [16, true,  57, 17], [16, false, 27, 18],
-    // A15 — 4 attempts, 2 wins
-    [15, true,  57, 19], [15, false, 33, 20], [15, true,  57, 21], [15, false, 41, 22],
-    // A14–A12 — pushed through, mixed
-    [14, true,  57, 23], [14, false, 36, 24], [13, false, 28, 25],
-    [12, true,  57, 26], [12, false, 42, 27],
-    // A11–A8 — mostly wins, some losses
-    [11, true,  57, 28], [10, false, 35, 29], [10, true,  57, 30],
-    [9,  true,  57, 31], [9,  false, 22, 32], [8,  true,  57, 33], [8,  true,  57, 34],
-    // A7–A0 — comfortable wins
-    [7,  true,  57, 35], [6,  true,  57, 36], [5,  true,  57, 38],
-    [5,  false, 38, 39], [4,  true,  57, 40], [3,  true,  57, 41],
-    [2,  true,  57, 42], [1,  true,  57, 43], [0,  true,  57, 44],
+    // A9 — 6 attempts, 1 win (current push)
+    [9,  false, 47, 0],  [9,  false, 28, 1],  [9,  false, 51, 3],
+    [9,  true,  57, 4],  [9,  false, 39, 6],  [9,  false, 33, 8],
+    // A8 — 5 attempts, 2 wins
+    [8,  true,  57, 9],  [8,  false, 41, 10], [8,  false, 35, 11],
+    [8,  true,  57, 12], [8,  false, 44, 13],
+    // A7 — 5 attempts, 2 wins
+    [7,  true,  57, 14], [7,  false, 38, 15], [7,  false, 30, 16],
+    [7,  true,  57, 17], [7,  false, 27, 18],
+    // A6 — 4 attempts, 2 wins
+    [6,  true,  57, 19], [6,  false, 33, 20], [6,  true,  57, 21], [6,  false, 41, 22],
+    // A5 — 3 attempts, 2 wins
+    [5,  true,  57, 23], [5,  false, 36, 24], [5,  true,  57, 25],
+    // A4 — 2 attempts, 1 win
+    [4,  true,  57, 26], [4,  false, 42, 27],
+    // A3–A0 — comfortable wins
+    [3,  true,  57, 28], [3,  true,  57, 30],
+    [2,  true,  57, 33], [2,  false, 38, 34],
+    [1,  true,  57, 38], [0,  true,  57, 42],
   ],
   silent: [
-    // A12 push, mostly losses
-    [12, false, 41, 2],  [12, false, 28, 5],  [12, true,  57, 7],
-    [11, false, 35, 9],  [11, true,  57, 11], [10, false, 33, 13],
-    [10, false, 22, 16], [9,  true,  57, 18], [9,  false, 31, 20],
-    [8,  true,  57, 22], [7,  true,  57, 24], [6,  false, 18, 26],
-    [5,  true,  57, 28], [4,  true,  57, 30], [3,  true,  57, 32],
-    [2,  false, 26, 34], [1,  true,  57, 36], [0,  true,  57, 39],
-    [0,  false, 18, 41],
+    // A6 push, mixed
+    [6,  false, 41, 2],  [6,  false, 28, 5],  [6,  true,  57, 7],
+    [5,  false, 35, 9],  [5,  true,  57, 11], [4,  false, 33, 13],
+    [4,  false, 22, 16], [3,  true,  57, 18], [3,  false, 31, 20],
+    [2,  true,  57, 22], [2,  true,  57, 24], [1,  false, 18, 26],
+    [1,  true,  57, 28], [0,  true,  57, 30], [0,  true,  57, 32],
   ],
   defect: [
-    [10, false, 33, 6],  [10, true,  57, 9],  [9,  false, 41, 12],
-    [8,  false, 27, 14], [8,  true,  57, 17], [7,  false, 33, 19],
-    [6,  true,  57, 22], [5,  false, 28, 24], [5,  true,  57, 27],
-    [3,  true,  57, 33], [2,  false, 22, 36], [1,  false, 22, 38],
+    [5,  false, 33, 6],  [5,  true,  57, 9],  [4,  false, 41, 12],
+    [4,  false, 27, 14], [3,  true,  57, 17], [3,  false, 33, 19],
+    [2,  true,  57, 22], [2,  false, 28, 24], [1,  true,  57, 27],
+    [1,  true,  57, 33], [0,  false, 22, 36], [0,  true,  57, 38],
     [0,  true,  57, 43],
   ],
   regent: [
-    [6,  false, 38, 11], [6,  true,  57, 14], [5,  false, 35, 19],
-    [4,  false, 22, 22], [4,  true,  57, 26], [3,  false, 30, 29],
-    [2,  true,  57, 32], [1,  false, 30, 39], [0,  true,  57, 45],
+    [3,  false, 38, 11], [3,  true,  57, 14], [2,  false, 35, 19],
+    [2,  false, 22, 22], [2,  true,  57, 26], [1,  false, 30, 29],
+    [1,  true,  57, 32], [0,  false, 30, 39], [0,  true,  57, 45],
   ],
   necrobinder: [
     [0, false, 28, 5],   [0, false, 14, 12],  [0, false, 22, 17],
@@ -236,11 +285,17 @@ const SCHEDULE = {
 
 for (const [character, list] of Object.entries(SCHEDULE)) {
   for (const [a, w, f, d] of list) {
+    // Cap floor at 51 (STS2 max — Act 3 boss). The schedule above
+    // uses 57 as a sentinel for "full game complete" because that
+    // mirrored the historical STS1 Heart depth, but STS2 has no 4th
+    // act. Clamping here keeps the Act Timeline honest: 3 acts max,
+    // no phantom "Architect" zone.
+    const cappedFloor = Math.min(f, 51);
     DEMO_RUNS.push(makeRun({
       character,
       ascension: a,
       victory: w,
-      floor: f,
+      floor: cappedFloor,
       daysAgo: d,
       durationSec: 1500 + rInt(0, 1500),
     }));
@@ -263,6 +318,9 @@ export function getDemoRuns() {
     relics: [...r.relics],
     deckAtEnd: [...r.deckAtEnd],
     cardPicks: r.cardPicks.map((p) => ({ ...p, not_picked: [...p.not_picked] })),
+    pathByAct: Array.isArray(r.pathByAct)
+      ? r.pathByAct.map((a) => ({ act: a.act, nodes: a.nodes.map((n) => ({ ...n })) }))
+      : undefined,
   }));
 }
 

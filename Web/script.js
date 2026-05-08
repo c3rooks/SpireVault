@@ -14,9 +14,12 @@
 // =========================================================================
 
 import * as Stats from "/lib/stats-engine.js?v=4";
-import * as HistoryStore from "/lib/history-store.js?v=7";
+import * as HistoryStore from "/lib/history-store.js?v=8";
 import * as InviteAPI from "/lib/invites.js?v=4";
 import * as AscInfo from "/lib/ascension-info.js?v=1";
+import * as CharInfo from "/lib/character-info.js?v=1";
+import * as RelicInfo from "/lib/relic-info.js?v=1";
+import * as OverlayEngine from "/lib/overlay-engine.js?v=1";
 
 // ─── Constants ─────────────────────────────────────────────────────────
 //
@@ -49,6 +52,153 @@ const SERVER_URL  = "https://vault-coop.coreycrooks.workers.dev";
 const API_BASE    = "/api";
 const RETURN_URL  = `${window.location.origin}/auth.html`;
 const STS2_APP_ID = "2868840";
+
+/**
+ * Build stamp — incremented on each deploy that needs a verifiable
+ * cache-bust. Surfaces in three places so we can answer "is the user
+ * on the new build?" without DevTools:
+ *
+ *   1. console.info on boot ("[Vault] build vXX")
+ *   2. <meta name="vault-build" content="vXX"> appended at boot
+ *   3. window.__VAULT_BUILD__ for quick console-paste verification
+ *
+ * If a user reports stale UI, ask them to paste `window.__VAULT_BUILD__`
+ * in the console. If it doesn't match the latest deploy, they're
+ * on an old client — instruct hard refresh. If it DOES match, the
+ * bug is real and we can stop chasing cache ghosts.
+ */
+const VAULT_BUILD = "v111-2026-05-07-profile-dock-bottom";
+
+// Feature flag — set to `true` only on local dev when iterating on the
+// Run Companion Overlay. Production stays false until the feature is
+// genuinely ready, so users never see a half-baked tab in their nav.
+const OVERLAY_NAV_VISIBLE = false;
+console.info(`[Vault] build ${VAULT_BUILD}`);
+window.__VAULT_BUILD__ = VAULT_BUILD;
+try {
+  const meta = document.createElement("meta");
+  meta.setAttribute("name", "vault-build");
+  meta.setAttribute("content", VAULT_BUILD);
+  document.head.appendChild(meta);
+} catch { /* never fail boot on a meta-tag write */ }
+
+/**
+ * Soft auto-update: detect when the loaded JS bundle is older than
+ * the latest deployed build and surface a non-blocking banner with
+ * a Reload button.
+ *
+ * The bug this solves: even with `Cache-Control: no-store` on
+ * /script.js, browsers can serve from in-tab MEMORY cache (Safari
+ * is especially aggressive about this). A user who opened the tab
+ * before a deploy would keep running the old code forever, no
+ * matter how many times they hit Cmd+R, until they fully quit the
+ * browser. That's the "private mode shows new, normal doesn't" bug
+ * we kept chasing.
+ *
+ * Detection: on tab visibility-change, fetch /index.html (no-store,
+ * always fresh) and read the `<script src="/script.js?v=NN">`
+ * version string. If the LIVE version is higher than ours, we're
+ * stale.
+ *
+ * UX: the previous version force-reloaded the tab. That worked but
+ * was hostile — anyone in the middle of typing an invite, scrolling
+ * a long run, or signing into Steam would lose their place. The new
+ * banner shows "A newer version of Spire Vault is available —
+ * Reload" with a button. The user reloads when they're ready.
+ *
+ * Forward-fix-only: catches future deploys for users who have THIS
+ * code loaded. Users on builds older than this one still need ONE
+ * manual hard-refresh.
+ */
+function vaultBuildNumber(s) {
+  const m = (s || "").match(/^v(\d+)/);
+  return m ? parseInt(m[1], 10) : 0;
+}
+
+let updateCheckInflight = false;
+let updateBannerShown   = false;
+async function checkForUpdate() {
+  if (updateCheckInflight || updateBannerShown) return;
+  updateCheckInflight = true;
+  try {
+    const r = await fetch("/", {
+      method: "GET",
+      cache: "no-store",
+      credentials: "include",
+    });
+    if (!r.ok) return;
+    const html = await r.text();
+    const match = html.match(/script\.js\?v=(\d+)/);
+    if (!match) return;
+    const liveVersion = parseInt(match[1], 10);
+    const myVersion   = vaultBuildNumber(VAULT_BUILD);
+    if (liveVersion > myVersion) {
+      console.info(
+        `[Vault] new build available (live v${liveVersion} > running v${myVersion}); banner shown`
+      );
+      showUpdateBanner(liveVersion);
+    }
+  } catch { /* offline, network blip — try again next visibilitychange */ }
+  finally { updateCheckInflight = false; }
+}
+
+/** Render the "newer version available" banner. Sticks at the top
+ *  of #app-content above the global invite banner. Two actions:
+ *  Reload (immediate `location.reload()`) and a tiny dismiss `×`
+ *  (sessionStorage so we don't keep nagging in the same tab — the
+ *  next tab open will show it again because a stale tab IS the
+ *  reason a stuck user reaches this code path). */
+function showUpdateBanner(liveVersion) {
+  if (updateBannerShown) return;
+  updateBannerShown = true;
+  // Honor a per-tab dismiss. If the user explicitly closed the
+  // banner already, don't re-show it on every visibility-change.
+  try {
+    if (sessionStorage.getItem("vault.update.dismissed") === String(liveVersion)) {
+      return;
+    }
+  } catch {}
+
+  const host = document.getElementById("app-content");
+  if (!host) return;
+  const bar = document.createElement("div");
+  bar.id = "vault-update-banner";
+  bar.className = "vault-update-banner";
+  bar.setAttribute("role", "status");
+  bar.setAttribute("aria-live", "polite");
+  bar.innerHTML = `
+    <span class="vault-update-banner-icon" aria-hidden="true">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15A9 9 0 1 1 18.36 5.64L23 10"/></svg>
+    </span>
+    <span class="vault-update-banner-text">
+      <strong>A newer version of Spire Vault is available.</strong>
+      Reload to pick up the latest fixes &mdash; your sign-in and stats stay intact.
+    </span>
+    <button type="button" class="vault-update-banner-reload" data-action="vault-update-reload">
+      Reload now
+    </button>
+    <button type="button" class="vault-update-banner-close" aria-label="Dismiss" data-action="vault-update-dismiss">&times;</button>`;
+  host.insertBefore(bar, host.firstChild);
+
+  bar.querySelector('[data-action="vault-update-reload"]').addEventListener("click", () => {
+    sendBeacon("update-banner-reload", `from=${VAULT_BUILD} to=v${liveVersion}`);
+    window.location.reload();
+  });
+  bar.querySelector('[data-action="vault-update-dismiss"]').addEventListener("click", () => {
+    try { sessionStorage.setItem("vault.update.dismissed", String(liveVersion)); } catch {}
+    bar.remove();
+    sendBeacon("update-banner-dismissed", `from=${VAULT_BUILD} to=v${liveVersion}`);
+  });
+}
+
+// Check once at boot (after a small delay so we don't compete with
+// the rest of boot for the network), and again every time the tab
+// becomes visible (foregrounded). This catches users who leave the
+// tab open across deploys without forcing extra polling traffic.
+setTimeout(() => { void checkForUpdate(); }, 4_000);
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") void checkForUpdate();
+});
 const STORAGE_SESSION       = "vault.web.session";
 const STORAGE_DRAFT         = "vault.web.presence.draft";
 const STORAGE_LAST_TAB      = "vault.web.last-tab";
@@ -61,6 +211,7 @@ const STORAGE_LAST_TAB      = "vault.web.last-tab";
 // back to the new Random default; anyone who genuinely wanted a
 // fixed climber can re-pick it in two clicks.
 const STORAGE_COMPANION     = "vault.web.companion.v2";
+const STORAGE_OVERLAY_STATE = "vault.web.overlay.v1";
 /** Last fingerprint of the linked save-folder file list — skips redundant full re-parsing when nothing changed. */
 const STORAGE_DIR_FP        = "vault.web.history.dir-fp";
 /** Display name of the linked save folder ("SlayTheSpire2", "history", …) — survives reloads so the "Linked" pill paints instantly. */
@@ -88,10 +239,19 @@ const COMPANIONS = [
   { id: "random",     label: "Random",     blurb: "Surprise me.",            color: "#ffa05c", isRandom: true },
   { id: "ironclad",   label: "Ironclad",   blurb: "Tempered steel.",         color: "#e94560", facesLeft: true },
   { id: "silent",     label: "Silent",     blurb: "Poisons and shadows.",    color: "#6dd97c", facesLeft: true },
-  { id: "defect",     label: "Defect",     blurb: "Orbs and algorithms.",    color: "#4dc8ff" },
+  // Defect's source art (the blue plush bear, hands forward) is painted
+  // with its body angled to its OWN right — which means in the diorama
+  // (climber on left of the boss) the bear ends up facing AWAY from the
+  // Architect. Flip it so the duel reads correctly: both figures square
+  // off across the painted floor instead of staring in opposite directions.
+  { id: "defect",     label: "Defect",     blurb: "Orbs and algorithms.",    color: "#4dc8ff", facesLeft: true },
   { id: "regent",     label: "Regent",     blurb: "Crown and consequence.",  color: "#d4af37", facesLeft: true },
   { id: "necrobinder",label: "Necrobinder",blurb: "Bone, blood, and will.",  color: "#9b83ff", facesLeft: true },
 ];
+
+// Last quote speaker, used to avoid streaks where one side talks
+// repeatedly (which reads as "Architect dominates every line").
+let lastQuoteSpeaker = null;
 
 // Cached diorama state. Invalidated when the user picks a different
 // companion, taps the speech bubble for a manual re-roll, or switches
@@ -135,7 +295,7 @@ function isDesktopLikelyToHandleSteamClient() {
 // field.
 const BOSSES = [
   {
-    id: "architect", label: "The Architect", colored: true,
+    id: "architect", label: "The Architect", colored: true, color: "#6db6d9",
     lines: [
       { text: "Cursed to fight forever, aren't you?" },
       { text: "Not even an introduction?" },
@@ -261,7 +421,7 @@ const CLIMBER_LINES = [
   { text: "The Spire bleeds today." },
   { text: "Heart, I'm coming for you." },
   { text: "Neow's blessing was enough." },
-  { text: "Ascension 20 or nothing." },
+  { text: "Ascension 9 or nothing." },
 
   // ─── Ironclad ───
   { only: "ironclad", text: "Anger. Steel. Repeat." },
@@ -306,6 +466,7 @@ const POLL_INBOX_MS         = 30_000;  // was 10_000
 const HEARTBEAT_MS          = 180_000; // was 90_000
 
 const TABS_WITH_DATA = ["overview", "characters", "ascensions", "relics", "cards", "runs"];
+const KNOWN_TABS = ["overview", "characters", "ascensions", "relics", "cards", "runs", "coop", "news", "overlay"];
 
 // Where the desktop app keeps history.json on each platform. These are
 // declared at the top of the module because boot code (switchTab → empty
@@ -571,11 +732,32 @@ function relicImageSrc(id) {
   return null;
 }
 
+/** Character sprite filenames are versioned to allow cache-busting
+ *  the long-immutable CDN copy when we re-process the art. The v2
+ *  set normalizes every character to the same fill ratio (~85% of a
+ *  512x512 canvas, anchored bottom-center), so Regent and Defect
+ *  visually occupy the same space in the diorama instead of Regent
+ *  rendering at half the size. Bump this when we re-export. */
+const CHARACTER_ASSET_VERSION = "v2";
+
 function characterImageSrc(name) {
   const slug = String(name || "").trim().toLowerCase();
   if (!slug || !assetManifest.characters.has(slug)) return null;
-  return `${ASSET_BASE}/characters/${slug}.webp`;
+  return `${ASSET_BASE}/characters/${slug}-${CHARACTER_ASSET_VERSION}.webp`;
 }
+
+/** Architect asset path.
+ *
+ *  History: the original filename `architect.webp` got poisoned at
+ *  the Cloudflare edge cache. We re-exported the asset multiple
+ *  times (transparency fix → AI hero polish → canonical wiki art),
+ *  but a stuck `_redirects` rule kept redirecting `?v=4` back to
+ *  `?v=3`, so the new bytes never reached users. Rather than fight
+ *  the cache, we ship the canonical art under a brand-new filename
+ *  that has no edge-cache history. Future re-exports rotate this
+ *  filename, not just a query string. Other bosses use a single
+ *  stable filename because their art is fixed. */
+const ARCHITECT_ASSET_BASENAME = "architect-wiki";
 
 function bossImageSrc(slug) {
   const s = String(slug || "").trim().toLowerCase();
@@ -585,9 +767,24 @@ function bossImageSrc(slug) {
   // diorama from the "stale `force-cache` manifest serves an old
   // bosses list" race that previously made the boss render as a
   // letter glyph fallback.
-  if (s === "architect") return `${ASSET_BASE}/bosses/architect.webp`;
+  if (s === "architect") {
+    return `${ASSET_BASE}/bosses/${ARCHITECT_ASSET_BASENAME}.webp`;
+  }
   if (!assetManifest.bosses.has(s)) return null;
   return `${ASSET_BASE}/bosses/${s}.webp`;
+}
+
+/** Returns a `srcset` attribute value (1x + 2x retina) for bosses that
+ *  ship a high-res companion file. Currently only the Architect — the
+ *  rest of the bosses live behind the manifest in a single resolution.
+ *  Falls back to an empty string if there's no @2x variant; callers
+ *  should treat empty as "use plain `src` only". */
+function bossImageSrcset(slug) {
+  const s = String(slug || "").trim().toLowerCase();
+  if (s === "architect") {
+    return `${ASSET_BASE}/bosses/${ARCHITECT_ASSET_BASENAME}.webp 1x, ${ASSET_BASE}/bosses/${ARCHITECT_ASSET_BASENAME}@2x.webp 2x`;
+  }
+  return "";
 }
 
 // ─── Module state ──────────────────────────────────────────────────────
@@ -631,10 +828,16 @@ let HAS_PROMPTED_NOTIFICATION = false; // ask permission lazily, once
 // the page, which meant any transient blip on the backend (KV consistency
 // window, momentary worker error, network corruption) silently signed users
 // out. Now we count consecutive 401s from authenticated requests and only
-// give up when we've seen 3 in a row inside a short window. Anything that
-// returns 200/2xx/3xx anywhere in between resets the counter.
-const AUTH_FAIL_THRESHOLD = 3;
-const AUTH_FAIL_WINDOW_MS = 5 * 60_000; // 5 min: outside this window, reset
+// give up when we've seen 8 in a row inside a wide window — high enough
+// that real users with intermittent connectivity, browsers throttling
+// background tabs, or a Cloudflare colo blip won't get evicted. The
+// previous 3-in-5-minutes threshold was producing measurable phantom
+// logouts in production logs (ingest-runs-uploaded for users who had
+// "no session" 30 seconds later). Real "your token is dead" events
+// trigger the cookie-clear path on the server side and force a clean
+// reload anyway, so the client fail-counter is now defense in depth.
+const AUTH_FAIL_THRESHOLD = 8;
+const AUTH_FAIL_WINDOW_MS = 30 * 60_000; // 30 min window
 let consecutiveAuthFails = 0;
 let firstAuthFailAt = 0;
 
@@ -693,53 +896,89 @@ let isDemoMode = false;
 // an opt-in once they've decided they like the tool.
 //
 // Cookie rehydration runs BEFORE boot() so that an ITP-wiped localStorage
-// doesn't briefly flash the guest UI before swapping to signed-in. We cap
-// the wait at 1.5s — if the cookie endpoint is sluggish (Pages Functions
-// cold start is ~150ms, but factor in network) we'd rather show the guest
-// UI promptly and then upgrade than block the whole boot on a slow proxy.
+// doesn't briefly flash the guest UI before swapping to signed-in.
+//
+// CRITICAL: we ALWAYS attempt cookie rehydration, even when localStorage
+// already has a session blob. Reason: localStorage can have a stale token
+// (worker session: KV row expired, was revoked, the user switched Steam
+// IDs in another tab, etc.) while the cookie has a fresh one. Trusting
+// localStorage blindly led to "every API call 401s, 3 fails later you're
+// logged out, repeat forever" — that's the production bug users keep
+// hitting that looks like "I keep having to sign in".
+//
+// Resolution priority:
+//   1. Cookie says auth'd + matches localStorage Steam ID → use localStorage
+//      (preserves the real bearer in `sessionToken` for legacy direct-worker
+//      callers).
+//   2. Cookie says auth'd + DIFFERENT Steam ID → cookie wins, replace
+//      localStorage (account switch in another tab).
+//   3. Cookie says auth'd + localStorage empty → cookie hydrates from scratch.
+//   4. Cookie says transient (503) → keep whatever localStorage has, retry
+//      on next page load. This is the case our resilience fix unblocked.
+//   5. Cookie says definitive 401 → wipe localStorage (token genuinely dead).
+//   6. No cookie + no localStorage → guest.
 (async () => {
-  if (!session) {
-    try {
-      const ctrl = new AbortController();
-      const t = setTimeout(() => ctrl.abort(), 2800);
-      const r = await fetch("/api/_session", {
-        method: "GET",
-        credentials: "include",
-        cache: "no-store",
-        signal: ctrl.signal,
-      });
-      clearTimeout(t);
-      if (r.ok) {
-        const j = await r.json();
-        // The cookie GET endpoint doesn't return the bearer (it's
-        // HttpOnly and stays in the cookie). For the legacy direct
-        // worker calls (still used until everything migrates to /api/*)
-        // we need a usable bearer in JS too — so we skip those and rely
-        // on the proxy from now on. Build a minimal session record with
-        // a synthetic flag so callers know to route through the proxy.
-        if (j && /^\d{17}$/.test(j.steamID || "")) {
+  try {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 2800);
+    const r = await fetch("/api/_session", {
+      method: "GET",
+      credentials: "include",
+      cache: "no-store",
+      signal: ctrl.signal,
+    });
+    clearTimeout(t);
+    if (r.ok) {
+      const j = await r.json();
+      if (j && /^\d{17}$/.test(j.steamID || "")) {
+        // Cookie session is valid. Decide how to merge with whatever
+        // localStorage already had:
+        //   - Same Steam ID + has a real bearer? Keep the localStorage
+        //     bearer (some legacy code paths still hit the worker
+        //     directly with the raw token). Refresh persona/avatar.
+        //   - Different Steam ID? User signed in to a different
+        //     account in another tab — cookie wins, replace.
+        //   - No localStorage? Hydrate fresh from the cookie response.
+        const sameSteam = !!session && session.steamID === j.steamID;
+        const hasRealBearer = !!session?.sessionToken && session.sessionToken !== "__cookie__";
+        if (sameSteam && hasRealBearer) {
+          session = {
+            ...session,
+            personaName: j.personaName || session.personaName,
+            avatarURL: j.avatarURL || session.avatarURL,
+            viaCookie: true,
+          };
+        } else {
           session = {
             steamID: j.steamID,
             personaName: j.personaName || "Steam User",
             avatarURL: j.avatarURL || undefined,
-            // Legacy callers expect a `sessionToken`; route via the
-            // proxy with cookie auth, so a sentinel value works for
-            // the `Authorization: Bearer ...` slot — the proxy will
-            // strip it and replace with the real cookie token. The
-            // sentinel is documented in `Web/functions/api/[[path]].js`.
             sessionToken: "__cookie__",
             signedInAt: new Date().toISOString(),
             viaCookie: true,
           };
-          // Re-stamp localStorage so the next cold load is instant
-          // even if cookies are still working.
-          try {
-            localStorage.setItem(STORAGE_SESSION, JSON.stringify(session));
-          } catch { /* private mode etc. — fine, cookie still wins */ }
         }
+        try {
+          localStorage.setItem(STORAGE_SESSION, JSON.stringify(session));
+        } catch { /* private mode etc. — cookie still wins */ }
       }
-    } catch { /* offline, timeout, or proxy down — fall through */ }
-  }
+    } else if (r.status === 401) {
+      // Cookie path returned a definitive 401 (the proxy explicitly
+      // tells us "this token is dead"). Wipe localStorage so we
+      // don't keep banging on the proxy with a dead bearer for the
+      // rest of the session. The proxy already cleared the cookie.
+      session = null;
+      try { localStorage.removeItem(STORAGE_SESSION); } catch {}
+    } else if (r.status === 503) {
+      // Transient upstream failure (KV blip, network hiccup,
+      // Cloudflare colo restart). Keep whatever localStorage had
+      // — the user is probably still signed in, the worker is just
+      // having a moment. We'll retry on the next request that
+      // actually needs auth.
+      console.info("[Vault] /api/_session transient, retaining local session");
+    }
+    // r.status 404 / other unexpected — leave session as-is, fall through.
+  } catch { /* offline, timeout, or proxy down — keep localStorage */ }
   boot();
 })();
 
@@ -973,6 +1212,9 @@ async function boot() {
       $meTier.textContent = "Signed in with Steam · " + session.steamID.slice(0,4) + "…" + session.steamID.slice(-4);
     }
     setStatus("connecting", "Connecting…");
+    // Paint the profile dock at boot so the user sees their status pill
+    // immediately, before the first heartbeat round-trip lands.
+    renderProfileDock();
   } else {
     // Guest sidebar pill: invite to sign in instead of the persona block.
     const $mePill = document.getElementById("me-pill");
@@ -1019,10 +1261,36 @@ async function boot() {
   document.querySelectorAll(".nav-row").forEach((btn) => {
     btn.addEventListener("click", () => switchTab(btn.dataset.tab));
   });
+  // Paint the "NEW" pill on the News button before we route to the
+  // user's last tab — that way even if they're going straight to
+  // Recent Runs, they see the pill on the sidebar immediately.
+  refreshNewsBadge();
+  // Honor deep links from both query and path:
+  //   - /?tab=<id>
+  //   - /overlay
+  // Restrict to known tabs so typos can't land on empty panels.
+  let initialTab = null;
+  try {
+    const qsTab = new URLSearchParams(window.location.search).get("tab");
+    const known = new Set(KNOWN_TABS);
+    const path = (window.location.pathname || "/").replace(/\/+$/, "") || "/";
+    if (path === "/overlay") initialTab = "overlay";
+    else if (qsTab && known.has(qsTab)) initialTab = qsTab;
+  } catch {}
   const lastTab = localStorage.getItem(STORAGE_LAST_TAB);
   // First-time visitors with no real session land on overview by default.
   // Returning signed-in users go back to whichever tab they last used.
-  switchTab(lastTab || (session ? "coop" : "overview"));
+  // Query-param wins over both — that's the path explicit deep-links take.
+  switchTab(initialTab || lastTab || (session ? "coop" : "overview"));
+  // If the deep-link also carries a hash (e.g. `?tab=news#news-001`),
+  // scroll to that anchor after the panel paints. Tiny rAF delay so the
+  // tab-panel is actually visible when scrollIntoView fires.
+  if (initialTab && window.location.hash) {
+    requestAnimationFrame(() => {
+      const target = document.querySelector(window.location.hash);
+      target?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }
 
   // Wire the Co-op tab. Authenticated path is the normal experience;
   // guest path swaps in a sign-in prompt + read-only roster.
@@ -1088,8 +1356,17 @@ async function boot() {
   document.querySelectorAll('[data-action="scan"]').forEach((btn) => {
     btn.addEventListener("click", () => void scanForHistory());
   });
+  // CRITICAL FIX (v93): the Import / Pick-saves buttons used to open a
+  // flat <input type="file"> picker that can't recurse into folders.
+  // STS2 stores `.run` files at `<saves>/steam/<steam-id>/profile1/saves/history/`
+  // — five levels deep — so a flat picker forces the user to navigate
+  // five clicks on their own and then shift-select dozens of files.
+  // Most users gave up at the second click. We now route every "Import"
+  // button through the same smart entry-point as "Find my STS2 saves":
+  // showDirectoryPicker on Chromium (recursive walk, one click), with
+  // graceful fallback to multi-file picker on Safari/Firefox.
   document.querySelectorAll('[data-action="upload"]').forEach((btn) => {
-    btn.addEventListener("click", () => triggerFilePicker());
+    btn.addEventListener("click", () => void scanForHistory());
   });
   document.querySelectorAll('[data-action="reload-saves"]').forEach((btn) => {
     btn.addEventListener("click", () => void reloadSavedHistoryInteractive());
@@ -1174,6 +1451,34 @@ async function boot() {
     }
     e.target.value = ""; // allow re-selecting same file
   });
+  // Folder picker (webkitdirectory) — cross-browser way to scoop up
+  // every `.run` file in the user's SlayTheSpire2 folder in ONE
+  // click. The browser hands us a flat FileList of every nested file,
+  // and our ingest filters to plausible extensions. This is the
+  // SAFARI / FIREFOX path to a one-click import; Chromium uses
+  // showDirectoryPicker (faster, supports persistent re-read) but
+  // webkitdirectory works on Safari and Firefox where showDirectoryPicker
+  // is unavailable. v94 made this the primary fallback because users
+  // were stuck multi-selecting hundreds of `.run` files manually.
+  const $folderInput = document.getElementById("history-folder-input");
+  if ($folderInput) {
+    $folderInput.addEventListener("change", (e) => {
+      const files = e.target.files;
+      if (files && files.length > 0) {
+        sendBeacon("ingest-folder-input-picked", `count=${files.length}`);
+        // Remember the folder display name so the "Linked" pill paints.
+        // Pull it from the first file's webkitRelativePath which has the
+        // form `<folder-name>/<...>/file.run`.
+        try {
+          const rel = files[0]?.webkitRelativePath || "";
+          const root = rel.split("/")[0] || "";
+          if (root) rememberLinkedFolderName(root);
+        } catch {}
+        void ingestHistoryFiles(files);
+      }
+      e.target.value = "";
+    });
+  }
 
   // Invite modal scaffolding (auth-only — guests don't see invites)
   if (session) {
@@ -1203,6 +1508,31 @@ async function boot() {
     }
   }
 
+  // Scope IndexedDB by Steam ID for signed-in users. This is what
+  // prevents "shared browser → next signed-in user inherits previous
+  // user's runs". Guests still use the legacy unscoped key. Must run
+  // BEFORE the loadHistory() call below so the read picks the right
+  // scope from the very first IDB roundtrip.
+  HistoryStore.setActiveSteamID(session?.steamID || null);
+
+  // Restore the last-known cloud sync timestamp so the toolbar pill
+  // can show "Synced N runs · 2m ago" the moment the page renders,
+  // before any new fetch resolves.
+  loadCloudSyncFromStorage();
+
+  // Private/Incognito detection: surface a clear notice that
+  // sign-in won't persist. Without this, users testing in private
+  // windows kept asking "why does it keep logging me out?" when the
+  // real answer was "private mode wipes cookies on close — that's
+  // by design, not our bug". The detection runs storage-quota probes
+  // because every browser fingerprints private differently.
+  void detectPrivateMode().then((isPrivate) => {
+    if (isPrivate) {
+      showPrivateModeNotice();
+      sendBeacon("private-mode-detected", `ua=${navigator.userAgent.slice(0, 80)}`);
+    }
+  });
+
   // Try to restore a previously uploaded history. We render whatever's in
   // IndexedDB FIRST so the UI lights up instantly with last-known stats,
   // then optionally re-pull from disk a few moments later if the user has
@@ -1219,47 +1549,92 @@ async function boot() {
   } catch (e) {
     console.warn("loadDirectoryHandle/loadHandle failed at boot", e);
   }
+
+  // Decide what to render at first paint based on the four-way matrix
+  // of (signed-in?) × (IDB has data?) × (folder linked?) × (cloud may
+  // have data?). The single rule we enforce: signed-in users with no
+  // local data must NEVER see demo data. They see a skeleton until
+  // cloud download resolves; only after cloud returns empty do we
+  // optionally fall back to demo. This is the "mobile shows dummy
+  // data" bug class.
+  let cached = null;
   try {
-    const cached = await HistoryStore.loadHistory();
-    if (cached?.runs?.length) {
-      parsedRuns = cached.runs.map(reviveRun);
-      isDemoMode = false;
-    } else if (hasLinkedSaves) {
-      // Cached runs missing, but a folder is still linked — show empty
-      // for one frame, the upcoming auto-reload will populate it.
-      parsedRuns = [];
-      isDemoMode = false;
-    } else {
+    cached = await HistoryStore.loadHistory();
+  } catch (e) {
+    console.warn("could not load cached history", e);
+  }
+
+  let needCloudHydrate = false;
+  if (cached?.runs?.length) {
+    parsedRuns = cached.runs.map(reviveRun);
+    isDemoMode = false;
+    // Signed-in: kick a cloud refresh anyway so any newer runs from
+    // another device get unioned in (merge-by-id is safe).
+    if (session?.steamID) needCloudHydrate = true;
+  } else if (hasLinkedSaves) {
+    // Folder is linked but cache is empty — show empty for one frame,
+    // the auto-reload below will populate it.
+    parsedRuns = [];
+    isDemoMode = false;
+  } else if (session?.steamID) {
+    // Signed-in fresh device. Show a skeleton, NOT demo data, until
+    // cloud download resolves.
+    parsedRuns = [];
+    isDemoMode = false;
+    showBootSkeleton();
+    needCloudHydrate = true;
+  } else {
+    // True guest, no local cache, no folder, no Steam — demo time.
+    try {
       const { getDemoRuns } = await import("./lib/demo-runs.js");
       parsedRuns = getDemoRuns();
       isDemoMode = true;
-    }
-  } catch (e) {
-    console.warn("could not load cached history; falling back to demo data", e);
-    if (hasLinkedSaves) {
+    } catch {
       parsedRuns = [];
       isDemoMode = false;
-    } else {
-      try {
-        const { getDemoRuns } = await import("./lib/demo-runs.js");
-        parsedRuns = getDemoRuns();
-        isDemoMode = true;
-      } catch {
-        parsedRuns = [];
-        isDemoMode = false;
-      }
     }
   }
+
   renderActiveTab();
 
-  // Cross-device sync (signed-in users only): if local IndexedDB had no
-  // real runs (just demo data, or a fresh device), check the cloud copy
-  // and hydrate from there. This is what makes "log in on mobile,
-  // already see my web-uploaded runs" work without any user action.
-  // The download is async + non-blocking — the demo screen stays up
-  // for one frame, then gets replaced when the cloud copy arrives.
-  if (session && session.steamID && (isDemoMode || parsedRuns.length === 0)) {
-    void hydrateFromCloudIfAvailable();
+  // Cross-device sync. Two paths feed this same call:
+  //   - boot with a cached IDB record: union any cloud-only runs in
+  //   - boot fresh-device-signed-in: pull the cloud copy verbatim
+  // The merge logic in hydrateFromCloudIfAvailable handles both.
+  //
+  // CRITICAL DATA-SOURCE-PRIORITY RULE (per product spec):
+  //
+  //   1. Authenticated Steam user data from server (cloud)
+  //   2. Local IDB cache of that same user's data
+  //   3. Empty state (signed-in user with no uploaded history)
+  //   4. Demo data — ONLY for signed-out marketing/preview mode
+  //
+  // Demo data MUST NOT override real data. Signed-in users with an
+  // empty cloud get the empty state, not synthetic 73-run dashboards
+  // that look like their stats. This was the regression that made
+  // users say "the app keeps showing dummy data over my account".
+  //
+  // The previous code path here used to call
+  // `fallbackToDemoIfStillEmpty()` for signed-in users with empty
+  // cloud. That violated the rule above. Removed.
+  if (needCloudHydrate) {
+    void hydrateFromCloudIfAvailable()
+      .then(async () => {
+        hideBootSkeleton();
+        // If the user is signed in and we still have no data,
+        // re-render so the empty-state CTA shows ("Drop your save
+        // folder to start syncing"). NEVER load demo for an authed
+        // user — their dashboard would lie about their stats.
+        if (parsedRuns.length === 0 && session?.steamID) {
+          renderActiveTab();
+        }
+      })
+      .catch(async () => {
+        // Cloud unreachable. Don't synthesize demo — the user's
+        // network blipped, they'll see a normal empty state.
+        hideBootSkeleton();
+        if (parsedRuns.length === 0) renderActiveTab();
+      });
   }
 
 
@@ -1315,6 +1690,21 @@ async function boot() {
     }
     void autoReloadHistoryIfPermitted({ silent: true });
   });
+
+  // Phone-breakpoint re-render. Charts emit a different viewBox on
+  // phone vs desktop (smaller w + bigger axis text) so we re-render
+  // the active stats tab whenever the breakpoint flips. Also fires
+  // when the user rotates a phone landscape→portrait. We deliberately
+  // *only* react to the boundary crossing, not every resize, so the
+  // chart doesn't redraw mid-drag on desktop window resize.
+  try {
+    const mq = window.matchMedia("(max-width: 720px)");
+    const onMq = () => {
+      if (TABS_WITH_DATA.includes(activeTab)) renderStatsTab(activeTab);
+    };
+    if (typeof mq.addEventListener === "function") mq.addEventListener("change", onMq);
+    else if (typeof mq.addListener === "function") mq.addListener(onMq);
+  } catch { /* matchMedia not available — chart still works at one size */ }
 
   // bfcache restores (back/forward navigation) don't fire visibilitychange
   // on every browser. pageshow with persisted=true is the catch-all.
@@ -1386,36 +1776,74 @@ function wireGuestCoop() {
 }
 
 async function refreshGuestRoster() {
-  const $count = document.getElementById("guest-coop-count");
+  const $count   = document.getElementById("guest-coop-count");
   const $rosterWrap = document.getElementById("guest-coop-roster");
-  const $list = document.getElementById("guest-coop-roster-list");
-  if (!$count) return;
+  const $list    = document.getElementById("guest-coop-roster-list");
+  const $headCount   = document.getElementById("online-count");
+  const $headSummary = document.getElementById("online-summary");
+  if (!$count && !$headSummary) return;
   try {
     const list = await fetchFeed();
     if (!list || list.length === 0) {
-      $count.textContent = "Nobody signed up yet — be the first.";
+      if ($count) $count.textContent = "Nobody signed up yet — be the first.";
+      if ($headSummary) $headSummary.textContent = "No one signed up yet.";
+      if ($headCount) $headCount.textContent = "0";
       if ($rosterWrap) $rosterWrap.hidden = true;
       return;
     }
     const looking = list.filter((p) => p.status === "looking").length;
-    const inGame = list.filter((p) => p.inSTS2).length;
-    const total = list.length;
-    const head = total === 1 ? "1 player signed up" : `${total} players signed up`;
-    $count.innerHTML = `<span class="dot dot-pulse" aria-hidden="true"></span>${head} · ${looking} looking for co-op · ${inGame} in STS2 right now`;
+    const inGame  = list.filter((p) => p.inSTS2).length;
+    const total   = list.length;
+    const head    = total === 1 ? "1 player signed up" : `${total} players signed up`;
+    if ($count) {
+      $count.innerHTML = `<span class="dot dot-pulse" aria-hidden="true"></span>${head} · ${looking} looking for co-op · ${inGame} in STS2 right now`;
+    }
+    if ($headSummary) {
+      $headSummary.textContent = `${head} · ${looking} looking · ${inGame} in Slay the Spire 2`;
+    }
+    if ($headCount) {
+      $headCount.textContent = String(total);
+    }
     if ($rosterWrap && $list) {
       $rosterWrap.hidden = total === 0;
-      $list.innerHTML = list.slice(0, 12).map((p) => `
-        <div class="guest-roster-row">
-          <img class="avatar" src="${p.avatarURL || '/assets/vault-mark.svg'}" alt="" />
+      // Guest view: list rows come back sanitized (anonId / status /
+      // inSTS2 only). Render anonymous placeholders with status pills
+      // so the social proof ("someone IS in STS2 right now") lands
+      // without leaking Steam handles or avatars. Clicking a row does
+      // nothing for guests; we only enable invite actions after
+      // sign-in. A sticky footer row prompts sign-in to reveal
+      // identities and send invites.
+      const rowsHtml = list.slice(0, 12).map((p, i) => `
+        <div class="guest-roster-row guest-roster-row--anon">
+          <div class="avatar avatar-anon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="8" r="4"/>
+              <path d="M4 21v-1a8 8 0 0 1 16 0v1"/>
+            </svg>
+          </div>
           <div class="guest-roster-meta">
-            <strong>${escapeHtml(p.personaName || "Steam User")}</strong>
+            <strong>Anonymous player ${i + 1}</strong>
             <span class="muted small">${guestStatusLabel(p)}</span>
           </div>
           ${p.inSTS2 ? '<span class="pill ember">In STS2</span>' : ''}
         </div>`).join("");
+      const moreHidden = total > 12 ? `<p class="muted small guest-roster-more">…and ${total - 12} more</p>` : "";
+      const signinCta = `
+        <div class="guest-roster-cta">
+          <div>
+            <strong>Steam handles hidden while you're signed out.</strong>
+            <span class="muted small">Sign in with Steam to see who's here and send invites.</span>
+          </div>
+          <button class="btn-primary sm" type="button" data-action="signin-cta">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3 5l8-1.1V11H3V5zm0 7h8v7.1L3 18V12zm9 7.2V12h9v8L12 19.2zM12 11V3.9L21 3v8h-9z"/></svg>
+            Sign in with Steam
+          </button>
+        </div>`;
+      $list.innerHTML = rowsHtml + moreHidden + signinCta;
     }
   } catch {
-    $count.textContent = "Live count momentarily unavailable.";
+    if ($count) $count.textContent = "Live count momentarily unavailable.";
+    if ($headSummary) $headSummary.textContent = "Live count momentarily unavailable.";
   }
 }
 
@@ -1435,10 +1863,32 @@ function escapeHtml(s) {
 // =========================================================================
 // Tabs
 // =========================================================================
+function syncTabUrl(tab) {
+  try {
+    const u = new URL(window.location.href);
+    if (tab === "overlay") {
+      u.pathname = "/overlay";
+      u.searchParams.delete("tab");
+      u.hash = "";
+    } else {
+      if (u.pathname === "/overlay") u.pathname = "/";
+      if (tab === "overview") u.searchParams.delete("tab");
+      else u.searchParams.set("tab", tab);
+      if (tab !== "news") u.hash = "";
+    }
+    history.replaceState(null, "", `${u.pathname}${u.search}${u.hash}`);
+  } catch {
+    // URL sync is nice-to-have only; never block tab rendering on it.
+  }
+}
+
 function switchTab(tab) {
   if (!tab) tab = "coop";
+  // Overlay is hidden in production. Redirect any deep-link to overview.
+  if (tab === "overlay" && !OVERLAY_NAV_VISIBLE) tab = "overview";
   activeTab = tab;
   localStorage.setItem(STORAGE_LAST_TAB, tab);
+  syncTabUrl(tab);
   document.querySelectorAll(".nav-row").forEach((b) => {
     const isActive = b.dataset.tab === tab;
     b.classList.toggle("is-active", isActive);
@@ -1456,7 +1906,48 @@ function switchTab(tab) {
     companionScene = null;
     renderCompanion();
   }
+  // Mark the latest news post as read once the user lands on the
+  // News tab. Persists per-browser so the green "NEW" pill on the
+  // sidebar doesn't keep nagging on every reload after they've
+  // already scrolled the post.
+  if (tab === "news") markLatestNewsRead();
   renderActiveTab();
+}
+
+/**
+ * Latest news post id. Bump this string every time we publish a new
+ * post (and the post HTML lands in `index.html`). The sidebar shows
+ * a green "NEW" pill on the News tab whenever the user's stored
+ * "last-read" id is older than this value, so a returning visitor
+ * gets a clear signal that a fresh post is up there.
+ *
+ * Why a string and not a number: post ids are likely to grow into
+ * dated slugs ("2026-05-12-windows-build") rather than monotonic
+ * integers. Plain string-equality is what we need — "is the last
+ * thing I read still the latest thing published?" — without forcing
+ * a chronological compare that could go wrong on a typo.
+ */
+const LATEST_NEWS_POST_ID = "post-001-2026-05-05-bug-fixes-and-updates";
+const STORAGE_NEWS_LAST_READ = "vault.web.news.lastRead";
+
+/** Show the "NEW" pill on the sidebar News button when the user
+ *  hasn't yet visited the latest post. Called at boot and on every
+ *  switchTab() pass through (cheap — single localStorage read). */
+function refreshNewsBadge() {
+  const $badge = document.getElementById("nav-news-count");
+  if (!$badge) return;
+  let lastRead = "";
+  try { lastRead = localStorage.getItem(STORAGE_NEWS_LAST_READ) || ""; } catch {}
+  const isUnread = lastRead !== LATEST_NEWS_POST_ID;
+  $badge.hidden = !isUnread;
+}
+
+/** Persist that the user has seen the current latest post, so the
+ *  pill stops appearing in this browser until a new post is published. */
+function markLatestNewsRead() {
+  try { localStorage.setItem(STORAGE_NEWS_LAST_READ, LATEST_NEWS_POST_ID); } catch {}
+  const $badge = document.getElementById("nav-news-count");
+  if ($badge) $badge.hidden = true;
 }
 
 // =========================================================================
@@ -1517,14 +2008,21 @@ function rollBoss() {
  *  of an Ironclad's mouth (and an Architect Defect-taunt only fires
  *  when Defect is on the field facing the Architect). */
 function rollQuote(climber, boss) {
-  const speakerIsClimber = Math.random() < 0.5;
+  // Keep randomness but prevent same-side streaks. This gives a
+  // true back-and-forth feel between climber and boss lines.
+  const speakerIsClimber =
+    lastQuoteSpeaker === "climber" ? false :
+    lastQuoteSpeaker === "boss" ? true :
+    Math.random() < 0.5;
   if (speakerIsClimber) {
     const pool = CLIMBER_LINES.filter((q) => !q.only || q.only === climber.id);
     const line = pool[Math.floor(Math.random() * pool.length)];
+    lastQuoteSpeaker = "climber";
     return { who: "climber", text: line.text };
   }
   const pool = boss.lines.filter((q) => !q.only || q.only === climber.id);
   const line = pool[Math.floor(Math.random() * pool.length)];
+  lastQuoteSpeaker = "boss";
   return { who: "boss", text: line.text };
 }
 
@@ -1535,6 +2033,7 @@ function setCompanion(id) {
   // roll so the next render reflects the new setting (and re-rolls
   // the climber if they switched into Random).
   companionScene = null;
+  lastQuoteSpeaker = null;
   renderCompanion();
 }
 
@@ -1560,7 +2059,10 @@ function renderCompanion() {
   const { setting, climber, boss, quote } = scene;
   const climberSrc = characterImageSrc(climber.id) || "";
   const bossSrc    = bossImageSrc(boss.id) || "";
+  const bossSrcset = bossImageSrcset(boss.id);
   const speakerIsClimber = quote.who === "climber";
+  const bossColor = boss.color || "#6db6d9";
+  const bubbleColor = speakerIsClimber ? climber.color : bossColor;
 
   // Build the diorama+picker markup once and write it into every
   // `.companion-slot` on the page. Multiple stats tabs each have
@@ -1574,7 +2076,7 @@ function renderCompanion() {
   // panel's picker.
   const sceneHtml = `
     <div class="scene scene-${speakerIsClimber ? "climber-speaks" : "boss-speaks"}"
-         style="--scene-color:${climber.color}">
+         style="--scene-color:${climber.color};--scene-bubble-color:${bubbleColor};--scene-boss-color:${bossColor}">
       <button class="scene-figure scene-figure-climber" type="button"
               data-action="companion-toggle"
               aria-label="Change companion. Current: ${esc(climber.label)}${setting.isRandom ? " (rolled randomly)" : ""}"
@@ -1589,7 +2091,7 @@ function renderCompanion() {
            aria-label="${esc(boss.label)}" title="${esc(boss.label)}">
         <span class="scene-shadow" aria-hidden="true"></span>
         ${bossSrc
-          ? `<img class="scene-art scene-art-boss" src="${esc(bossSrc)}" alt="${esc(boss.label)}" draggable="false">`
+          ? `<img class="scene-art scene-art-boss" src="${esc(bossSrc)}"${bossSrcset ? ` srcset="${esc(bossSrcset)}"` : ""} alt="${esc(boss.label)}" draggable="false">`
           : `<span class="scene-glyph">${esc(boss.label[0])}</span>`}
       </div>
 
@@ -1683,12 +2185,13 @@ function wireCompanion() {
 }
 
 function renderActiveTab() {
-  // Toolbar status: linked-folder pill (when a folder is wired up for
-  // auto-refresh) on the left, or an amber "showing sample data" pill
-  // when the user is browsing demo data instead. Cheap on every tab
-  // switch — handful of attribute writes — and guarantees the user
-  // always knows which dataset is live.
+  // Toolbar status pills, painted in priority order so the user
+  // always sees the most useful signal:
+  //   - linked-folder pill: a save folder is wired for auto-refresh
+  //   - sync pill:          signed-in + cloud-synced run count + age
+  //   - sample-data pill:   showing demo data, no real saves linked
   renderLinkedPill();
+  renderSyncPill();
   renderToolbarEmptyPill();
   if (TABS_WITH_DATA.includes(activeTab)) {
     renderStatsTab(activeTab);
@@ -1699,6 +2202,8 @@ function renderActiveTab() {
     if (!session) return;
     if (lastFeed.length) renderFeed(lastFeed);
     renderInbox(lastInbox);
+  } else if (activeTab === "overlay") {
+    renderOverlayTab();
   }
 }
 
@@ -1708,29 +2213,251 @@ function renderActiveTab() {
  *  takes precedence: if a save folder is wired up, this pill stays
  *  hidden so we don't flash both. */
 function renderToolbarEmptyPill() {
+  let dismissed = false;
+  try { dismissed = localStorage.getItem("vault.web.demoBannerDismissed") === "1"; } catch {}
   document.querySelectorAll("[data-toolbar-empty]").forEach(($pill) => {
     const linked = !!getLinkedFolderName();
-    $pill.hidden = linked || !isDemoMode;
+    const hasRealData = !isDemoMode && parsedRuns.length > 0;
+    $pill.hidden = linked || !isDemoMode || hasRealData || dismissed;
   });
 }
 
-/** Paint every `[data-linked-pill]` slot in the panel-action bars. The
- *  pill confirms to the user that the chosen folder is wired up for
- *  silent auto-refresh, and provides a one-click Disconnect. */
+/** Linked-folder pill suppressed in v109 per user request — the panel-
+ *  head was getting too noisy. Auto-refresh from the saved folder
+ *  still runs silently in the background; the Refresh button on the
+ *  toolbar is the only surface that needs to be there. */
 function renderLinkedPill() {
-  const name = getLinkedFolderName();
   document.querySelectorAll("[data-linked-pill]").forEach((el) => {
-    if (!name) {
-      el.hidden = true;
-      el.innerHTML = "";
-      return;
-    }
+    el.hidden = true;
+    el.innerHTML = "";
+  });
+}
+
+/** Cloud-sync status pill. Surfaces what the user CANNOT otherwise
+ *  see: that their uploaded run history is synced to their Steam
+ *  account, when the last sync happened, and how many runs are in
+ *  the cloud copy. Without this surface, "did it actually save?"
+ *  has no observable answer — and that's why users keep asking
+ *  whether they need to re-pick their save files.
+ *
+ *  Three states:
+ *   - signed-in + has runs in memory + uploaded recently → green dot
+ *     "Synced N runs · just now / 2m ago"
+ *   - signed-in + has runs but never uploaded → amber dot
+ *     "Local only · Sign in to sync" (rare; we auto-upload after
+ *     ingest)
+ *   - signed-out → hidden (no cloud account to sync with)
+ *
+ *  Updated by:
+ *    - boot (after IDB load)
+ *    - every CloudRuns.upload success
+ *    - every hydrateFromCloudIfAvailable
+ *    - timer every 30 s so the "X ago" string stays fresh */
+let lastCloudSyncAt = 0;
+let lastCloudSyncCount = 0;
+
+function recordCloudSync(count) {
+  lastCloudSyncAt = Date.now();
+  lastCloudSyncCount = count || 0;
+  try { localStorage.setItem("vault.web.lastCloudSync",
+    JSON.stringify({ at: lastCloudSyncAt, count: lastCloudSyncCount }));
+  } catch {}
+  renderSyncPill();
+}
+
+function loadCloudSyncFromStorage() {
+  try {
+    const raw = localStorage.getItem("vault.web.lastCloudSync");
+    if (!raw) return;
+    const j = JSON.parse(raw);
+    if (Number.isFinite(j?.at)) lastCloudSyncAt = j.at;
+    if (Number.isFinite(j?.count)) lastCloudSyncCount = j.count;
+  } catch { /* ignore */ }
+}
+
+function relativeAgoLabel(ts) {
+  if (!ts) return "";
+  const sec = Math.max(0, Math.floor((Date.now() - ts) / 1000));
+  if (sec < 5) return "just now";
+  if (sec < 60) return `${sec}s ago`;
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  const day = Math.floor(hr / 24);
+  return `${day}d ago`;
+}
+
+function renderSyncPill() {
+  const slots = document.querySelectorAll("[data-sync-pill]");
+  if (!slots.length) return;
+  // Sync pill suppressed in v109 per user request — they don't want
+  // it cluttering the panel-head. Cloud sync still runs in the
+  // background (recordCloudSync, CloudRuns.upload). Users who really
+  // want a manual cloud refresh can use the toolbar Refresh button.
+  slots.forEach((el) => { el.hidden = true; el.innerHTML = ""; });
+  return;
+  // eslint-disable-next-line no-unreachable
+  const signedIn = !!session?.steamID;
+  const hasData = parsedRuns.length > 0 && !isDemoMode;
+  if (!signedIn || !hasData) {
+    slots.forEach((el) => { el.hidden = true; el.innerHTML = ""; });
+    return;
+  }
+  const count = lastCloudSyncCount || parsedRuns.length;
+  // Stuck-state pill: signed-in but only 1 run — overwhelmingly means
+  // the user has not successfully linked their SlayTheSpire2 folder yet.
+  // Show a clear "Set up history" CTA instead of a green "Synced" pill
+  // that hides the real problem.
+  const stuck = count <= 1;
+  const ago = lastCloudSyncAt ? relativeAgoLabel(lastCloudSyncAt) : "syncing…";
+  slots.forEach((el) => {
     el.hidden = false;
-    el.innerHTML = `
-      <span class="linked-pill-dot" aria-hidden="true"></span>
-      <span class="linked-pill-text" title="Auto-refresh from this folder is on.">Linked: ${esc(name)}</span>
-      <button class="linked-pill-disconnect" type="button" data-action="disconnect-saves" title="Stop auto-refreshing from this folder">Disconnect</button>
-    `;
+    if (stuck) {
+      el.innerHTML = `
+        <span class="sync-pill-dot sync-pill-dot--warn" aria-hidden="true"></span>
+        <span class="sync-pill-text">
+          <strong>${count} run synced</strong>
+          <span class="sync-pill-ago">&middot; link your save folder</span>
+        </span>
+        <button class="sync-pill-refresh" type="button" data-action="link-saves" title="Pick your SlayTheSpire2 folder so we can import all your runs">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          <span>Link folder</span>
+        </button>`;
+    } else {
+      el.innerHTML = `
+        <span class="sync-pill-dot" aria-hidden="true"></span>
+        <span class="sync-pill-text">
+          <strong>Synced ${count} run${count === 1 ? "" : "s"}</strong>
+          <span class="sync-pill-ago">&middot; ${esc(ago)}</span>
+        </span>
+        <button class="sync-pill-refresh" type="button" data-action="refresh-cloud" title="Pull the latest history from your Steam account">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+          <span>Refresh</span>
+        </button>`;
+    }
+  });
+
+  document.querySelectorAll('[data-action="link-saves"]').forEach((btn) => {
+    if (btn.dataset.wired === "1") return;
+    btn.dataset.wired = "1";
+    btn.addEventListener("click", () => { void scanForHistory(); });
+  });
+
+  // Wire the refresh button — it manually triggers a cloud merge.
+  // Helps users who want to verify "is my latest run synced?".
+  document.querySelectorAll('[data-action="refresh-cloud"]').forEach((btn) => {
+    if (btn.dataset.wired === "1") return;
+    btn.dataset.wired = "1";
+    btn.addEventListener("click", async () => {
+      btn.disabled = true;
+      try {
+        // Re-scan the linked save folder first (if any) so the cloud
+        // merge has fresh local data to upload. Without this step,
+        // Refresh would always claim "Already up to date" even when the
+        // user just played 50 new runs that hadn't been re-ingested.
+        try {
+          const dirHandle = await HistoryStore.loadDirectoryHandle();
+          if (dirHandle) {
+            const files = await collectFilesFromDirectoryHandle(dirHandle);
+            if (files && files.length > 0) {
+              await ingestHistoryFiles(files, { silent: true });
+            }
+          }
+        } catch (e) {
+          console.warn("[Vault] refresh: rescan failed", e);
+        }
+        const res = await hydrateFromCloudIfAvailable();
+        const localCount = parsedRuns.length;
+        if (res?.changed) {
+          toast(`Synced ${res.count} run${res.count === 1 ? "" : "s"} from your Steam account.`);
+        } else if (localCount <= 1) {
+          // Sync says "no new runs", but local stats are still empty.
+          // Tell the user the truth: nothing to sync because no history
+          // has been imported yet. This was the misleading
+          // "Already up to date" toast that hid a stuck import.
+          toast("No history found yet. Click Import and pick your SlayTheSpire2 folder, or drag it onto the page.", { duration: 9000 });
+        } else {
+          toast(`Up to date — ${localCount} run${localCount === 1 ? "" : "s"} synced.`);
+        }
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  });
+}
+
+// Update the relative time string every 30s so "1m ago" doesn't
+// stay stuck while the user is staring at the toolbar.
+setInterval(() => {
+  if (lastCloudSyncAt) renderSyncPill();
+}, 30_000);
+
+/**
+ * Best-effort Private/Incognito detection.
+ *
+ * Every browser fingerprints private mode slightly differently;
+ * there is no single API. We use the storage-quota probe — in
+ * private mode browsers cap origin storage to ~120MB or refuse to
+ * report a quota at all. Combined with a localStorage write probe
+ * (Safari throws SecurityError in private mode on some versions),
+ * this catches Safari, Chrome, Firefox, and Edge private windows
+ * with high accuracy and no false positives on regular profiles
+ * that happen to be near quota.
+ */
+async function detectPrivateMode() {
+  try {
+    // Probe 1: localStorage write/read. In Safari Private (some
+    // versions) the write throws QuotaExceededError immediately.
+    const k = "__vault_private_probe__";
+    try {
+      localStorage.setItem(k, "1");
+      localStorage.removeItem(k);
+    } catch {
+      return true;
+    }
+    // Probe 2: storage quota. Private mode tends to report tiny
+    // (<200MB) quotas or refuses entirely.
+    if (navigator.storage && typeof navigator.storage.estimate === "function") {
+      const est = await navigator.storage.estimate();
+      const quota = est?.quota || 0;
+      // Normal browsers report >1GB quota on most origins; private
+      // mode caps tightly. The 200MB threshold is conservative —
+      // Chrome incognito reports ~120MB, Safari private ~100MB.
+      if (quota > 0 && quota < 200 * 1024 * 1024) return true;
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+let privateModeNoticeShown = false;
+function showPrivateModeNotice() {
+  if (privateModeNoticeShown) return;
+  privateModeNoticeShown = true;
+  // Don't pester users who explicitly chose private mode — show
+  // once per tab, dismissible. Sticks at the top of #app-content
+  // above the global invite banner. We deliberately do NOT block
+  // any features — private-mode sign-in still works, just won't
+  // persist after the window closes.
+  const $host = document.getElementById("app-content");
+  if (!$host) return;
+  const div = document.createElement("div");
+  div.className = "private-mode-notice";
+  div.setAttribute("role", "status");
+  div.innerHTML = `
+    <span class="private-mode-icon" aria-hidden="true">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
+    </span>
+    <span class="private-mode-text">
+      <strong>Private window detected.</strong>
+      Steam sign-in won't persist after you close this window, and your linked save folder won't be remembered next visit. Open in a regular browser window for the full experience.
+    </span>
+    <button type="button" class="private-mode-close" aria-label="Dismiss">&times;</button>`;
+  $host.insertBefore(div, $host.firstChild);
+  div.querySelector(".private-mode-close").addEventListener("click", () => {
+    div.remove();
   });
 }
 
@@ -1739,14 +2466,49 @@ function renderLinkedPill() {
 // =========================================================================
 function wireCoopForm() {
   document.querySelectorAll('input[name="status"]').forEach((el) =>
-    el.addEventListener("change", schedulePush)
+    el.addEventListener("change", () => {
+      // Manual user change → reset auto-AFK timer so we don't
+      // immediately flip them back to AFK on the next idle window.
+      lastUserActivityAt = Date.now();
+      userExplicitStatusAt = Date.now();
+      schedulePush();
+    })
   );
   document.getElementById("me-discord").addEventListener("input", schedulePush);
 
-  // Restore last draft (status pill + discord handle).
+  // Restore last status from local draft FIRST so the radio shows
+  // immediately, then pull the authoritative copy from the server
+  // (the user might have set "afk" on desktop and just opened
+  // mobile — the server has the truth, localStorage doesn't).
   const draft = readDraft();
   setRadio("status", draft.status ?? "looking");
   document.getElementById("me-discord").value = draft.discordHandle ?? "";
+
+  // Pull our own row from the roster on mount and use it to
+  // override the local draft if it's fresher. This is what makes
+  // status follow the user across devices: set "afk" anywhere,
+  // see "afk" everywhere.
+  void hydrateMyStatusFromServer();
+}
+
+/** Pull the signed-in user's own presence row from the server and
+ *  reflect it in the form. Skipped for guests. Non-blocking — if it
+ *  fails, the local draft stays. */
+async function hydrateMyStatusFromServer() {
+  if (!session?.steamID) return;
+  try {
+    const list = await fetchFeed();
+    const me = (list || []).find((p) => p.steamID === session.steamID);
+    if (!me) return;
+    if (me.status && me.status !== "none") {
+      setRadio("status", me.status);
+    }
+    if (me.discordHandle) {
+      const $d = document.getElementById("me-discord");
+      if ($d && !$d.value) $d.value = me.discordHandle;
+    }
+    saveDraft({ status: me.status, discordHandle: me.discordHandle });
+  } catch { /* offline at boot is fine */ }
 }
 
 /**
@@ -1774,9 +2536,66 @@ function schedulePush(delay = 600) {
   pushTimer = setTimeout(() => pushNow(false), delay);
 }
 
+/**
+ * Auto-AFK + status-accuracy guard.
+ *
+ * Two real problems we're solving:
+ *
+ *   A) Stale status: a user clicked "Looking for co-op" 6 hours ago,
+ *      walked away from their machine, and is still on the roster as
+ *      "looking" while their Discord goes silent. Other players ping
+ *      them, get nothing back, churn. We auto-flip to "afk" after 15
+ *      minutes of true tab inactivity (no mouse, no keyboard, tab
+ *      not focused).
+ *
+ *   B) Auto-flip clobbering an explicit choice: if the user *just*
+ *      manually set "looking" 2 minutes ago and switched to a
+ *      different tab to read STS2 strategy, we don't want to flip
+ *      them to "afk" the moment they tab away. So `userExplicitStatusAt`
+ *      records when they last manually changed; auto-AFK only fires
+ *      after the explicit choice is at least IDLE_GRACE_MS old.
+ *
+ * `inSTS2` is server-derived from the Steam Web API — accuracy on
+ * "is this player actually in the game right now" is enforced
+ * upstream, not by the client. Nothing here can lie about that.
+ */
+const IDLE_AFK_AFTER_MS  = 15 * 60_000; // 15 min idle → auto-AFK
+const IDLE_GRACE_MS      = 5  * 60_000; // 5 min after manual choice, no auto-flip
+let lastUserActivityAt   = Date.now();
+let userExplicitStatusAt = Date.now();
+
+["mousemove", "mousedown", "keydown", "touchstart", "scroll"].forEach((ev) => {
+  window.addEventListener(ev, () => {
+    lastUserActivityAt = Date.now();
+  }, { passive: true });
+});
+
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") lastUserActivityAt = Date.now();
+});
+
+setInterval(() => {
+  if (!session?.steamID) return;
+  const idleMs = Date.now() - lastUserActivityAt;
+  const sinceExplicit = Date.now() - userExplicitStatusAt;
+  if (idleMs < IDLE_AFK_AFTER_MS) return;
+  if (sinceExplicit < IDLE_GRACE_MS) return;
+  const current = (document.querySelector('input[name="status"]:checked') || {}).value;
+  if (!current || current === "afk") return;
+  // Flip to AFK; the heartbeat will push it server-side.
+  setRadio("status", "afk");
+  saveDraft({ ...readDraft(), status: "afk" });
+  schedulePush(0);
+  sendBeacon("auto-afk-flipped", `from=${current} idleMs=${idleMs}`);
+}, 60_000);
+
 async function pushNow(silent) {
   const body = readMyForm();
   saveDraft(body);
+  // Reflect the new status in the bottom profile dock immediately so
+  // the user gets visible feedback that their status switch landed,
+  // even before the server round-trip completes.
+  renderProfileDock();
   if (!silent) showPushingPill(true);
   try {
     const resp = await fetch(`${API_BASE}/presence`, {
@@ -1838,9 +2657,16 @@ async function pullInbox() {
     const previousInbox = lastInbox;
     lastInbox = r.invites ?? [];
     if (activeTab === "coop") renderInbox(lastInbox);
+    // Always refresh the global banner — it's not coupled to the
+    // Co-op tab. A user on Overview should see "X wants to play"
+    // appear at the top of the page the moment the invite arrives.
+    renderGlobalInviteBanner(
+      lastInbox.filter((i) => i.status === "pending")
+    );
     updateCoopBadge();
     updateTabTitle();
     announceNewInvites(previousInbox, lastInbox);
+    renderProfileDock();
   } catch (e) {
     console.warn("inbox fetch failed", e);
   }
@@ -1929,11 +2755,29 @@ function fireOSNotification(invite) {
   } catch { /* notification API quirks vary; never fail the poll */ }
 }
 
+/**
+ * Auto-routed feed fetch:
+ *   - Authed users → `/presence/roster`   (full Steam identity, for invites)
+ *   - Guests       → `/presence`          (anonymized: anonId / status only)
+ *
+ * The server enforces the privacy boundary — guests hitting
+ * `/presence/roster` get a 401. This routing just picks the right
+ * URL up front so we don't surface a spurious 401 to a guest who
+ * doesn't need identity fields anyway.
+ *
+ * Callers get back rows that are either:
+ *   PresenceEntry     { steamID, personaName, avatarURL, status, ... }     — authed
+ *   PublicPresenceEntry { anonId, status, inSTS2, updatedAt, note:"" }     — guest
+ *
+ * Renderers detect the shape via presence of `steamID` vs. `anonId`.
+ */
 async function fetchFeed() {
-  const r = await fetch(`${API_BASE}/presence`, {
+  const authed = !!(session && session.sessionToken);
+  const url = authed ? `${API_BASE}/presence/roster` : `${API_BASE}/presence`;
+  const r = await fetch(url, {
     cache: "no-store",
     credentials: "include",
-    headers: session?.sessionToken
+    headers: authed
       ? { authorization: `Bearer ${session.sessionToken}` }
       : {},
   });
@@ -1982,7 +2826,17 @@ async function signOut() {
     }),
   ]);
   localStorage.removeItem(STORAGE_DRAFT);
-  // Keep cached history.json. That's the user's data, sign-out shouldn't nuke it.
+
+  // Keep locally imported history AND the saved save-folder handle on
+  // this device when signing out. The handle is a per-device permission
+  // for the user's local SlayTheSpire2 folder — wiping it on sign-out
+  // forced users into a fresh manual folder pick on every sign-in,
+  // which felt completely broken. The handle is not Steam-account
+  // sensitive (it points at a folder on this machine), and IDB run data
+  // is already scoped per Steam ID for shared-browser privacy.
+  HistoryStore.setActiveSteamID(null);
+  sendBeacon("signout-clear", "scope=kept-history handles=kept");
+
   clearSessionAndReload();
 }
 
@@ -1990,6 +2844,13 @@ async function signOut() {
 // Co-op feed renderer
 // =========================================================================
 function renderFeed(list) {
+  const me = list.find((p) => p.steamID === session.steamID);
+  // Surface "Currently paired with @X" inside the user's me-card.
+  // Reflects server pair state on every feed refresh, so the banner
+  // appears within ~one poll cycle of acceptance and disappears the
+  // moment either side ends the pair (or the 4h TTL elapses).
+  renderMyPairStatus(me);
+
   const others = list.filter((p) => p.steamID !== session.steamID);
   const inGame = others.filter((p) => p.inSTS2).length;
   const looking = others.filter((p) => p.status === "looking").length;
@@ -2126,25 +2987,108 @@ function renderRow(p) {
   const persona = p.personaName || "Steam User";
   const lastActive = formatRelativeActive(p.updatedAt);
   const freshness = activeFreshnessClass(p.updatedAt);
+  // "Playing with @X" pill. Server-derived; populated when a mutually
+  // accepted invite has linked this row's user to a partner. Gives
+  // social proof on the feed ("these two are co-oping right now")
+  // without exposing anything beyond the partner's persona.
+  const pairedPartner = (p.paired && p.paired.partnerPersona) ? p.paired.partnerPersona : "";
+  const isPairedWithMe = !!(p.paired && session?.steamID && p.paired.partnerID === session.steamID);
 
   return `
-    <article class="row ${status}" data-sid="${esc(sid)}">
+    <article class="row ${status}${pairedPartner ? " row--paired" : ""}" data-sid="${esc(sid)}">
       <img class="avatar" alt="" src="${esc(safeAvatar)}" />
       <div class="meta">
         <div class="meta-line">
           <span class="name">${esc(persona)}</span>
           <span class="tag ${tagClass}">${tagLabel}</span>
           ${p.inSTS2 ? `<span class="tag live">In STS2</span>` : ""}
+          ${pairedPartner ? `<span class="tag paired" title="${isPairedWithMe ? "You're co-oping with this player right now." : "Currently playing with " + esc(pairedPartner)}">${isPairedWithMe ? "Co-op &mdash; with you" : "Co-op &mdash; w/ " + esc(pairedPartner)}</span>` : ""}
           ${lastActive ? `<span class="last-active is-${freshness}" title="Last heartbeat ${esc(p.updatedAt ?? "")}">${esc(lastActive)}</span>` : ""}
         </div>
-        <p class="row-hint muted">Send them an invite to play.</p>
+        <p class="row-hint muted">${pairedPartner && !isPairedWithMe ? "Already in a co-op session." : "Send them an invite to play."}</p>
       </div>
       <div class="actions">
-        <button class="btn-primary sm" data-act="invite" data-id="${esc(sid)}" data-name="${esc(persona)}">Invite to play</button>
+        <button class="btn-primary sm" data-act="invite" data-id="${esc(sid)}" data-name="${esc(persona)}"${pairedPartner && !isPairedWithMe ? " disabled" : ""}>${pairedPartner && !isPairedWithMe ? "Busy" : "Invite to play"}</button>
         <a class="action-link" target="_blank" rel="noopener" href="${esc(steamProfileWeb)}" title="Open Steam profile">Steam profile</a>
         ${p.discordHandle ? `<button class="action-link" data-act="discord" data-handle="${esc(p.discordHandle)}">Copy Discord</button>` : ""}
       </div>
     </article>`;
+}
+
+/**
+ * Render or hide the "Currently paired with @X" banner inside the user's
+ * own me-card. Lifecycle:
+ *
+ *   - The user accepts an invite (or has theirs accepted) → server writes
+ *     the pair → next /presence/roster fetch returns `me.paired` → we
+ *     surface the banner with an "End co-op" button.
+ *
+ *   - User clicks End co-op → DELETE /api/pair → both sides clear → next
+ *     roster fetch comes back without the pair → banner unmounts.
+ *
+ *   - 4-hour TTL also clears the pair server-side without action; the
+ *     banner just disappears on the following poll.
+ */
+function renderMyPairStatus(me) {
+  const $card = document.querySelector(".me-card");
+  if (!$card) return;
+  let $banner = document.getElementById("me-pair-banner");
+  const partner = me?.paired?.partnerPersona;
+  const partnerSid = me?.paired?.partnerID;
+
+  if (!partner) {
+    if ($banner) $banner.remove();
+    return;
+  }
+
+  if (!$banner) {
+    $banner = document.createElement("div");
+    $banner.id = "me-pair-banner";
+    $banner.className = "me-pair-banner";
+    // Insert at the top of the me-card so it's the first thing the
+    // user sees when their pair is live.
+    $card.insertBefore($banner, $card.firstChild);
+  }
+
+  const sinceLabel = me.paired.since
+    ? formatRelativeActive(me.paired.since).replace(" ago", "").replace("just now", "just now")
+    : "";
+  $banner.innerHTML = `
+    <span class="me-pair-icon" aria-hidden="true">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+    </span>
+    <span class="me-pair-text">
+      <strong>Co-oping with ${esc(partner)}</strong>
+      ${sinceLabel ? `<span class="me-pair-since muted">paired ${esc(sinceLabel === "just now" ? "just now" : sinceLabel + " ago")}</span>` : ""}
+    </span>
+    <button type="button" class="btn-ghost sm" data-action="end-coop" data-partner="${esc(partner)}" data-partner-sid="${esc(partnerSid || "")}">End co-op</button>`;
+
+  $banner.querySelector('[data-action="end-coop"]').addEventListener("click", async (ev) => {
+    const btn = ev.currentTarget;
+    btn.disabled = true;
+    try {
+      const r = await fetch(`${API_BASE}/pair`, {
+        method: "DELETE",
+        credentials: "include",
+        headers: { authorization: `Bearer ${session?.sessionToken ?? "__cookie__"}` },
+      });
+      if (!r.ok) {
+        toast(`Couldn't end co-op (${r.status}). Please try again.`);
+        btn.disabled = false;
+        return;
+      }
+      sendBeacon("pair-ended", `partner=${partnerSid || "unknown"}`);
+      // Optimistically clear the banner; the next pullFeed() will
+      // confirm by returning a roster entry without `paired`.
+      $banner?.remove();
+      toast(`Ended co-op with ${partner}.`);
+      // Refresh feed so the partner's row also drops its pill.
+      void pullFeed?.();
+    } catch (err) {
+      toast(`Couldn't end co-op: ${String(err?.message ?? err)}`);
+      btn.disabled = false;
+    }
+  });
 }
 
 // =========================================================================
@@ -2157,6 +3101,7 @@ function renderInbox(invites) {
   document.getElementById("inbox-count").textContent = String(pending.filter(i => i.status === "pending").length);
   if (!pending.length) {
     $inbox.hidden = true;
+    renderGlobalInviteBanner([]);
     return;
   }
   $inbox.hidden = false;
@@ -2174,6 +3119,128 @@ function renderInbox(invites) {
         return;
       }
       await pullInbox();
+    });
+  });
+
+  // Mirror pending invites into the global banner so users on Overview,
+  // Characters, etc. see incoming requests without navigating to Co-op.
+  renderGlobalInviteBanner(pending);
+}
+
+// =========================================================================
+// Global invite banner (persistent, all tabs)
+// -------------------------------------------------------------------------
+// Lives above every tab panel (prepended into #app-content on first
+// render). Surfaces pending invites with inline Accept / Decline / Open
+// Steam profile so the user never has to hop to the Co-op tab to
+// respond. Dismissible per-invite-id via sessionStorage so closing the
+// banner doesn't mean missing the invite — it just removes it from
+// this view while the Co-op tab still shows it.
+// =========================================================================
+
+const GLOBAL_INVITE_DISMISSED_KEY = "vault.invites.dismissed";
+
+function getDismissedInviteIds() {
+  try {
+    const raw = sessionStorage.getItem(GLOBAL_INVITE_DISMISSED_KEY);
+    if (!raw) return new Set();
+    return new Set(JSON.parse(raw));
+  } catch { return new Set(); }
+}
+
+function dismissInviteLocally(id) {
+  const s = getDismissedInviteIds();
+  s.add(id);
+  try { sessionStorage.setItem(GLOBAL_INVITE_DISMISSED_KEY, JSON.stringify([...s])); } catch {}
+}
+
+function ensureGlobalInviteBanner() {
+  let $b = document.getElementById("global-invite-banner");
+  if ($b) return $b;
+  $b = document.createElement("div");
+  $b.id = "global-invite-banner";
+  $b.className = "global-invite-banner";
+  $b.hidden = true;
+  $b.setAttribute("role", "region");
+  $b.setAttribute("aria-label", "Pending co-op invites");
+  const host = document.getElementById("app-content");
+  if (host) host.insertBefore($b, host.firstChild);
+  else document.body.insertBefore($b, document.body.firstChild);
+  return $b;
+}
+
+function renderGlobalInviteBanner(pending) {
+  const $b = ensureGlobalInviteBanner();
+  const dismissed = getDismissedInviteIds();
+  const visible = (pending || []).filter((i) => i.status === "pending" && !dismissed.has(i.id));
+  if (!visible.length) {
+    $b.hidden = true;
+    $b.innerHTML = "";
+    return;
+  }
+  $b.hidden = false;
+
+  const desktopLikely = isDesktopLikelyToHandleSteamClient();
+  const launchSTS = `steam://run/${STS2_APP_ID}`;
+
+  $b.innerHTML = visible.map((inv) => {
+    const safeAvatar = (() => {
+      try {
+        const u = new URL(inv.fromAvatar ?? "");
+        if (u.protocol === "https:" || u.protocol === "http:") return u.toString();
+      } catch {}
+      return "/assets/vault-mark.svg";
+    })();
+    const messageText = InviteAPI.getMessageText(inv.messageId) ?? "Wants to play.";
+    const sid = inv.fromID;
+    const steamProfileWeb = `https://steamcommunity.com/profiles/${esc(sid)}`;
+    return `
+      <div class="global-invite-row" data-invite-id="${esc(inv.id)}">
+        <img class="global-invite-avatar" alt="" src="${esc(safeAvatar)}" />
+        <div class="global-invite-text">
+          <strong><span class="global-invite-eyebrow">Co-op invite</span> ${esc(inv.fromPersona || "Someone")} wants to play</strong>
+          <span class="global-invite-msg">"${esc(messageText)}"</span>
+        </div>
+        <div class="global-invite-actions">
+          <button class="btn-primary sm" type="button" data-invite-act="accept" data-id="${esc(inv.id)}">Accept</button>
+          <button class="btn-ghost sm"   type="button" data-invite-act="decline" data-id="${esc(inv.id)}">Decline</button>
+          <a class="btn-ghost sm" target="_blank" rel="noopener" href="${steamProfileWeb}" title="Open ${esc(inv.fromPersona || "this player")}'s Steam profile">Open Steam profile</a>
+          ${desktopLikely ? `<a class="btn-ghost sm" href="${launchSTS}" title="Launch Slay the Spire 2">Launch STS2</a>` : ""}
+        </div>
+        <button class="global-invite-close" type="button" data-invite-dismiss="${esc(inv.id)}" aria-label="Dismiss (keeps the invite in Co-op)">&times;</button>
+      </div>`;
+  }).join("");
+
+  // Wire buttons. Accept/decline go through the same API as the
+  // Co-op tab; dismissing only hides the banner row (invite stays
+  // in the inbox until explicitly accepted/declined).
+  $b.querySelectorAll("button[data-invite-act]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const id = btn.dataset.id;
+      const action = btn.dataset.inviteAct;
+      btn.disabled = true;
+      const r = await InviteAPI.respondToInvite(API_BASE, session.sessionToken, id, action);
+      btn.disabled = false;
+      if (!r.ok) {
+        toast(`Couldn't ${action}: ${r.error ?? "unknown error"}`);
+        return;
+      }
+      if (action === "accept") {
+        toast(`Accepted. Opening Steam profile…`);
+        // Surface Steam profile automatically — the user accepted,
+        // the obvious next step is to add them as a friend.
+        const row = btn.closest(".global-invite-row");
+        const link = row?.querySelector('a[href^="https://steamcommunity.com"]');
+        try { link?.click(); } catch {}
+      }
+      await pullInbox();
+    });
+  });
+  $b.querySelectorAll("button[data-invite-dismiss]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      dismissInviteLocally(btn.dataset.inviteDismiss);
+      // Re-render with the dismissed id filtered out.
+      renderGlobalInviteBanner(lastInbox.filter((i) => i.status === "pending"));
     });
   });
 }
@@ -2516,28 +3583,49 @@ async function disconnectLinkedSaves() {
   try { renderActiveTab(); } catch { /* defensive */ }
 }
 
-async function scanForHistory() {
-  // Best path: directory picker (Chromium, Edge, Brave). One click, the
-  // user picks `Slay the Spire 2/` (or any parent of the actual `runs/`
-  // folder), the browser hands back a directory handle, and we
-  // recursively read every `.run` file inside. This is the experience
-  // 95% of new users actually want: "show me my stats", one gesture.
+function scanForHistory() {
+  console.info("[Vault import] scanForHistory invoked, ua=", navigator.userAgent);
+  // CRITICAL: this function MUST run synchronously up to the `.click()`
+  // on the hidden input. Safari only honors picker-opening clicks that
+  // are inside the same JS task as the user's gesture. Any `await` here
+  // (e.g. checking for a saved handle, querying permissions) consumes
+  // the user gesture and Safari silently refuses to open the picker.
+  // The silent re-read of saved handles still happens on page boot via
+  // autoReloadHistoryIfPermitted() — this entry point is just for the
+  // explicit Import button.
   if (typeof window.showDirectoryPicker === "function") {
     sendBeacon("ingest-picker-opened", "directory");
-    return scanForHistoryViaDirectoryPicker();
+    console.info("[Vault import] using showDirectoryPicker (Chromium)");
+    void scanForHistoryViaDirectoryPicker();
+    return;
   }
-  // Second-best: file picker on Chromium with `multiple: true` — user
-  // can shift-select every `.run` file in their save folder. Still one
-  // gesture, but they have to navigate to the folder themselves.
-  if (HistoryStore.supportsFSA()) {
-    sendBeacon("ingest-picker-opened", "fsa-multifile");
-    return scanForHistoryViaFilePicker();
+  // FALLBACK: <input type="file" webkitdirectory>. Works on Safari and
+  // Firefox. The browser opens its native folder picker, hands us a flat
+  // FileList of every nested file. We filter to .run/.json/.save in the
+  // change handler.
+  sendBeacon("ingest-picker-opened", "webkitdirectory");
+  console.info("[Vault import] using webkitdirectory fallback");
+  triggerFolderPicker();
+}
+
+/** Click the hidden folder input so the browser opens its native
+ *  directory picker. Same UX as showDirectoryPicker on Chromium —
+ *  the user picks one folder, we receive every file inside. */
+function triggerFolderPicker() {
+  const $input = document.getElementById("history-folder-input");
+  if (!$input) {
+    // No folder input on the page (very old cached HTML). DO NOT fall
+    // through to the flat single-file picker — that's exactly the
+    // 1-run-import bug class. Force a hard reload so the user picks up
+    // the latest HTML, then they can try again.
+    console.error("[Vault import] history-folder-input missing — reloading page");
+    toast("Updating to latest version… retrying import after reload.", { duration: 5000 });
+    setTimeout(() => { try { window.location.reload(); } catch {} }, 1200);
+    return;
   }
-  // Safari / Firefox fallback: legacy `<input type="file" multiple>`.
-  // Users can multi-select but no folder picker is exposed by these
-  // browsers without webkitdirectory, which they don't support
-  // consistently for the open-then-trust pattern we want.
-  triggerFilePicker();
+  console.info("[Vault import] clicking history-folder-input (webkitdirectory)");
+  $input.value = "";
+  $input.click();
 }
 
 /**
@@ -2551,8 +3639,13 @@ async function scanForHistory() {
  */
 async function scanForHistoryViaDirectoryPicker() {
   // Platform-appropriate path → clipboard so the user can paste into
-  // the picker instead of clicking through `~/Library/Application
-  // Support/Mega Crit/...` from scratch. Best-effort; never blocks.
+  // the OS picker (which is its own modal we cannot decorate) instead
+  // of hand-navigating to a hidden directory. Best-effort; never
+  // blocks. The toast that follows tells them WHAT to do with the
+  // pasted path AND reminds them the next click is "Select" — the
+  // most common failure mode is "I pasted, I'm at the folder, now
+  // what?". A platform-aware copy makes Windows paste-into-address-
+  // bar, macOS Cmd+Shift+G, and Linux file-manager flows all clear.
   const platform = detectPlatform();
   let copiedPath = null;
   try {
@@ -2565,11 +3658,23 @@ async function scanForHistoryViaDirectoryPicker() {
   } catch { /* ignore */ }
   if (copiedPath) {
     if (platform === "mac") {
-      toast("Path copied. In the picker, press Cmd+Shift+G and paste.");
+      // The Chrome showDirectoryPicker button literally says "Select"
+      // (not "Open"). Earlier copy said Open and confused users who
+      // were already at SlayTheSpire2 and didn't know to click Select.
+      toast(
+        `Path copied. In the picker → press ⌘⇧G → paste → Enter. You'll see SlayTheSpire2 with subfolders (steam, logs, etc.). Click the blue Select button — we walk into steam/<id>/profile1/saves/history automatically.`,
+        { duration: 14000 }
+      );
     } else if (platform === "windows") {
-      toast("Path copied. Paste into the picker's address bar.");
+      toast(
+        "Path copied. In the picker → click the address bar at the top → paste → Enter. You'll see SlayTheSpire2. Click the Select Folder button — we walk every subfolder automatically.",
+        { duration: 14000 }
+      );
     } else {
-      toast("Path copied. Paste into the picker.");
+      toast(
+        "Path copied. Press Ctrl+L in the picker → paste → Enter. You'll see SlayTheSpire2. Click the Select button — we walk every subfolder automatically.",
+        { duration: 14000 }
+      );
     }
   }
 
@@ -2623,7 +3728,39 @@ async function scanForHistoryViaDirectoryPicker() {
   toast("Scanning folder…");
   const files = await collectFilesFromDirectoryHandle(dirHandle);
   if (files.length === 0) {
-    toast(`No .run or .json files found inside ${dirHandle.name || "that folder"}. Make sure you picked the SlayTheSpire2 save folder, not the install folder.`);
+    // Specific diagnostic — the previous "didn't find anything" toast
+    // didn't tell the user where to look next. Three real cases:
+    //   1. Wrong folder (Steam install dir, not save dir) — the most
+    //      common failure. Surface the exact deep path they should
+    //      have ended up in.
+    //   2. Right folder, but no runs played yet — common for first-
+    //      time STS2 buyers visiting our site.
+    //   3. Picked a parent and the walker hit its 8-deep cap — very
+    //      rare, but the diagnostic should still help.
+    const platform = detectPlatform();
+    const where =
+      platform === "windows" ? HISTORY_PATH_WIN_FULL
+      : platform === "linux" ? HISTORY_PATH_LINUX_FULL
+      : HISTORY_PATH_MAC_FULL;
+    sendBeacon("ingest-empty-folder", `picked=${dirHandle.name || ""} platform=${platform}`);
+    // Friendlier diagnosis. The two real failure modes:
+    //   1. User picked the right parent BUT haven't played any STS2 runs
+    //      yet — most common for first-time visitors who just installed
+    //      the game. Tell them to play one run and come back.
+    //   2. User picked a wrong folder (Steam install dir, Cluely, etc.).
+    //      Surface the EXACT deep path so they know where to navigate.
+    // For macOS specifically: also nudge them to drill down into
+    // `steam/<your-id>/profile1/saves/history/` because the parent
+    // SlayTheSpire2/ has no `.run` files at the top level.
+    const drillHint = platform === "mac"
+      ? "STS2 buries them at steam/<your-id>/profile1/saves/history/ inside that folder. Try drilling into 'steam' first."
+      : platform === "windows"
+        ? "STS2 stores them under steam\\<your-id>\\profile1\\saves\\history\\."
+        : "STS2 stores them under steam/<your-id>/profile1/saves/history/.";
+    toast(
+      `No .run files in "${dirHandle.name || "that folder"}". ${drillHint} Or drag the whole SlayTheSpire2 folder from Finder onto this page — that always works.`,
+      { duration: 14000 }
+    );
     return;
   }
   const ok = await ingestHistoryFiles(files);
@@ -3046,7 +4183,66 @@ async function ingestHistoryFiles(files, { silent = false } = {}) {
   }
 
   console.info(`[Vault] loaded ${runs.length} unique run(s) from ${okFiles}/${plausible.length} file(s)`);
-  return await commitParsedRuns(runs, plausible[0]?.name || "save", { silent, fileCount: plausible.length });
+  const committed = await commitParsedRuns(runs, plausible[0]?.name || "save", { silent, fileCount: plausible.length });
+
+  // Quality check: if a user picked a folder and we got back a tiny
+  // number of runs, they almost certainly picked a wrong subfolder
+  // (e.g. `default/` or the parent `SlayTheSpire2/` containing only
+  // settings.save files). The healthy STS2 player has dozens to
+  // hundreds of `.run` files. Surface a recovery banner so they don't
+  // silently sit on garbage stats. Skip this for silent auto-refresh
+  // and for single-file imports (someone consciously picked one run).
+  if (!silent && plausible.length >= 1 && runs.length > 0 && runs.length < 5) {
+    setTimeout(() => maybeShowImportRecoveryBanner(runs.length), 600);
+  }
+
+  return committed;
+}
+
+/**
+ * Show a sticky recovery banner when an interactive import comes back
+ * with suspiciously few runs. The banner has two real escape hatches:
+ *   1. A direct "Pick again" button that opens the folder picker.
+ *   2. A "Drop your folder here" zone wired to the global drag-drop.
+ * The user can dismiss if they really do only have a handful of runs.
+ */
+function maybeShowImportRecoveryBanner(runCount) {
+  // De-dupe: don't stack banners if the user re-imports.
+  document.getElementById("import-recovery-banner")?.remove();
+
+  const host = document.getElementById("app-content");
+  if (!host) return;
+
+  const bar = document.createElement("div");
+  bar.id = "import-recovery-banner";
+  bar.className = "import-recovery-banner";
+  bar.setAttribute("role", "status");
+  bar.innerHTML = `
+    <div class="import-recovery-banner-inner">
+      <span class="import-recovery-icon" aria-hidden="true">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
+      </span>
+      <div class="import-recovery-text">
+        <strong>That doesn't look right &mdash; we only found ${runCount} run${runCount === 1 ? "" : "s"}.</strong>
+        Most STS2 players have dozens or hundreds. You probably picked a wrong folder. The right one is
+        <code>SlayTheSpire2</code> (the whole folder, not a subfolder). Easiest fix: drag it from Finder onto this page.
+      </div>
+      <div class="import-recovery-actions">
+        <button class="btn-primary sm" type="button" data-action="recover-pick-again">Pick again</button>
+        <button class="btn-ghost sm" type="button" data-action="recover-dismiss" aria-label="Dismiss">&times;</button>
+      </div>
+    </div>`;
+  host.insertBefore(bar, host.firstChild);
+
+  bar.querySelector('[data-action="recover-pick-again"]').addEventListener("click", () => {
+    bar.remove();
+    sendBeacon("import-recovery-pick-again", `from-count=${runCount}`);
+    void scanForHistory();
+  });
+  bar.querySelector('[data-action="recover-dismiss"]').addEventListener("click", () => {
+    bar.remove();
+    sendBeacon("import-recovery-dismissed", `from-count=${runCount}`);
+  });
 }
 
 /**
@@ -3179,40 +4375,111 @@ function reviveRun(r) {
   };
 }
 
-/** Boot-time cloud rehydration. Pulls the user's cloud-copy run set
- *  (if any) and replaces the in-memory state when it has more runs
- *  than what's currently rendered (i.e. demo data on a fresh device).
- *  Persists to IndexedDB on success so the next cold load reads
- *  locally instead of round-tripping the network. */
+/** Boot-time + sign-in cloud rehydration.
+ *
+ *  Pulls the user's cloud-copy run set and **unions** it with whatever's
+ *  already in memory, deduping by `run.id` and keeping the newer record
+ *  per id. This protects three real edge cases that the previous
+ *  "replace if cloud is bigger" path got wrong:
+ *
+ *    1. Phone has 5 fresh local runs not yet uploaded; cloud has 50
+ *       runs from web. Old code: cloud overwrites, the 5 phone runs
+ *       are lost. New code: result is 55 unique runs.
+ *    2. Web uploaded once, then user trimmed runs locally on web.
+ *       Cloud has the larger original set; the user expects local
+ *       state to win — the merge keeps newer-by-`endedAt` per-id.
+ *    3. Stale cloud snapshot + larger fresh local set: merge prefers
+ *       newer end-times so freshness wins over cardinality.
+ *
+ *  Persists the merged result to IndexedDB (keyed under the active
+ *  Steam ID) and re-uploads so cloud catches up to local additions on
+ *  the next push. Re-renders the active tab if anything changed.
+ *
+ *  Returns `{ changed, count }` for the caller. Safe to call multiple
+ *  times — boot, sign-in transition, and visibility-change all funnel
+ *  through this single entry point.
+ */
 async function hydrateFromCloudIfAvailable() {
   try {
     const blob = await CloudRuns.download();
-    if (!blob || !Array.isArray(blob.runs) || blob.runs.length === 0) return;
-    // Only replace state when the cloud copy is meaningfully larger than
-    // what's already in memory — guards against "I had 50 local runs,
-    // cloud only has 3 from a stale upload" smashing the local set.
-    const localRealRuns = isDemoMode ? 0 : parsedRuns.length;
-    if (blob.runs.length <= localRealRuns) return;
+    if (!blob || !Array.isArray(blob.runs) || blob.runs.length === 0) {
+      return { changed: false, count: parsedRuns.length };
+    }
 
-    const revived = blob.runs.map((r) => reviveRun(r));
-    revived.sort((a, b) => (b.endedAt?.getTime?.() || 0) - (a.endedAt?.getTime?.() || 0));
-    parsedRuns = revived;
+    const cloudRevived = blob.runs.map((r) => reviveRun(r));
+    // Demo data is never merged — it's synthetic and would pollute the
+    // user's actual run set. The first real ingest path (manual import
+    // or cloud hydrate) replaces the demo wholesale.
+    const baseLocal = isDemoMode ? [] : parsedRuns;
+    const wasDemo = isDemoMode;
+
+    const byId = new Map();
+    for (const r of baseLocal) {
+      if (r && r.id) byId.set(r.id, r);
+    }
+    let cloudOnly = 0;
+    let cloudOverrides = 0;
+    for (const r of cloudRevived) {
+      if (!r || !r.id) continue;
+      const existing = byId.get(r.id);
+      if (!existing) {
+        byId.set(r.id, r);
+        cloudOnly += 1;
+      } else {
+        // Pick the newer `endedAt` to win — same id but a later
+        // end-time means the run was re-finalized (extra floors before
+        // game-over, etc.) so prefer the freshly-observed copy.
+        const aT = existing.endedAt?.getTime?.() || 0;
+        const bT = r.endedAt?.getTime?.() || 0;
+        if (bT > aT) { byId.set(r.id, r); cloudOverrides += 1; }
+      }
+    }
+
+    const merged = [...byId.values()].sort(
+      (a, b) => (b.endedAt?.getTime?.() || 0) - (a.endedAt?.getTime?.() || 0)
+    );
+
+    // Bail out if nothing changed (cold boot with cloud == local, or
+    // pure no-op refresh) — avoids a useless re-render flicker.
+    const changed = wasDemo
+      || merged.length !== baseLocal.length
+      || cloudOverrides > 0;
+    if (!changed) {
+      return { changed: false, count: merged.length };
+    }
+
+    parsedRuns = merged;
     isDemoMode = false;
-    sendBeacon("cloud-runs-hydrated", `count=${revived.length}`);
+    sendBeacon(
+      "cloud-runs-hydrated",
+      `count=${merged.length} cloud_only=${cloudOnly} overrides=${cloudOverrides} was_demo=${wasDemo ? 1 : 0}`
+    );
+    recordCloudSync(merged.length);
 
     // Persist to IndexedDB so the next cold load is instant.
     try {
       await HistoryStore.saveHistory({
         savedAt: new Date().toISOString(),
         sourceFilename: "cloud-sync",
-        runs: revived.map(serializeRun),
+        runs: merged.map(serializeRun),
       });
     } catch { /* IDB failure is non-fatal; we still have it in memory */ }
 
-    toast(`Synced ${revived.length} run${revived.length === 1 ? "" : "s"} from your other device.`);
+    // Re-upload so cloud catches up to any local-only runs we just
+    // unioned in. Idempotent via CloudRuns' fingerprint memo — if the
+    // merged set matches what cloud already had, this is a no-op.
+    try { CloudRuns.upload(merged); } catch { /* fire-and-forget */ }
+
+    if (wasDemo) {
+      toast(`Loaded ${merged.length} run${merged.length === 1 ? "" : "s"} from your Steam account.`);
+    } else if (cloudOnly > 0) {
+      toast(`Synced ${cloudOnly} run${cloudOnly === 1 ? "" : "s"} from your other device.`);
+    }
     renderActiveTab();
+    return { changed: true, count: merged.length };
   } catch (e) {
     console.warn("[Vault] cloud rehydrate failed", e);
+    return { changed: false, count: parsedRuns.length };
   }
 }
 
@@ -3306,8 +4573,22 @@ const CloudRuns = (() => {
           const j = await r.json().catch(() => ({}));
           sendBeacon("cloud-runs-uploaded",
             `count=${j.count || 0} added=${j.added || 0} truncated=${j.truncated ? 1 : 0}`);
+          recordCloudSync(j.count || runs.length);
         } else {
           sendBeacon("cloud-runs-upload-failed", `status=${r.status}`);
+          // Surface persistence failures so the user knows their
+          // history isn't being saved to their Steam account. The
+          // previous silent-fail let users assume sync was working
+          // when it wasn't, then they'd lose progress on the next
+          // device. Now they see it and can intervene (re-sign-in,
+          // check connection, etc.).
+          if (r.status === 401 || r.status === 403) {
+            toast("Couldn't save to your Steam account — your session expired. Please sign in again.");
+          } else if (r.status >= 500) {
+            toast(`Couldn't save to your Steam account (server ${r.status}). We'll retry automatically.`);
+          } else if (r.status >= 400) {
+            toast(`Couldn't save to your Steam account (${r.status}). Please refresh and try again.`);
+          }
         }
       } catch (e) {
         sendBeacon("cloud-runs-upload-error", String(e?.message || e).slice(0, 80));
@@ -3473,16 +4754,58 @@ function exportAllRuns(format) {
 // =========================================================================
 // Stats tab renderers
 // =========================================================================
+/** Tracks whether the boot-time skeleton is currently showing. We
+ *  render it when a signed-in user lands on a fresh device with no
+ *  IDB cache yet — so the cloud download has a moment to come back
+ *  without the UI flashing demo numbers in the meantime. */
+let bootSkeletonActive = false;
+
+/** Render the skeleton placeholder into the Overview body. Cheap —
+ *  pure HTML with CSS shimmer, no SVG. Stays up until cloud hydrate
+ *  resolves and `hideBootSkeleton()` clears the flag. */
+function showBootSkeleton() {
+  bootSkeletonActive = true;
+  const $body = document.getElementById("overview-body");
+  if (!$body) return;
+  $body.innerHTML = `
+    <div class="kpi-skeleton" aria-hidden="true">
+      ${Array(6).fill(0).map(() => `
+        <div class="skeleton-card">
+          <div class="skeleton-bar is-label"></div>
+          <div class="skeleton-bar is-value"></div>
+          <div class="skeleton-bar is-sub"></div>
+        </div>
+      `).join("")}
+    </div>
+    <div class="skeleton-hero" aria-hidden="true"></div>
+    <p class="chart-empty" role="status">Syncing your runs from your Steam account&hellip;</p>`;
+}
+
+function hideBootSkeleton() {
+  if (!bootSkeletonActive) return;
+  bootSkeletonActive = false;
+  // Re-render whatever tab is active so the skeleton is replaced with
+  // either real data, the empty state, or demo data depending on what
+  // landed in `parsedRuns`.
+  try { renderActiveTab(); } catch { /* defensive */ }
+}
+
 function renderStatsTab(tab) {
   const $body = document.getElementById(`${tab}-body`);
   if (!$body) return;
+  // While the boot skeleton is up, leave it alone. The hydrate
+  // promise will trigger a re-render once cloud responds.
+  if (bootSkeletonActive && tab === "overview") return;
   if (parsedRuns.length === 0) {
     $body.innerHTML = renderEmptyState();
     $body.querySelectorAll("[data-action='scan']").forEach((btn) => {
       btn.addEventListener("click", () => void scanForHistory());
     });
+    // v93: route upload through scanForHistory so we get the recursive
+    // directory picker on Chromium instead of a flat file-only picker
+    // that can't see into STS2's nested `steam/<id>/profile1/saves/history/`.
     $body.querySelectorAll("[data-action='upload']").forEach((btn) => {
-      btn.addEventListener("click", () => triggerFilePicker());
+      btn.addEventListener("click", () => void scanForHistory());
     });
     $body.querySelectorAll("[data-action='copy-path']").forEach((btn) => {
       btn.addEventListener("click", async () => {
@@ -3501,6 +4824,32 @@ function renderStatsTab(tab) {
         }
       });
     });
+    // "Restore my runs from Steam" — manual cloud-pull for signed-in
+    // users on a fresh device or after IDB was wiped. Same network
+    // path as the boot-time auto-hydrate, just user-triggered with
+    // visible feedback so they know it's working (or know it failed).
+    $body.querySelectorAll('[data-action="restore-from-cloud"]').forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const original = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = "Pulling…";
+        try {
+          const res = await hydrateFromCloudIfAvailable();
+          if (res?.changed && res.count > 0) {
+            toast(`Restored ${res.count} run${res.count === 1 ? "" : "s"} from your Steam account.`);
+            // hydrateFromCloudIfAvailable already triggered renderActiveTab.
+          } else if (res?.count === 0) {
+            toast("Your Steam account has no runs synced yet — drop your save folder once to start.");
+          } else {
+            toast("Couldn't reach the cloud. Check your connection and try again.");
+          }
+        } catch (e) {
+          toast(`Restore failed: ${String(e?.message || e).slice(0, 80)}`);
+          btn.innerHTML = original;
+          btn.disabled = false;
+        }
+      });
+    });
     return;
   }
   const report = Stats.summarize(parsedRuns);
@@ -3510,7 +4859,12 @@ function renderStatsTab(tab) {
   // amber pill carries the same "showing sample data" signal on every
   // tab, so the user always knows what they're looking at without the
   // banner dominating every fold.
-  const banner = isDemoMode && tab === "overview" ? renderDemoBanner() : "";
+  // Demo banner: only on overview, only in demo mode, AND only if the
+  // user hasn't dismissed it for this browser. Lets people who already
+  // know it's sample data hide the orange strip permanently.
+  let demoBannerDismissed = false;
+  try { demoBannerDismissed = localStorage.getItem("vault.web.demoBannerDismissed") === "1"; } catch {}
+  const banner = isDemoMode && tab === "overview" && !demoBannerDismissed ? renderDemoBanner() : "";
   // Schema warning — surfaces above stats when any real run uses an STS2
   // schema_version we haven't explicitly tested. Lets the user know the
   // game just shipped a build we're still catching up to, instead of
@@ -3530,8 +4884,61 @@ function renderStatsTab(tab) {
     $body.querySelectorAll('[data-action="scan"]').forEach((btn) => {
       btn.addEventListener("click", () => void scanForHistory());
     });
+    // v93: see above — upload now uses the recursive directory picker.
     $body.querySelectorAll('[data-action="upload"]').forEach((btn) => {
-      btn.addEventListener("click", () => triggerFilePicker());
+      btn.addEventListener("click", () => void scanForHistory());
+    });
+    // Dismiss-X on the demo banner. Persists per-browser so the user
+    // doesn't keep seeing the orange strip if they already understand
+    // what it means.
+    $body.querySelectorAll('[data-action="dismiss-demo-banner"]').forEach((btn) => {
+      btn.addEventListener("click", () => {
+        try { localStorage.setItem("vault.web.demoBannerDismissed", "1"); } catch {}
+        const banner = btn.closest(".demo-banner");
+        if (banner) banner.remove();
+        // Also hide the toolbar pill so the user gets full silence.
+        document.querySelectorAll("[data-toolbar-empty]").forEach((p) => { p.hidden = true; });
+      });
+    });
+    // Copy-path button on each platform panel — copies the
+    // platform's STS2 save path to the clipboard with a brief
+    // "Copied" confirmation.
+    $body.querySelectorAll('[data-action="copy-path"]').forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const key = btn.dataset.pathKey || "mac";
+        const path =
+          key === "win"   ? HISTORY_PATH_WIN
+          : key === "linux" ? HISTORY_PATH_LINUX
+          :                   HISTORY_PATH_MAC;
+        try {
+          await navigator.clipboard.writeText(path);
+          const original = btn.textContent;
+          btn.textContent = "Copied";
+          setTimeout(() => (btn.textContent = original), 1500);
+        } catch {
+          toast("Couldn't copy. Select the path and copy manually.");
+        }
+      });
+    });
+    // Platform tab switcher — click a tab to swap the visible panel.
+    // All three panels are pre-rendered, just hidden; the switch is
+    // a pure DOM toggle so it feels instant.
+    $body.querySelectorAll('[data-action="ingest-platform-switch"]').forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const target = btn.dataset.platformKey;
+        if (!target) return;
+        const root = btn.closest(".demo-strip-help-body");
+        if (!root) return;
+        root.querySelectorAll(".ingest-platform-tab").forEach((t) => {
+          const active = t.dataset.platformKey === target;
+          t.classList.toggle("is-active", active);
+          t.setAttribute("aria-selected", active ? "true" : "false");
+        });
+        root.querySelectorAll(".ingest-platform-panel").forEach((p) => {
+          p.hidden = p.dataset.platformPanel !== target;
+        });
+        sendBeacon("ingest-platform-tab-clicked", `target=${target}`);
+      });
     });
   }
   // Delegated handler for any element marked with data-action="goto-tab".
@@ -3548,6 +4955,77 @@ function renderStatsTab(tab) {
         const next = el.dataset.tab;
         if (next) switchTab(next);
       }
+    });
+  });
+  // Relic drill-down expand / collapse (Top Relics tab only).
+  // Same UX pattern as the character drill-down: click opens a
+  // detail panel below the grid, click again or close button
+  // collapses, click another card swaps to that relic.
+  $body.querySelectorAll('[data-action="relic-expand"]').forEach((el) => {
+    const open = () => {
+      const key = el.dataset.relicKey;
+      if (!key) return;
+      const slot = document.getElementById("relic-detail-slot");
+      if (!slot) return;
+      const isOpenSame = slot.querySelector(`[data-relic-detail="${CSS.escape(key)}"]`);
+      if (isOpenSame) {
+        slot.innerHTML = "";
+        $body.querySelectorAll(".relic-card.is-active").forEach((c) => c.classList.remove("is-active"));
+        return;
+      }
+      const report = Stats.summarize(parsedRuns);
+      const bucket = (report.byRelic || []).find((b) => b.key === key) || null;
+      slot.innerHTML = renderRelicDetail(key, bucket);
+      $body.querySelectorAll(".relic-card.is-active").forEach((c) => c.classList.remove("is-active"));
+      el.classList.add("is-active");
+      slot.querySelectorAll('[data-action="relic-collapse"]').forEach((btn) => {
+        btn.addEventListener("click", () => {
+          slot.innerHTML = "";
+          el.classList.remove("is-active");
+        });
+      });
+      slot.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    };
+    el.addEventListener("click", open);
+    el.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); }
+    });
+  });
+
+  // Character drill-down expand / collapse (Characters tab only).
+  // Clicking a character card opens a detail panel below the grid;
+  // clicking the same card again, the close button, or another card
+  // routes to the new selection.
+  $body.querySelectorAll('[data-action="char-expand"]').forEach((el) => {
+    const open = () => {
+      const key = el.dataset.charKey;
+      if (!key) return;
+      const slot = document.getElementById("char-detail-slot");
+      if (!slot) return;
+      const isOpenSame = slot.querySelector(`[data-char-detail="${CSS.escape(key)}"]`);
+      if (isOpenSame) {
+        slot.innerHTML = "";
+        $body.querySelectorAll(".char-card.is-active").forEach((c) => c.classList.remove("is-active"));
+        return;
+      }
+      const report = Stats.summarize(parsedRuns);
+      const bucket = (report.byCharacter || []).find((b) => b.key === key) || null;
+      slot.innerHTML = renderCharacterDetail(key, bucket);
+      $body.querySelectorAll(".char-card.is-active").forEach((c) => c.classList.remove("is-active"));
+      el.classList.add("is-active");
+      // Wire the close button inside the freshly-rendered detail.
+      slot.querySelectorAll('[data-action="char-collapse"]').forEach((btn) => {
+        btn.addEventListener("click", () => {
+          slot.innerHTML = "";
+          el.classList.remove("is-active");
+        });
+      });
+      // Smoothly bring the detail into view.
+      slot.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    };
+    el.addEventListener("click", open);
+    el.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); }
     });
   });
   // Update Overview sub-text
@@ -3578,62 +5056,139 @@ function renderDemoBanner() {
        <button class="btn-ghost" data-action="upload">Pick files</button>`
     : `<button class="btn-primary" data-action="upload">Pick STS2 save files</button>`;
 
-  const platform = detectPlatform();
-  const path =
-    platform === "windows" ? HISTORY_PATH_WIN
-    : platform === "linux" ? HISTORY_PATH_LINUX
-    : HISTORY_PATH_MAC; // mac + unknown both use Mac path as the visible default
-  const fullPath =
-    platform === "windows" ? HISTORY_PATH_WIN_FULL
-    : platform === "linux" ? HISTORY_PATH_LINUX_FULL
-    : HISTORY_PATH_MAC_FULL;
-  const platformLabel =
-    platform === "windows" ? "Windows" : platform === "linux" ? "Linux" : "macOS";
-  const pasteHint =
-    platform === "windows"
-      ? `paste into File Explorer's address bar`
-      : platform === "linux"
-        ? `paste into your file manager's path bar`
-        : `Cmd+Shift+G in the picker, paste, Enter`;
-  const pathKey =
-    platform === "windows" ? "win" : platform === "linux" ? "linux" : "mac";
+  const detected = detectPlatform();
+  const detectedKey = detected === "windows" ? "win" : detected === "linux" ? "linux" : "mac";
+
+  // Platform-specific instructions live in this single source of
+  // truth. The UI renders all three as tabs (with the user's
+  // detected platform pre-selected) so a Mac user prepping a
+  // Windows friend can flip to the Windows tab without having to
+  // be on Windows.
+  const platforms = {
+    win: {
+      label: "Windows",
+      icon: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 5l8-1.1V11H3V5zm0 7h8v7.1L3 18V12zm9 7.2V12h9v8L12 19.2zM12 11V3.9L21 3v8h-9z"/></svg>',
+      path: HISTORY_PATH_WIN,
+      fullPath: HISTORY_PATH_WIN_FULL,
+      manager: "File Explorer",
+      pickerSteps: [
+        "Click <strong>Find my STS2 saves</strong> below (we copy the path to your clipboard).",
+        "In the File Explorer dialog, click the <strong>address bar at the top</strong>, paste the path, hit <strong>Enter</strong>.",
+        "Click <strong>Select Folder</strong> with <code>SlayTheSpire2</code> showing in the breadcrumb.",
+      ],
+      browserNote: "Works in Chrome, Edge, Brave, Firefox, and the Steam in-app browser. (Edge auto-remembers the folder so future sessions skip the picker.)",
+    },
+    mac: {
+      label: "macOS",
+      icon: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M16.4 1.7c0 1.3-.5 2.6-1.4 3.5-.9 1-2.5 1.7-3.7 1.6-.2-1.3.5-2.6 1.3-3.5.9-1 2.5-1.7 3.8-1.6zM20 17.4c-.6 1.3-.9 1.9-1.6 3-1 1.6-2.5 3.6-4.4 3.6-1.6 0-2.1-1-4.3-1-2.2 0-2.7 1-4.3 1-1.9 0-3.3-1.8-4.4-3.4-2.9-4.5-3.2-9.7-1.4-12.5C1 6 3 4.6 5 4.6c2 0 3.3 1.1 4.9 1.1 1.6 0 2.6-1.1 5-1.1 1.7 0 3.6.9 4.9 2.5-4.3 2.4-3.6 8.6 0 10.3z"/></svg>',
+      path: HISTORY_PATH_MAC,
+      fullPath: HISTORY_PATH_MAC_FULL,
+      manager: "Finder",
+      pickerSteps: [
+        "Click <strong>Find my STS2 saves</strong> below (we copy the path to your clipboard).",
+        "In the picker, press <strong>⌘⇧G</strong> (Cmd+Shift+G), paste, hit <strong>Enter</strong>.",
+        "Click <strong>Select</strong> &mdash; you'll see <code>default</code>, <code>steam</code>, <code>logs</code> etc. inside. That's the right folder.",
+      ],
+      browserNote: "Works in Chrome, Edge, Brave, Arc, Safari (drag-drop only), and Firefox.",
+    },
+    linux: {
+      label: "Linux / Deck",
+      icon: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2c1.7 0 3 1.3 3 3 0 .8-.3 1.5-.7 2 1.5.7 2.7 2.5 2.7 4.5 0 .9-.2 1.7-.6 2.4 1.5.7 2.6 2.3 2.6 4.1 0 .5-.1 1-.2 1.5-.4 1.6-1.6 2.5-2.8 2.5-.6 0-1.3-.2-1.8-.6-.5.4-1.4.6-2.2.6h-.4c-.8 0-1.7-.2-2.2-.6-.5.4-1.2.6-1.8.6-1.2 0-2.4-.9-2.8-2.5-.1-.5-.2-1-.2-1.5 0-1.8 1.1-3.4 2.6-4.1-.4-.7-.6-1.5-.6-2.4 0-2 1.2-3.8 2.7-4.5-.4-.5-.7-1.2-.7-2 0-1.7 1.3-3 3-3z"/></svg>',
+      path: HISTORY_PATH_LINUX,
+      fullPath: HISTORY_PATH_LINUX_FULL,
+      manager: "your file manager",
+      pickerSteps: [
+        "Click <strong>Find my STS2 saves</strong> below (we copy the path to your clipboard).",
+        "In the file picker, press <strong>Ctrl+L</strong> (or click the path bar), paste, hit <strong>Enter</strong>.",
+        "Click <strong>Select</strong> with <code>SlayTheSpire2</code> highlighted.",
+      ],
+      browserNote: "Works in Chrome, Edge, Firefox. On Steam Deck the desktop-mode browser handles it cleanly.",
+    },
+  };
+
+  // Renders one panel per platform — the JS toggles between them
+  // when the user clicks a tab. Pre-rendering all three keeps the
+  // tab swap zero-latency (no fetch, no re-render).
+  const platformPanel = (key) => {
+    const p = platforms[key];
+    return `
+      <div class="ingest-platform-panel" data-platform-panel="${key}" ${key === detectedKey ? "" : "hidden"}>
+        <div class="ingest-method ingest-method--primary">
+          <div class="ingest-method-num">1</div>
+          <div class="ingest-method-body">
+            <strong class="ingest-method-title">Easiest: drag &amp; drop</strong>
+            <p class="ingest-method-text">
+              Open ${esc(p.manager)} at the path below, then <strong>drag the <code>SlayTheSpire2</code> folder</strong> directly onto this page. We walk it for <code>.run</code> files automatically. Works on every browser, no permission prompt.
+            </p>
+            <div class="demo-banner-path">
+              <span class="path-label">Your STS2 save folder on ${esc(p.label)}</span>
+              <code class="path-value">${esc(p.path)}</code>
+              <button class="btn-ghost btn-sm" data-action="copy-path" data-path-key="${key}" title="Copy this path">Copy path</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="ingest-method">
+          <div class="ingest-method-num">2</div>
+          <div class="ingest-method-body">
+            <strong class="ingest-method-title">Or use the picker</strong>
+            <ol class="ingest-steps">
+              ${p.pickerSteps.map((s) => `<li>${s}</li>`).join("")}
+            </ol>
+            <p class="ingest-tip muted small">
+              ${esc(p.browserNote)} The actual <code>.run</code> files live at
+              <code>${esc(p.fullPath)}</code> &mdash; but you can pick any ancestor and we'll find them.
+            </p>
+          </div>
+        </div>
+      </div>`;
+  };
 
   return `
     <div class="demo-banner is-compact" role="region" aria-label="Sample data notice">
+      <button class="demo-banner-dismiss" type="button" data-action="dismiss-demo-banner" aria-label="Dismiss sample data notice" title="Hide this notice">&times;</button>
       <div class="demo-strip-row">
         <span class="demo-strip-eyebrow">Sample data</span>
-        <span class="demo-strip-text">Drop your STS2 save folder to see your own runs &mdash; nothing uploads, everything stays in your browser.</span>
+        <span class="demo-strip-text">Connect Steam or drop your STS2 save folder to see your own runs &mdash; sign in once and your history follows you to mobile.</span>
         <div class="demo-strip-actions">${primaryCTAs}</div>
       </div>
       <details class="demo-strip-help">
         <summary>Where are my saves?</summary>
         <div class="demo-strip-help-body">
-          <div class="demo-banner-path">
-            <span class="path-label">Your STS2 save folder on ${platformLabel}</span>
-            <code class="path-value">${esc(path)}</code>
-            <button class="btn-ghost btn-sm" data-action="copy-path" data-path-key="${pathKey}" title="Copy path. Then ${pasteHint}.">Copy path</button>
+
+          <div class="ingest-platform-tabs" role="tablist" aria-label="Choose your operating system">
+            ${["win", "mac", "linux"].map((k) => `
+              <button type="button"
+                      class="ingest-platform-tab${k === detectedKey ? " is-active" : ""}"
+                      role="tab"
+                      aria-selected="${k === detectedKey ? "true" : "false"}"
+                      data-action="ingest-platform-switch"
+                      data-platform-key="${k}">
+                <span class="ingest-platform-tab-icon" aria-hidden="true">${platforms[k].icon}</span>
+                <span>${esc(platforms[k].label)}</span>
+                ${k === detectedKey ? '<span class="ingest-platform-tab-badge">Detected</span>' : ""}
+              </button>
+            `).join("")}
           </div>
-          <p class="demo-banner-deep">
-            Your <code>.run</code> files live deeper inside, at:
-            <code class="path-value path-value-sub">${esc(fullPath)}</code>
-            Pick the <code>SlayTheSpire2</code> parent and we'll walk into <code>history/</code> for you.
-          </p>
-          <div class="demo-banner-hints" open>
+
+          ${["win", "mac", "linux"].map((k) => platformPanel(k)).join("")}
+
+          <div class="hints-warning">
+            <strong>⚠ Don't pick "Browse Local Files" from Steam.</strong>
+            That opens the game's <em>install</em> folder (the .app / .exe). Your saves live in a separate location, listed above.
+          </div>
+
+          <details class="demo-banner-hints">
+            <summary>Other paths / troubleshooting</summary>
             <div class="hints-body">
-              <div class="hints-warning">
-                <strong>⚠ Steam Library → Browse Local Files won't work.</strong>
-                That opens the game's <em>install</em> folder (the .app / .exe). Your saves live in a different place &mdash; the path above.
-              </div>
               <ul class="hints-list">
-                <li><strong>macOS:</strong> <code>${esc(HISTORY_PATH_MAC_FULL)}</code></li>
-                <li><strong>Windows:</strong> <code>${esc(HISTORY_PATH_WIN_FULL)}</code></li>
-                <li><strong>Linux / Steam Deck:</strong> <code>${esc(HISTORY_PATH_LINUX_FULL)}</code></li>
-                <li><strong>Steam Cloud (Mac fallback):</strong> if the path above is empty, your saves may be at <code>~/Library/Application Support/Steam/userdata/&lt;your-id&gt;/2868840/remote/</code>.</li>
+                <li><strong>Steam Cloud fallback (Mac):</strong> if the macOS path above is empty, try <code>~/Library/Application Support/Steam/userdata/&lt;your-id&gt;/2868840/remote/</code>.</li>
+                <li><strong>Steam Cloud fallback (Windows):</strong> <code>%PROGRAMFILES(X86)%\\Steam\\userdata\\&lt;your-id&gt;\\2868840\\remote\\</code> if the standard path is empty.</li>
                 <li>On Chrome / Edge / Brave / Arc, the picker remembers your folder for next time &mdash; look for the green <em>Linked:</em> pill in the toolbar to confirm.</li>
+                <li>Inside <code>history/</code> you'll see files named like <code>1735689420.run</code> &mdash; one per game. Pick any ancestor folder and we walk in.</li>
               </ul>
-              <p class="hints-tip">Inside the <code>history/</code> folder you'll see files named like <code>1735689420.run</code> &mdash; one per game, raw JSON. Pick any ancestor and we read every <code>.run</code> file in one pass.</p>
             </div>
-          </div>
+          </details>
         </div>
       </details>
     </div>`;
@@ -3739,13 +5294,39 @@ function renderEmptyState() {
        <button class="btn-ghost" data-action="upload">Pick files instead</button>`
     : `<button class="btn-primary" data-action="upload">Pick STS2 save files</button>`;
 
+  // Context-aware copy + cloud-restore CTA for signed-in users.
+  //
+  // The user pain point we're solving: every fresh device or
+  // browser session, signed-in users were being asked to re-pick
+  // their save folder, even though their runs are already synced
+  // to their Steam account in the cloud. The cloud-restore path
+  // existed but was invisible — the boot's auto-hydrate runs in
+  // the background and either succeeds (you see your runs) or
+  // silently fails (you see the empty state and assume you have
+  // to start over). Now we surface a manual "Restore my runs from
+  // Steam" button on the empty state for signed-in users so the
+  // cloud copy is one click away even when auto-hydrate hiccups.
+  const isSignedIn = !!session?.steamID;
+  const cloudRestoreCTA = isSignedIn
+    ? `<button class="btn-primary" type="button" data-action="restore-from-cloud">
+         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="margin-right:6px"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15A9 9 0 1 1 18.36 5.64L23 10"/></svg>
+         Restore my runs from Steam
+       </button>`
+    : "";
+  const headlineHtml = isSignedIn
+    ? `<h2>Restore your runs from Steam</h2>
+       <p>You're signed in as <strong>${esc(session?.personaName || "Steam User")}</strong>. If you've already uploaded run history on another device, click <strong>Restore my runs from Steam</strong> below and we'll pull your cloud copy now. If this is your first device, point us at your STS2 save folder once and we'll sync it to your Steam account &mdash; <strong>you only do this once.</strong></p>`
+    : `<h2>See your STS2 stats — no sign-in required</h2>
+       <p>Slay the Spire 2 saves one <code>.run</code> file per game. Point us at your STS2 save folder (or drag it in) and we'll read every run on disk to build your stats. Nothing uploads &mdash; everything stays in your browser. <strong>Sign in with Steam once</strong> to keep your history forever and sync it across devices.</p>`;
+
   return `
-    <div class="empty-state">
+    <div class="empty-state${isSignedIn ? " empty-state--authed" : ""}">
       <div class="empty-state-icon">📂</div>
-      <h2>See your STS2 stats — no sign-in required</h2>
-      <p>Slay the Spire 2 saves one <code>.run</code> file per game. Point us at your STS2 save folder (or drag it in) and we'll read every run on disk to build your stats. Nothing uploads — everything stays in your browser.</p>
+      ${headlineHtml}
       <div class="empty-state-actions">
+        ${cloudRestoreCTA}
         ${primaryCTA}
+        ${!isSignedIn ? '<button class="btn-ghost" type="button" data-action="signin-cta"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="margin-right:6px"><path d="M3 5l8-1.1V11H3V5zm0 7h8v7.1L3 18V12zm9 7.2V12h9v8L12 19.2zM12 11V3.9L21 3v8h-9z"/></svg>Sign in with Steam</button>' : ""}
       </div>
       <p class="empty-state-tip">
         Or drag your STS2 <strong>save folder</strong> (or any <code>.run</code> files) anywhere on this page to load them now.
@@ -3878,8 +5459,11 @@ function currentStreak(runs) {
   return { kind, count };
 }
 
-/** Longest win streak ever. Walks chronologically and tracks max. */
-function longestWinStreak(runs) {
+/** Longest win streak ever. Walks chronologically and tracks max,
+ *  remembering the run that *completed* the streak so we can show the
+ *  user a date + character on the KPI card. Returns
+ *  `{ count, endedAt, character, ascension }` (endedAt is a Date or null). */
+function longestWinStreakDetails(runs) {
   const sorted = runs.slice().sort((a, b) => {
     const ta = a.endedAt ? a.endedAt.getTime() : 0;
     const tb = b.endedAt ? b.endedAt.getTime() : 0;
@@ -3887,11 +5471,43 @@ function longestWinStreak(runs) {
   });
   let max = 0;
   let cur = 0;
-  for (const r of sorted) {
-    if (r.won) { cur += 1; if (cur > max) max = cur; }
-    else cur = 0;
+  let bestEndIdx = -1;
+  let curEndIdx = -1;
+  for (let i = 0; i < sorted.length; i += 1) {
+    const r = sorted[i];
+    if (r.won) {
+      cur += 1;
+      curEndIdx = i;
+      if (cur > max) { max = cur; bestEndIdx = curEndIdx; }
+    } else {
+      cur = 0;
+      curEndIdx = -1;
+    }
   }
-  return max;
+  if (bestEndIdx < 0) return { count: 0, endedAt: null, character: null, ascension: null };
+  const ender = sorted[bestEndIdx];
+  return {
+    count: max,
+    endedAt: ender.endedAt || null,
+    character: ender.character || null,
+    ascension: Number.isFinite(ender.ascension) ? ender.ascension : null,
+  };
+}
+
+/** Backwards-compatible thin wrapper if anything still imports the
+ *  old name. */
+function longestWinStreak(runs) {
+  return longestWinStreakDetails(runs).count;
+}
+
+/** Short human date used inside KPI sub-copy. `Mar 14, 2026`. */
+function formatShortDate(d) {
+  if (!(d instanceof Date) || Number.isNaN(d.getTime())) return "";
+  try {
+    return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+  } catch {
+    return d.toISOString().slice(0, 10);
+  }
 }
 
 /** Returns the run with the highest floor reached. Ties broken by win
@@ -3963,85 +5579,162 @@ function sparklineLastN(runs, n = 10) {
 function renderKPIStrip(runs) {
   const total = runs.length;
   if (total === 0) return "";
+
+  // ── Card 1: Recent form ────────────────────────────────────────────
+  // Headline value is a percentage (`30%`) so the user sees instantly
+  // whether they're winning or losing recent runs. Sub-copy compares
+  // against lifetime average with a signed delta and a green/red glyph.
   const sortedRecent = runsByDateDesc(runs);
   const last10 = sortedRecent.slice(0, 10);
   const last10Wins = last10.filter((r) => r.won).length;
   const last10Pct = last10.length ? Math.round((last10Wins / last10.length) * 100) : 0;
   const lifetimeWins = runs.filter((r) => r.won).length;
   const lifetimePct = Math.round((lifetimeWins / total) * 100);
-  const last10Tone = last10Pct >= lifetimePct ? "win" : (last10Pct + 5 < lifetimePct ? "loss" : "accent");
+  const last10Tone = last10Pct >= lifetimePct + 1 ? "win"
+    : (last10Pct + 5 < lifetimePct ? "loss" : "accent");
   const trend = last10Pct - lifetimePct;
-  const trendLabel = total < 11 ? "Need more runs" : `${trend >= 0 ? "▲" : "▼"} ${Math.abs(trend)}pt vs. lifetime`;
+  const trendGlyph = trend > 0 ? "▲" : trend < 0 ? "▼" : "●";
+  const trendClass = trend > 0 ? "is-up" : trend < 0 ? "is-down" : "is-flat";
+  const recentFormSub = total < 11
+    ? `${last10Wins}W &ndash; ${last10.length - last10Wins}L &middot; need 11+ runs for trend`
+    : trend > 0
+      ? `${last10Wins}W &ndash; ${last10.length - last10Wins}L &middot; <strong>+${Math.abs(trend)}</strong> vs. lifetime`
+      : trend < 0
+        ? `${last10Wins}W &ndash; ${last10.length - last10Wins}L &middot; <strong>&minus;${Math.abs(trend)}</strong> vs. lifetime`
+        : `${last10Wins}W &ndash; ${last10.length - last10Wins}L &middot; on par with lifetime`;
+  const recentFormCard = `
+      <div class="kpi-card" role="listitem" data-tone="${last10Tone}">
+        <span class="kpi-card-label">${SEC_ICONS.bolt} Recent form</span>
+        <span class="kpi-card-value">
+          <span class="kpi-trend ${trendClass}" aria-hidden="true">${trendGlyph}</span>${last10Pct}<span class="kpi-unit">%</span>
+        </span>
+        <span class="kpi-card-sub">${recentFormSub}</span>
+        ${sparklineLastN(runs, 10)}
+      </div>`;
 
+  // ── Card 2: Active streak ──────────────────────────────────────────
+  // Direction is encoded in:
+  //   - the card label (`Win streak` vs `Loss streak`)
+  //   - the card tone (green border + green value vs red)
+  //   - the sub-copy ("3 in a row...")
+  // …so the value itself is just the count. The previous "4L" suffix
+  // looked like a line-noise artifact next to a 24px number; dropping
+  // it makes the headline number breathe.
   const streak = currentStreak(runs);
   const streakTone = streak.kind === "win" ? "win" : (streak.kind === "loss" ? "loss" : "accent");
-  const streakValue = streak.kind === "none" ? "0" : `${streak.count}${streak.kind === "win" ? "W" : "L"}`;
-  const streakSub = streak.kind === "win"
-    ? "Current win streak — keep climbing"
+  const longestDetail = longestWinStreakDetails(runs);
+  const longest = longestDetail.count;
+  const streakLabel = streak.kind === "win"
+    ? `${SEC_ICONS.sparkles} Win streak`
     : streak.kind === "loss"
-      ? "On a losing skid — refresh & retry"
-      : "No runs yet";
+      ? `${SEC_ICONS.bolt} Loss streak`
+      : `${SEC_ICONS.sparkles} Active streak`;
+  const streakValue = streak.kind === "none" ? `0` : `${streak.count}`;
+  const streakSub = streak.kind === "win"
+    ? (streak.count === 1
+        ? `One win &mdash; keep the momentum`
+        : longest > streak.count
+          ? `${streak.count} in a row &middot; PB <strong>${longest}</strong>`
+          : `${streak.count} in a row &mdash; new personal best`)
+    : streak.kind === "loss"
+      ? (streak.count === 1
+          ? `One loss &mdash; reset and re-roll`
+          : `${streak.count} in a row &mdash; reset and re-roll`)
+      : `No active streak yet &mdash; play a run`;
+  const streakCard = `
+      <div class="kpi-card" role="listitem" data-tone="${streakTone}">
+        <span class="kpi-card-label">${streakLabel}</span>
+        <span class="kpi-card-value">${streakValue}</span>
+        <span class="kpi-card-sub">${streakSub}</span>
+      </div>`;
 
-  const longest = longestWinStreak(runs);
+  // ── Card 3: Longest win streak ─────────────────────────────────────
+  // Sub-copy keeps the *most interesting* fact only — the character
+  // who set the record. Date is dropped to stop the line wrapping
+  // into three lines on narrow cards. Lifetime context lives on the
+  // dedicated Characters tab.
+  const longestSub = longest > 0
+    ? (longestDetail.character
+        ? `Set on <strong>${esc(capitalize(longestDetail.character))}</strong>${longestDetail.ascension != null ? ` at A${longestDetail.ascension}` : ""}`
+        : `Set across your run history`)
+    : `Win two in a row to start one`;
+  const longestCard = `
+      <div class="kpi-card" role="listitem" data-tone="gold">
+        <span class="kpi-card-label">${SEC_ICONS.bars} Longest win streak</span>
+        <span class="kpi-card-value">${longest}<span class="kpi-unit">${longest === 1 ? "win" : "wins"}</span></span>
+        <span class="kpi-card-sub">${longestSub}</span>
+      </div>`;
 
+  // ── Card 4: Best floor ─────────────────────────────────────────────
+  // Drop the redundant "Floor" prefix from the value — the LABEL
+  // already says "Best floor", so showing it twice was visual stutter.
+  // Just the number now, with character + ascension as sub-copy.
   const pb = pbFloorRun(runs);
-  const pbValue = pb ? `F${pb.floorReached}` : "—";
+  const pbValue = pb ? `${pb.floorReached}` : "&mdash;";
   const pbSub = pb
-    ? `<strong>${esc(capitalize(pb.character || "Unknown"))}</strong>${Number.isFinite(pb.ascension) ? ` · A${pb.ascension}` : ""}${pb.won ? " · Victory" : ""}`
-    : "Play one run to set this";
+    ? `<strong>${esc(capitalize(pb.character || "Unknown"))}</strong>${Number.isFinite(pb.ascension) ? ` at A${pb.ascension}` : ""}${pb.won ? ` &middot; Victory` : ""}`
+    : `Play one run to set this`;
+  const pbCard = `
+      <div class="kpi-card" role="listitem" data-tone="accent">
+        <span class="kpi-card-label">${SEC_ICONS.bars} Best floor</span>
+        <span class="kpi-card-value">${pbValue}</span>
+        <span class="kpi-card-sub">${pbSub}</span>
+      </div>`;
 
+  // ── Card 5: Fastest victory ────────────────────────────────────────
   const fastest = fastestWinRun(runs);
   const fastestValue = fastest
     ? formatPlayTimeStrict(fastest.playTimeSeconds) || `${Math.round(fastest.playTimeSeconds / 60)}m`
     : "—";
   const fastestSub = fastest
-    ? `<strong>${esc(capitalize(fastest.character || "Unknown"))}</strong>${Number.isFinite(fastest.ascension) ? ` · A${fastest.ascension}` : ""}`
-    : "No wins yet";
+    ? `<strong>${esc(capitalize(fastest.character || "Unknown"))}</strong>${Number.isFinite(fastest.ascension) ? ` at A${fastest.ascension}` : ""}`
+    : `No victories yet`;
+  const fastestCard = `
+      <div class="kpi-card" role="listitem" data-tone="win">
+        <span class="kpi-card-label">${SEC_ICONS.clock} Fastest victory</span>
+        <span class="kpi-card-value">${esc(fastestValue)}</span>
+        <span class="kpi-card-sub">${fastestSub}</span>
+      </div>`;
 
+  // ── Card 6: Runs this week ─────────────────────────────────────────
   const cadence = weeklyCadence(runs);
-  const cadenceTone = cadence.thisWeek >= cadence.prevWeek ? "accent" : "loss";
+  const cadenceTone = cadence.delta > 0 ? "win"
+    : cadence.delta < 0 ? "loss"
+      : "accent";
   const cadenceSub = cadence.prevWeek === 0 && cadence.thisWeek > 0
-    ? "First runs in two weeks"
+    ? `Back at it after a quiet stretch`
     : cadence.delta > 0
       ? `<strong>+${cadence.delta}</strong> vs. last week`
       : cadence.delta < 0
         ? `<strong>${cadence.delta}</strong> vs. last week`
-        : "Same as last week";
+        : `Same pace as last week`;
+  const cadenceCard = `
+      <div class="kpi-card" role="listitem" data-tone="${cadenceTone}">
+        <span class="kpi-card-label">${SEC_ICONS.clock} Runs this week</span>
+        <span class="kpi-card-value">${cadence.thisWeek}<span class="kpi-unit">${cadence.thisWeek === 1 ? "run" : "runs"}</span></span>
+        <span class="kpi-card-sub">${cadenceSub}</span>
+      </div>`;
 
   return `
     <div class="kpi-strip" role="list" aria-label="At-a-glance KPIs">
-      <div class="kpi-card" role="listitem" data-tone="${last10Tone}">
-        <span class="kpi-card-label">${SEC_ICONS.bolt} Last 10</span>
-        <span class="kpi-card-value">${last10Wins}<span style="font-size:18px; opacity:0.55">W·</span>${last10.length - last10Wins}<span style="font-size:18px; opacity:0.55">L</span></span>
-        <span class="kpi-card-sub">${esc(trendLabel)}</span>
-        ${sparklineLastN(runs, 10)}
-      </div>
-      <div class="kpi-card" role="listitem" data-tone="${streakTone}">
-        <span class="kpi-card-label">${SEC_ICONS.sparkles} Current streak</span>
-        <span class="kpi-card-value">${esc(streakValue)}</span>
-        <span class="kpi-card-sub">${esc(streakSub)}</span>
-      </div>
-      <div class="kpi-card" role="listitem" data-tone="gold">
-        <span class="kpi-card-label">${SEC_ICONS.bars} Best streak</span>
-        <span class="kpi-card-value">${longest}<span style="font-size:18px; opacity:0.55">W</span></span>
-        <span class="kpi-card-sub">Longest win streak ever</span>
-      </div>
-      <div class="kpi-card" role="listitem" data-tone="accent">
-        <span class="kpi-card-label">${SEC_ICONS.bars} PB floor</span>
-        <span class="kpi-card-value">${esc(pbValue)}</span>
-        <span class="kpi-card-sub">${pbSub}</span>
-      </div>
-      <div class="kpi-card" role="listitem" data-tone="win">
-        <span class="kpi-card-label">${SEC_ICONS.clock} Fastest win</span>
-        <span class="kpi-card-value">${esc(fastestValue)}</span>
-        <span class="kpi-card-sub">${fastestSub}</span>
-      </div>
-      <div class="kpi-card" role="listitem" data-tone="${cadenceTone}">
-        <span class="kpi-card-label">${SEC_ICONS.clock} This week</span>
-        <span class="kpi-card-value">${cadence.thisWeek}<span style="font-size:18px; opacity:0.55">${cadence.thisWeek === 1 ? " run" : " runs"}</span></span>
-        <span class="kpi-card-sub">${cadenceSub}</span>
-      </div>
+      ${recentFormCard}
+      ${streakCard}
+      ${longestCard}
+      ${pbCard}
+      ${fastestCard}
+      ${cadenceCard}
     </div>`;
+}
+
+/** True when the active viewport is phone-sized. Used by chart
+ *  renderers to emit a tighter viewBox so the same SVG is legible at
+ *  ~360px wide instead of scaling 10px text down to ~5px. Cached per
+ *  call rather than module-scope so a resize → re-render picks up the
+ *  new state without a stale flag. */
+function isPhoneViewport() {
+  if (typeof window === "undefined") return false;
+  try { return window.matchMedia("(max-width: 720px)").matches; }
+  catch { return (window.innerWidth || 0) <= 720; }
 }
 
 /**
@@ -4075,28 +5768,41 @@ function renderWinrateChart(runs) {
   }
   const lifetime = sorted.filter((r) => r.won).length / sorted.length;
 
-  const w = 760;
-  const h = 200;
-  const padL = 40, padR = 14, padT = 16, padB = 34;
+  const phone = isPhoneViewport();
+  const w = phone ? 480 : 760;
+  const h = 72;
+  const padL = phone ? 24 : 30, padR = 6, padT = 4, padB = phone ? 18 : 16;
   const innerW = w - padL - padR;
   const innerH = h - padT - padB;
   const stepX = points.length > 1 ? innerW / (points.length - 1) : 0;
-  const yFor = (v) => padT + (1 - v) * innerH;
+  const maxRolling = Math.max(...points.map((p) => p.wr), 0.001);
+  /** Zoom Y axis so low winrates don't leave ~75% empty chart above the line. */
+  const yCeil = Math.min(1, Math.max(0.11, lifetime * 1.35, maxRolling * 1.22, 0.22));
+  const yFor = (v) => {
+    const vv = Math.min(Math.max(v, 0), yCeil);
+    return padT + (1 - vv / yCeil) * innerH;
+  };
   const xFor = (i) => padL + i * stepX;
 
   const dLine = points.map((p, i) => `${i === 0 ? "M" : "L"}${xFor(i).toFixed(1)} ${yFor(p.wr).toFixed(1)}`).join(" ");
   const dArea = `${dLine} L${xFor(points.length - 1).toFixed(1)} ${(padT + innerH).toFixed(1)} L${xFor(0).toFixed(1)} ${(padT + innerH).toFixed(1)} Z`;
 
-  const grid = [0, 0.25, 0.5, 0.75, 1].map((v) => `
-    <line class="grid-line" x1="${padL}" x2="${padL + innerW}" y1="${yFor(v)}" y2="${yFor(v)}"></line>
-    <text class="axis-label" x="${padL - 6}" y="${yFor(v) + 3}" text-anchor="end">${Math.round(v * 100)}%</text>
-  `).join("");
-  const baseline = `<line class="baseline" x1="${padL}" x2="${padL + innerW}" y1="${yFor(lifetime)}" y2="${yFor(lifetime)}"></line>
-    <text class="axis-label" x="${padL + innerW}" y="${(yFor(lifetime) - 4).toFixed(1)}" text-anchor="end">lifetime ${(lifetime * 100).toFixed(0)}%</text>`;
+  const tickN = 4;
+  const grid = [];
+  for (let i = 0; i <= tickN; i += 1) {
+    const tv = (i / tickN) * yCeil;
+    grid.push(`
+    <line class="grid-line" x1="${padL}" x2="${padL + innerW}" y1="${yFor(tv)}" y2="${yFor(tv)}"></line>
+    <text class="axis-label" x="${padL - 4}" y="${yFor(tv) + 3}" text-anchor="end">${Math.round(tv * 100)}%</text>`);
+  }
+  const gridStr = grid.join("");
+  const lifeClamp = Math.min(lifetime, yCeil);
+  const baseline = `<line class="baseline" x1="${padL}" x2="${padL + innerW}" y1="${yFor(lifeClamp)}" y2="${yFor(lifeClamp)}"></line>
+    <text class="axis-label" x="${padL + innerW}" y="${yFor(lifeClamp) - 2}" text-anchor="end">avg ${(lifetime * 100).toFixed(0)}%</text>`;
   const axis = `
     <line class="axis-line" x1="${padL}" x2="${padL + innerW}" y1="${padT + innerH}" y2="${padT + innerH}"></line>
-    <text class="axis-label" x="${padL}" y="${h - 8}">Run #1</text>
-    <text class="axis-label" x="${padL + innerW}" y="${h - 8}" text-anchor="end">Run #${sorted.length}</text>`;
+    <text class="axis-label" x="${padL}" y="${h - 4}">Run #1</text>
+    <text class="axis-label" x="${padL + innerW}" y="${h - 4}" text-anchor="end">Run #${sorted.length}</text>`;
   const lineColor = "var(--accent, #ffa05c)";
   const lastPt = points[points.length - 1];
 
@@ -4108,13 +5814,13 @@ function renderWinrateChart(runs) {
           <p class="chart-panel-sub">Trailing ${window}-run win rate across your history. Dashed line: lifetime average.</p>
         </div>
       </div>
-      <div class="chart-svg-wrap">
+      <div class="chart-svg-wrap chart-svg-wrap--winrate" style="aspect-ratio: ${w} / ${h};">
       <svg class="chart-svg" viewBox="0 0 ${w} ${h}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Rolling win rate over time">
-        ${grid}
+        ${gridStr}
         ${baseline}
         <path class="series-fill" d="${dArea}" fill="${lineColor}"></path>
         <path class="series-line" d="${dLine}" stroke="${lineColor}"></path>
-        <circle class="series-pt" cx="${xFor(points.length - 1).toFixed(1)}" cy="${yFor(lastPt.wr).toFixed(1)}" r="3.5" fill="${lineColor}"></circle>
+        <circle class="series-pt" cx="${xFor(points.length - 1).toFixed(1)}" cy="${yFor(lastPt.wr).toFixed(1)}" r="2.5" fill="${lineColor}"></circle>
         ${axis}
       </svg>
       </div>
@@ -4156,31 +5862,42 @@ function renderDeathHistogram(runs) {
   const series = [...bins.values()].sort((a, b) => a.floor - b.floor);
   const maxCount = Math.max(...series.map((b) => b.wins + b.losses), 1);
 
-  const w = 760;
-  const h = 200;
-  const padL = 32, padR = 14, padT = 16, padB = 34;
+  const phone = isPhoneViewport();
+  const w = phone ? 480 : 760;
+  const h = phone ? 96 : 88;
+  const padL = phone ? 22 : 28, padR = 8, padT = 6, padB = phone ? 30 : 26;
   const innerW = w - padL - padR;
   const innerH = h - padT - padB;
   const barGap = 2;
-  const barW = Math.max(3, (innerW - (series.length - 1) * barGap) / series.length);
+  const barW = Math.max(2, (innerW - (series.length - 1) * barGap) / series.length);
 
   const yFor = (v) => padT + (1 - v / maxCount) * innerH;
 
+  const labelStep = Math.max(1, Math.ceil(series.length / 12));
+  const tiltLabels = series.length > 8;
+
   const bars = series.map((b, i) => {
     const x = padL + i * (barW + barGap);
+    const cx = x + barW / 2;
     const total = b.wins + b.losses;
     const yTop = yFor(total);
     const heightTotal = (padT + innerH) - yTop;
     const winsHeight = total > 0 ? heightTotal * (b.wins / total) : 0;
     const lossHeight = heightTotal - winsHeight;
-    const labelStep = Math.max(1, Math.ceil(series.length / 20));
     const showLabel = i % labelStep === 0 || i === series.length - 1;
+    const lab = `${b.floor}${binSize > 1 ? `–${b.floor + binSize - 1}` : ""}`;
+    const yLab = h - (tiltLabels ? 4 : 6);
+    const labSvg = showLabel
+      ? (tiltLabels
+        ? `<text class="bar-label" transform="rotate(-52 ${cx.toFixed(2)} ${yLab})" x="${cx.toFixed(2)}" y="${yLab}" text-anchor="end">${esc(lab)}</text>`
+        : `<text class="bar-label" x="${cx.toFixed(2)}" y="${yLab}" text-anchor="middle">${esc(lab)}</text>`)
+      : "";
     return `
       <g>
         <rect class="bar-bg" x="${x.toFixed(1)}" y="${padT}" width="${barW.toFixed(1)}" height="${innerH}" rx="1.5"></rect>
         <rect class="bar-loss" x="${x.toFixed(1)}" y="${yTop.toFixed(1)}" width="${barW.toFixed(1)}" height="${lossHeight.toFixed(1)}" rx="1.5"></rect>
         <rect class="bar-win"  x="${x.toFixed(1)}" y="${(yTop + lossHeight).toFixed(1)}" width="${barW.toFixed(1)}" height="${winsHeight.toFixed(1)}" rx="1.5"></rect>
-        ${showLabel ? `<text class="bar-label" x="${(x + barW / 2).toFixed(1)}" y="${(h - 10)}">${b.floor}${binSize > 1 ? `–${b.floor + binSize - 1}` : ""}</text>` : ""}
+        ${labSvg}
         <title>${binSize > 1 ? `Floors ${b.floor}–${b.floor + binSize - 1}` : `Floor ${b.floor}`}: ${b.wins}W / ${b.losses}L</title>
       </g>`;
   }).join("");
@@ -4201,7 +5918,7 @@ function renderDeathHistogram(runs) {
         </div>
         ${legend}
       </div>
-      <div class="chart-svg-wrap">
+      <div class="chart-svg-wrap chart-svg-wrap--hist" style="aspect-ratio: ${w} / ${h};">
       <svg class="chart-svg" viewBox="0 0 ${w} ${h}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Floor outcome histogram">
         ${bars}
       </svg>
@@ -4331,7 +6048,7 @@ function renderOverview(report) {
   // mirror that layout exactly so the web reads as the same product.
   // Delegates to renderCharCards so Overview and the dedicated Characters
   // tab pick up the same character-portrait art treatment.
-  const charCards = renderCharCards(report.byCharacter);
+  const charCards = renderCharCards(report.byCharacter, { expandable: false });
 
   // KPI strip + analytics charts (added in v49). Reasoned about as
   // "answers to the questions a player asks every session": am I on a
@@ -4343,67 +6060,772 @@ function renderOverview(report) {
   const kpiStrip = renderKPIStrip(parsedRuns);
   const winrateChart = renderWinrateChart(parsedRuns);
   const deathChart = renderDeathHistogram(parsedRuns);
+  // Overlay inline card pulled from production. The full Overlay
+  // experience is gated behind the OVERLAY_NAV_VISIBLE flag below.
 
   return `
     ${kpiStrip}
     ${heroPanel}
     ${secTitle("Trends", "bars")}
-    ${winrateChart}
-    ${deathChart}
+    <div class="chart-row">
+      ${winrateChart}
+      ${deathChart}
+    </div>
     ${secTitle("Per character", "people")}
     ${charCards}
     ${secTitle("Top relics", "sparkles", "gold")}
     ${renderRelicCards(report.byRelic.slice(0, 6))}`;
 }
 
+const OVERLAY_TAGS = ["damage", "block", "scaling", "draw", "energy", "exhaust", "poison", "orbs", "stance", "strength", "defensive", "unknown"];
+const OVERLAY_DECISIONS = [
+  { key: "cardReward", label: "Card reward" },
+  { key: "pathChoice", label: "Path choice" },
+  { key: "shop", label: "Shop" },
+  { key: "restSite", label: "Rest site" },
+  { key: "upgrade", label: "Upgrade" },
+  { key: "remove", label: "Remove" },
+  { key: "bossRelic", label: "Boss relic" },
+  { key: "potionUse", label: "Potion use" },
+  { key: "coopCoordination", label: "Co-op coordination" },
+];
+const OVERLAY_REMINDERS = [
+  { key: "need_damage", label: "Need damage" },
+  { key: "need_block", label: "Need block" },
+  { key: "need_scaling", label: "Need scaling" },
+  { key: "need_draw", label: "Need draw" },
+  { key: "need_energy", label: "Need energy" },
+  { key: "save_potion", label: "Save potion" },
+  { key: "avoid_elite", label: "Avoid elite" },
+  { key: "take_elite", label: "Take elite" },
+  { key: "look_for_removal", label: "Look for removal" },
+  { key: "upgrade_priority", label: "Upgrade priority" },
+];
+
+function defaultOverlayState() {
+  return {
+    enabled: true,
+    mode: "compact",
+    // Compact mode renders most cards collapsed by default so the panel
+    // stays out of the way during play. The user can expand any section.
+    collapsed: { settings: true, helper: true, advisor: false },
+    status: {
+      character: "ironclad",
+      act: 1,
+      floor: 1,
+      ascension: 0,
+      goal: "",
+      boss: "",
+      pathRisk: "medium",
+    },
+    tags: [],
+    decisions: {},
+    notes: "",
+    reminders: [],
+    prefs: {
+      alwaysOnTop: false,
+      transparency: 92,
+      fontSize: "medium",
+      position: "top-right",
+      privacyReminder: true,
+    },
+    // Optional AI-assist provider settings. Manual-only by default. The key
+    // never leaves the user's browser unless they click Analyze. We only
+    // store provider/model/key here; we do NOT keep sent screenshots.
+    provider: {
+      name: "openai",
+      model: "gpt-4o-mini",
+      apiKey: "",
+      acceptedDisclosure: false,
+      lastAnalyzedAt: 0,
+      lastResult: null,
+    },
+  };
+}
+
+function loadOverlayState() {
+  const fallback = defaultOverlayState();
+  try {
+    const raw = localStorage.getItem(STORAGE_OVERLAY_STATE);
+    if (!raw) return fallback;
+    const parsed = JSON.parse(raw);
+    return {
+      ...fallback,
+      ...parsed,
+      status: { ...fallback.status, ...(parsed.status || {}) },
+      prefs: { ...fallback.prefs, ...(parsed.prefs || {}) },
+      collapsed: { ...fallback.collapsed, ...(parsed.collapsed || {}) },
+      provider: { ...fallback.provider, ...(parsed.provider || {}) },
+      tags: Array.isArray(parsed.tags) ? parsed.tags : [],
+      reminders: Array.isArray(parsed.reminders) ? parsed.reminders : [],
+      decisions: parsed.decisions && typeof parsed.decisions === "object" ? parsed.decisions : {},
+    };
+  } catch {
+    return fallback;
+  }
+}
+
+function saveOverlayState(state) {
+  try { localStorage.setItem(STORAGE_OVERLAY_STATE, JSON.stringify(state)); } catch {}
+}
+
+function setOverlayPathValue(state, path, value) {
+  const parts = path.split(".");
+  let node = state;
+  for (let i = 0; i < parts.length - 1; i++) {
+    const k = parts[i];
+    if (!node[k] || typeof node[k] !== "object") node[k] = {};
+    node = node[k];
+  }
+  node[parts[parts.length - 1]] = value;
+}
+
+function isOverlayProductionPreview() {
+  return window.location.hostname === "app.spirevault.app";
+}
+
+// Rate limit for the optional AI screenshot analyze button. Manual button,
+// not a polling loop, but we still cap to one call every 10 seconds so an
+// accidental double-click can't burn the user's API tokens.
+const OVERLAY_ANALYZE_COOLDOWN_MS = 10_000;
+
+function overlayCompactClass(s) {
+  if (s.mode === "compact") return "overlay-mode-compact";
+  if (s.mode === "minimal") return "overlay-mode-minimal";
+  return "overlay-mode-full";
+}
+
+function renderRecommendationCardHtml(rec, source) {
+  const sourceLabel = source === "ai-screenshot" ? "Screenshot assist" : "Local advisor";
+  const conf = rec.confidence || "low";
+  const why = (rec.why || []).map((w) => `<li>${esc(w)}</li>`).join("");
+  const assumptions = (rec.assumptions || []).map((a) => `<li>${esc(a)}</li>`).join("");
+  return `
+    <article class="overlay-card overlay-rec-card overlay-rec-${esc(conf)}" data-overlay-section="advisor">
+      <header class="overlay-rec-head">
+        <div>
+          <span class="overlay-rec-eyebrow">Best next action <span class="overlay-source-pill">${esc(sourceLabel)}</span></span>
+          <h4 class="overlay-rec-title">${esc(rec.action || "—")}</h4>
+        </div>
+        <span class="overlay-rec-confidence" data-conf="${esc(conf)}">${esc(conf)} confidence</span>
+      </header>
+      ${why ? `<ul class="overlay-rec-why">${why}</ul>` : ""}
+      ${assumptions ? `<details class="overlay-rec-assumptions"><summary>Assumptions</summary><ul>${assumptions}</ul></details>` : ""}
+      <p class="overlay-rec-foot muted">Support, not a verdict. The advisor never reads game memory or automates play.</p>
+    </article>
+  `;
+}
+
+function renderOverlayTab() {
+  const $body = document.getElementById("overlay-body");
+  if (!$body) return;
+  const s = loadOverlayState();
+  const previewTag = isOverlayProductionPreview() ? `<span class="overlay-kicker">Preview · Beta</span>` : `<span class="overlay-kicker">Local preview</span>`;
+  const selectedTagSet = new Set(s.tags);
+  const selectedReminderSet = new Set(s.reminders);
+  const charOptions = COMPANIONS.filter((c) => !c.isRandom);
+
+  // Compute the local recommendation up front. Cheap, deterministic,
+  // and always available even without an API key. The AI screenshot
+  // assist (when invoked) replaces this with its result.
+  const localRec = OverlayEngine.recommendNextAction(s);
+  const showResult = s.provider?.lastResult || localRec;
+  const showSource = s.provider?.lastResult ? "ai-screenshot" : "local";
+
+  const lastAnalyzedLabel = s.provider?.lastAnalyzedAt
+    ? `Last screenshot analyzed ${formatRelative(s.provider.lastAnalyzedAt)}`
+    : "No screenshot analyzed in this session.";
+
+  const collapsedStatus    = !!s.collapsed?.status;
+  const collapsedTags      = !!s.collapsed?.tags;
+  const collapsedDecisions = !!s.collapsed?.decisions;
+  const collapsedNotes     = !!s.collapsed?.notes;
+  const collapsedReminders = !!s.collapsed?.reminders;
+  const collapsedHelper    = s.collapsed?.helper !== false;
+  const collapsedSettings  = s.collapsed?.settings !== false;
+  const collapsedAdvisor   = !!s.collapsed?.advisor;
+  const collapsedAi        = s.collapsed?.ai !== false;
+
+  $body.innerHTML = `
+    <section class="overlay-hero-card ${overlayCompactClass(s)}">
+      <div>
+        <h3>Run Companion Overlay ${previewTag}</h3>
+        <p>Decision support while you play. Local-first, manual analyze only, never reads game memory.</p>
+      </div>
+      <div class="overlay-hero-actions">
+        <button class="btn-ghost ${s.mode === "compact" ? "is-on" : ""}" type="button" data-overlay-mode="compact">Compact</button>
+        <button class="btn-ghost ${s.mode === "full" ? "is-on" : ""}" type="button" data-overlay-mode="full">Full</button>
+        <button class="btn-ghost ${s.mode === "minimal" ? "is-on" : ""}" type="button" data-overlay-mode="minimal">Minimal HUD</button>
+      </div>
+    </section>
+
+    ${renderOverlayCollapsibleHeader("advisor", "Advisor", collapsedAdvisor)}
+    <div class="overlay-section-body" data-section-body="advisor" ${collapsedAdvisor ? "hidden" : ""}>
+      ${renderRecommendationCardHtml(showResult, showSource)}
+    </div>
+
+    ${renderOverlayCollapsibleHeader("ai", "Screenshot assist (optional)", collapsedAi)}
+    <div class="overlay-section-body" data-section-body="ai" ${collapsedAi ? "hidden" : ""}>
+      <article class="overlay-card overlay-ai-card">
+        <p class="overlay-ai-lede">Manual analyze only. The advisor will only call your provider when you click <strong>Analyze screenshot</strong>. SpireVault never streams your screen and never auto-uploads images.</p>
+        ${s.provider?.acceptedDisclosure ? "" : `
+          <div class="overlay-ai-consent">
+            <p>Before enabling: a screenshot you choose will be POSTed directly from your browser to your selected provider using your API key. SpireVault never sees the image or the key.</p>
+            <button class="btn-primary" type="button" data-overlay-action="ai-accept">I understand, enable manual screenshot assist</button>
+          </div>
+        `}
+        <div class="overlay-form-grid ${s.provider?.acceptedDisclosure ? "" : "is-disabled"}">
+          <label>Provider
+            <select data-overlay-field="provider.name">
+              <option value="openai"${(s.provider?.name || "openai") === "openai" ? " selected" : ""}>OpenAI (vision)</option>
+            </select>
+          </label>
+          <label>Model
+            <input type="text" value="${esc(s.provider?.model || "gpt-4o-mini")}" data-overlay-field="provider.model" placeholder="gpt-4o-mini" />
+          </label>
+          <label>API key (stored locally on this device only)
+            <input type="password" autocomplete="off" spellcheck="false" value="${esc(s.provider?.apiKey || "")}" data-overlay-field="provider.apiKey" placeholder="sk-..." />
+          </label>
+        </div>
+        <div class="overlay-ai-actions">
+          <button class="btn-primary" type="button" data-overlay-action="ai-analyze" ${s.provider?.acceptedDisclosure ? "" : "disabled"}>Analyze screenshot</button>
+          <input type="file" accept="image/png,image/jpeg,image/webp" data-overlay-screenshot hidden />
+          <button class="btn-ghost" type="button" data-overlay-action="ai-clear" ${s.provider?.lastResult ? "" : "disabled"}>Clear last AI result</button>
+          <span class="overlay-ai-status muted small" data-overlay-ai-status>${esc(lastAnalyzedLabel)}</span>
+        </div>
+        <p class="muted small">Manual-only. Rate-limited to one call every 10 seconds.</p>
+      </article>
+    </div>
+
+    <section class="overlay-grid">
+      <article class="overlay-card" data-overlay-section="status">
+        ${renderOverlayCardHead("status", "Run status", collapsedStatus)}
+        <div class="overlay-section-body" data-section-body="status" ${collapsedStatus ? "hidden" : ""}>
+          <div class="overlay-form-grid">
+            <label>Character
+              <select data-overlay-field="status.character">${charOptions.map((c) => `<option value="${esc(c.id)}"${s.status.character === c.id ? " selected" : ""}>${esc(c.label)}</option>`).join("")}</select>
+            </label>
+            <label>Act <input type="number" min="1" max="3" value="${Number(s.status.act) || 1}" data-overlay-field="status.act" /></label>
+            <label>Floor <input type="number" min="0" max="99" value="${Number(s.status.floor) || 1}" data-overlay-field="status.floor" /></label>
+            <label>Ascension <input type="number" min="0" max="9" value="${Number(s.status.ascension) || 0}" data-overlay-field="status.ascension" /></label>
+            <label>Current goal <input type="text" value="${esc(s.status.goal || "")}" placeholder="Example: survive act 2 elite" data-overlay-field="status.goal" /></label>
+            <label>Current boss <input type="text" value="${esc(s.status.boss || "")}" placeholder="Example: The Architect" data-overlay-field="status.boss" /></label>
+            <label>Current path risk
+              <select data-overlay-field="status.pathRisk">
+                ${["low", "medium", "high"].map((r) => `<option value="${r}"${s.status.pathRisk === r ? " selected" : ""}>${r[0].toUpperCase() + r.slice(1)}</option>`).join("")}
+              </select>
+            </label>
+          </div>
+        </div>
+      </article>
+
+      <article class="overlay-card" data-overlay-section="tags">
+        ${renderOverlayCardHead("tags", "Deck direction", collapsedTags)}
+        <div class="overlay-section-body" data-section-body="tags" ${collapsedTags ? "hidden" : ""}>
+          <div class="overlay-chip-row">
+            ${OVERLAY_TAGS.map((tag) => `<button type="button" class="overlay-chip${selectedTagSet.has(tag) ? " is-on" : ""}" data-overlay-tag="${tag}">${esc(tag)}</button>`).join("")}
+          </div>
+        </div>
+      </article>
+
+      <article class="overlay-card" data-overlay-section="decisions">
+        ${renderOverlayCardHead("decisions", "Next decision", collapsedDecisions)}
+        <div class="overlay-section-body" data-section-body="decisions" ${collapsedDecisions ? "hidden" : ""}>
+          <div class="overlay-check-grid">
+            ${OVERLAY_DECISIONS.map((d) => `<label><input type="checkbox" data-overlay-decision="${d.key}"${s.decisions[d.key] ? " checked" : ""} /> ${esc(d.label)}</label>`).join("")}
+          </div>
+        </div>
+      </article>
+
+      <article class="overlay-card" data-overlay-section="notes">
+        ${renderOverlayCardHead("notes", "Notes", collapsedNotes)}
+        <div class="overlay-section-body" data-section-body="notes" ${collapsedNotes ? "hidden" : ""}>
+          <textarea rows="5" data-overlay-field="notes" placeholder="Remember to remove Strike. Need AoE before Act 2. Save potion for elite.">${esc(s.notes || "")}</textarea>
+        </div>
+      </article>
+
+      <article class="overlay-card" data-overlay-section="reminders">
+        ${renderOverlayCardHead("reminders", "Reminders", collapsedReminders)}
+        <div class="overlay-section-body" data-section-body="reminders" ${collapsedReminders ? "hidden" : ""}>
+          <div class="overlay-chip-row">
+            ${OVERLAY_REMINDERS.map((r) => `<button type="button" class="overlay-chip${selectedReminderSet.has(r.key) ? " is-on" : ""}" data-overlay-reminder="${r.key}">${esc(r.label)}</button>`).join("")}
+          </div>
+        </div>
+      </article>
+
+      <article class="overlay-card overlay-privacy">
+        <h4>Privacy model</h4>
+        <p>Overlay data stays local. SpireVault does not modify the game, inject code, read memory, or upload your private run history.</p>
+        <div class="overlay-pill-row">
+          <span class="mini-pill">Manual analyze only</span>
+          <span class="mini-pill">Local-first</span>
+          <span class="mini-pill">No game modification</span>
+        </div>
+      </article>
+    </section>
+
+    <section class="overlay-grid overlay-grid--two">
+      <article class="overlay-card" data-overlay-section="helper">
+        ${renderOverlayCardHead("helper", "Decision helper", collapsedHelper)}
+        <div class="overlay-section-body" data-section-body="helper" ${collapsedHelper ? "hidden" : ""}>
+          <ul class="overlay-helper-list">
+            <li><strong>Card reward:</strong> immediate problem solved? boss matchup improved? relic fit? deck consistency preserved?</li>
+            <li><strong>Pathing:</strong> elite count, rest sites, shop timing, current strength, pivot room.</li>
+            <li><strong>Shop:</strong> remove vs potion vs relic vs card, and whether to save gold.</li>
+            <li><strong>Co-op:</strong> what partner needs, who takes risk, align before elite/boss.</li>
+          </ul>
+        </div>
+      </article>
+      <article class="overlay-card" data-overlay-section="settings">
+        ${renderOverlayCardHead("settings", "Overlay settings", collapsedSettings)}
+        <div class="overlay-section-body" data-section-body="settings" ${collapsedSettings ? "hidden" : ""}>
+          <div class="overlay-form-grid">
+            <label><input type="checkbox" data-overlay-field="enabled"${s.enabled ? " checked" : ""} /> Enable overlay feature</label>
+            <label>Default mode
+              <select data-overlay-field="mode">
+                ${["full", "compact", "minimal"].map((m) => `<option value="${m}"${s.mode === m ? " selected" : ""}>${m === "minimal" ? "Minimal HUD" : `${m[0].toUpperCase() + m.slice(1)} panel`}</option>`).join("")}
+              </select>
+            </label>
+            <label><input type="checkbox" data-overlay-field="prefs.alwaysOnTop"${s.prefs.alwaysOnTop ? " checked" : ""} /> Always on top <span class="muted">(native app only / planned)</span></label>
+            <label>Transparency ${Number(s.prefs.transparency) || 92}%
+              <input type="range" min="55" max="100" value="${Number(s.prefs.transparency) || 92}" data-overlay-field="prefs.transparency" />
+            </label>
+            <label>Font size
+              <select data-overlay-field="prefs.fontSize">
+                ${["small", "medium", "large"].map((f) => `<option value="${f}"${s.prefs.fontSize === f ? " selected" : ""}>${f[0].toUpperCase() + f.slice(1)}</option>`).join("")}
+              </select>
+            </label>
+            <label>Position
+              <select data-overlay-field="prefs.position">
+                ${["top-right", "top-left", "bottom-right", "bottom-left", "custom"].map((p) => `<option value="${p}"${s.prefs.position === p ? " selected" : ""}>${p}</option>`).join("")}
+              </select>
+            </label>
+            <label><input type="checkbox" data-overlay-field="prefs.privacyReminder"${s.prefs.privacyReminder ? " checked" : ""} /> Privacy reminder enabled</label>
+          </div>
+        </div>
+      </article>
+    </section>
+  `;
+
+  // Mode toggles.
+  $body.querySelectorAll("[data-overlay-mode]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      s.mode = btn.dataset.overlayMode || "compact";
+      saveOverlayState(s);
+      renderOverlayTab();
+    });
+  });
+
+  // Tag/reminder/decision/field handlers.
+  $body.querySelectorAll("[data-overlay-tag]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const key = btn.dataset.overlayTag;
+      if (!key) return;
+      s.tags = s.tags.includes(key) ? s.tags.filter((t) => t !== key) : [...s.tags, key];
+      saveOverlayState(s);
+      renderOverlayTab();
+    });
+  });
+  $body.querySelectorAll("[data-overlay-reminder]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const key = btn.dataset.overlayReminder;
+      if (!key) return;
+      s.reminders = s.reminders.includes(key) ? s.reminders.filter((r) => r !== key) : [...s.reminders, key];
+      saveOverlayState(s);
+      renderOverlayTab();
+    });
+  });
+  $body.querySelectorAll("[data-overlay-decision]").forEach((input) => {
+    input.addEventListener("change", () => {
+      const key = input.dataset.overlayDecision;
+      if (!key) return;
+      s.decisions[key] = !!input.checked;
+      saveOverlayState(s);
+      // Rerender so the recommendation card updates immediately. We
+      // intentionally don't rerender on every keystroke for text inputs.
+      renderOverlayTab();
+    });
+  });
+  $body.querySelectorAll("[data-overlay-field]").forEach((input) => {
+    const save = () => {
+      const key = input.dataset.overlayField;
+      if (!key) return;
+      let value = input.value;
+      if (input.type === "checkbox") value = !!input.checked;
+      else if (input.type === "number" || input.type === "range") value = Number(input.value);
+      setOverlayPathValue(s, key, value);
+      saveOverlayState(s);
+    };
+    input.addEventListener("input", save);
+    input.addEventListener("change", () => {
+      save();
+      renderOverlayTab();
+    });
+  });
+
+  // Collapsible section toggles.
+  $body.querySelectorAll("[data-overlay-collapse]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const sec = btn.dataset.overlayCollapse;
+      if (!sec) return;
+      s.collapsed = s.collapsed || {};
+      s.collapsed[sec] = !s.collapsed[sec];
+      saveOverlayState(s);
+      renderOverlayTab();
+    });
+  });
+
+  // AI assist actions.
+  $body.querySelectorAll("[data-overlay-action]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const action = btn.dataset.overlayAction;
+      if (action === "ai-accept") {
+        s.provider = { ...(s.provider || {}), acceptedDisclosure: true };
+        saveOverlayState(s);
+        renderOverlayTab();
+      } else if (action === "ai-clear") {
+        s.provider = { ...(s.provider || {}), lastResult: null, lastAnalyzedAt: 0 };
+        saveOverlayState(s);
+        renderOverlayTab();
+      } else if (action === "ai-analyze") {
+        const $picker = $body.querySelector("[data-overlay-screenshot]");
+        if ($picker) $picker.click();
+      }
+    });
+  });
+
+  // Wire the hidden file picker that drives the analyze flow.
+  const $picker = $body.querySelector("[data-overlay-screenshot]");
+  if ($picker) {
+    $picker.addEventListener("change", () => {
+      const file = $picker.files && $picker.files[0];
+      if (!file) return;
+      void runOverlayAnalyze(file);
+      $picker.value = "";
+    });
+  }
+}
+
+function renderOverlayCollapsibleHeader(section, label, collapsed) {
+  return `
+    <button type="button" class="overlay-section-header${collapsed ? " is-collapsed" : ""}" data-overlay-collapse="${esc(section)}" aria-expanded="${collapsed ? "false" : "true"}">
+      <span>${esc(label)}</span>
+      <span class="overlay-section-caret" aria-hidden="true">${collapsed ? "▸" : "▾"}</span>
+    </button>
+  `;
+}
+
+function renderOverlayCardHead(section, label, collapsed) {
+  return `
+    <button type="button" class="overlay-card-head${collapsed ? " is-collapsed" : ""}" data-overlay-collapse="${esc(section)}" aria-expanded="${collapsed ? "false" : "true"}">
+      <h4>${esc(label)}</h4>
+      <span class="overlay-section-caret" aria-hidden="true">${collapsed ? "▸" : "▾"}</span>
+    </button>
+  `;
+}
+
+// =========================================================================
+// Optional AI screenshot assist.
+//
+// Manual-only. Triggered by the user clicking "Analyze screenshot" and
+// picking an image file. We POST directly from the browser to the user's
+// chosen provider (OpenAI today). SpireVault servers never see the image
+// or the API key. We rate-limit to one call every 10 seconds and
+// validate the response strictly before rendering.
+// =========================================================================
+async function runOverlayAnalyze(file) {
+  const s = loadOverlayState();
+  if (!s.provider?.acceptedDisclosure) {
+    toast("Enable manual screenshot assist first.");
+    return;
+  }
+  const apiKey = (s.provider?.apiKey || "").trim();
+  if (!apiKey) {
+    toast("Add your API key in the Screenshot assist card.");
+    return;
+  }
+  const since = Date.now() - (s.provider?.lastAnalyzedAt || 0);
+  if (s.provider?.lastAnalyzedAt && since < OVERLAY_ANALYZE_COOLDOWN_MS) {
+    const wait = Math.ceil((OVERLAY_ANALYZE_COOLDOWN_MS - since) / 1000);
+    toast(`Slow down — wait ${wait}s before analyzing again.`);
+    return;
+  }
+  if (!file || file.size > 6 * 1024 * 1024) {
+    toast("Pick a screenshot under 6 MB (PNG/JPEG/WebP).");
+    return;
+  }
+  const $status = document.querySelector("[data-overlay-ai-status]");
+  if ($status) $status.textContent = "Analyzing screenshot…";
+
+  try {
+    const dataUrl = await readFileAsDataURL(file);
+    const { system, user } = OverlayEngine.buildVisionPrompt(s);
+    const provider = (s.provider?.name || "openai").toLowerCase();
+
+    let parsed = null;
+    if (provider === "openai") {
+      parsed = await callOpenAIVision(apiKey, s.provider.model || "gpt-4o-mini", system, user, dataUrl);
+    } else {
+      throw new Error("Unsupported provider");
+    }
+
+    const valid = OverlayEngine.validateVisionResponse(parsed);
+    if (!valid) {
+      toast("Provider returned an unreadable response. Try again.");
+      if ($status) $status.textContent = "Last analyze failed (unreadable response).";
+      return;
+    }
+    s.provider = {
+      ...(s.provider || {}),
+      lastAnalyzedAt: Date.now(),
+      lastResult: valid,
+    };
+    saveOverlayState(s);
+    renderOverlayTab();
+    toast("Screenshot analyzed.");
+  } catch (err) {
+    console.warn("[Overlay] analyze failed", err);
+    toast("Screenshot analyze failed. Check your API key and try again.");
+    if ($status) $status.textContent = "Last analyze failed.";
+  }
+}
+
+function readFileAsDataURL(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(reader.error || new Error("read failed"));
+    reader.readAsDataURL(file);
+  });
+}
+
+async function callOpenAIVision(apiKey, model, system, user, dataUrl) {
+  const body = {
+    model: model || "gpt-4o-mini",
+    response_format: { type: "json_object" },
+    messages: [
+      { role: "system", content: system },
+      {
+        role: "user",
+        content: [
+          { type: "text", text: user },
+          { type: "image_url", image_url: { url: dataUrl } },
+        ],
+      },
+    ],
+    max_tokens: 400,
+  };
+  const r = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify(body),
+  });
+  if (!r.ok) {
+    const text = await r.text().catch(() => "");
+    throw new Error(`openai_${r.status}_${text.slice(0, 120)}`);
+  }
+  const json = await r.json();
+  const content = json?.choices?.[0]?.message?.content;
+  if (!content) return null;
+  try { return JSON.parse(content); } catch { return null; }
+}
+
+function formatRelative(ts) {
+  if (!ts) return "never";
+  const diff = Date.now() - ts;
+  if (diff < 60_000) return "just now";
+  if (diff < 60 * 60_000) return `${Math.floor(diff / 60_000)}m ago`;
+  if (diff < 24 * 60 * 60_000) return `${Math.floor(diff / (60 * 60_000))}h ago`;
+  return `${Math.floor(diff / (24 * 60 * 60_000))}d ago`;
+}
+
 /** Render the per-character grid card. Shared between Overview and the
  *  dedicated Characters tab so both surfaces feel like one product. Each
  *  card is keyboard-focusable and routes to the Characters tab on click,
  *  so the cards behave like the desktop app's clickable tiles. */
-function renderCharCards(buckets) {
+/** Render the character grid. `opts.expandable` controls whether
+ *  clicking a card opens an inline detail panel (used on the
+ *  Characters tab) or routes to the Characters tab (used on
+ *  Overview).
+ *
+ *  When `expandable` is true we surface an explicit "View details"
+ *  footer with a chevron — without it the card looked like static
+ *  data and users didn't realize they could tap it. The footer also
+ *  plays a subtle hover/active animation so the affordance is
+ *  reinforced on pointer devices. */
+function renderCharCards(buckets, opts = {}) {
+  const expandable = !!opts.expandable;
   if (!buckets || !buckets.length) {
     return `<p class="muted">No character data yet.</p>`;
   }
+  const hint = expandable
+    ? `<div class="char-card-cta">
+         <span>View details</span>
+         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 6 15 12 9 18"/></svg>
+       </div>`
+    : "";
+  const cardClass = expandable ? "char-card is-clickable" : "char-card";
   return `
     <div class="char-grid">
       ${buckets.map((c) => {
         const theme = charTheme(c.key);
         const wr = (c.winrate * 100).toFixed(1);
         const lossCount = c.runs - c.wins;
+        const dataAttrs = expandable
+          ? `data-action="char-expand" data-char-key="${esc(c.key)}"`
+          : `data-action="goto-tab" data-tab="characters"`;
         return `
-          <div class="char-card" style="--char-color:${theme.color}"
+          <div class="${cardClass}" style="--char-color:${theme.color}"
                role="button" tabindex="0"
-               data-action="goto-tab" data-tab="characters"
-               aria-label="${esc(capitalize(c.key))}: ${wr}% winrate over ${c.runs} runs">
+               ${dataAttrs}
+               aria-label="${esc(capitalize(c.key))}: ${wr}% winrate over ${c.runs} runs. ${expandable ? "Tap to view details." : ""}">
             <div class="char-card-head">
               <div class="char-card-icon">${charPortraitOrIcon(c.key, theme)}</div>
               <span class="char-card-runs">${c.runs} runs</span>
             </div>
             <div class="char-card-name">${esc(capitalize(c.key))}</div>
-            <div class="char-card-record">${c.wins} win${c.wins === 1 ? "" : "s"} · ${lossCount} loss${lossCount === 1 ? "" : "es"}</div>
+            <div class="char-card-record">${c.wins} win${c.wins === 1 ? "" : "s"} &middot; ${lossCount} loss${lossCount === 1 ? "" : "es"}</div>
             <div class="char-card-wr">
               <strong class="char-card-pct">${wr}%</strong>
               <span class="char-card-pct-label">Winrate</span>
             </div>
             <div class="char-card-bar"><span style="width:${Math.min(100, c.winrate * 100)}%"></span></div>
+            ${hint}
           </div>`;
       }).join("")}
+    </div>`;
+}
+
+/** Inline character drill-down — shown below the grid on the
+ *  Characters tab when a card is selected. Pulls from `CharInfo`
+ *  for hand-written copy and from the per-character bucket for
+ *  the user's personal stats. */
+function renderCharacterDetail(charKey, bucket) {
+  const info = CharInfo.characterInfoFor(charKey);
+  const theme = charTheme(charKey);
+  const personal = bucket
+    ? `<div class="char-detail-stats">
+         <div class="char-detail-stat">
+           <span class="char-detail-stat-label">Your runs</span>
+           <strong class="char-detail-stat-value">${bucket.runs}</strong>
+         </div>
+         <div class="char-detail-stat">
+           <span class="char-detail-stat-label">Wins</span>
+           <strong class="char-detail-stat-value" style="color:var(--win)">${bucket.wins}</strong>
+         </div>
+         <div class="char-detail-stat">
+           <span class="char-detail-stat-label">Losses</span>
+           <strong class="char-detail-stat-value" style="color:var(--loss)">${bucket.runs - bucket.wins}</strong>
+         </div>
+         <div class="char-detail-stat">
+           <span class="char-detail-stat-label">Win rate</span>
+           <strong class="char-detail-stat-value" style="color:${theme.color}">${(bucket.winrate * 100).toFixed(1)}%</strong>
+         </div>
+       </div>`
+    : `<p class="muted small">You haven't played ${esc(capitalize(charKey))} yet.</p>`;
+
+  if (!info) {
+    return `
+      <div class="char-detail" data-char-detail="${esc(charKey)}">
+        <div class="char-detail-head">
+          <h3 class="char-detail-name">${esc(capitalize(charKey))}</h3>
+          <button class="char-detail-close" type="button" data-action="char-collapse" aria-label="Close">&times;</button>
+        </div>
+        ${personal}
+      </div>`;
+  }
+
+  const stars = (n) => "&#9733;".repeat(n) + "&#9734;".repeat(Math.max(0, 5 - n));
+  const meterRow = (label, val) => `
+    <div class="char-detail-meter">
+      <span class="char-detail-meter-label">${esc(label)}</span>
+      <div class="char-detail-meter-bar">
+        <span style="width:${val * 20}%; background:${theme.color}"></span>
+      </div>
+      <span class="char-detail-meter-val">${val}/5</span>
+    </div>`;
+
+  const tipsHtml = info.tips.map((t) => `<li>${esc(t)}</li>`).join("");
+  const archetypeChips = info.archetypes
+    .map((a) => `<span class="char-detail-chip" style="--chip-color:${theme.color}">${esc(a)}</span>`)
+    .join("");
+  const mechanicCards = info.mechanics
+    .map((m) => `
+      <div class="char-detail-mech">
+        <strong class="char-detail-mech-title">${esc(m.title)}</strong>
+        <p class="char-detail-mech-text">${esc(m.detail)}</p>
+      </div>`)
+    .join("");
+
+  return `
+    <div class="char-detail" data-char-detail="${esc(charKey)}" style="--char-color:${theme.color}">
+      <div class="char-detail-head">
+        <div class="char-detail-portrait">${charPortraitOrIcon(charKey, theme)}</div>
+        <div class="char-detail-titles">
+          <h3 class="char-detail-name">${esc(info.name)}</h3>
+          <p class="char-detail-tagline">${esc(info.tagline)}</p>
+          <div class="char-detail-meta">
+            <span class="char-detail-role">${esc(info.role)}</span>
+            <span class="char-detail-difficulty" title="Difficulty">${stars(info.difficulty)}</span>
+          </div>
+        </div>
+        <button class="char-detail-close" type="button" data-action="char-collapse" aria-label="Close detail panel">&times;</button>
+      </div>
+
+      ${personal}
+
+      <div class="char-detail-section">
+        <h4 class="char-detail-section-title">Playstyle</h4>
+        <p class="char-detail-summary">${esc(info.summary)}</p>
+        <div class="char-detail-meters">
+          ${meterRow("Aggression", info.playstyle.aggression)}
+          ${meterRow("Complexity", info.playstyle.complexity)}
+        </div>
+      </div>
+
+      <div class="char-detail-section">
+        <h4 class="char-detail-section-title">Archetypes</h4>
+        <div class="char-detail-chips">${archetypeChips}</div>
+      </div>
+
+      <div class="char-detail-section">
+        <h4 class="char-detail-section-title">Core mechanics</h4>
+        <div class="char-detail-mech-grid">${mechanicCards}</div>
+      </div>
+
+      <div class="char-detail-section">
+        <h4 class="char-detail-section-title">Climbing tips</h4>
+        <ul class="char-detail-tips">${tipsHtml}</ul>
+      </div>
     </div>`;
 }
 
 function renderCharactersTab(report) {
   return `
     ${secTitle("Winrate by character", "people")}
-    ${renderCharCards(report.byCharacter)}`;
+    ${renderCharCards(report.byCharacter, { expandable: true })}
+    <div id="char-detail-slot" class="char-detail-slot"></div>`;
 }
 
 /** Bar chart matching the desktop app's "Per ascension" panel.
  *  Each bar shows total runs (height proportional to max) with the wins
  *  portion painted in green from the bottom up. */
 function renderAscensionsTab(report) {
-  const buckets = report.byAscension
+  // STS2 Early Access caps the live ascension ladder at A9 ("combined
+  // challenges stack"). A bucket above A9 should only appear if Mega
+  // Crit has shipped a new level — pre-A9 noise from old demo data
+  // gets filtered here so the screen never claims A18 exists in a
+  // game that doesn't have it. If a future patch raises the cap, the
+  // bucket renders cleanly via UNKNOWN_TIER without code changes.
+  const STS2_ASC_CAP = 9;
+  const allBuckets = report.byAscension
     .slice()
     .sort((a, b) => parseAsc(a.key) - parseAsc(b.key));
+  const buckets = allBuckets.filter((b) => parseAsc(b.key) <= STS2_ASC_CAP);
+  const hiddenAbove = allBuckets.length - buckets.length;
   if (!buckets.length) {
     return `<p class="muted">No ascension data yet.</p>`;
   }
@@ -4484,8 +6906,19 @@ function renderAscensionsTab(report) {
       }).join("")}
     </div>`;
 
+  // Only surface the "newer levels detected" hint if the user actually
+  // has runs above the EA cap — keeps the UI quiet for the 99% case
+  // where this never fires, but transparent if Mega Crit ever extends
+  // the ladder and the user's saves are ahead of our hardcoded cap.
+  const newLevelsHint = hiddenAbove > 0
+    ? `<p class="muted small" style="margin: -6px 0 14px;">
+         <strong>${hiddenAbove}</strong> additional level${hiddenAbove === 1 ? "" : "s"} detected above the Early Access cap of A${STS2_ASC_CAP}. Hidden until we update this view.
+       </p>`
+    : "";
+
   return `
     ${secTitle("Per ascension", "bars")}
+    ${newLevelsHint}
     ${barChart}
     ${secTitle("Difficulty tiers", "sparkles")}
     ${tierLegend}
@@ -4507,12 +6940,23 @@ function renderRelicsTab(report) {
     ${secTitle("Top relics by winrate", "sparkles", "gold")}
     <p class="muted small" style="margin: -6px 0 14px;">
       Sorted by winrate, with a minimum-sample filter applied to suppress one-run flukes.
+      <strong>Tap any relic for details.</strong>
     </p>
-    ${renderRelicCards(buckets)}`;
+    ${renderRelicCards(buckets, { expandable: true })}
+    <div id="relic-detail-slot" class="relic-detail-slot"></div>`;
 }
 
-function renderRelicCards(buckets) {
+/** `opts.expandable`: when true, each card opens an inline detail
+ *  panel below the grid (Top Relics tab). When false, the cards are
+ *  static (Overview tab). */
+function renderRelicCards(buckets, opts = {}) {
   if (!buckets || !buckets.length) return `<p class="muted">No relic data yet.</p>`;
+  const expandable = !!opts.expandable;
+  const ctaHint = expandable
+    ? `<div class="relic-card-cta" aria-hidden="true">
+         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"/></svg>
+       </div>`
+    : "";
   return `
     <div class="relic-grid">
       ${buckets.map((b) => {
@@ -4526,8 +6970,12 @@ function renderRelicCards(buckets) {
         const seenPill = isLowSample
           ? `<span class="pill pill-muted pill-small-sample" title="Small sample — winrate is uncertain at this run count">${b.runs} seen</span>`
           : `<span class="pill pill-muted">${b.runs} seen</span>`;
+        const dataAttrs = expandable
+          ? `role="button" tabindex="0" data-action="relic-expand" data-relic-key="${esc(b.key)}"`
+          : "";
+        const cardClass = expandable ? "relic-card is-clickable" : "relic-card";
         return `
-          <div class="relic-card">
+          <div class="${cardClass}" ${dataAttrs} aria-label="${esc(relicLabel(b.key))}: ${wr}% winrate over ${b.runs} runs.${expandable ? " Tap for details." : ""}">
             ${icon}
             <div class="relic-card-meta">
               <div class="relic-card-name">${esc(relicLabel(b.key))}</div>
@@ -4540,8 +6988,103 @@ function renderRelicCards(buckets) {
               <strong>${wr}%</strong>
               <span>WINRATE</span>
             </div>
+            ${ctaHint}
           </div>`;
       }).join("")}
+    </div>`;
+}
+
+/** Inline relic drill-down panel. Same UX pattern as the character
+ *  drill-down on the Characters tab. Pulls hand-written copy from
+ *  RelicInfo for the in-game effect + when-to-pick advice; pulls
+ *  the user's personal numbers from the bucket. */
+function renderRelicDetail(relicKey, bucket) {
+  const info = RelicInfo.relicInfoFor(relicKey);
+  const art = relicImageSrc(relicKey);
+  const wr = bucket ? (bucket.winrate * 100).toFixed(1) : "—";
+  const tone = bucket ? winrateTone(bucket) : "accent";
+  const lossCount = bucket ? bucket.runs - bucket.wins : 0;
+  const tier = info?.rarity || "unknown";
+  const tierColor = RelicInfo.RARITY_COLORS[tier] || "#8a7cb8";
+
+  const personal = bucket
+    ? `<div class="relic-detail-stats">
+         <div class="relic-detail-stat">
+           <span class="relic-detail-stat-label">Picked</span>
+           <strong class="relic-detail-stat-value">${bucket.runs}</strong>
+           <span class="relic-detail-stat-sub">runs</span>
+         </div>
+         <div class="relic-detail-stat">
+           <span class="relic-detail-stat-label">Wins</span>
+           <strong class="relic-detail-stat-value" style="color:var(--win)">${bucket.wins}</strong>
+         </div>
+         <div class="relic-detail-stat">
+           <span class="relic-detail-stat-label">Losses</span>
+           <strong class="relic-detail-stat-value" style="color:var(--loss)">${lossCount}</strong>
+         </div>
+         <div class="relic-detail-stat">
+           <span class="relic-detail-stat-label">Win rate</span>
+           <strong class="relic-detail-stat-value relic-detail-stat-value-${tone}">${wr}%</strong>
+         </div>
+       </div>`
+    : `<p class="muted small">You haven't picked this relic yet.</p>`;
+
+  if (!info) {
+    // No hand-written copy — show user's personal stats only and
+    // honestly tell them we don't ship description copy for this
+    // relic. Better than fabricating an in-game effect.
+    return `
+      <div class="relic-detail" data-relic-detail="${esc(relicKey)}">
+        <div class="relic-detail-head">
+          ${art ? `<img class="relic-detail-portrait" src="${art}" alt="${esc(relicLabel(relicKey))}">` : `<div class="relic-detail-portrait" aria-hidden="true">⚡</div>`}
+          <div class="relic-detail-titles">
+            <h3 class="relic-detail-name">${esc(relicLabel(relicKey))}</h3>
+            <p class="relic-detail-tagline muted small">In-game effect copy not yet on file. Personal stats below.</p>
+          </div>
+          <button class="relic-detail-close" type="button" data-action="relic-collapse" aria-label="Close detail">&times;</button>
+        </div>
+        ${personal}
+      </div>`;
+  }
+
+  const synergyChips = info.synergy
+    .map((s) => `<span class="relic-detail-chip" style="--chip-color:${tierColor}">${esc(s)}</span>`)
+    .join("");
+
+  return `
+    <div class="relic-detail" data-relic-detail="${esc(relicKey)}" style="--relic-tier-color:${tierColor}">
+      <div class="relic-detail-head">
+        ${art
+          ? `<img class="relic-detail-portrait" src="${art}" alt="${esc(relicLabel(relicKey))}">`
+          : `<div class="relic-detail-portrait" aria-hidden="true">⚡</div>`}
+        <div class="relic-detail-titles">
+          <h3 class="relic-detail-name">${esc(relicLabel(relicKey))}</h3>
+          <div class="relic-detail-meta">
+            <span class="relic-detail-rarity" style="color:${tierColor}; border-color:${tierColor}">${esc(tier)}</span>
+          </div>
+        </div>
+        <button class="relic-detail-close" type="button" data-action="relic-collapse" aria-label="Close detail">&times;</button>
+      </div>
+
+      <div class="relic-detail-section">
+        <h4 class="relic-detail-section-title">In-game effect</h4>
+        <p class="relic-detail-effect">${esc(info.effect)}</p>
+      </div>
+
+      <div class="relic-detail-section">
+        <h4 class="relic-detail-section-title">When to pick</h4>
+        <p class="relic-detail-tip">${esc(info.tip)}</p>
+      </div>
+
+      <div class="relic-detail-section">
+        <h4 class="relic-detail-section-title">Pairs with</h4>
+        <div class="relic-detail-chips">${synergyChips}</div>
+      </div>
+
+      <div class="relic-detail-section">
+        <h4 class="relic-detail-section-title">Your record with this relic</h4>
+        ${personal}
+      </div>
     </div>`;
 }
 
@@ -4805,6 +7348,9 @@ function renderRecentRuns(runs) {
   return `
     ${filtersHTML}
     ${secTitle("Recent runs", "clock")}
+    <p class="muted small recent-runs-hint">
+      <strong>Tap any run</strong> to see your full Act timeline — every combat, elite, shop, and rest you walked through, with the floor where the run ended marked.
+    </p>
     <div class="run-list">
       ${slice.map((r) => {
         const theme = charTheme(r.character);
@@ -4898,6 +7444,44 @@ function setStatus(state, label) {
   if ($lblM) $lblM.textContent = label;
 }
 
+/** Sync the sidebar profile dock (status pill + invite count badge).
+ *  Reads the current draft (looking/inRun/inCoop/afk) and the latest
+ *  inbox count so the user always sees their live state at the bottom
+ *  of the viewport without having to open Co-op tab first. */
+function renderProfileDock() {
+  const $row = document.getElementById("me-pill-status-row");
+  const $pill = document.getElementById("me-pill-status-pill");
+  const $inv = document.getElementById("me-pill-invites");
+  if (!$row || !$pill || !$inv) return;
+  if (!session?.steamID) {
+    $row.hidden = true;
+    return;
+  }
+  $row.hidden = false;
+  const draft = readDraft();
+  const status = draft.status || "looking";
+  const labels = {
+    looking: "Looking",
+    inRun: "In a solo run",
+    inCoop: "In co-op",
+    afk: "AFK",
+  };
+  $pill.dataset.status = status;
+  $pill.textContent = labels[status] || status;
+  const pendingCount = (lastInbox || []).filter((i) => i?.status === "pending").length;
+  if (pendingCount > 0) {
+    $inv.hidden = false;
+    $inv.textContent = `${pendingCount} invite${pendingCount === 1 ? "" : "s"}`;
+  } else {
+    $inv.hidden = true;
+    $inv.textContent = "0";
+  }
+  if (!$inv.dataset.wired) {
+    $inv.dataset.wired = "1";
+    $inv.addEventListener("click", () => switchTab("coop"));
+  }
+}
+
 function showPushingPill(visible) {
   const pill = document.getElementById("me-pushing-pill");
   if (visible) { pill.hidden = false; pill.textContent = "Sending…"; }
@@ -4910,7 +7494,7 @@ function setRadio(name, value) {
   if (el) el.checked = true;
 }
 
-function toast(msg) {
+function toast(msg, opts = {}) {
   let $t = document.getElementById("toast");
   if (!$t) {
     $t = document.createElement("div");
@@ -4920,8 +7504,14 @@ function toast(msg) {
   }
   $t.textContent = msg;
   $t.classList.add("is-visible");
+  // Long messages (multi-sentence diagnostics) need more dwell time
+  // than the default 3s — reading + comprehension + acting on a path
+  // takes ~10s for most users. Callers pass `{ duration: 12000 }` for
+  // those cases. The default stays 3s so common confirmations don't
+  // linger past usefulness.
+  const duration = Number.isFinite(opts.duration) && opts.duration > 0 ? opts.duration : 3000;
   clearTimeout(toast._t);
-  toast._t = setTimeout(() => $t.classList.remove("is-visible"), 3000);
+  toast._t = setTimeout(() => $t.classList.remove("is-visible"), duration);
 }
 
 function capitalize(s) {
@@ -5137,6 +7727,15 @@ function renderRunDetail(r) {
       </div>
     </div>`;
 
+  // ── Act Timeline ────────────────────────────────────────────────
+  // Honest path visualization. Renders the linear sequence of nodes
+  // the player visited per act. We DO NOT fabricate the full STS map
+  // — the .run file only contains nodes the player actually walked
+  // through, not the unvisited branches of the random map. So we
+  // show "the road you took", not "the map of the dungeon". The
+  // user explicitly asked for this honesty.
+  const pathHTML = renderActTimeline(r);
+
   const relicsHTML = relicCount > 0
     ? `
       <div class="run-detail-section">
@@ -5219,7 +7818,141 @@ function renderRunDetail(r) {
       </button>
     </div>`;
 
-  return heroHTML + statsHTML + relicsHTML + deckHTML + picksHTML + actionsHTML;
+  return heroHTML + statsHTML + pathHTML + relicsHTML + deckHTML + picksHTML + actionsHTML;
+}
+
+/**
+ * Render the act-by-act path the player walked.
+ *
+ * Honest about scope:
+ *   - We DO have the linear sequence of nodes visited per act.
+ *   - We DO NOT have the unvisited branches of the random map.
+ *   - So we render the actual road taken with the in-game STS2 node
+ *     icons — no fake DAG branching.
+ *
+ * UX:
+ *   - Each act is a collapsible `<details>` element that opens by
+ *     default. Players who finished a long run can fold the early
+ *     acts and focus on where they died.
+ *   - Bottom legend explains every icon so the row reads at a
+ *     glance even if the user has never seen the in-game map.
+ *   - Death node highlighted with a red ring; victory with gold.
+ *
+ * Icons are hand-painted PNG sprites (`/assets/sts2/map-icons/*`)
+ * matching the in-game art rather than abstract SVG glyphs.
+ */
+function renderActTimeline(r) {
+  const path = Array.isArray(r.pathByAct) ? r.pathByAct : [];
+  if (!path.length || !path.some((a) => a.nodes && a.nodes.length)) {
+    return ""; // No path data on this run (older parser, partial save, etc.)
+  }
+  // STS2 has THREE acts in Early Access. There is no separate
+  // "Act 4 / Architect" zone — the Architect is the act 3 boss
+  // encounter, not its own area. Anything beyond act 3 (e.g. a
+  // future Mega Crit content patch) renders with a generic label
+  // until we ship explicit support.
+  const actLabel = (n) => {
+    if (n === 1) return "Act 1 — The Crawl";
+    if (n === 2) return "Act 2 — The Climb";
+    if (n === 3) return "Act 3 — The Final Push";
+    return `Act ${n}`;
+  };
+  const nodeLabel = (type) => ({
+    combat: "Enemy", elite: "Elite", shop: "Merchant", rest: "Rest",
+    event: "Unknown", chest: "Treasure", boss: "Boss", unknown: "Unknown",
+  })[type] || "Unknown";
+
+  // Death/victory marker placement
+  let deathFloor = null;
+  if (!r.won) {
+    const lastAct = path[path.length - 1];
+    const lastNode = lastAct?.nodes?.[lastAct.nodes.length - 1];
+    if (lastNode) deathFloor = lastNode.floor;
+  }
+
+  // Per-act node count summary so the closed-state of each <details>
+  // tells you what you'd see if you opened it ("12 nodes · 1 elite, 2 rests").
+  const summarize = (nodes) => {
+    const counts = {};
+    nodes.forEach((n) => { counts[n.type] = (counts[n.type] || 0) + 1; });
+    const order = ["combat", "elite", "shop", "rest", "event", "chest", "boss"];
+    return order
+      .filter((k) => counts[k])
+      .map((k) => `${counts[k]} ${nodeLabel(k).toLowerCase()}${counts[k] > 1 ? "s" : ""}`)
+      .join(" · ");
+  };
+
+  // Legend: every icon used in the timeline, captioned. Renders at
+  // the bottom of the map view so a first-time user can decode the
+  // strip immediately.
+  const legendTypes = [
+    { type: "event",  label: "Unknown" },
+    { type: "shop",   label: "Merchant" },
+    { type: "chest",  label: "Treasure" },
+    { type: "rest",   label: "Rest" },
+    { type: "combat", label: "Enemy" },
+    { type: "elite",  label: "Elite" },
+    { type: "boss",   label: "Boss" },
+  ];
+
+  return `
+    <div class="run-detail-section run-detail-path-section">
+      <div class="run-detail-section-head">
+        <h3 class="run-detail-section-title">Act timeline — the path you took</h3>
+        <span class="run-detail-section-count">${path.reduce((n, a) => n + (a.nodes?.length || 0), 0)} nodes</span>
+      </div>
+      <p class="run-detail-section-sub muted small">
+        The actual sequence of rooms you walked through, taken from your <code>.run</code> file. We don't show
+        the unvisited branches because the save data only records nodes you visited.
+      </p>
+      ${path.map((act, idx) => {
+        if (!act.nodes || !act.nodes.length) return "";
+        const summary = summarize(act.nodes);
+        // EVERY act starts collapsed. Users open whatever they want.
+        // The DIED HERE / VICTORY flag chip on the relevant act
+        // header tells them where to look without auto-opening it.
+        const isFinalAct = idx === path.length - 1;
+        const hasDeath = !r.won && isFinalAct;
+        const hasVictory = r.won && isFinalAct;
+        return `
+          <details class="path-act">
+            <summary class="path-act-summary">
+              <span class="path-act-chevron" aria-hidden="true">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+              </span>
+              <span class="path-act-label">${esc(actLabel(act.act))}</span>
+              <span class="path-act-meta">${esc(summary)}</span>
+              ${hasDeath ? '<span class="path-act-flag path-act-flag--death">DIED HERE</span>' : ""}
+              ${hasVictory ? '<span class="path-act-flag path-act-flag--win">VICTORY</span>' : ""}
+            </summary>
+            <div class="path-act-strip">
+              ${act.nodes.map((n, i) => {
+                const isDeath = n.floor === deathFloor;
+                const isWin = r.won && i === act.nodes.length - 1 && act === path[path.length - 1];
+                const cls = `path-node path-node--${esc(n.type)}${isDeath ? " path-node--death" : ""}${isWin ? " path-node--win" : ""}`;
+                return `
+                  <div class="${cls}" title="Floor ${n.floor} · ${esc(nodeLabel(n.type))}${isDeath ? " · DIED HERE" : ""}${isWin ? " · VICTORY" : ""}">
+                    <span class="path-node-icon" data-node-type="${esc(n.type)}" aria-hidden="true"></span>
+                    <span class="path-node-floor">${n.floor}</span>
+                  </div>
+                  ${i < act.nodes.length - 1 ? '<span class="path-connector" aria-hidden="true"></span>' : ""}`;
+              }).join("")}
+            </div>
+          </details>`;
+      }).join("")}
+
+      <div class="path-legend" aria-label="Map icon legend">
+        <span class="path-legend-title">Legend</span>
+        <div class="path-legend-grid">
+          ${legendTypes.map((l) => `
+            <div class="path-legend-item">
+              <span class="path-node-icon path-legend-icon" data-node-type="${esc(l.type)}" aria-hidden="true"></span>
+              <span class="path-legend-label">${esc(l.label)}</span>
+            </div>
+          `).join("")}
+        </div>
+      </div>
+    </div>`;
 }
 
 // =========================================================================

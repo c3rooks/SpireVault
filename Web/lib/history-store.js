@@ -1,7 +1,23 @@
 // history-store.js
 // =========================================================================
 // IndexedDB-backed persistence for the user's uploaded `history.json`.
-// We keep one record at key "current" — uploads overwrite, no version history.
+//
+// Storage keys
+// ------------
+// Guests:     "current"
+// Signed-in:  "current:<steamID>"
+//
+// Per-Steam-ID keying ensures a shared browser (kiosk, public PC, family
+// machine) never leaks one user's run history to the next person who
+// signs in with a different account. Guests still use the legacy key so
+// drag-and-drop without a login keeps working.
+//
+// The active key is set at boot via `setActiveSteamID(id)`. If no Steam
+// ID is set, all reads/writes fall through to the legacy `"current"`
+// key. Migration: on first signed-in read, if the per-Steam-ID record
+// is empty AND the legacy `"current"` record has data, we copy the
+// legacy record forward (without deleting it — preserves the legacy
+// path for the same browser used in guest mode again later).
 //
 // Why IndexedDB and not localStorage?
 //   `history.json` for an active player can blow past 5 MB in a hurry; that's
@@ -13,10 +29,23 @@ const DB_NAME = "vault-web";
 const DB_VERSION = 2;
 const STORE = "history";
 const HANDLES_STORE = "handles";
-const KEY = "current";
+const LEGACY_KEY = "current";
 const HANDLE_KEY = "history-file";
 /** Saved `FileSystemDirectoryHandle` from showDirectoryPicker — enables silent re-scan. */
 const HANDLE_KEY_DIR = "history-directory";
+
+let activeSteamID = null;
+
+/** Set the Steam ID used to scope history reads/writes. Call after
+ *  successful sign-in (or with `null` on sign-out). Idempotent. */
+export function setActiveSteamID(steamID) {
+  activeSteamID = steamID && /^\d{17}$/.test(steamID) ? steamID : null;
+}
+
+/** Resolve the IDB key for the active scope. */
+function activeHistoryKey() {
+  return activeSteamID ? `${LEGACY_KEY}:${activeSteamID}` : LEGACY_KEY;
+}
 
 function open() {
   return new Promise((resolve, reject) => {
@@ -36,10 +65,11 @@ function open() {
 }
 
 export async function saveHistory(record) {
+  const key = activeHistoryKey();
   const db = await open();
   await new Promise((res, rej) => {
     const tx = db.transaction(STORE, "readwrite");
-    tx.objectStore(STORE).put(record, KEY);
+    tx.objectStore(STORE).put(record, key);
     // `oncomplete` is the only signal that data is durably committed.
     // `onerror` and `onabort` both indicate the write was rolled back
     // (quota exceeded, low storage, browser killed the txn, …) so
@@ -53,22 +83,57 @@ export async function saveHistory(record) {
 }
 
 export async function loadHistory() {
+  const key = activeHistoryKey();
   const db = await open();
   const value = await new Promise((res, rej) => {
     const tx = db.transaction(STORE, "readonly");
-    const req = tx.objectStore(STORE).get(KEY);
+    const req = tx.objectStore(STORE).get(key);
     req.onsuccess = () => res(req.result ?? null);
     req.onerror = () => rej(req.error);
   });
   db.close();
+  if (!activeSteamID) return value;
+  // Signed-in path: prefer the richer record across scoped+legacy. This
+  // fixes the "stuck at 1 run" class where an old scoped snapshot exists
+  // but the user later imported a much larger set under legacy scope.
+  const legacy = await new Promise((res) => {
+    open().then((db2) => {
+      const tx2 = db2.transaction(STORE, "readonly");
+      const req2 = tx2.objectStore(STORE).get(LEGACY_KEY);
+      req2.onsuccess = () => { res(req2.result ?? null); db2.close(); };
+      req2.onerror = () => { res(null); try { db2.close(); } catch {} };
+    }).catch(() => res(null));
+  });
+
+  const scopedRuns = Array.isArray(value?.runs) ? value.runs.length : 0;
+  const legacyRuns = Array.isArray(legacy?.runs) ? legacy.runs.length : 0;
+  if (!value) return legacy;
+  if (legacyRuns > scopedRuns) return legacy;
   return value;
 }
 
-export async function clearHistory() {
+/** Clear the history record under the **active scope**. Defaults to
+ *  the active scope (Steam-keyed when signed in, legacy otherwise).
+ *  Pass `{ allScopes: true }` to wipe every history record (used on
+ *  sign-out so a shared browser cannot leak one user's runs to the
+ *  next signed-in user). */
+export async function clearHistory(opts = {}) {
   const db = await open();
   await new Promise((res, rej) => {
     const tx = db.transaction(STORE, "readwrite");
-    tx.objectStore(STORE).delete(KEY);
+    const store = tx.objectStore(STORE);
+    if (opts.allScopes) {
+      // Wipe every record in the store — both the legacy "current"
+      // and any "current:<steamID>" entries from prior sessions.
+      const req = store.openCursor();
+      req.onsuccess = (ev) => {
+        const cur = ev.target.result;
+        if (cur) { cur.delete(); cur.continue(); }
+      };
+      req.onerror = () => rej(req.error);
+    } else {
+      store.delete(activeHistoryKey());
+    }
     tx.oncomplete = res;
     tx.onerror = () => rej(tx.error);
   });

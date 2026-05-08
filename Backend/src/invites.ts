@@ -1,5 +1,6 @@
 import type { Env } from "./types";
 import { checkAndConsume } from "./ratelimit";
+import { setPair } from "./pairs";
 
 /**
  * Co-op invite system — preset messages only, accept/decline.
@@ -272,6 +273,28 @@ export async function respondToInvite(
   }
 
   await writeInbox(env, responderID, inbox);
+
+  // Pair both sides on accept. We do this *after* the inbox write so a
+  // pair-table failure can't leave the invite in pending state — better
+  // to record the accept and silently miss the pill than to lose the
+  // accept entirely. The pair entry has its own short TTL and can be
+  // re-established by either user accepting another invite.
+  if (accept) {
+    try {
+      await setPair(
+        env,
+        invite.fromID,
+        invite.fromPersona,
+        invite.fromAvatar,
+        invite.toID,
+        invite.toPersona,
+        invite.toAvatar,
+      );
+    } catch {
+      /* pair table is a UX nicety, not the source of truth — never block accept */
+    }
+  }
+
   return { ok: true, invite };
 }
 

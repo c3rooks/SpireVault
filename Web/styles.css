@@ -33,6 +33,35 @@ html, body {
   line-height: 1.55;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+  /* Prevent any single child from pushing the entire document
+   * sideways on phones. Children that *want* to scroll horizontally
+   * (KPI snap rail, tab strip) opt-in via their own `overflow-x:
+   * auto`. This is a safety net, not the primary mechanism. */
+  overflow-x: hidden;
+}
+
+/* Global Playfair Display legibility fix.
+ *
+ * Playfair's default kerning collapses adjacent rounded letters at
+ * display sizes (≥18px). "Recent Runs" was reading as "Reeent Runs"
+ * because the `c` and `e` share apertures and Playfair packs them
+ * tighter than their negative space supports. The fix applies app-
+ * wide so every heading reads cleanly:
+ *
+ *   - +0.005em letter-spacing opens the rounded-letter pairs.
+ *   - `font-feature-settings: "kern" 1` forces OpenType kerning
+ *     (some browsers default it OFF for body fonts).
+ *   - `text-rendering: geometricPrecision` improves glyph
+ *     rasterization at display sizes (less subpixel hinting blur).
+ *
+ * Brand wordmarks (.brand-mark) keep their wide letter-spacing
+ * (0.08em) so the override never narrows them. */
+.brand-mark, .signed-out h1, .page-head h1, .feed-heading,
+.panel-head h1, .panel-head h2, .sec-title-text,
+.tab-panel h1, .tab-panel h2,
+.run-detail-name, .relic-detail-name, .char-detail-name {
+  font-feature-settings: "kern" 1, "liga" 1;
+  text-rendering: geometricPrecision;
 }
 
 a { color: var(--accent-hi); text-decoration: none; }
@@ -85,6 +114,23 @@ a:focus-visible,
   color: #0c0a14;
 }
 
+/* Visually-hidden file inputs that REMAIN clickable on Safari.
+   Safari refuses to open the native file picker via `.click()` if the
+   input is `display: none`, `opacity: 0`, `visibility: hidden`, OR
+   `pointer-events: none`. The only style that works on every browser
+   is to position the input far off-screen while leaving it fully
+   "visible" to the rendering pipeline. */
+.visually-hidden-input {
+  position: absolute !important;
+  left: -10000px !important;
+  top: 0 !important;
+  width: 1px !important;
+  height: 1px !important;
+  border: 0 !important;
+  padding: 0 !important;
+  margin: 0 !important;
+}
+
 input[type="text"], input[type="email"] {
   font: inherit;
   color: var(--text);
@@ -96,14 +142,21 @@ input[type="text"], input[type="email"] {
 }
 input[type="text"]:focus { outline: none; border-color: var(--gold); box-shadow: 0 0 0 3px rgba(212,175,55,0.18); }
 
+/* Background glow disabled in v109. The two top-anchored radial
+   gradients were bleeding orange/gold through the panel-head's
+   semi-transparent background, producing a thin yellow bar at the
+   very top of the viewport that users couldn't get rid of. */
 .bg-glow {
-  position: fixed;
-  inset: 0;
-  background:
-    radial-gradient(800px 500px at 18% -10%, rgba(255,107,26,0.15), transparent 60%),
-    radial-gradient(700px 500px at 95% 20%, rgba(212,175,55,0.10), transparent 60%);
-  pointer-events: none;
-  z-index: -1;
+  display: none;
+}
+
+/* Overlay (Run Companion Overlay) is gated behind a feature flag in
+   script.js (OVERLAY_NAV_VISIBLE). Belt-and-suspenders: also hide via
+   CSS so a stale render or cached HTML can't surface a half-baked tab
+   in production. */
+.nav-row[data-tab="overlay"],
+.tab-panel[data-tab="overlay"] {
+  display: none !important;
 }
 
 /* ─── Top bar ─────────────────────────────────────────────────── */
@@ -390,6 +443,82 @@ main.main-public,
 .me-row .me-id strong { font-weight: 800; font-size: 15px; }
 .me-status-spacer { flex: 1; }
 
+/* "Currently co-oping with @X" banner. Mounts at the top of the
+ * me-card whenever the signed-in user is in an active pair (server-
+ * derived from a mutually-accepted invite). It's the only place in
+ * the UI that exposes the "End co-op" affordance — putting it on
+ * the user's own roster row would mean polluting the public feed
+ * with self-actions, and stuffing it in a settings menu would bury
+ * the most-likely follow-up action ("we're done playing now"). */
+.me-pair-banner {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 12px;
+  margin: 0 0 14px;
+  padding: 10px 14px;
+  border: 1px solid color-mix(in srgb, var(--win) 55%, transparent);
+  border-radius: 12px;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--win) 16%, var(--surface) 84%),
+    color-mix(in srgb, var(--win) 6%, var(--surface) 94%)
+  );
+  color: var(--text);
+  box-shadow: 0 0 0 1px rgba(109,217,124,0.10) inset;
+  animation: me-pair-banner-in 220ms cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+.me-pair-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--win) 30%, transparent);
+  color: var(--win);
+  flex-shrink: 0;
+}
+.me-pair-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.me-pair-text strong {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.me-pair-since {
+  font-size: 11px;
+  letter-spacing: 0.01em;
+}
+@keyframes me-pair-banner-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@media (max-width: 600px) {
+  .me-pair-banner {
+    grid-template-columns: auto 1fr;
+    grid-template-rows: auto auto;
+    gap: 6px 10px;
+    padding: 10px 12px;
+  }
+  .me-pair-text { grid-column: 2; grid-row: 1; }
+  .me-pair-banner > .btn-ghost {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    width: 100%;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .me-pair-banner { animation: none; }
+}
+
 .avatar {
   width: 36px;
   height: 36px;
@@ -561,6 +690,29 @@ main.main-public,
 .tag.ember { color: var(--accent-hi); }
 .tag.mute  { color: var(--text-3); }
 .tag.live  { color: var(--win); background: rgba(109,217,124,0.10); }
+/* Mutually accepted invite — both sides of a co-op pair get this pill.
+ * Reads as a *positive* state (green-shifted on the win color, with
+ * a soft glow) rather than the orange "in co-op" status pill, because
+ * "paired" carries more information: we know who they're paired with.
+ * The text always carries the partner persona so the row tells you
+ * everything in one glance. */
+.tag.paired {
+  color: var(--win);
+  background: rgba(109,217,124,0.18);
+  border-color: color-mix(in srgb, var(--win) 70%, transparent);
+  box-shadow: 0 0 0 1px rgba(109,217,124,0.12) inset;
+  letter-spacing: 0.06em;
+}
+/* Whole-row tint when this row is in a co-op pair. Subtle —
+ * the row needs to feel "alive" but not steal focus from rows
+ * that the user can actually invite. */
+.row.row--paired {
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--win) 7%, transparent),
+    transparent 70%
+  );
+}
 
 /*
  * Freshness badge on each feed row. Sits next to the status tag so the user
@@ -801,13 +953,75 @@ main.main-public,
   color: var(--win);
   animation: pulse 2s infinite;
 }
+/* "NEW" pill on the News sidebar row. Distinct from the urgent pulse —
+ * news is informational, not actionable, so it should grab the eye without
+ * looking like an alert. Soft amber matches the brand accent without
+ * stealing focus from any active orange-ember CTA. */
+.nav-badge--new {
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  background: linear-gradient(180deg, rgba(212,175,55,0.32), rgba(212,175,55,0.18));
+  border-color: rgba(212,175,55,0.6);
+  color: #f4d77a;
+  text-transform: uppercase;
+}
 
-.sidebar-spacer { flex: 1; }
+.sidebar-spacer { flex: 1; min-height: 12px; }
 
+/* Anchor the profile dock to the bottom of the viewport. The sidebar
+   itself is `height: 100vh; position: sticky`, so making the footer
+   `position: sticky; bottom: 0` guarantees the me-pill stays pinned to
+   the bottom of the visible sidebar even if the nav above ever grows
+   long enough to scroll. The opaque background + top border keeps it
+   readable when it covers content above. */
 .sidebar-footer {
+  position: sticky;
+  bottom: 0;
   border-top: 1px solid var(--border);
   padding: 14px;
+  background: #0a0812;
+  z-index: 2;
 }
+.me-pill-status-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px 0;
+  font-size: 11px;
+  color: var(--text-2, #b6abc4);
+}
+.me-pill-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-size: 10px;
+  border: 1px solid rgba(255,255,255,0.16);
+}
+.me-pill-status-pill[data-status="looking"] { color: #a3e7ad; border-color: rgba(109, 217, 124, 0.5); }
+.me-pill-status-pill[data-status="inRun"]   { color: #f0d27a; border-color: rgba(212, 175, 55, 0.5); }
+.me-pill-status-pill[data-status="inCoop"]  { color: #ffa05c; border-color: rgba(255, 107, 26, 0.55); }
+.me-pill-status-pill[data-status="afk"]     { color: #b6abc4; border-color: rgba(255,255,255,0.18); }
+.me-pill-invites {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #ffd0a0;
+  background: rgba(255, 107, 26, 0.18);
+  border: 1px solid rgba(255, 107, 26, 0.45);
+  padding: 2px 7px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.me-pill-invites:hover { background: rgba(255, 107, 26, 0.28); }
+.me-pill-invites[hidden] { display: none; }
 .me-pill {
   display: flex;
   align-items: center;
@@ -936,7 +1150,10 @@ main.main-public,
   gap: 12px;
   width: 100%;
   min-width: 0;
-  min-height: 118px;
+  /* v53 — taller painted banner so the duel diorama has room to
+   * breathe and the Architect reads at presence-scale, matching the
+   * reference in-game scene. Was 118px, now 168px. */
+  min-height: 168px;
   flex: 1 1 auto;
 }
 .tab-panel[data-tab="overview"]   > .panel-head .panel-head-title-wrap,
@@ -1047,7 +1264,7 @@ main.main-public,
   align-items: flex-end;
   justify-content: space-between;
   gap: 16px;
-  padding: 24px 32px 18px;
+  padding: 8px 32px 18px;
   border-bottom: 1px solid var(--border);
   position: sticky;
   top: 0;
@@ -1058,10 +1275,18 @@ main.main-public,
 .panel-head h1,
 .panel-head h2 {
   font-family: 'Playfair Display', serif;
-  font-size: 24px;
+  font-size: 26px;
   font-weight: 900;
   margin: 0 0 4px;
-  letter-spacing: -0.01em;
+  /* Open the kerning slightly. Playfair's default kerning collapses
+   * adjacent rounded letters at display sizes — "Recent Runs" was
+   * reading as "Reeent Runs" because the c and e share apertures.
+   * +0.005em separates rounded glyphs without making the heading
+   * feel airy or losing the editorial-serif weight. */
+  letter-spacing: 0.005em;
+  /* Force OpenType kerning + better glyph rasterization at this size. */
+  font-feature-settings: "kern" 1, "liga" 1;
+  text-rendering: geometricPrecision;
   color: var(--text);
 }
 .panel-sub { margin: 0; color: var(--text-2); font-size: 13px; }
@@ -1199,25 +1424,20 @@ main.main-public,
 .scene {
   position: relative;
   display: grid;
-  /* Asymmetric duel: smallish climber (left) vs imposing boss (right).
-   * 1 : 1.7 ratio so the Architect's staff + robes silhouette dominates
-   * the frame, the way a final-floor encounter actually reads in-game.
-   *
-   * v51 scale-down: column widths trimmed from 200/340 → 80/120, total
-   * footprint roughly 30% of the original. The diorama is now a tiny
-   * corner vignette; the painted backdrop carries the visual weight.
-   * Boss still dominates the climber proportionally. */
-  grid-template-columns: 104px 158px;
+  /* v54: bumped climber column 160 → 200 to match the larger
+   * climber sprite. Boss column unchanged. The asymmetric ratio
+   * (200/250 ≈ 0.8) is tighter than v53 (160/250 ≈ 0.64) but the
+   * boss still visually dominates because of its taller silhouette. */
+  grid-template-columns: 200px 250px;
   grid-template-rows: auto 1fr;
   justify-content: center;
   align-items: end;
   justify-items: center;
-  /* Tight horizontal gap — "square off" energy, not a wide arena. */
-  column-gap: 8px;
+  column-gap: 14px;
   row-gap: 0;
   width: 100%;
   min-width: 0;
-  min-height: 108px;
+  min-height: 160px;
   padding: 0 4px 4px;
   background: transparent;
   animation: sceneIn 0.42s cubic-bezier(0.2, 0.9, 0.3, 1) both;
@@ -1254,12 +1474,13 @@ main.main-public,
   flex-direction: column;
   align-items: center;
   width: 100%;
-  /* Climber slot — intentionally narrower than the boss column so the
-   * Architect dominates the right side of the banner. v51: shrunk from
-   * 96/102 → 64/72 — pure decorative scale, the painted backdrop is
-   * the real banner now. */
-  max-width: 84px;
-  height: 92px;
+  /* Climber slot. v54: scaled up ~25% so the random companion
+   * actually reads in the painted banner instead of looking like
+   * a sidebar token. The boss is still proportionally larger
+   * (218×172 vs 178×190), so the asymmetric "boss dominates" feel
+   * is preserved while the climber becomes a real co-star. */
+  max-width: 178px;
+  height: 190px;
   padding: 0;
   background: transparent;
   border: 0;
@@ -1272,12 +1493,13 @@ main.main-public,
 .scene-figure-climber { grid-column: 1; }
 .scene-figure-boss    { grid-column: 2; }
 /* Boss column: noticeably wider AND taller than the climber. The
- * Architect's silhouette (floating, staff overhead, billowing robes)
- * needs vertical canvas to read as a boss, not a sidekick. v51:
- * shrunk from 168/140 → 108/90 — corner vignette scale. */
+ * Architect's silhouette (gold-armored, staff overhead, robes flowing)
+ * needs vertical canvas to read as a boss, not a sidekick.
+ * v53: scaled up to 218/172 so the boss reads as the visual anchor
+ * of the duel scene, matching the in-game encounter reference. */
 .scene-figure-boss {
-  max-width: 136px;
-  height: 112px;
+  max-width: 218px;
+  height: 172px;
 }
 .scene-figure-climber {
   cursor: pointer;
@@ -1383,52 +1605,479 @@ main.main-public,
  * fight the bubble's own pop / hover transforms. The tail at the
  * bubble's bottom-center then points straight down at the
  * speaker's head sitting in row 2 of the same column. */
+/* Speech bubble — STS2 in-game style.
+ *
+ * Reference: the in-game dialogue scene has a puffy pale-teal box
+ * with a thicker teal border, gentle inner highlight, and a clean
+ * rounded-triangle tail pointing at the speaker.
+ *
+ * Key fixes vs. earlier versions:
+ *   - NO `hyphens: auto` — it was breaking "nothing" into "noth-ing"
+ *     mid-line. Words wrap whole or not at all.
+ *   - `min-width` so short utterances ("My deck is ready.") still
+ *     read as dialogue boxes, not stamp labels.
+ *   - Slightly more saturated teal palette to match the in-game
+ *     reference more closely (was reading too pale on the painted
+ *     banner).
+ *   - Thicker border (2px) and stronger inner highlight for that
+ *     "physical bubble floating above the scene" feel.
+ */
+/* Speech bubble — STS2 in-game style.
+ *
+ * SVG-based outline rendered via inline `mask` + `border-image`
+ * combo would be ideal but adds complexity. Instead we use:
+ *
+ *   - Saturated teal gradient fill (matches in-game palette)
+ *   - 3px hand-tuned darker-teal border
+ *   - Inner highlight + inset shadow for "puffy" depth
+ *   - Outer drop shadow + ambient glow for floating feel
+ *   - Two stacked CSS triangles for the tail (outer = border color,
+ *     inner = bubble fill — gives the tail a stroked outline that
+ *     reads as part of the bubble shape)
+ *
+ * Looks identical at every size because it's pure CSS. The previous
+ * painted-PNG approach got stretched into a thin strip when text
+ * was short, hiding all the hand-drawn texture and producing the
+ * "boring pill" look the user complained about. CSS scales cleanly.
+ */
+/* The bubble derives its palette from `--scene-color` (set on the .scene
+ * parent based on whichever character is climbing). Each character's
+ * speech bubble feels visually "owned" by them:
+ *   - Regent     → gold/amber bubble
+ *   - Defect     → cyan/blue bubble
+ *   - Silent     → green bubble
+ *   - Necrobinder→ purple bubble
+ *   - Ironclad   → red bubble
+ * Implementation: a small palette of named CSS vars, each derived via
+ * color-mix() from --scene-color. The named vars are then consumed by
+ * background, border, and the dual-triangle tail so swapping characters
+ * changes ALL of the bubble in lockstep. The fallback teal stays for any
+ * scope where --scene-color hasn't been set (legacy / static demo states). */
 .scene-bubble {
+  --bubble-color: var(--scene-bubble-color, var(--scene-color, #4a8a9c));
+  /* Top-of-bubble highlight — soft cream-tinted version of the character
+   * color, almost white at 12% mix so the bubble surface still reads as
+   * "paper" rather than a flat color block. */
+  --bubble-bg-top:    color-mix(in srgb, var(--bubble-color) 14%, #f8f4ed);
+  --bubble-bg-bottom: color-mix(in srgb, var(--bubble-color) 32%, #d8d0c2);
+  /* Border + tail: the character color, dimmed ~30% so it reads as a
+   * darker stroke against the lighter fill. */
+  --bubble-border:    color-mix(in srgb, var(--bubble-color) 78%, #1a0e08);
+  /* Inner shadow tint for the bottom edge — same family but transparent. */
+  --bubble-inner-shadow: color-mix(in srgb, var(--bubble-color) 35%, transparent);
+  /* Dark ink for body text; tinted slightly toward the character color
+   * so the text doesn't fight with a strongly-tinted background. */
+  --bubble-text:      color-mix(in srgb, var(--bubble-color) 18%, #0a0a0a);
+
   position: relative;
   z-index: 4;
   justify-self: center;
   align-self: end;
-  min-width: 0;
-  /* v51: tightened to 180px and 1-line clamp so the bubble fits in
-   * the new compact ~110px banner without forcing the diorama down.
-   * Multi-line taunts truncate with ellipsis. */
-  max-width: 180px;
-  margin-bottom: 2px;
-  padding: 5px 12px;
-  /* Single-line clamp keeps the bubble at predictable height. */
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  /* Cleaner, slightly cooler off-white. Old build used a vertical
-   * blue tint that read as "default Apple modal" — replaced with
-   * a near-white with a hairline gradient so it pops on the
-   * painted scene without looking like generic chrome. */
-  background: linear-gradient(180deg, #fbfbfd 0%, #eef0f6 100%);
-  color: #0a0d18;
-  border: 1px solid rgba(255, 255, 255, 0.85);
-  border-radius: 14px;
+  min-width: 200px;
+  max-width: 340px;
+  padding: 14px 22px 16px;
+  margin-bottom: 16px;
+  background:
+    radial-gradient(ellipse at 50% 0%, rgba(255, 255, 255, 0.55) 0%, transparent 55%),
+    linear-gradient(180deg, var(--bubble-bg-top) 0%, var(--bubble-bg-bottom) 100%);
+  color: var(--bubble-text);
+  border: 3px solid var(--bubble-border);
+  border-radius: 24px;
   font-family: 'Inter', sans-serif;
-  font-size: 11px;
-  font-weight: 600;
-  line-height: 1.25;
+  font-size: 13.5px;
+  font-weight: 700;
+  line-height: 1.35;
   letter-spacing: -0.005em;
   text-align: center;
   cursor: pointer;
-  /* Layered shadow: tight inner ambient + wider diffuse drop for
-   * a real "floating above the scene" feeling rather than a flat
-   * stamp. Same visual language Apple uses for modal dialogs. */
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.7);
   box-shadow:
-    0 1px 0 rgba(255, 255, 255, 0.6) inset,
-    0 2px 4px rgba(0, 0, 0, 0.25),
-    0 12px 24px rgba(0, 0, 0, 0.45);
+    0 2px 0 rgba(255, 255, 255, 0.85) inset,
+    0 -3px 6px var(--bubble-inner-shadow) inset,
+    0 4px 10px rgba(0, 0, 0, 0.32),
+    0 16px 32px rgba(0, 0, 0, 0.48);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: visible;
+  white-space: normal;
+  overflow-wrap: break-word;
+  word-break: normal;
+  hyphens: manual;
+  -webkit-hyphens: manual;
   animation: sceneBubblePop 0.32s cubic-bezier(0.2, 1.6, 0.6, 1) both;
   transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+/* Overlay preview (Run Companion Overlay) */
+.overlay-panel .panel-body {
+  display: grid;
+  gap: 14px;
+}
+.overlay-hero-card,
+.overlay-card,
+.overlay-inline-card {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 14px;
+  background: linear-gradient(180deg, rgba(19, 25, 41, 0.95), rgba(12, 16, 30, 0.95));
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.32);
+}
+.overlay-hero-card {
+  padding: 14px;
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  align-items: center;
+}
+.overlay-hero-card h3,
+.overlay-card h4,
+.overlay-inline-card h3 {
+  margin: 0 0 6px;
+}
+.overlay-hero-actions,
+.overlay-inline-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.overlay-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.overlay-grid--two {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.overlay-card {
+  padding: 14px;
+}
+.overlay-kicker {
+  font-size: 11px;
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  border: 1px solid rgba(109, 212, 255, 0.55);
+  color: #a7e9ff;
+}
+.overlay-form-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.overlay-form-grid label {
+  display: grid;
+  gap: 6px;
+  font-size: 12px;
+  color: #d5dbe9;
+}
+.overlay-form-grid input,
+.overlay-form-grid select,
+.overlay-card textarea {
+  width: 100%;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(7, 12, 22, 0.92);
+  color: #f4f8ff;
+  padding: 8px 10px;
+  font: inherit;
+}
+.overlay-card textarea {
+  resize: vertical;
+  min-height: 100px;
+}
+.overlay-chip-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.overlay-chip {
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.06);
+  color: #d8e0f3;
+  padding: 6px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.overlay-chip.is-on {
+  background: linear-gradient(135deg, rgba(255, 152, 69, 0.32), rgba(109, 212, 255, 0.28));
+  border-color: rgba(255, 176, 98, 0.65);
+}
+.overlay-check-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.overlay-check-grid label {
+  font-size: 12px;
+  color: #d8e0f3;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.overlay-helper-list {
+  margin: 0;
+  padding-left: 18px;
+  color: #d2d9eb;
+  display: grid;
+  gap: 8px;
+}
+.overlay-pill-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+.overlay-inline-card {
+  padding: 14px;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 10px;
+}
+@media (max-width: 980px) {
+  .overlay-grid,
+  .overlay-grid--two,
+  .overlay-form-grid,
+  .overlay-check-grid {
+    grid-template-columns: 1fr;
+  }
+  .overlay-hero-card,
+  .overlay-inline-card {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+
+/* Section / card collapse headers. The whole header is the toggle so the
+   click target stays large (mobile + accessibility) and so a player can
+   collapse / expand without hunting for a tiny chevron. */
+.overlay-section-header,
+.overlay-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--text, #f4eddc);
+  cursor: pointer;
+  padding: 0;
+  margin: 0 0 8px;
+  font: inherit;
+  text-align: left;
+}
+.overlay-section-header {
+  margin-top: 4px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  background: rgba(255, 255, 255, 0.03);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.overlay-card-head h4 {
+  margin: 0;
+}
+.overlay-section-caret {
+  opacity: 0.7;
+  font-size: 13px;
+}
+.overlay-section-body[hidden] {
+  display: none;
+}
+
+/* Recommendation card — the heart of the advisor surface. */
+.overlay-rec-card {
+  border-color: rgba(212, 175, 55, 0.45);
+  background:
+    linear-gradient(180deg, rgba(28, 22, 38, 0.96), rgba(14, 11, 22, 0.96)),
+    radial-gradient(circle at top right, rgba(255, 107, 26, 0.18), transparent 60%);
+}
+.overlay-rec-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+.overlay-rec-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #d4af37;
+}
+.overlay-source-pill {
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: #d8e0f3;
+  letter-spacing: 0.04em;
+  text-transform: none;
+}
+.overlay-rec-title {
+  margin: 6px 0 8px;
+  font-size: 18px;
+  line-height: 1.3;
+  color: var(--text, #f4eddc);
+}
+.overlay-rec-confidence {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 4px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #f4eddc;
+}
+.overlay-rec-confidence[data-conf="high"]   { border-color: rgba(109, 217, 124, 0.65); color: #b6e9bf; }
+.overlay-rec-confidence[data-conf="medium"] { border-color: rgba(212, 175, 55, 0.65); color: #f0d27a; }
+.overlay-rec-confidence[data-conf="low"]    { border-color: rgba(255, 95, 109, 0.55); color: #ff9aa1; }
+.overlay-rec-why {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  color: #d2d9eb;
+  font-size: 13px;
+  display: grid;
+  gap: 4px;
+}
+.overlay-rec-assumptions {
+  margin-top: 10px;
+  font-size: 12px;
+  color: #b6abc4;
+}
+.overlay-rec-assumptions summary {
+  cursor: pointer;
+  color: #d8e0f3;
+}
+.overlay-rec-assumptions ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 4px;
+}
+.overlay-rec-foot {
+  margin: 10px 0 0;
+  font-size: 12px;
+}
+
+/* Optional AI screenshot assist. Visually clearly separated so it never
+   feels like the always-on path. */
+.overlay-ai-card {
+  border-color: rgba(109, 212, 255, 0.4);
+  display: grid;
+  gap: 10px;
+}
+.overlay-ai-card .overlay-form-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.overlay-ai-card .overlay-form-grid.is-disabled {
+  opacity: 0.55;
+  pointer-events: none;
+}
+.overlay-ai-lede {
+  margin: 0;
+  font-size: 13px;
+  color: #d2d9eb;
+}
+.overlay-ai-consent {
+  border: 1px solid rgba(212, 175, 55, 0.4);
+  background: rgba(212, 175, 55, 0.08);
+  border-radius: 12px;
+  padding: 10px 12px;
+  display: grid;
+  gap: 8px;
+}
+.overlay-ai-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.overlay-ai-status {
+  margin-left: auto;
+}
+
+/* Mode-specific compact / minimal density. We keep the full mode default
+   readable; compact reduces card padding; minimal hides everything but
+   the recommendation card so the panel can sit beside the game without
+   competing for attention. */
+.overlay-mode-compact ~ .overlay-grid .overlay-card,
+.overlay-mode-compact ~ .overlay-section-body .overlay-card {
+  padding: 10px 12px;
+}
+.overlay-mode-minimal ~ .overlay-grid,
+.overlay-mode-minimal ~ .overlay-section-body[data-section-body="ai"],
+.overlay-mode-minimal ~ .overlay-section-header[data-overlay-collapse="ai"] {
+  display: none;
+}
+
+@media (max-width: 720px) {
+  .overlay-ai-card .overlay-form-grid {
+    grid-template-columns: 1fr;
+  }
+  .overlay-rec-head {
+    flex-direction: column;
+  }
+  .overlay-rec-confidence {
+    align-self: flex-start;
+  }
+}
+.scene-bubble:hover {
+  transform: translateY(-2px);
+  box-shadow:
+    0 2px 0 rgba(255, 255, 255, 0.85) inset,
+    0 -3px 6px var(--bubble-inner-shadow) inset,
+    0 6px 14px rgba(0, 0, 0, 0.4),
+    0 20px 40px rgba(0, 0, 0, 0.55);
+}
+/* Tail: outer (border color) and inner (fill color) triangle stacked
+ * so the tail reads as a continuation of the bubble's stroked outline.
+ * Both colors are character-themed via the shared bubble-* vars. */
+.scene-bubble::after {
+  content: "";
+  position: absolute;
+  bottom: -12px;
+  left: 32px;
+  width: 0;
+  height: 0;
+  border-left: 11px solid transparent;
+  border-right: 11px solid transparent;
+  border-top: 14px solid var(--bubble-border);
+  filter: drop-shadow(0 1px 0 rgba(0, 0, 0, 0.2));
+}
+.scene-bubble::before {
+  content: "";
+  position: absolute;
+  bottom: -8px;
+  left: 34px;
+  width: 0;
+  height: 0;
+  border-left: 9px solid transparent;
+  border-right: 9px solid transparent;
+  border-top: 11px solid var(--bubble-bg-bottom);
+  z-index: 1;
+}
+.scene-bubble-boss::after {
+  left: auto;
+  right: 32px;
+}
+.scene-bubble-boss::before {
+  left: auto;
+  right: 34px;
 }
 .scene-bubble-climber { grid-column: 1; grid-row: 1; }
 .scene-bubble-boss    { grid-column: 2; grid-row: 1; }
 .scene-bubble:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.55);
+  transform: translateY(-2px);
+  filter: drop-shadow(0 8px 18px rgba(0, 0, 0, 0.45));
 }
 .scene-bubble:focus-visible {
   outline: 2px solid var(--scene-color, var(--accent));
@@ -1436,20 +2085,12 @@ main.main-public,
 }
 .scene-bubble-text {
   display: block;
-  word-break: break-word;
-  hyphens: auto;
 }
-/* Tail points straight down at the speaker's head. */
-.scene-bubble-tail {
-  position: absolute;
-  bottom: -6px;
-  width: 0;
-  height: 0;
-  border-left: 7px solid transparent;
-  border-right: 7px solid transparent;
-  border-top: 8px solid rgba(224, 232, 248, 0.98);
-  filter: drop-shadow(0 1px 0 rgba(255, 255, 255, 0.7));
-}
+/* The painted bubble graphic includes its own tail/pointer baked
+ * into the image, so the legacy CSS triangle tail is hidden. Keeping
+ * the element in the DOM means we don't have to touch every render
+ * site that still emits `<span class="scene-bubble-tail">`. */
+.scene-bubble-tail { display: none; }
 /* Tail centered under the bubble for both speakers — the bubble
  * itself is now centered above its speaker via grid placement so
  * we no longer need to bias the tail to one side. */
@@ -1562,48 +2203,51 @@ main.main-public,
   color: var(--text);
 }
 
-/* Tablet (v51): tiny corner-vignette diorama matched to desktop. */
+/* Tablet: scale the v52 desktop diorama down ~25% so it still reads
+ * as an asymmetric duel without crowding the panel-head title. */
 @media (max-width: 1100px) {
-  .companion-slot { max-width: 240px; }
+  .companion-slot { max-width: 320px; }
   .scene {
-    grid-template-columns: 92px 138px;
-    min-height: 98px;
-    padding: 0 3px 3px;
-    column-gap: 6px;
+    grid-template-columns: 110px 170px;
+    min-height: 118px;
+    padding: 0 4px 4px;
+    column-gap: 10px;
   }
   .scene-figure-climber {
-    max-width: 72px;
-    height: 80px;
+    max-width: 92px;
+    height: 102px;
   }
   .scene-figure-boss {
-    max-width: 118px;
-    height: 98px;
+    max-width: 150px;
+    height: 124px;
   }
   .scene-figure-boss .scene-art { --boss-scale: 1.26; }
-  .scene-bubble   { font-size: 10px; padding: 4px 10px; max-width: 160px; }
+  .scene-bubble   { font-size: 12px; padding: 8px 14px 9px; min-width: 130px; max-width: 240px; -webkit-line-clamp: 3; }
 }
 
-/* Mobile (v51): panel-head wraps to a stacked layout. Title stays
+/* Mobile: panel-head wraps to a stacked layout. Title stays
  * absolute-positioned (handled by the themed-mobile rule below) so
- * the diorama can sit small and centered under it. */
+ * the diorama can sit centered under it. We keep the asymmetric
+ * climber-vs-boss ratio but trim the absolute size so the painted
+ * banner doesn't push the KPI strip below the fold. */
 @media (max-width: 720px) {
   .companion-slot { margin-left: 0; max-width: 100%; }
   .scene {
-    grid-template-columns: 78px 118px;
-    min-height: 90px;
-    padding: 0 0 3px;
-    column-gap: 5px;
+    grid-template-columns: 96px 148px;
+    min-height: 108px;
+    padding: 0 0 4px;
+    column-gap: 8px;
   }
   .scene-figure-climber {
-    max-width: 66px;
-    height: 74px;
+    max-width: 84px;
+    height: 94px;
   }
   .scene-figure-boss {
-    max-width: 102px;
-    height: 88px;
+    max-width: 132px;
+    height: 112px;
   }
   .scene-figure-boss .scene-art { --boss-scale: 1.22; }
-  .scene-bubble   { font-size: 10px; padding: 4px 8px; max-width: 140px; }
+  .scene-bubble   { font-size: 11.5px; padding: 7px 12px 8px; min-width: 120px; max-width: 220px; -webkit-line-clamp: 3; }
   .companion-picker { left: auto; right: 0; }
 }
 
@@ -1944,9 +2588,18 @@ main.main-public,
   .hero-overview {
     grid-template-columns: 1fr;
     text-align: center;
-    padding: 22px 20px;
+    padding: 18px 16px;
+    gap: 18px;
   }
   .hero-side { text-align: left; }
+  /* Smaller hero ring on phones — 128px dominated the fold. */
+  .hero-ring-wrap, .hero-ring { width: 96px; height: 96px; }
+  .ring-track, .ring-fill { stroke-width: 9; }
+  .ring-pct { font-size: 22px; }
+  .ring-label { font-size: 9px; margin-top: 4px; }
+  .hero-num .num { font-size: 26px; }
+  .hero-numbers-head { font-size: 12px; margin-bottom: 10px; }
+  .hero-numbers-row { margin-bottom: 10px; }
 }
 
 /* Side panel: three small stat tiles stacked vertically. */
@@ -1960,11 +2613,14 @@ main.main-public,
   align-items: center;
   gap: 12px;
   padding: 10px 14px;
+  min-height: 56px;
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid rgba(255, 255, 255, 0.05);
   border-radius: 10px;
   transition: background 0.15s ease, border-color 0.15s ease;
+  touch-action: manipulation;
 }
+.hero-side-tile[data-action="goto-tab"] { cursor: pointer; }
 .hero-side-tile:hover {
   background: rgba(255, 255, 255, 0.05);
   border-color: rgba(255, 255, 255, 0.1);
@@ -2004,20 +2660,20 @@ main.main-public,
 .hero-side-sub { font-size: 11px; color: var(--text-3); }
 .hero-ring-wrap {
   position: relative;
-  width: 180px;
-  height: 180px;
+  width: 128px;
+  height: 128px;
   justify-self: center;
 }
-.hero-ring { width: 180px; height: 180px; display: block; }
+.hero-ring { width: 128px; height: 128px; display: block; }
 .ring-track {
   fill: none;
   stroke: rgba(255, 255, 255, 0.06);
-  stroke-width: 14;
+  stroke-width: 10;
 }
 .ring-fill {
   fill: none;
   stroke: var(--accent);
-  stroke-width: 14;
+  stroke-width: 10;
   filter: drop-shadow(0 0 10px rgba(255, 107, 26, 0.45));
   transition: stroke-dasharray 0.6s ease;
 }
@@ -2031,9 +2687,9 @@ main.main-public,
   pointer-events: none;
 }
 .ring-pct {
-  font-family: 'Inter', sans-serif;
-  font-size: 38px;
-  font-weight: 900;
+  font-family: "Inter", ui-sans-serif, system-ui, sans-serif;
+  font-size: 28px;
+  font-weight: 800;
   color: var(--accent);
   line-height: 1;
   letter-spacing: -0.02em;
@@ -2075,9 +2731,9 @@ main.main-public,
   .hero-num { align-items: center; }
 }
 .hero-num .num {
-  font-family: 'Inter', sans-serif;
-  font-size: 44px;
-  font-weight: 900;
+  font-family: "Inter", ui-sans-serif, system-ui, sans-serif;
+  font-size: 32px;
+  font-weight: 800;
   line-height: 1;
   letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
@@ -2098,7 +2754,17 @@ main.main-public,
   gap: 10px;
   font-size: 13px;
 }
-@media (max-width: 720px) { .hero-best { justify-content: center; } }
+.hero-best-text {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  line-height: 1.35;
+}
+@media (max-width: 720px) {
+  .hero-best { justify-content: center; }
+  .hero-best-text { font-size: 12px; }
+}
 .hero-best-icon {
   display: inline-flex;
   align-items: center;
@@ -2227,6 +2893,35 @@ main.main-public,
   background: var(--char-color);
   border-radius: 4px;
   box-shadow: 0 0 8px color-mix(in srgb, var(--char-color) 50%, transparent);
+}
+
+/* "View details →" hint that appears at the bottom of expandable
+ * character cards. Without it, the cards looked static — users
+ * didn't know they could open a detail panel. The chevron slides
+ * right on hover/focus to reinforce the affordance. */
+.char-card.is-clickable { padding-bottom: 14px; }
+.char-card-cta {
+  position: relative;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px dashed color-mix(in srgb, var(--char-color) 28%, var(--border));
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--char-color) 80%, var(--text-2));
+  transition: color 0.15s ease;
+}
+.char-card-cta svg { transition: transform 0.18s ease; }
+.char-card.is-clickable:hover .char-card-cta { color: var(--char-color); }
+.char-card.is-clickable:hover .char-card-cta svg { transform: translateX(3px); }
+.char-card.is-clickable:focus-visible .char-card-cta svg { transform: translateX(3px); }
+.char-card.is-clickable.is-active .char-card-cta svg { transform: rotate(90deg); }
+@media (prefers-reduced-motion: reduce) {
+  .char-card-cta svg { transition: none; }
 }
 
 /* ─── Pills (matches desktop app's Pill component) ────── */
@@ -3583,6 +4278,7 @@ select#me-note option { background: var(--bg-deep); color: var(--text); }
 
 /* ── Demo data banner ── */
 .demo-banner {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -3592,6 +4288,27 @@ select#me-note option { background: var(--bg-deep); color: var(--text); }
   border: 1px solid rgba(255, 198, 92, 0.32);
   border-radius: 12px;
   font-size: 13px;
+}
+.demo-banner-dismiss {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(0, 0, 0, 0.35);
+  color: #f4eddc;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.demo-banner-dismiss:hover {
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
 }
 .demo-banner-row {
   display: flex;
@@ -3974,6 +4691,54 @@ select#me-note option { background: var(--bg-deep); color: var(--text); }
   text-transform: uppercase;
 }
 
+/* Anonymized guest row — no Steam identity, generic silhouette
+ * avatar, "Anonymous player N" name. The status + inSTS2 pill are
+ * kept so social proof lands. The sign-in CTA footer is what
+ * converts a guest browsing the roster into an authenticated user
+ * who can see real handles and send invites. */
+.guest-roster-row--anon .avatar-anon {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border);
+  color: var(--text-3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.guest-roster-row--anon .avatar-anon svg { width: 18px; height: 18px; }
+.guest-roster-row--anon .guest-roster-meta strong {
+  color: var(--text-2);
+  font-weight: 600;
+  font-style: italic;
+  letter-spacing: 0.01em;
+}
+.guest-roster-more {
+  text-align: center;
+  margin: 4px 0 2px;
+}
+.guest-roster-cta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 10px;
+  padding: 14px 16px;
+  background: linear-gradient(180deg, rgba(255, 160, 92, 0.08), rgba(255, 160, 92, 0.02));
+  border: 1px solid rgba(255, 160, 92, 0.28);
+  border-radius: 12px;
+}
+.guest-roster-cta > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.guest-roster-cta strong { font-size: 13px; color: var(--text-1); }
+.guest-roster-cta .btn-primary { flex: 0 0 auto; white-space: nowrap; }
+@media (max-width: 560px) {
+  .guest-roster-cta { flex-direction: column; align-items: stretch; text-align: left; }
+  .guest-roster-cta .btn-primary { width: 100%; justify-content: center; }
+}
+
 /* ── Full-screen in-app browser overlay ── */
 .inapp-overlay {
   position: fixed;
@@ -4333,6 +5098,152 @@ select#me-note option { background: var(--bg-deep); color: var(--text); }
   gap: 12px;
 }
 
+/* Platform tabs — Windows / macOS / Linux equally accessible.
+ * The user's detected OS is pre-selected (and tagged "Detected")
+ * but anyone can flip to a different platform — useful when a Mac
+ * user is helping a Windows friend find their saves. All three
+ * panels are pre-rendered; clicking a tab toggles `hidden` on the
+ * panels for zero-latency swap. */
+.ingest-platform-tabs {
+  display: flex;
+  gap: 6px;
+  padding: 4px;
+  margin-bottom: 14px;
+  background: rgba(0, 0, 0, 0.22);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+.ingest-platform-tab {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  flex: 1 1 auto;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: var(--text-2);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+.ingest-platform-tab:hover {
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-1);
+}
+.ingest-platform-tab.is-active {
+  background: linear-gradient(180deg, rgba(255, 160, 92, 0.18), rgba(255, 160, 92, 0.06));
+  border-color: rgba(255, 160, 92, 0.4);
+  color: var(--accent, #ffa05c);
+}
+.ingest-platform-tab-icon {
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.ingest-platform-tab-icon svg { width: 16px; height: 16px; }
+.ingest-platform-tab-badge {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: rgba(95, 224, 154, 0.15);
+  color: #6fe091;
+  border: 1px solid rgba(95, 224, 154, 0.35);
+  margin-left: 4px;
+}
+.ingest-platform-panel[hidden] { display: none; }
+.ingest-platform-panel { display: flex; flex-direction: column; gap: 10px; }
+
+/* Numbered ingest-method blocks. The previous help dropdown was a
+ * wall of text with platform-specific shortcut commands; users on
+ * Windows were getting macOS instructions and bouncing. Now we lead
+ * with drag-and-drop (works everywhere, no shortcuts needed) and
+ * show the picker flow second with platform-correct steps. */
+.ingest-method {
+  display: grid;
+  grid-template-columns: 28px 1fr;
+  gap: 12px;
+  padding: 12px 14px;
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.ingest-method--primary {
+  background: linear-gradient(180deg, rgba(255, 160, 92, 0.08), rgba(255, 160, 92, 0.02));
+  border-color: rgba(255, 160, 92, 0.28);
+}
+.ingest-method-num {
+  width: 28px; height: 28px;
+  border-radius: 999px;
+  background: rgba(255, 160, 92, 0.18);
+  color: var(--accent, #ffa05c);
+  font-weight: 800;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.ingest-method-body { min-width: 0; }
+.ingest-method-title {
+  display: block;
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--text-1);
+  margin-bottom: 4px;
+  letter-spacing: 0.01em;
+}
+.ingest-method-text {
+  margin: 0 0 10px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text-2);
+}
+.ingest-method-text code,
+.ingest-tip code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  padding: 1px 6px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 4px;
+  color: var(--text-1);
+  word-break: break-all;
+}
+.ingest-steps {
+  margin: 0 0 10px;
+  padding-left: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.ingest-steps li {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-1);
+}
+.ingest-steps li::marker { color: var(--accent, #ffa05c); font-weight: 800; }
+.ingest-steps code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11.5px;
+  padding: 1px 5px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 4px;
+}
+.ingest-tip { margin: 0; }
+@media (max-width: 720px) {
+  .ingest-method { padding: 10px 12px; gap: 10px; }
+  .ingest-method-num { width: 24px; height: 24px; font-size: 12px; }
+  .ingest-method-text, .ingest-steps li { font-size: 12.5px; }
+}
+
 /* ── KPI strip on Overview top ────────────────────────────────────── */
 /* Six compact value cards above the hero panel. Each card is one KPI
  * with a tiny supporting line. Designed for "at-a-glance every visit"
@@ -4341,9 +5252,37 @@ select#me-note option { background: var(--bg-deep); color: var(--text); }
  * mobile so they don't reflow into a huge stacked column. */
 .kpi-strip {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(168px, 1fr));
   gap: 10px;
   margin: 0 0 18px;
+}
+/* Phone snap rail: one-row horizontal scroll with snap so the strip
+ * reads as a "swipeable snapshot" instead of six full-width tiles
+ * stacked above the hero. Matches the platform-native card-rail
+ * pattern used on iOS and Android home/dashboard surfaces. The rail
+ * stays inside the panel-body content box (no negative margins) so
+ * the document itself never scrolls horizontally. */
+@media (max-width: 720px) {
+  .kpi-strip {
+    display: flex;
+    grid-template-columns: none;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch;
+    gap: 10px;
+    margin: 0 0 14px;
+    padding: 2px 0 8px;
+    scrollbar-width: thin;
+    max-width: 100%;
+  }
+  .kpi-strip::-webkit-scrollbar { height: 4px; }
+  .kpi-strip::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 4px; }
+  .kpi-strip > .kpi-card {
+    flex: 0 0 82%;
+    max-width: 280px;
+    scroll-snap-align: start;
+  }
 }
 .kpi-card {
   position: relative;
@@ -4362,7 +5301,7 @@ select#me-note option { background: var(--bg-deep); color: var(--text); }
   align-items: center;
   gap: 6px;
   color: var(--text-2);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -4374,17 +5313,59 @@ select#me-note option { background: var(--bg-deep); color: var(--text); }
   opacity: 0.85;
 }
 .kpi-card-value {
-  font-family: 'Playfair Display', serif;
-  font-size: 26px;
-  font-weight: 900;
-  line-height: 1;
+  /* Switched from flex back to inline-block so the in-line `gap`
+   * collapses cleanly across browsers. Text-node + span flex gaps
+   * were rendering inconsistently and the unit suffix looked
+   * jammed against the number. */
+  display: block;
+  font-family: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: 24px;
+  font-weight: 800;
+  line-height: 1.15;
   color: var(--text-1);
-  letter-spacing: -0.01em;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
   margin-top: 4px;
+  white-space: normal;
 }
+/* Inline unit suffix beside a KPI value (e.g. `wins`, `runs`, `%`).
+ * Explicit `margin-left` is what gives us the consistent space —
+ * flex `gap` between a text node and an inline element collapsed
+ * differently across Chromium / Safari / Firefox. */
+.kpi-unit {
+  display: inline-block;
+  margin-left: 0.32em;
+  font-size: 0.6em;
+  font-weight: 700;
+  opacity: 0.65;
+  letter-spacing: 0.02em;
+  text-transform: lowercase;
+  vertical-align: baseline;
+}
+.kpi-unit-prefix {
+  display: inline-block;
+  margin-right: 0.32em;
+  font-size: 0.55em;
+  font-weight: 700;
+  opacity: 0.6;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  vertical-align: baseline;
+}
+.kpi-trend {
+  display: inline-block;
+  font-size: 0.6em;
+  font-weight: 800;
+  margin-right: 0.32em;
+  transform: translateY(-2px);
+  vertical-align: baseline;
+}
+.kpi-trend.is-up   { color: #6fe091; }
+.kpi-trend.is-down { color: #ff8888; }
+.kpi-trend.is-flat { color: var(--text-3); }
 .kpi-card-sub {
   color: var(--text-2);
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.4;
 }
 .kpi-card-sub strong { color: var(--text-1); font-weight: 700; }
@@ -4401,21 +5382,21 @@ select#me-note option { background: var(--bg-deep); color: var(--text); }
  * SVG path). Uses currentColor so the stroke matches the value tone. */
 .kpi-card-spark {
   position: absolute;
-  right: 14px;
-  top: 14px;
-  width: 56px;
-  height: 22px;
-  opacity: 0.85;
+  right: 12px;
+  top: 12px;
+  width: 48px;
+  height: 18px;
+  opacity: 0.9;
 }
-.kpi-card-spark path { fill: none; stroke: currentColor; stroke-width: 2.25; stroke-linecap: round; stroke-linejoin: round; }
+.kpi-card-spark path { fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
 .kpi-card-spark .pt {
   fill: currentColor;
 }
 
 /* ── Chart panel (winrate-over-time + floor-death histogram) ──────── */
 .chart-panel {
-  margin: 0 0 18px;
-  padding: 18px 20px 16px;
+  margin: 0 0 12px;
+  padding: 12px 14px 10px;
   background: rgba(255, 255, 255, 0.025);
   border: 1px solid var(--border);
   border-radius: 12px;
@@ -4446,11 +5427,54 @@ select#me-note option { background: var(--bg-deep); color: var(--text); }
   margin: 0;
   font-weight: 500;
 }
+/* Two-up Trends grid (≥1024px). Winrate left (~52%), histogram
+ * right (~48%) so the section reads as a single composed row instead
+ * of two stacked banners. Below 1024 we fall back to single-column
+ * stacking — see media queries on the panel itself. */
+.chart-row {
+  display: block;
+  margin-bottom: 14px;
+}
+@media (min-width: 1024px) {
+  .chart-row {
+    display: grid;
+    grid-template-columns: 1.05fr 1fr;
+    gap: 12px;
+    align-items: stretch;
+  }
+  .chart-row > .chart-panel {
+    margin: 0;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+  }
+  .chart-row > .chart-panel + .chart-panel { margin-top: 0; }
+}
 .chart-svg-wrap {
   position: relative;
   width: 100%;
-  aspect-ratio: 760 / 200;
-  margin-top: 4px;
+  margin-top: 2px;
+}
+/* Winrate: short plot. Aspect ratio is overridden inline by the
+ * renderer so phone-sized viewports use a tighter w/h pair (480/72). */
+.chart-svg-wrap--winrate {
+  max-height: 84px;
+  aspect-ratio: 760 / 72;
+}
+/* Histogram: slightly taller bottom padding for tilted x-axis labels. */
+.chart-svg-wrap--hist {
+  max-height: 104px;
+  aspect-ratio: 760 / 88;
+}
+@media (min-width: 1024px) {
+  .chart-svg-wrap--winrate { max-height: 104px; }
+  .chart-svg-wrap--hist    { max-height: 116px; }
+}
+@media (max-width: 720px) {
+  /* Phone breakpoint: bigger plot area so axis text lands at ~12px
+   * effective and tilted histogram x-labels have room. */
+  .chart-svg-wrap--winrate { max-height: 112px; }
+  .chart-svg-wrap--hist    { max-height: 132px; }
 }
 .chart-svg-wrap .chart-svg {
   position: absolute;
@@ -4484,16 +5508,37 @@ select#me-note option { background: var(--bg-deep); color: var(--text); }
   color: var(--accent, #ffa05c);
 }
 .chart-svg .axis-line { stroke: rgba(255, 255, 255, 0.08); stroke-width: 1; }
-.chart-svg .axis-label { fill: var(--text-2); font-size: 11px; font-family: "Inter", ui-sans-serif, system-ui, sans-serif; font-weight: 600; }
+.chart-svg .axis-label {
+  fill: var(--text-2);
+  font-size: 10px;
+  font-family: "Inter", ui-sans-serif, system-ui, sans-serif;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+@media (max-width: 720px) {
+  /* Phone viewBox is 480-wide, so the SAME 12px in user units now
+   * scales to ~12px effective on screen instead of being squeezed. */
+  .chart-svg .axis-label { font-size: 12px; }
+  .chart-svg .bar-label  { font-size: 10px; }
+}
+.chart-svg text {
+  font-family: "Inter", ui-sans-serif, system-ui, sans-serif !important;
+}
 .chart-svg .grid-line { stroke: rgba(255, 255, 255, 0.06); stroke-width: 1; stroke-dasharray: 3 4; }
 .chart-svg .series-fill { opacity: 0.22; }
-.chart-svg .series-line { fill: none; stroke-width: 2.25; stroke-linecap: round; stroke-linejoin: round; }
-.chart-svg .series-pt { stroke: rgba(12, 10, 20, 0.95); stroke-width: 1.5; }
+.chart-svg .series-line { fill: none; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
+.chart-svg .series-pt { stroke: rgba(12, 10, 20, 0.95); stroke-width: 1.25; }
 .chart-svg .baseline { stroke: rgba(255, 255, 255, 0.28); stroke-width: 1.25; stroke-dasharray: 5 4; }
 .chart-svg .bar-loss { fill: rgba(255, 107, 107, 0.62); }
 .chart-svg .bar-win  { fill: rgba(95, 224, 154, 0.88); }
 .chart-svg .bar-bg   { fill: rgba(255, 255, 255, 0.03); }
-.chart-svg .bar-label { fill: var(--text-2); font-size: 10px; font-family: "Inter", ui-sans-serif, system-ui, sans-serif; font-weight: 600; text-anchor: middle; }
+.chart-svg .bar-label {
+  fill: var(--text-2);
+  font-size: 8px;
+  font-family: "Inter", ui-sans-serif, system-ui, sans-serif;
+  font-weight: 600;
+  text-anchor: middle;
+}
 .chart-empty {
   padding: 24px 12px;
   text-align: center;
@@ -4843,12 +5888,1503 @@ select#me-note option { background: var(--bg-deep); color: var(--text); }
   .app-toolbar .btn-icon-text .caret { display: none; }
   .app-toolbar-export-menu { right: 0; left: auto; min-width: 220px; }
   .panel-body { padding: 18px 18px 60px; }
-  .kpi-strip { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
   .run-filters { padding: 12px 14px; gap: 10px 12px; }
   .modal-run-detail { width: 100vw; max-width: 100vw; max-height: 100dvh; border-radius: 0; }
   .run-detail-hero { grid-template-columns: 64px 1fr; padding: 14px; }
   .run-detail-hero .run-detail-portrait { width: 64px; height: 64px; }
   .run-detail-outcome { grid-column: 1 / -1; justify-self: start; }
   .run-detail-stats, .run-detail-section, .run-detail-actions { padding: 12px 14px; }
+}
+
+/* =========================================================================
+ * Character drill-down — inline detail panel that opens below the
+ * Characters grid when a card is clicked. Uses the character's theme
+ * color for accents (border, chip outline, meter fill, big winrate
+ * tint) so each character feels distinct without being noisy.
+ * ========================================================================= */
+.char-grid .char-card.is-active {
+  outline: 2px solid var(--char-color);
+  outline-offset: -2px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.25);
+}
+.char-detail-slot { width: 100%; }
+.char-detail-slot:not(:empty) { margin: 16px 0 8px; }
+.char-detail {
+  background: linear-gradient(180deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0.02) 100%);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--char-color, var(--accent));
+  border-radius: 14px;
+  padding: 22px 24px 26px;
+  animation: char-detail-fade 0.28s ease-out;
+}
+@keyframes char-detail-fade {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.char-detail-head {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+.char-detail-portrait {
+  width: 64px; height: 64px;
+  border-radius: 12px;
+  overflow: hidden;
+  background: rgba(255,255,255,0.04);
+  display: flex; align-items: center; justify-content: center;
+  color: var(--char-color, var(--accent));
+}
+.char-detail-portrait img,
+.char-detail-portrait svg.char-icon { width: 100%; height: 100%; object-fit: cover; }
+.char-detail-titles { min-width: 0; }
+.char-detail-name {
+  font-family: "Inter", ui-sans-serif, system-ui, sans-serif;
+  font-size: 22px;
+  font-weight: 800;
+  margin: 0 0 2px;
+  letter-spacing: -0.01em;
+  color: var(--text-1);
+}
+.char-detail-tagline {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-style: italic;
+  color: var(--text-2);
+  line-height: 1.4;
+}
+.char-detail-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.char-detail-role {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--char-color, var(--accent));
+  background: rgba(255,255,255,0.04);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 4px 10px;
+}
+.char-detail-difficulty {
+  font-size: 13px;
+  color: var(--gold, #ffc65c);
+  letter-spacing: 0.1em;
+}
+.char-detail-close {
+  width: 32px; height: 32px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: rgba(255,255,255,0.03);
+  color: var(--text-2);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.char-detail-close:hover { background: rgba(255,255,255,0.08); color: var(--text-1); }
+
+.char-detail-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  padding: 14px 16px;
+  background: rgba(0,0,0,0.18);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  margin-bottom: 18px;
+}
+.char-detail-stat { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.char-detail-stat-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.char-detail-stat-value {
+  font-family: "Inter", ui-sans-serif, system-ui, sans-serif;
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-1);
+  line-height: 1.1;
+}
+
+.char-detail-section { margin-top: 18px; }
+.char-detail-section-title {
+  font-family: "Inter", ui-sans-serif, system-ui, sans-serif;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-2);
+  margin: 0 0 10px;
+}
+.char-detail-summary {
+  margin: 0 0 14px;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--text-1);
+}
+
+.char-detail-meters {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px 16px;
+}
+.char-detail-meter {
+  display: grid;
+  grid-template-columns: 100px 1fr 36px;
+  align-items: center;
+  gap: 10px;
+}
+.char-detail-meter-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-2);
+}
+.char-detail-meter-bar {
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.06);
+  overflow: hidden;
+}
+.char-detail-meter-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.4s ease;
+}
+.char-detail-meter-val {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-2);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.char-detail-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.char-detail-chip {
+  padding: 5px 12px;
+  border: 1px solid var(--chip-color, var(--border));
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-1);
+  background: rgba(255,255,255,0.03);
+}
+
+.char-detail-mech-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+}
+.char-detail-mech {
+  padding: 12px 14px;
+  background: rgba(255,255,255,0.025);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.char-detail-mech-title {
+  display: block;
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--char-color, var(--accent));
+  margin-bottom: 4px;
+  letter-spacing: 0.02em;
+}
+.char-detail-mech-text {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-2);
+}
+
+.char-detail-tips {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.char-detail-tips li {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-1);
+}
+.char-detail-tips li::marker {
+  color: var(--char-color, var(--accent));
+}
+
+@media (max-width: 720px) {
+  .char-detail { padding: 16px 14px 18px; }
+  .char-detail-head { grid-template-columns: 48px 1fr auto; gap: 12px; margin-bottom: 14px; }
+  .char-detail-portrait { width: 48px; height: 48px; }
+  .char-detail-name { font-size: 18px; }
+  .char-detail-stats { grid-template-columns: repeat(2, 1fr); }
+  .char-detail-meters { grid-template-columns: 1fr; }
+}
+
+/* Recent runs intro hint — surfaces the click-for-Act-timeline
+ * affordance without forcing users to discover the modal blind. */
+.recent-runs-hint {
+  margin: -8px 0 14px;
+  padding: 10px 14px;
+  background: linear-gradient(180deg, rgba(255, 160, 92, 0.08), rgba(255, 160, 92, 0.02));
+  border: 1px solid rgba(255, 160, 92, 0.22);
+  border-radius: 10px;
+  color: var(--text-2);
+  line-height: 1.5;
+}
+.recent-runs-hint strong { color: var(--text-1); }
+
+/* =========================================================================
+ * Act timeline — honest path visualization in the Run Detail modal.
+ *
+ * Three rows (or four if you reached the Architect), each showing
+ * the linear sequence of nodes the player visited. Node icons are
+ * hand-painted WebP sprites in `/assets/sts2/map-icons/` that
+ * match the in-game STS2 map legend exactly (yellow ? for unknown,
+ * brown bag for merchant, red devil for combat, etc.). Death node
+ * gets a red ring + ☠; victory gets a gold ring + 👑.
+ *
+ * Each act is a `<details>` element so users can collapse acts they
+ * don't care about and focus on where the run ended.
+ * ========================================================================= */
+.run-detail-path-section { padding: 14px 16px 18px; }
+.run-detail-section-sub  { margin: 4px 0 14px; }
+
+.path-act {
+  margin-bottom: 10px;
+  background: rgba(0, 0, 0, 0.18);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.path-act:last-of-type { margin-bottom: 18px; }
+.path-act-summary {
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  cursor: pointer;
+  user-select: none;
+  background: rgba(255, 255, 255, 0.025);
+  border-bottom: 1px solid var(--border);
+  transition: background 0.15s ease;
+}
+.path-act-summary::-webkit-details-marker { display: none; }
+.path-act:not([open]) .path-act-summary { border-bottom-color: transparent; }
+.path-act-summary:hover { background: rgba(255, 255, 255, 0.05); }
+.path-act-chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-2);
+  transition: transform 0.18s ease;
+  flex: 0 0 auto;
+}
+.path-act[open] .path-act-chevron { transform: rotate(180deg); }
+.path-act-label {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-1);
+  flex: 0 0 auto;
+}
+.path-act-meta {
+  font-size: 11px;
+  color: var(--text-3);
+  margin-left: auto;
+  letter-spacing: 0.02em;
+}
+/* Status flag on the act-summary row — surfaces "DIED HERE" or
+ * "VICTORY" so users know which act to expand without opening
+ * any of them. The act with the death/victory is also auto-opened
+ * by default (everything else stays collapsed). */
+.path-act-flag {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid;
+  margin-left: 6px;
+  flex: 0 0 auto;
+}
+.path-act-flag--death {
+  color: #ff8888;
+  background: rgba(255, 107, 107, 0.15);
+  border-color: rgba(255, 107, 107, 0.45);
+}
+.path-act-flag--win {
+  color: #6fe091;
+  background: rgba(95, 224, 154, 0.15);
+  border-color: rgba(95, 224, 154, 0.45);
+}
+.path-act-strip {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 4px;
+  padding: 14px 12px;
+}
+
+/* Node tiles — each holds a painted icon + the floor number.
+ * Per-type background tint helps the tile read at a glance even
+ * when the icon is small (rest tiles glow orange, treasure tiles
+ * glow purple, elite tiles glow red). The painted icon stays
+ * the primary identifier; the tint is a backup signal. */
+.path-node {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 7px 5px 5px;
+  width: 52px;
+  flex: 0 0 auto;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  transition: transform 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+.path-node:hover {
+  transform: translateY(-2px);
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.22);
+}
+/* Per-type tile tints — subtle so they don't fight the painted icon
+ * but strong enough to color-code the tile at a glance. */
+.path-node--combat  { background: rgba(255, 107, 107, 0.06); border-color: rgba(255, 107, 107, 0.16); }
+.path-node--elite   { background: rgba(255, 80, 80, 0.10); border-color: rgba(255, 107, 107, 0.32); }
+.path-node--shop    { background: rgba(180, 130, 80, 0.10); border-color: rgba(180, 130, 80, 0.30); }
+.path-node--rest    { background: rgba(255, 140, 60, 0.12); border-color: rgba(255, 140, 60, 0.32); }
+.path-node--event   { background: rgba(212, 175, 55, 0.08); border-color: rgba(212, 175, 55, 0.28); }
+.path-node--chest   { background: rgba(80, 140, 160, 0.10); border-color: rgba(80, 140, 160, 0.30); }
+.path-node-icon {
+  display: block;
+  width: 32px;
+  height: 32px;
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
+  flex: 0 0 auto;
+  /* Subtle drop shadow so painted icons read against any tile tint. */
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.5));
+}
+/* Cache-bust map icons via query string. Bump `?v=N` whenever any
+ * icon is re-exported — these assets have `immutable, max-age=1y`
+ * via _headers so the URL must change to bypass Cloudflare's edge.
+ * v3 forces a refresh after rest.webp was updated to a campfire. */
+.path-node-icon[data-node-type="event"]   { background-image: url("/assets/sts2/map-icons/event.webp?v=3"); }
+.path-node-icon[data-node-type="shop"]    { background-image: url("/assets/sts2/map-icons/shop.webp?v=3"); }
+.path-node-icon[data-node-type="chest"]   { background-image: url("/assets/sts2/map-icons/chest.webp?v=3"); }
+.path-node-icon[data-node-type="rest"]    { background-image: url("/assets/sts2/map-icons/rest.webp?v=4"); }
+.path-node-icon[data-node-type="combat"]  { background-image: url("/assets/sts2/map-icons/combat.webp?v=3"); }
+.path-node-icon[data-node-type="elite"]   { background-image: url("/assets/sts2/map-icons/elite.webp?v=3"); }
+.path-node-icon[data-node-type="boss"]    { background-image: url("/assets/sts2/map-icons/boss.webp?v=3"); }
+.path-node-icon[data-node-type="unknown"] { background-image: url("/assets/sts2/map-icons/event.webp?v=3"); opacity: 0.55; }
+.path-node-floor {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Special states for the boss node + death/victory markers. */
+.path-node--boss {
+  width: 60px;
+  background: linear-gradient(180deg, rgba(212, 175, 55, 0.18), rgba(212, 175, 55, 0.06));
+  border-color: rgba(212, 175, 55, 0.45);
+}
+.path-node--boss .path-node-icon { width: 36px; height: 36px; }
+.path-node--death {
+  background: rgba(255, 107, 107, 0.20);
+  border: 2px solid rgba(255, 107, 107, 0.85);
+  box-shadow: 0 0 0 2px rgba(255, 107, 107, 0.18);
+}
+.path-node--death::after {
+  content: "☠";
+  position: absolute;
+  top: -7px;
+  right: -7px;
+  font-size: 14px;
+  color: #ff8888;
+  background: var(--card-raised, #1a1626);
+  border-radius: 50%;
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.path-node--win {
+  background: rgba(95, 224, 154, 0.20);
+  border: 2px solid rgba(95, 224, 154, 0.85);
+  box-shadow: 0 0 0 2px rgba(95, 224, 154, 0.15);
+}
+.path-node--win::after {
+  content: "👑";
+  position: absolute;
+  top: -10px;
+  right: -8px;
+  font-size: 16px;
+}
+.path-connector {
+  display: inline-block;
+  width: 10px;
+  height: 2px;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.04));
+  border-radius: 2px;
+  flex: 0 0 auto;
+}
+
+/* Legend shown at the bottom of the map view. Game-faithful icons
+ * paired with their plain-language labels. */
+.path-legend {
+  margin-top: 10px;
+  padding: 12px 14px;
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.path-legend-title {
+  display: block;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  margin-bottom: 8px;
+}
+.path-legend-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 6px 10px;
+}
+.path-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-1);
+}
+.path-legend-icon { width: 22px; height: 22px; flex: 0 0 auto; }
+
+@media (max-width: 720px) {
+  .path-node { width: 46px; padding: 6px 4px 4px; }
+  .path-node-icon { width: 28px; height: 28px; }
+  .path-node--boss { width: 58px; }
+  .path-node--boss .path-node-icon { width: 34px; height: 34px; }
+  .path-node-floor { font-size: 9px; }
+  .path-act-summary { padding: 9px 12px; gap: 8px; flex-wrap: wrap; }
+  .path-act-meta { font-size: 10px; }
+  .path-act-flag { margin-left: 0; margin-top: 2px; }
+  .path-legend-grid { grid-template-columns: repeat(auto-fit, minmax(95px, 1fr)); }
+}
+
+/* =========================================================================
+ * Relic drill-down — opens below the Top Relics grid when a card
+ * is tapped. Same UX pattern as the character drill-down on the
+ * Characters tab, with a tier-color border and in-game effect copy
+ * pulled from /lib/relic-info.js.
+ * ========================================================================= */
+.relic-grid .relic-card.is-clickable { cursor: pointer; position: relative; padding-right: 32px; }
+.relic-card.is-clickable:hover {
+  transform: translateY(-2px);
+  border-color: rgba(255, 255, 255, 0.2);
+  box-shadow: 0 8px 24px -8px rgba(0, 0, 0, 0.4);
+}
+.relic-card.is-clickable.is-active {
+  outline: 2px solid var(--gold, #d4af37);
+  outline-offset: -2px;
+}
+.relic-card-cta {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-3);
+  display: flex;
+  align-items: center;
+  pointer-events: none;
+  transition: transform 0.18s ease, color 0.15s ease;
+}
+.relic-card.is-clickable:hover .relic-card-cta {
+  color: var(--gold, #d4af37);
+  transform: translateY(-50%) translateX(3px);
+}
+.relic-detail-slot:not(:empty) { margin: 16px 0 8px; }
+.relic-detail {
+  background: linear-gradient(180deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0.02) 100%);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--relic-tier-color, var(--gold));
+  border-radius: 14px;
+  padding: 22px 24px 26px;
+  animation: char-detail-fade 0.28s ease-out;
+}
+.relic-detail-head {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+.relic-detail-portrait {
+  width: 64px; height: 64px;
+  border-radius: 12px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.04);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 28px;
+}
+.relic-detail-portrait img { width: 100%; height: 100%; object-fit: contain; padding: 6px; }
+.relic-detail-titles { min-width: 0; }
+.relic-detail-name {
+  font-family: "Inter", ui-sans-serif, system-ui, sans-serif;
+  font-size: 22px;
+  font-weight: 800;
+  margin: 0 0 2px;
+  letter-spacing: -0.01em;
+  color: var(--text-1);
+}
+.relic-detail-tagline { margin: 0; }
+.relic-detail-meta { display: flex; gap: 8px; flex-wrap: wrap; }
+.relic-detail-rarity {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid;
+  border-radius: 999px;
+  padding: 4px 10px;
+}
+.relic-detail-close {
+  width: 32px; height: 32px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: rgba(255,255,255,0.03);
+  color: var(--text-2);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+}
+.relic-detail-close:hover { background: rgba(255,255,255,0.08); color: var(--text-1); }
+.relic-detail-section { margin-top: 18px; }
+.relic-detail-section-title {
+  font-family: "Inter", ui-sans-serif, system-ui, sans-serif;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-2);
+  margin: 0 0 8px;
+}
+.relic-detail-effect {
+  margin: 0;
+  padding: 12px 14px;
+  background: rgba(0, 0, 0, 0.18);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text-1);
+  font-style: italic;
+}
+.relic-detail-tip {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--text-1);
+}
+.relic-detail-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.relic-detail-chip {
+  padding: 5px 12px;
+  border: 1px solid var(--chip-color, var(--border));
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-1);
+  background: rgba(255,255,255,0.03);
+}
+.relic-detail-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  padding: 14px 16px;
+  background: rgba(0,0,0,0.18);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.relic-detail-stat { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.relic-detail-stat-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.relic-detail-stat-value {
+  font-family: "Inter", ui-sans-serif, system-ui, sans-serif;
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-1);
+  line-height: 1.1;
+}
+.relic-detail-stat-value-win  { color: #6fe091; }
+.relic-detail-stat-value-gold { color: #ffc65c; }
+.relic-detail-stat-value-accent { color: var(--accent, #ffa05c); }
+.relic-detail-stat-sub { font-size: 11px; color: var(--text-3); }
+@media (max-width: 720px) {
+  .relic-detail { padding: 16px 14px 18px; }
+  .relic-detail-head { grid-template-columns: 48px 1fr auto; gap: 12px; margin-bottom: 14px; }
+  .relic-detail-portrait { width: 48px; height: 48px; }
+  .relic-detail-name { font-size: 18px; }
+  .relic-detail-stats { grid-template-columns: repeat(2, 1fr); }
+}
+
+/* =========================================================================
+ * Sync status pill — shown in the toolbar when a signed-in user
+ * has uploaded run history. Confirms "your runs are saved to your
+ * Steam account · last updated 2m ago" and offers a Refresh button
+ * for manual cloud-pull. This is what makes "did my upload save?"
+ * answerable without console diagnostics.
+ * ========================================================================= */
+.sync-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px 5px 12px;
+  background: rgba(95, 224, 154, 0.10);
+  border: 1px solid rgba(95, 224, 154, 0.35);
+  border-radius: 999px;
+  font-size: 11px;
+  color: var(--text-1);
+  white-space: nowrap;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sync-pill[hidden] { display: none; }
+.sync-pill-dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: #6fe091;
+  box-shadow: 0 0 0 2px rgba(111, 224, 145, 0.18);
+  animation: syncDotPulse 3s ease-in-out infinite;
+  flex: 0 0 auto;
+}
+@keyframes syncDotPulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.55; }
+}
+.sync-pill-text { display: flex; align-items: baseline; gap: 4px; min-width: 0; overflow: hidden; }
+.sync-pill-text strong {
+  font-weight: 700;
+  color: var(--text-1);
+}
+.sync-pill-ago { color: var(--text-2); font-size: 11px; }
+.sync-pill-refresh {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  margin-left: 4px;
+  background: rgba(95, 224, 154, 0.15);
+  border: 1px solid rgba(95, 224, 154, 0.4);
+  border-radius: 999px;
+  color: #6fe091;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.sync-pill-refresh:hover { background: rgba(95, 224, 154, 0.25); color: #fff; }
+.sync-pill-refresh:disabled { opacity: 0.5; cursor: wait; }
+@media (max-width: 720px) {
+  .sync-pill-refresh span { display: none; }
+  .sync-pill-ago { display: none; }
+}
+
+/* =========================================================================
+ * Private/Incognito mode notice — shown ONCE per tab when we
+ * detect the user is in a private window. Explains that sign-in
+ * won't persist; lets them dismiss. Sticks at the top of
+ * #app-content above the global invite banner.
+ * ========================================================================= */
+.private-mode-notice {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  margin: 0;
+  background: linear-gradient(180deg, rgba(255, 196, 86, 0.14) 0%, rgba(255, 160, 92, 0.08) 100%);
+  border-bottom: 1px solid rgba(255, 196, 86, 0.32);
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-1);
+}
+.private-mode-icon {
+  width: 22px; height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  color: var(--gold, #ffc65c);
+}
+.private-mode-text { flex: 1; min-width: 0; }
+.private-mode-text strong { color: var(--text-1); margin-right: 4px; }
+.private-mode-close {
+  width: 26px; height: 26px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text-2);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+.private-mode-close:hover { background: rgba(255, 255, 255, 0.08); color: var(--text-1); }
+
+/* Empty-state for signed-in users — different visual treatment
+ * (subtle accent border) so it's clearly "your account is connected,
+ * just need to add data" rather than the generic guest pitch. */
+.empty-state.empty-state--authed {
+  border: 1px solid rgba(255, 160, 92, 0.28);
+  background: linear-gradient(180deg, rgba(255, 160, 92, 0.06) 0%, transparent 60%);
+}
+
+/* =========================================================================
+ * Global invite banner — sticky top strip across every tab so an
+ * incoming co-op invite is impossible to miss regardless of where the
+ * user happens to be in the app. Inline Accept / Decline / Open Steam
+ * profile so they never have to navigate to Co-op to respond.
+ * Dismissing only removes the banner row; the invite itself stays in
+ * the Co-op inbox until explicitly accepted or declined.
+ * ========================================================================= */
+.global-invite-banner {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 14px;
+  background: linear-gradient(180deg, rgba(255, 196, 86, 0.18) 0%, rgba(255, 160, 92, 0.14) 100%);
+  border-bottom: 1px solid rgba(255, 196, 86, 0.4);
+  backdrop-filter: saturate(140%) blur(6px);
+  -webkit-backdrop-filter: saturate(140%) blur(6px);
+  animation: globalInviteSlideIn 0.32s cubic-bezier(0.2, 0.8, 0.4, 1) both;
+}
+/* Force the [hidden] attribute to win over the .global-invite-banner
+   display: flex rule above. Without this, an empty banner still rendered
+   as a 21px-tall amber strip at the top of the page even when there
+   were no pending invites. */
+.global-invite-banner[hidden] {
+  display: none !important;
+}
+@keyframes globalInviteSlideIn {
+  from { transform: translateY(-100%); opacity: 0; }
+  to   { transform: translateY(0); opacity: 1; }
+}
+.global-invite-row {
+  display: grid;
+  grid-template-columns: 40px 1fr auto auto;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 14px;
+  background: rgba(20, 16, 32, 0.72);
+  border: 1px solid rgba(255, 196, 86, 0.45);
+  border-radius: 10px;
+}
+.global-invite-avatar {
+  width: 40px; height: 40px;
+  border-radius: 50%;
+  object-fit: cover;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border);
+}
+.global-invite-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.global-invite-text strong {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-1);
+}
+.global-invite-eyebrow {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--gold, #ffc65c);
+  margin-right: 8px;
+}
+.global-invite-msg {
+  font-size: 12px;
+  color: var(--text-2);
+  font-style: italic;
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+.global-invite-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.global-invite-actions .btn-primary,
+.global-invite-actions .btn-ghost {
+  white-space: nowrap;
+}
+.global-invite-close {
+  width: 28px; height: 28px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text-2);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+.global-invite-close:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-1);
+}
+@media (max-width: 720px) {
+  .global-invite-banner { padding: 8px 12px; }
+  .global-invite-row {
+    grid-template-columns: 36px 1fr auto;
+    grid-template-rows: auto auto;
+    gap: 10px;
+    padding: 10px 12px;
+  }
+  .global-invite-avatar { width: 36px; height: 36px; }
+  .global-invite-actions {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+  .global-invite-close {
+    grid-column: 3;
+    grid-row: 1;
+  }
+  .global-invite-text strong { font-size: 12px; }
+  .global-invite-msg { font-size: 11px; -webkit-line-clamp: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .global-invite-banner { animation: none; }
+}
+
+/* =========================================================================
+ * Update banner — appears when the running JS bundle is older than the
+ * latest deployed one. Replaces the old hostile "force-reload on detect"
+ * behavior so users in the middle of typing or scrolling don't lose
+ * state. Sits above every other banner because a stale tab is the
+ * highest-priority thing to surface — bug reports otherwise look like
+ * "the site is broken" when really the user's been running an old
+ * bundle for hours.
+ * ========================================================================= */
+.vault-update-banner {
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  align-items: center;
+  gap: 12px;
+  margin: 0 0 12px;
+  padding: 10px 14px;
+  border: 1px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  border-radius: 12px;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--accent) 18%, var(--surface) 82%),
+    color-mix(in srgb, var(--accent) 8%, var(--surface) 92%)
+  );
+  color: var(--text);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+  animation: vault-update-slide-in 220ms cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+.vault-update-banner-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--accent) 30%, transparent);
+  color: var(--accent);
+  flex-shrink: 0;
+}
+.vault-update-banner-text {
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text);
+}
+.vault-update-banner-text strong {
+  display: inline;
+  margin-right: 4px;
+  color: var(--text);
+  font-weight: 600;
+}
+.vault-update-banner-reload {
+  appearance: none;
+  border: 0;
+  border-radius: 8px;
+  padding: 8px 14px;
+  font: inherit;
+  font-weight: 600;
+  font-size: 13px;
+  background: var(--accent);
+  color: var(--bg);
+  cursor: pointer;
+  transition: filter 120ms ease, transform 120ms ease;
+  white-space: nowrap;
+}
+.vault-update-banner-reload:hover { filter: brightness(1.08); }
+.vault-update-banner-reload:active { transform: translateY(1px); }
+.vault-update-banner-reload:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.vault-update-banner-close {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 22px;
+  line-height: 1;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+.vault-update-banner-close:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+}
+.vault-update-banner-close:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+@keyframes vault-update-slide-in {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@media (max-width: 720px) {
+  .vault-update-banner {
+    grid-template-columns: auto 1fr auto;
+    grid-template-rows: auto auto;
+    gap: 8px 10px;
+    padding: 10px 12px;
+  }
+  .vault-update-banner-text {
+    grid-column: 2 / span 1;
+    grid-row: 1;
+    font-size: 12px;
+  }
+  .vault-update-banner-reload {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    width: 100%;
+  }
+  .vault-update-banner-close {
+    grid-column: 3;
+    grid-row: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .vault-update-banner { animation: none; }
+}
+
+/* =========================================================================
+ * Import recovery banner — surfaces when an interactive import lands
+ * with suspiciously few runs (signal that the user picked a wrong
+ * subfolder). Top-of-content position so it can't be missed. Red-ish
+ * tone because it's a "hey this isn't right" signal, not a generic
+ * info banner. The two CTAs (Pick again / Dismiss) sit on the right
+ * so the user can act in one click without scrolling.
+ * ========================================================================= */
+.import-recovery-banner {
+  margin: 0 0 14px;
+  padding: 12px 16px;
+  border: 1px solid color-mix(in srgb, var(--loss) 55%, transparent);
+  border-radius: 12px;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--loss) 14%, var(--surface) 86%),
+    color-mix(in srgb, var(--loss) 6%, var(--surface) 94%)
+  );
+  color: var(--text);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+  animation: import-recovery-slide-in 220ms cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+.import-recovery-banner-inner {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 12px;
+}
+.import-recovery-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--loss) 30%, transparent);
+  color: var(--loss);
+  flex-shrink: 0;
+}
+.import-recovery-text {
+  font-size: 13px;
+  line-height: 1.5;
+}
+.import-recovery-text strong {
+  display: block;
+  margin-bottom: 2px;
+  font-size: 14px;
+  color: var(--text);
+}
+.import-recovery-text code {
+  font-family: "SF Mono", "Menlo", Consolas, monospace;
+  font-size: 12px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--gold);
+}
+.import-recovery-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-shrink: 0;
+}
+.import-recovery-actions .btn-ghost.sm {
+  padding: 4px 10px;
+  font-size: 18px;
+  line-height: 1;
+}
+@keyframes import-recovery-slide-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@media (max-width: 720px) {
+  .import-recovery-banner-inner {
+    grid-template-columns: auto 1fr;
+    grid-template-rows: auto auto;
+    gap: 8px 10px;
+  }
+  .import-recovery-actions {
+    grid-column: 1 / -1;
+    justify-content: flex-end;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .import-recovery-banner { animation: none; }
+}
+
+/* =========================================================================
+ * Skeleton state — shown while we hydrate from cloud on a fresh device
+ * for a signed-in Steam user (instead of flashing demo numbers). Matches
+ * the layout of the KPI strip + hero so the swap to real data is a
+ * single repaint, not a layout shift.
+ * ========================================================================= */
+.kpi-skeleton {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(168px, 1fr));
+  gap: 10px;
+  margin: 0 0 18px;
+}
+@media (max-width: 720px) {
+  .kpi-skeleton {
+    display: flex;
+    overflow-x: hidden;
+    gap: 10px;
+    margin: 0 0 14px;
+    padding: 2px 0 8px;
+    max-width: 100%;
+  }
+  .kpi-skeleton > .skeleton-card { flex: 0 0 82%; max-width: 280px; }
+}
+.skeleton-card,
+.skeleton-hero {
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px 16px;
+  position: relative;
+  overflow: hidden;
+}
+.skeleton-card { height: 92px; }
+.skeleton-hero { height: 168px; margin-bottom: 18px; }
+.skeleton-card::after,
+.skeleton-hero::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0) 0%,
+    rgba(255, 255, 255, 0.05) 50%,
+    rgba(255, 255, 255, 0) 100%
+  );
+  transform: translateX(-100%);
+  animation: skeleton-shimmer 1400ms ease-in-out infinite;
+}
+.skeleton-bar {
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 6px;
+  height: 10px;
+  margin-bottom: 8px;
+}
+.skeleton-bar.is-label  { width: 40%; height: 8px; opacity: 0.6; }
+.skeleton-bar.is-value  { width: 55%; height: 22px; margin-top: 6px; }
+.skeleton-bar.is-sub    { width: 75%; height: 8px; opacity: 0.5; }
+@keyframes skeleton-shimmer {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+/* =========================================================================
+ * prefers-reduced-motion — disable shimmer, sparkline draw, and chart
+ * fade-in animations for users who opt out of motion at the OS level.
+ * ========================================================================= */
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-card::after,
+  .skeleton-hero::after { animation: none; }
+  .ring-fill { transition: none; }
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* =========================================================================
+ * News tab — the "what's new + roadmap" surface.
+ *
+ * Goal: feel like a real letter from a real person, not a changelog dump.
+ * Long-form reading typography (wider line-height, narrower measure,
+ * slightly larger body font) so a 1500-word post is pleasant to scroll
+ * top to bottom. The painted banner image at the top sets the tone before
+ * the user reads a single word.
+ *
+ * Constraints:
+ *   - Has to share the same panel-head + panel-body shell as the other
+ *     tabs (search box, refresh, etc. live there). We don't override the
+ *     shell; we just decorate the body.
+ *   - Mobile: banner shrinks but never disappears. The image is the
+ *     hook that says "this is a real person writing, not a robot."
+ *   - Reading width capped at ~70ch on desktop so paragraphs stay
+ *     scanable. The full-bleed banner pre-cap stretches edge-to-edge
+ *     for cinematic feel.
+ * ========================================================================= */
+.news-panel .panel-body {
+  padding-top: 0;
+}
+.news-feed {
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+  margin: 0 auto;
+  max-width: 880px;
+}
+.news-post {
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(180deg, var(--card-raised), var(--card));
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 16px 40px -28px rgba(0, 0, 0, 0.6);
+}
+.news-post-banner {
+  margin: 0;
+  position: relative;
+  overflow: hidden;
+  /* 21:9 cinematic crop on desktop. The painted illustration has a lot
+   * of vertical content that we don't need to show in full — the action
+   * is in the central horizontal third, so cropping vertically keeps
+   * the post compact without losing the focal point. */
+  aspect-ratio: 21 / 9;
+  background: #0c0a14;
+}
+.news-post-banner img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.news-post-banner::after {
+  /* Soft vignette into the panel body so the image edges blend rather
+   * than landing on a hard line. Subtle — 14% black at the bottom edge
+   * fades into the card's gradient. */
+  content: "";
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 32%;
+  pointer-events: none;
+  background: linear-gradient(180deg, transparent, rgba(0, 0, 0, 0.45));
+}
+
+.news-post-head {
+  padding: 24px 28px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.news-post-eyebrow {
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent-hi);
+  font-weight: 700;
+}
+.news-post-title {
+  font-family: "Playfair Display", Georgia, serif;
+  font-size: 28px;
+  line-height: 1.2;
+  font-weight: 800;
+  margin: 0;
+  color: var(--text);
+}
+.news-post-byline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--text-2);
+  font-weight: 600;
+}
+.news-post-byline-sep { color: var(--text-3); }
+.news-post-byline-meta {
+  font-weight: 400;
+  color: var(--text-3);
+}
+
+.news-post-body {
+  padding: 4px 28px 24px;
+  /* Reading-optimized typography. 16.5px on a 1.7 line-height gives ~70ch
+   * at the 880-max width, which research has consistently flagged as the
+   * sweet spot for long-form web reading. The slight bump above the app's
+   * default 14-15px body size is intentional — News is the only tab where
+   * the user is going to read full paragraphs end to end. */
+  font-size: 16.5px;
+  line-height: 1.7;
+  color: var(--text-2);
+}
+.news-post-body p {
+  margin: 0 0 18px;
+}
+.news-post-body p:last-child {
+  margin-bottom: 0;
+}
+.news-post-body a {
+  color: var(--accent-hi);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-thickness: 1px;
+}
+.news-post-body a:hover {
+  color: #ff8a4a;
+}
+.news-post-body em {
+  font-style: italic;
+  color: var(--text);
+}
+.news-post-body strong {
+  color: var(--text);
+  font-weight: 700;
+}
+.news-post-body code {
+  font-family: "SF Mono", "Menlo", Consolas, monospace;
+  font-size: 0.9em;
+  padding: 1px 6px;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--gold);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.news-lede {
+  /* The opening paragraph — slightly larger, bolder serif. Matches the
+   * "first paragraph" treatment of editorial sites (NYT, Stratechery)
+   * so the reader feels invited into a real piece, not a notification. */
+  font-size: 18px;
+  font-weight: 500;
+  color: var(--text);
+  margin: 0 0 20px !important;
+  letter-spacing: -0.005em;
+}
+
+.news-post-section {
+  font-family: "Playfair Display", Georgia, serif;
+  font-size: 20px;
+  font-weight: 700;
+  margin: 28px 0 14px;
+  color: var(--text);
+  letter-spacing: -0.005em;
+}
+
+.news-feature-block {
+  margin: 0 0 22px;
+  padding: 16px 18px;
+  background: rgba(255, 255, 255, 0.025);
+  border-left: 3px solid var(--accent);
+  border-radius: 6px;
+}
+.news-feature-block h5 {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+  margin: 0 0 10px;
+  letter-spacing: -0.005em;
+}
+.news-feature-block p {
+  font-size: 15px;
+  line-height: 1.65;
+  margin: 0 0 10px !important;
+}
+.news-feature-block p:last-child {
+  margin-bottom: 0 !important;
+}
+
+.news-roadmap {
+  margin: 0 0 20px;
+  padding: 0 0 0 22px;
+  list-style-type: decimal;
+}
+.news-roadmap li {
+  margin: 0 0 14px;
+  padding-left: 4px;
+  font-size: 15.5px;
+  line-height: 1.65;
+}
+.news-roadmap li::marker {
+  color: var(--accent-hi);
+  font-weight: 700;
+}
+.news-roadmap li strong {
+  color: var(--text);
+}
+
+.news-post-signoff {
+  margin: 20px 0 0 !important;
+  font-style: italic;
+  color: var(--text-3);
+  font-size: 15px;
+}
+
+.news-post-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 16px 28px 22px;
+  border-top: 1px solid var(--border);
+  background: rgba(0, 0, 0, 0.12);
+}
+.news-post-foot-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.news-post-tag {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-2);
+}
+.news-post-foot-actions {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.news-post-foot-actions .action-link {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+@media (max-width: 720px) {
+  .news-feed {
+    gap: 22px;
+  }
+  .news-post-banner {
+    aspect-ratio: 16 / 10;
+  }
+  .news-post-head {
+    padding: 18px 18px 10px;
+  }
+  .news-post-title {
+    font-size: 22px;
+    line-height: 1.25;
+  }
+  .news-post-body {
+    padding: 4px 18px 18px;
+    font-size: 15.5px;
+    line-height: 1.62;
+  }
+  .news-lede {
+    font-size: 16.5px;
+  }
+  .news-post-section {
+    font-size: 18px;
+    margin: 22px 0 12px;
+  }
+  .news-feature-block {
+    padding: 14px 14px;
+  }
+  .news-feature-block h5 {
+    font-size: 14.5px;
+  }
+  .news-feature-block p,
+  .news-roadmap li {
+    font-size: 14.5px;
+  }
+  .news-post-foot {
+    padding: 14px 18px 18px;
+    flex-direction: column;
+    align-items: flex-start;
+  }
 }
 

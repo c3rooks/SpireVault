@@ -187,6 +187,35 @@ section {
   border-radius: 999px;
 }
 
+/* News link in the top nav. Same visual weight as Features / Co-op / etc.
+ * — no CTA-style framing, no orange call-out — but carries a small ember
+ * dot to its right so a returning visitor can tell at a glance that there
+ * are fresh updates worth clicking through to. The dot is decoration, not
+ * a count, so it stays whether they've read the post or not (the in-app
+ * News tab handles the read/unread state with its own badge). */
+.nav-link-news {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.nav-link-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 3px rgba(255, 107, 26, 0.18);
+  flex-shrink: 0;
+  animation: nav-link-dot-pulse 2.4s ease-in-out infinite;
+}
+@keyframes nav-link-dot-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.55; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .nav-link-dot { animation: none; }
+}
+
 .dot {
   display: inline-block;
   width: 8px;
@@ -582,6 +611,41 @@ section {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 18px;
+}
+
+.overlay-feature-card {
+  border: 1px solid rgba(212, 175, 55, 0.35);
+  border-radius: 16px;
+  padding: 22px;
+  background:
+    linear-gradient(145deg, rgba(25, 20, 33, 0.96), rgba(14, 11, 22, 0.96)),
+    radial-gradient(circle at top right, rgba(255, 107, 26, 0.22), transparent 60%);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.34);
+  max-width: 920px;
+  margin: 0 auto;
+  display: grid;
+  gap: 14px;
+}
+.overlay-feature-card p {
+  margin: 0;
+  color: var(--text-2);
+}
+.overlay-badges {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.overlay-badges span {
+  font-size: 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.2);
+  background: rgba(255,255,255,0.07);
+  color: var(--text);
+  padding: 4px 9px;
+}
+.overlay-trust-copy {
+  font-size: 13px;
+  color: #d8ccad;
 }
 @media (max-width: 880px) { .feature-grid { grid-template-columns: repeat(2, 1fr); } }
 @media (max-width: 600px) { .feature-grid { grid-template-columns: 1fr; } }
