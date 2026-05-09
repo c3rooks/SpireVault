@@ -31,7 +31,36 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Playfair+Display:wght@700;900&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/styles.css?v=97" />
+  <link rel="stylesheet" href="/styles.css?v=104" />
+
+  <!-- Google tag (gtag.js) — Spire Vault GA4 stream G-09LEQ247HN.
+       Loaded async so it never blocks the critical rendering path; the
+       inline initializer queues calls until the loader finishes. We
+       also expose `window.gtag` directly (rather than only via the
+       inlined dataLayer.push proxy) so app code in script.js can fire
+       structured custom events: tab_change, run_share, highlight_react,
+       milestone_award, ingest_complete. The CSP in _headers explicitly
+       lists googletagmanager.com (script-src) and *.google-analytics.com
+       (connect-src + img-src) so the loader, beacons, and tracking
+       pixel are all permitted. -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-09LEQ247HN"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){ dataLayer.push(arguments); }
+    window.gtag = gtag;
+    gtag('js', new Date());
+    gtag('config', 'G-09LEQ247HN', {
+      // Honor the user's Do Not Track signal if their browser sends one.
+      // GA4 respects this when navigator.doNotTrack === '1'.
+      anonymize_ip: true,
+      // Don't send a hit on the initial page load until script.js has
+      // had a chance to surface the right page name (tab-aware page_view
+      // events fire from script.js on every tab switch). Without this
+      // we'd double-count: once at boot for the bare URL, again when
+      // the app routes to a tab.
+      send_page_view: false
+    });
+  </script>
 </head>
 <body>
   <div class="bg-glow" aria-hidden="true"></div>
@@ -154,6 +183,11 @@
           <button class="nav-row" data-tab="runs">
             <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 100 20 10 10 0 000-20zm.5 5h-1.5v6.4l5.4 3.2.8-1.3-4.7-2.8z"/></svg></span>
             <span class="nav-label">Recent Runs</span>
+            <!-- Red unseen-dot. Lights up when refreshRunsBadge() detects
+                 a run with `endedAt` newer than the user's stored
+                 last-seen timestamp. Clears the moment they open the
+                 tab via markRunsSeen(). -->
+            <span class="nav-badge nav-badge--dot" id="nav-runs-count" aria-label="New runs since you last looked" hidden></span>
           </button>
         </div>
 
@@ -167,7 +201,11 @@
           <button class="nav-row" data-tab="highlights">
             <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.39 6.95H22l-5.93 4.31L18.46 22 12 17.27 5.54 22l2.39-8.74L2 8.95h7.61z"/></svg></span>
             <span class="nav-label">Highlights</span>
-            <span class="nav-badge nav-badge--new" id="nav-highlights-count" hidden>NEW</span>
+            <!-- Red unseen-dot. Shown by refreshHighlightsBadge() when at
+                 least one highlight authored by *somebody else* is newer
+                 than the user's stored last-seen timestamp. Cleared by
+                 markHighlightsSeen() the moment they open the tab. -->
+            <span class="nav-badge nav-badge--dot" id="nav-highlights-count" aria-label="New community highlights" hidden></span>
           </button>
           <button class="nav-row" data-tab="news">
             <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M4 4h12a2 2 0 012 2v12a3 3 0 003 3H6a2 2 0 01-2-2V4zm2 2v13h12.17A1 1 0 0118 18V6H6zm2 3h8v2H8V9zm0 4h8v2H8v-2zm0 4h5v2H8v-2z"/></svg></span>
@@ -178,6 +216,19 @@
             <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 4h18v14H3zM7 8h10v2H7zm0 4h7v2H7zm14 10H3v-2h18z"/></svg></span>
             <span class="nav-label">Overlay</span>
             <span class="nav-badge nav-badge--new">BETA</span>
+          </button>
+        </div>
+
+        <div class="nav-group">
+          <span class="nav-group-label">YOU</span>
+          <!-- Settings tab — single canonical home for save-data plumbing
+               (link/disconnect folder, export, refresh, clear) plus
+               preferences, account info, keyboard shortcuts. Removed
+               those buttons from every panel-head as part of the
+               header-action consolidation pass. -->
+          <button class="nav-row" data-tab="settings">
+            <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M19.4 13a7.5 7.5 0 000-2l2.1-1.6a.5.5 0 00.1-.6l-2-3.4a.5.5 0 00-.6-.2l-2.5 1a7.5 7.5 0 00-1.7-1l-.4-2.6a.5.5 0 00-.5-.4h-4a.5.5 0 00-.5.4l-.4 2.6a7.5 7.5 0 00-1.7 1l-2.5-1a.5.5 0 00-.6.2l-2 3.4a.5.5 0 00.1.6L4.6 11a7.5 7.5 0 000 2L2.5 14.6a.5.5 0 00-.1.6l2 3.4a.5.5 0 00.6.2l2.5-1a7.5 7.5 0 001.7 1l.4 2.6a.5.5 0 00.5.4h4a.5.5 0 00.5-.4l.4-2.6a7.5 7.5 0 001.7-1l2.5 1a.5.5 0 00.6-.2l2-3.4a.5.5 0 00-.1-.6L19.4 13zM12 15.5a3.5 3.5 0 110-7 3.5 3.5 0 010 7z"/></svg></span>
+            <span class="nav-label">Settings</span>
           </button>
         </div>
       </nav>
@@ -674,6 +725,28 @@
               <button class="btn-ghost" id="highlights-refresh" type="button" title="Refresh feed">Refresh</button>
             </div>
           </div>
+          <!-- Filter + sort row. Filter chips are radio-buttons under the
+               hood (`data-h-filter`), sort menu is a select. State is
+               persisted to localStorage so a returning user lands on
+               the same view. JS lives in renderHighlightsFeed →
+               filterAndSortHighlights. -->
+          <div class="h-controls" role="toolbar" aria-label="Highlights filter and sort">
+            <div class="h-filter-chips" role="group" aria-label="Filter">
+              <button class="h-filter-chip is-active" type="button" data-h-filter="all">All</button>
+              <button class="h-filter-chip" type="button" data-h-filter="mine">Mine</button>
+              <button class="h-filter-chip" type="button" data-h-filter="week">This week</button>
+              <button class="h-filter-chip" type="button" data-h-filter="featured">Featured <span class="h-filter-dot" aria-hidden="true">★</span></button>
+            </div>
+            <label class="h-sort">
+              <span class="muted small">Sort</span>
+              <select id="h-sort-select" class="h-sort-select">
+                <option value="recent">Newest</option>
+                <option value="reactions">Most reactions</option>
+                <option value="comments">Most comments</option>
+                <option value="floor">Highest floor</option>
+              </select>
+            </label>
+          </div>
         </div>
         <div class="panel-body">
           <div id="highlights-feed" class="highlights-feed" aria-live="polite" aria-busy="true">
@@ -840,7 +913,39 @@
         </div>
         <div class="panel-body" id="overlay-body"></div>
       </article>
+
+      <!-- =================== Settings =================== -->
+      <!-- Body filled by renderSettings() in script.js. We keep the markup
+           minimal here because the contents (linked-folder status, sync
+           pill, etc.) need to stay in lockstep with live state — and
+           that's far easier when one render function owns the whole DOM
+           subtree than when the HTML is also writing pieces of it. -->
+      <article class="tab-panel settings-panel" data-tab="settings" aria-labelledby="tab-settings-title" hidden>
+        <div class="panel-head">
+          <div class="panel-head-coop-row">
+            <div>
+              <h2 id="tab-settings-title">Settings</h2>
+              <p class="panel-sub">Save data, preferences, account.</p>
+            </div>
+          </div>
+        </div>
+        <div class="panel-body" id="settings-body"></div>
+      </article>
     </main>
+  </div>
+
+  <!-- ================================================================
+       Hover-preview tooltip for community-highlight relics + cards.
+       Single global element repositioned via JS as the user moves
+       between thumbnails. Lives at the document root so transforms
+       on parent cards never clip it.
+  ================================================================ -->
+  <div class="h-tooltip" id="h-tooltip" role="tooltip" hidden>
+    <img class="h-tooltip-art" id="h-tooltip-art" alt="" />
+    <div class="h-tooltip-meta">
+      <strong class="h-tooltip-name" id="h-tooltip-name"></strong>
+      <span class="h-tooltip-sub" id="h-tooltip-sub"></span>
+    </div>
   </div>
 
   <!-- ================================================================
@@ -968,6 +1073,6 @@
     </div>
   </footer>
 
-  <script src="/script.js?v=117" type="module"></script>
+  <script src="/script.js?v=129" type="module"></script>
 </body>
 </html>

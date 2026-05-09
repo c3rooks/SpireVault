@@ -84,6 +84,22 @@ export interface HighlightRun {
   won: boolean;
   playTimeSeconds: number;
   endedAt: string;
+  /** ISO-8601. Optional — clamps to a sane historical window when set
+   *  so we can render "Daily Run · MMM D" type badges. */
+  startedAt?: string;
+  /** STS2 `game_mode` literal, lower-cased. We accept any string the
+   *  client sends so a future STS2 patch can ship a new mode without
+   *  needing a backend change; the UI is responsible for treating
+   *  unknown values gracefully. Clamped to 24 chars. */
+  gameMode?: string;
+  /** True if the run ended via the in-game "abandon" option rather
+   *  than by death or victory. */
+  wasAbandoned?: boolean;
+  /** Run seed (≤ 32 chars). Useful for daily challenges where every
+   *  player on the same day shares one seed. */
+  seed?: string;
+  /** Daily / custom-game modifier ids (post-prefix), ≤ 8 entries. */
+  modifiers?: string[];
   killedBy?: string;
   /** Up to 12 relic ids, ≤ 64 chars each. */
   relics: string[];
@@ -162,6 +178,33 @@ function sanitizeRun(raw: unknown): HighlightRun | null {
   if (!character) return null;
   const endedAt = clampString(r.endedAt, 64);
   if (!endedAt) return null;
+  // gameMode: tolerate unknown strings, clamp size, lowercase. The UI
+  // is the policy layer for what counts as "daily" — by validating
+  // shape here and decoding meaning at render time we don't have to
+  // rev the backend every time STS2 ships a new game mode (custom,
+  // ascension-limited daily, holiday event, etc.).
+  const gameMode = typeof r.gameMode === "string"
+    ? clampString(r.gameMode.toLowerCase(), 24) || undefined
+    : undefined;
+  // Modifiers: same shape as relics — bounded list of bounded strings.
+  const modifiers = Array.isArray(r.modifiers)
+    ? clampStringArr(r.modifiers, 8, 64).map((m) => m.toLowerCase()) || undefined
+    : undefined;
+  // startedAt: must parse and not be more than 5 years in the past or
+  // 1 day in the future. Anything outside that window is dropped
+  // silently so the UI falls back to endedAt.
+  let startedAt: string | undefined;
+  if (typeof r.startedAt === "string") {
+    const candidate = clampString(r.startedAt, 64);
+    const t = Date.parse(candidate);
+    if (Number.isFinite(t)) {
+      const now = Date.now();
+      const fiveYearsAgo = now - 5 * 365 * 24 * 60 * 60 * 1000;
+      const oneDayAhead = now + 24 * 60 * 60 * 1000;
+      if (t >= fiveYearsAgo && t <= oneDayAhead) startedAt = candidate;
+    }
+  }
+  const seed = typeof r.seed === "string" ? clampString(r.seed, 32) || undefined : undefined;
   return {
     character,
     ascension: Math.max(0, Math.min(20, Math.floor(clampNumber(r.ascension, 0)))),
@@ -169,6 +212,11 @@ function sanitizeRun(raw: unknown): HighlightRun | null {
     won: r.won === true,
     playTimeSeconds: Math.max(0, Math.min(60 * 60 * 12, Math.floor(clampNumber(r.playTimeSeconds, 0)))),
     endedAt,
+    startedAt,
+    gameMode,
+    wasAbandoned: r.wasAbandoned === true ? true : undefined,
+    seed,
+    modifiers: modifiers && modifiers.length > 0 ? modifiers : undefined,
     killedBy: typeof r.killedBy === "string" ? clampString(r.killedBy, 64) : undefined,
     relics: clampStringArr(r.relics, 12, 64),
     deckHighlights: clampStringArr(r.deckHighlights ?? r.deckAtEnd, 12, 64),

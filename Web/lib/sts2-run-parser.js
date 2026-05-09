@@ -98,10 +98,37 @@ export function parseSTS2Run(obj, sourceName = "unknown.run") {
     ? `sts2-${startEpoch}`
     : `sts2-${obj.seed || "noseed"}-${Math.floor(Math.random() * 1e9)}`;
 
-  const character = parseCharacter(player.character);
+  // Schema-tolerant character extraction. Older STS2 builds wrote a
+  // bare string at `players[0].character` ("CHARACTER.SILENT"). Newer
+  // builds (schema 16+) sometimes ship the character under a different
+  // key, or as a nested object with an `id` field, or lower-case it,
+  // or drop the namespace prefix entirely. Rather than guess, we walk
+  // a list of likely candidates and return on the first hit. Anything
+  // else falls through to a last-resort scan that picks any string
+  // value on the player whose lowered form matches a known character
+  // key — schema-bump-proof for the four characters we know about
+  // today and forgiving when STS2 ships a fifth.
+  const character = extractCharacter(player) || parseCharacter(player.character);
   const ascension = Number.isFinite(obj.ascension) ? Math.max(0, Math.min(20, obj.ascension | 0)) : null;
   const seed = typeof obj.seed === "string" ? obj.seed : null;
   const won = obj.win === true || obj.win === 1;
+  // STS2 `game_mode` literal — typical values "standard", "daily",
+  // "custom", "trial". We pass through whatever the file reports
+  // (lower-cased + clamped) so downstream UI can decide how to badge
+  // it without us having to ship a new client every time STS2 adds a
+  // new mode. `null` means the field was missing (older schema).
+  const rawMode = typeof obj.game_mode === "string" ? obj.game_mode.trim().toLowerCase() : "";
+  const gameMode = rawMode ? rawMode.slice(0, 24) : null;
+  const wasAbandoned = obj.was_abandoned === true || obj.was_abandoned === 1;
+  // Daily-run modifiers (from STS2 `modifiers: ["MODIFIER.DOUBLE_TIME", ...]`).
+  // Stripped of the prefix and lowercased so the UI can show pretty chips
+  // without leaking the raw STS2 namespace.
+  const modifiers = Array.isArray(obj.modifiers)
+    ? obj.modifiers
+        .map((m) => (typeof m === "string" ? stripPrefix("MODIFIER.", m).toLowerCase() : null))
+        .filter(Boolean)
+        .slice(0, 8)
+    : [];
 
   const playTimeSeconds = Number.isFinite(obj.run_time) ? obj.run_time | 0 : null;
   const startedAt = startEpoch ? new Date(startEpoch * 1000) : null;
@@ -221,6 +248,9 @@ export function parseSTS2Run(obj, sourceName = "unknown.run") {
     sourceFile: sourceName,
     schemaVersion,
     buildId,
+    gameMode,
+    wasAbandoned,
+    modifiers,
   };
 }
 
@@ -237,6 +267,48 @@ function parseCharacter(raw) {
   if (stripped === "regent" || stripped === "re" || stripped === "rg" || stripped === "watcher") return "regent";
   if (stripped === "necrobinder" || stripped === "nb" || stripped === "binder") return "necrobinder";
   if (stripped === "defect" || stripped === "df" || stripped === "de") return "defect";
+  return null;
+}
+
+// Walk a player object looking for any field that resolves to a known
+// character key. Tries the explicit fields STS2 has used or might use
+// (character, character_id, class, class_id, etc.) as both bare
+// strings and `{ id: "..." }` shapes, then falls back to scanning
+// every string value on the object. Stops at the first hit.
+//
+// This is the safety net for schema bumps: STS2 0.104 (schema 9)
+// emits `character: "CHARACTER.SILENT"`. If 0.105 (schema 16) renames
+// it to `class_id` or wraps it in an object, we want the run to
+// still surface the right character art instead of going to
+// "Unknown" until we ship a parser update.
+function extractCharacter(player) {
+  if (!player || typeof player !== "object") return null;
+  const direct = ["character", "character_id", "class", "class_id", "archetype", "playerClass"];
+  for (const key of direct) {
+    const v = player[key];
+    if (typeof v === "string") {
+      const got = parseCharacter(v);
+      if (got) return got;
+    } else if (v && typeof v === "object") {
+      const inner = typeof v.id === "string" ? v.id
+                  : typeof v.name === "string" ? v.name
+                  : typeof v.key === "string" ? v.key
+                  : null;
+      if (inner) {
+        const got = parseCharacter(inner);
+        if (got) return got;
+      }
+    }
+  }
+  // Last-resort: any string value that parses as a character. We
+  // intentionally cap the depth at one level — we don't want to
+  // recurse into deck or relics arrays.
+  for (const key of Object.keys(player)) {
+    const v = player[key];
+    if (typeof v !== "string") continue;
+    const got = parseCharacter(v);
+    if (got) return got;
+  }
   return null;
 }
 

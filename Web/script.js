@@ -68,7 +68,7 @@ const STS2_APP_ID = "2868840";
  * on an old client — instruct hard refresh. If it DOES match, the
  * bug is real and we can stop chasing cache ghosts.
  */
-const VAULT_BUILD = "v117-2026-05-09-community-highlights";
+const VAULT_BUILD = "v129-2026-05-09-touch-hover-fix";
 
 // Feature flag — set to `true` only on local dev when iterating on the
 // Run Companion Overlay. Production stays false until the feature is
@@ -467,7 +467,7 @@ const POLL_INBOX_MS         = 30_000;  // was 10_000
 const HEARTBEAT_MS          = 180_000; // was 90_000
 
 const TABS_WITH_DATA = ["overview", "characters", "ascensions", "relics", "cards", "runs"];
-const KNOWN_TABS = ["overview", "characters", "ascensions", "relics", "cards", "runs", "coop", "news", "overlay"];
+const KNOWN_TABS = ["overview", "characters", "ascensions", "relics", "cards", "runs", "coop", "news", "highlights", "settings", "overlay"];
 
 // Where the desktop app keeps history.json on each platform. These are
 // declared at the top of the module because boot code (switchTab → empty
@@ -710,15 +710,48 @@ function cardImageSrc(id) {
   return null;
 }
 
+// Hand-curated relic id aliases. STS2 `.run` files emit some relic ids
+// without the leading article (`CHOSEN_CHEESE`) while the asset library
+// concatenates the full in-game name (`thechosencheese`). The naive
+// underscore-strip fallback below catches most of these, but loses on
+// any relic whose canonical asset name starts with `the` or `a` and
+// whose `.run` id strips that article. We list those explicitly.
+//
+// To extend: drop a console.warn when an asset fails to resolve, look
+// at the slug it tried, then add an entry mapping that slug to the
+// concatenated asset filename (without the .webp extension) we already
+// ship under Web/assets/sts2/relics/.
+const RELIC_SLUG_ALIASES = Object.freeze({
+  // Daily-run / event relics that emit without the `THE_` article.
+  chosen_cheese: "thechosencheese",
+  chosencheese: "thechosencheese",
+  // Common "the_*" relics whose id form may drop the article.
+  boot: "theboot",
+  courier: "thecourier",
+  abacus: "theabacus",
+  specimen: "thespecimen",
+});
+
 function relicImageSrc(id) {
   const slug = String(id || "").trim().toLowerCase();
   if (!slug) return null;
   if (assetManifest.relics.has(slug)) return `${ASSET_BASE}/relics/${slug}.webp`;
+  // Hand-curated alias — wins over generic fallbacks because it knows
+  // the exact asset name we ship.
+  const aliased = RELIC_SLUG_ALIASES[slug];
+  if (aliased && assetManifest.relics.has(aliased)) {
+    return `${ASSET_BASE}/relics/${aliased}.webp`;
+  }
   // Most relic asset slugs are concatenated (`artofwar`, `bagofmarbles`)
   // even though STS1-era code often emitted snake_case (`art_of_war`).
   // Try the underscore-stripped form as a fallback.
   const concat = slug.replace(/_/g, "");
   if (assetManifest.relics.has(concat)) return `${ASSET_BASE}/relics/${concat}.webp`;
+  // The article-prepended form: `chosen_cheese` → `thechosencheese`.
+  // We already cover the explicit case in the alias map but keep the
+  // generic form for future relics nobody's added there yet.
+  const articled = "the" + concat;
+  if (assetManifest.relics.has(articled)) return `${ASSET_BASE}/relics/${articled}.webp`;
   // Some manifest entries collapse only the trailing words and keep one
   // leading underscore — e.g. `self_formingclay` (manifest) for input
   // `self_forming_clay`. Try every "first-N joined, rest concatenated"
@@ -1159,6 +1192,29 @@ function sendBeacon(reason, detail) {
   } catch { /* never let beacons break user flow */ }
 }
 
+/**
+ * Fire a Google Analytics 4 custom event through the gtag loader
+ * defined in `index.html`. Safe to call before gtag has finished
+ * loading — `gtag()` itself proxies through `dataLayer.push` until
+ * the loader replaces the stub. Wrapped in try/catch + a stub-check
+ * because GA must NEVER break the app: ad-blocked browsers, strict
+ * tracking-protection settings (Brave / Firefox / Safari ITP) and
+ * users with `Do Not Track` will sometimes have window.gtag missing
+ * or replaced with a no-op shim.
+ *
+ * @param {string} name  GA4 event name (snake_case, ≤40 chars)
+ * @param {object} [params]  Event parameters; values are coerced to
+ *                           strings/numbers per the GA4 schema. PII
+ *                           must NOT be included — we only ship
+ *                           ids, counts, and short labels.
+ */
+function vaultGtagEvent(name, params) {
+  try {
+    if (typeof window.gtag !== "function") return;
+    window.gtag("event", String(name).slice(0, 40), params || {});
+  } catch { /* analytics is best-effort, never user-facing */ }
+}
+
 async function refreshPublicCount() {
   const $text = document.getElementById("presence-text");
   if (!$text) return;
@@ -1296,6 +1352,11 @@ async function boot() {
       target?.scrollIntoView({ behavior: "smooth", block: "start" });
     });
   }
+  // Deep-link to a specific run via `?run=<id>`. Cold-boot opens the
+  // detail modal as soon as the in-memory parsedRuns set contains it.
+  // Late ingest is also handled — see the openDeepLinkedRunIfPresent
+  // call inside commitParsedRuns.
+  try { openDeepLinkedRunIfPresent(); } catch (e) { console.warn("deeplink boot failed", e); }
 
   // Wire the Co-op tab. Authenticated path is the normal experience;
   // guest path swaps in a sign-in prompt + read-only roster.
@@ -1350,6 +1411,11 @@ async function boot() {
 
   // Drag-drop history.json
   wireDropOverlay();
+  applyPrefs();
+  wireRunRowPreview();
+  wireHighlightsControls();
+  wirePinnedCharsDelegation();
+  wireKeyboardShortcuts();
   // "Find history.json" buttons (sidebar + every empty-state) all route here.
   // On Chromium browsers we use the File System Access API so we can remember
   // the file handle and reload with one click on subsequent visits. On Safari
@@ -1601,6 +1667,10 @@ async function boot() {
   }
 
   renderActiveTab();
+  // Initial paint of the "new run" sidebar dot — silent if no runs
+  // are loaded yet, lights up if the cached/cloud data already
+  // includes runs the user hasn't seen since their last visit.
+  refreshRunsBadge();
 
   // Cross-device sync. Two paths feed this same call:
   //   - boot with a cached IDB record: union any cloud-only runs in
@@ -1689,6 +1759,14 @@ async function boot() {
   // the modal is opened — keeps event listeners idempotent and the
   // boot sequence simpler.
   wireShareToCommunity();
+  // One global Esc + outside-click dismisser for any open reaction
+  // popover. Idempotent — repeat calls bail early via the
+  // window-level `__hightlightsGlobalWired` flag.
+  wireHighlightsGlobalDismissal();
+  // Hover/focus tooltip preview for highlight relics + cards. Single
+  // global element, delegated listeners — adding/removing cards as
+  // the feed re-renders never requires new bindings.
+  wireHighlightsTooltip();
   // Top-of-tab refresh button.
   const $hRefresh = document.getElementById("highlights-refresh");
   if ($hRefresh && !$hRefresh.dataset.wired) {
@@ -1915,9 +1993,28 @@ function switchTab(tab) {
   if (!tab) tab = "coop";
   // Overlay is hidden in production. Redirect any deep-link to overview.
   if (tab === "overlay" && !OVERLAY_NAV_VISIBLE) tab = "overview";
+  // Force-hide every floating hover surface BEFORE we hide/show panels.
+  // Production bug: a stuck highlights tooltip would bleed onto the
+  // next tab because no pointerout fired when the anchor's parent
+  // panel got `hidden`-toggled out from under it. These calls are
+  // cheap idempotent no-ops when the surfaces are already hidden.
+  try { forceHideHighlightsTooltip(); } catch {}
+  try { forceHideRunRowPreview(); } catch {}
+  try { closeAllReactionPopovers(); } catch {}
   activeTab = tab;
   localStorage.setItem(STORAGE_LAST_TAB, tab);
   syncTabUrl(tab);
+  // GA4 tab-aware page_view. We suppressed the auto-pageview in
+  // index.html so the tab name lands as the page title in real-time.
+  // page_location is set explicitly because gtag would otherwise
+  // capture the URL at script-load time (before the user's last
+  // tab was restored).
+  vaultGtagEvent("page_view", {
+    page_title: `Vault · ${tab}`,
+    page_location: typeof window !== "undefined" ? window.location.href : "",
+    page_path: `/?tab=${tab}`,
+    tab,
+  });
   document.querySelectorAll(".nav-row").forEach((b) => {
     const isActive = b.dataset.tab === tab;
     b.classList.toggle("is-active", isActive);
@@ -1947,6 +2044,30 @@ function switchTab(tab) {
   // sidebar doesn't keep nagging on every reload after they've
   // already scrolled the post.
   if (tab === "news") markLatestNewsRead();
+  // Same idea for community highlights: opening the tab counts as
+  // "seen" for every highlight currently in the feed. The sidebar
+  // dot clears immediately and won't reappear until something
+  // newer than what we just showed lands on the next poll.
+  if (tab === "highlights") markHighlightsSeen();
+  // Recent Runs: clear the unseen-dot AND opportunistically refresh
+  // from disk. Two reasons we do this on tab entry rather than only
+  // in the 60s background loop:
+  //   1) The click on the nav row is an active *user gesture*, which
+  //      is what `requestPermission()` needs to prompt for File
+  //      System Access. The background loop runs without one and
+  //      can only do silent refreshes.
+  //   2) Users routinely come straight from STS2 to this tab to see
+  //      the run they just finished. Waiting up to 60s for the next
+  //      tick feels broken even though it's working as designed.
+  // The promise is fire-and-forget — `commitParsedRuns` will rerender
+  // the active tab if anything new lands.
+  if (tab === "runs") {
+    markRunsSeen();
+    void autoReloadHistoryIfPermitted({
+      silent: true,
+      allowPermissionPrompt: true,
+    });
+  }
   renderActiveTab();
 }
 
@@ -2248,6 +2369,9 @@ function renderActiveTab() {
     startHighlightsPolling();
   } else if (activeTab === "overlay") {
     renderOverlayTab();
+  } else if (activeTab === "settings") {
+    renderSettingsTab();
+    stopHighlightsPolling();
   } else {
     // Any other tab: stop background polling for highlights so we
     // don't waste KV reads when the user isn't looking.
@@ -2754,12 +2878,496 @@ async function pullHighlights() {
     const r = await HighlightsAPI.fetchFeed(API_BASE, token);
     if (!r.ok) return;
     lastHighlights = r.items ?? [];
+    refreshHighlightsBadge();
     if (activeTab === "highlights") {
       renderHighlightsFeed(lastHighlights);
+      // The user is *currently* looking at the feed, so clear the
+      // sidebar's red dot the moment any new items finish loading
+      // — no point flagging unread items the user is staring at.
+      markHighlightsSeen();
     }
   } catch (e) {
     console.warn("highlights fetch failed", e);
   }
+}
+
+// -------------------------------------------------------------------------
+// Hover-preview tooltip — community highlight relics & cards
+//
+// One global tooltip element (#h-tooltip) is positioned next to the
+// hovered thumbnail. We deliberately use pointerenter/pointerleave on
+// document body (delegated) so adding/removing cards in the feed
+// doesn't require re-binding listeners.
+//
+// The tooltip pulls everything it needs from `data-tip-*` attributes
+// the renderer sets directly on each thumbnail. The renderer is the
+// only place that knows what each thumbnail represents — by
+// communicating through data attributes the tooltip code stays a
+// pure presentation layer.
+//
+// Touch devices: pointerenter fires on first tap, pointerleave on tap
+// elsewhere. We also listen for `scroll` and `wheel` to dismiss on
+// scroll because the tooltip's anchor would otherwise drift.
+// Reduced-motion: no entrance animation; the CSS handles that.
+// -------------------------------------------------------------------------
+let hTooltipHideTimer = null;
+
+// =========================================================================
+// Recent Runs row hover preview
+//
+// On hover (and focus), pop a rich preview card next to a run row showing
+// the most useful at-a-glance info: relic count, deck size, killed-by, top
+// relics art strip. Lets the user triage 30+ runs without opening the
+// modal. Uses the same positionTooltip() helper as the highlights tooltip
+// so behavior is consistent.
+// =========================================================================
+// Module-level state mirrors the highlights-tooltip approach so we can
+// force-hide from outside the closure on tab switch / re-render / blur.
+let runPreviewAnchor = null;
+let runPreviewHideTimer = null;
+
+function forceHideRunRowPreview() {
+  const $el = document.getElementById("run-row-preview");
+  if ($el) $el.hidden = true;
+  if (runPreviewHideTimer) {
+    clearTimeout(runPreviewHideTimer);
+    runPreviewHideTimer = null;
+  }
+  runPreviewAnchor = null;
+}
+
+function wireRunRowPreview() {
+  if (window.__runPreviewWired) return;
+  window.__runPreviewWired = true;
+
+  // Lazily create the preview element — keeps index.html clean.
+  function ensurePreviewEl() {
+    let $el = document.getElementById("run-row-preview");
+    if ($el) return $el;
+    $el = document.createElement("div");
+    $el.id = "run-row-preview";
+    $el.className = "run-preview";
+    $el.hidden = true;
+    document.body.appendChild($el);
+    return $el;
+  }
+
+  function show(row) {
+    const id = row?.dataset?.runId;
+    if (!id) return;
+    const r = parsedRuns.find((x) => String(x.id) === String(id));
+    if (!r) return;
+    const $el = ensurePreviewEl();
+    $el.innerHTML = renderRunRowPreview(r);
+    $el.hidden = false;
+    runPreviewAnchor = row;
+    positionTooltip($el, row);
+    if (runPreviewHideTimer) { clearTimeout(runPreviewHideTimer); runPreviewHideTimer = null; }
+  }
+  function hide() {
+    const $el = document.getElementById("run-row-preview");
+    if (!$el) return;
+    if (runPreviewHideTimer) clearTimeout(runPreviewHideTimer);
+    runPreviewHideTimer = setTimeout(() => {
+      $el.hidden = true;
+      runPreviewAnchor = null;
+    }, 80);
+  }
+
+  document.body.addEventListener("pointerover", (e) => {
+    const row = e.target instanceof Element ? e.target.closest('[data-run-preview="1"]') : null;
+    if (!row) return;
+    show(row);
+  });
+  document.body.addEventListener("pointerout", (e) => {
+    const row = e.target instanceof Element ? e.target.closest('[data-run-preview="1"]') : null;
+    if (!row) return;
+    const related = e.relatedTarget instanceof Node ? e.relatedTarget : null;
+    if (related && row.contains(related)) return;
+    hide();
+  });
+  // Pointermove watchdog — same defense as the highlights tooltip. If
+  // the cursor isn't over a run row anymore (cursor moved to whitespace,
+  // anchor was unmounted by an auto-refresh, etc.), force-hide.
+  document.addEventListener("pointermove", (e) => {
+    const $el = document.getElementById("run-row-preview");
+    if (!$el || $el.hidden) return;
+    const under = e.target instanceof Element ? e.target.closest('[data-run-preview="1"]') : null;
+    if (!under) {
+      forceHideRunRowPreview();
+      return;
+    }
+    if (runPreviewAnchor && !document.contains(runPreviewAnchor)) {
+      show(under);
+    }
+  });
+  document.body.addEventListener("focusin", (e) => {
+    const row = e.target instanceof Element ? e.target.closest('[data-run-preview="1"]') : null;
+    if (row) show(row);
+  });
+  document.body.addEventListener("focusout", (e) => {
+    const row = e.target instanceof Element ? e.target.closest('[data-run-preview="1"]') : null;
+    if (row) hide();
+  });
+  ["scroll", "wheel", "resize"].forEach((evt) => {
+    window.addEventListener(evt, () => forceHideRunRowPreview(), { passive: true });
+  });
+  window.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") forceHideRunRowPreview();
+  });
+  window.addEventListener("blur", () => forceHideRunRowPreview());
+}
+
+/** Build the inner HTML of the hover preview card for a run. Pure
+ *  function so the test target stays predictable; reused by both
+ *  pointerover and focusin. Showcases the data the user most cares
+ *  about when deciding whether to open the run modal. */
+function renderRunRowPreview(r) {
+  const charName = r.character ? capitalize(r.character) : "Unknown";
+  const theme = charTheme(r.character);
+  const relicArr = Array.isArray(r.relics) ? r.relics : [];
+  const deckArr = Array.isArray(r.deckAtEnd) ? r.deckAtEnd : [];
+  const won = r.won === true;
+  const abandoned = r.wasAbandoned === true;
+  const result = won ? "Victory" : abandoned ? "Abandoned" : "Defeat";
+  const resultClass = won ? "is-win" : abandoned ? "is-abandon" : "is-loss";
+  const dur = formatPlayTimeStrict(r.playTimeSeconds);
+  const killedBy = !won && !abandoned && r.killedBy ? prettifyId(r.killedBy) : "";
+  // Top 6 relic icons. We render the first six; if there are more,
+  // show a `+N` chip on the right so the count is honest.
+  const topRelics = relicArr.slice(0, 6).map((id) => {
+    const src = relicImageSrc(id);
+    const name = prettifyId(id);
+    return `
+      <li class="run-preview-relic" title="${esc(name)}">
+        ${src
+          ? `<img src="${esc(src)}" alt="" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='inline-flex'"><span class="run-preview-fallback" style="display:none">${esc(name.slice(0,2))}</span>`
+          : `<span class="run-preview-fallback">${esc(name.slice(0,2))}</span>`}
+      </li>`;
+  }).join("");
+  const moreRelics = Math.max(0, relicArr.length - 6);
+
+  return `
+    <header class="run-preview-head" style="--char-color:${theme.color}">
+      <div class="run-preview-name">
+        <strong>${esc(charName)}</strong>
+        ${Number.isFinite(r.ascension) && r.ascension > 0 ? `<span class="run-preview-asc">A${r.ascension}</span>` : ""}
+      </div>
+      <span class="run-preview-result ${resultClass}">${result}</span>
+    </header>
+    <dl class="run-preview-stats">
+      <div><dt>Floor</dt><dd>${Number.isFinite(r.floorReached) ? r.floorReached : "—"}</dd></div>
+      <div><dt>Relics</dt><dd>${relicArr.length}</dd></div>
+      <div><dt>Deck</dt><dd>${deckArr.length}</dd></div>
+      <div><dt>Time</dt><dd>${esc(dur || "—")}</dd></div>
+    </dl>
+    ${topRelics ? `
+      <div class="run-preview-relics">
+        <ul>${topRelics}</ul>
+        ${moreRelics > 0 ? `<span class="run-preview-more">+${moreRelics}</span>` : ""}
+      </div>` : ""}
+    ${killedBy ? `<p class="run-preview-killed">Killed by <strong>${esc(killedBy)}</strong></p>` : ""}
+    <p class="run-preview-hint muted small">Click row to open · Shift-click to copy link</p>
+  `;
+}
+
+// Module-level anchor tracking lets `forceHideHighlightsTooltip()` (called
+// from switchTab and feed re-renders) yank the tooltip down even when the
+// pointer hasn't moved off a now-removed card. Without this, a background
+// poll that swaps the card under the cursor leaves the tooltip stuck open
+// — and switching tabs while it's stuck made it bleed onto other pages.
+let hTooltipAnchor = null;
+
+function forceHideHighlightsTooltip() {
+  const $tip = document.getElementById("h-tooltip");
+  if ($tip) $tip.hidden = true;
+  if (hTooltipHideTimer) {
+    clearTimeout(hTooltipHideTimer);
+    hTooltipHideTimer = null;
+  }
+  hTooltipAnchor = null;
+}
+
+function wireHighlightsTooltip() {
+  if (window.__hTooltipWired) return;
+  window.__hTooltipWired = true;
+  const $tip = document.getElementById("h-tooltip");
+  if (!$tip) return;
+
+  const showFor = (el) => {
+    const kind = el.getAttribute("data-tip-kind") || "";
+    const name = el.getAttribute("data-tip-name") || "";
+    const art = el.getAttribute("data-tip-art") || "";
+    const cls = el.getAttribute("data-tip-class") || "";
+    const upgraded = el.getAttribute("data-tip-upgraded") === "1";
+    const $art = document.getElementById("h-tooltip-art");
+    const $name = document.getElementById("h-tooltip-name");
+    const $sub = document.getElementById("h-tooltip-sub");
+    if (!$art || !$name || !$sub) return;
+    if (art) {
+      $art.src = art;
+      $art.hidden = false;
+    } else {
+      $art.removeAttribute("src");
+      $art.hidden = true;
+    }
+    $name.textContent = name;
+    // Sub-line: `Card · Ironclad +1` / `Card · Silent` / `Relic`. The
+    // upgraded chip is appended only when the card slug ended with the
+    // `_plus` / `+1` suffix.
+    if (kind === "card") {
+      const parts = ["Card"];
+      if (cls) parts.push(cls);
+      if (upgraded) parts.push("+1");
+      $sub.textContent = parts.join(" · ");
+    } else if (kind === "relic") {
+      $sub.textContent = "Relic";
+    } else {
+      $sub.textContent = "";
+    }
+    $tip.dataset.kind = kind;
+    $tip.hidden = false;
+    hTooltipAnchor = el;
+    positionTooltip($tip, el);
+    if (hTooltipHideTimer) {
+      clearTimeout(hTooltipHideTimer);
+      hTooltipHideTimer = null;
+    }
+  };
+
+  const hide = () => {
+    if (hTooltipHideTimer) clearTimeout(hTooltipHideTimer);
+    // Tiny grace period — without it, moving from one thumbnail to
+    // an adjacent one flickers the tooltip off and on for one frame.
+    hTooltipHideTimer = setTimeout(() => {
+      $tip.hidden = true;
+      hTooltipAnchor = null;
+    }, 60);
+  };
+
+  // pointerover/pointerout (rather than pointerenter/pointerleave)
+  // because they bubble — required for delegation. The closest()
+  // check filters down to actual `.h-tip` descendants.
+  document.body.addEventListener("pointerover", (e) => {
+    const target = e.target instanceof Element ? e.target.closest(".h-tip") : null;
+    if (!target) return;
+    showFor(target);
+  });
+  document.body.addEventListener("pointerout", (e) => {
+    const target = e.target instanceof Element ? e.target.closest(".h-tip") : null;
+    if (!target) return;
+    // Don't hide if pointer entered a child of the same target.
+    const related = e.relatedTarget instanceof Node ? e.relatedTarget : null;
+    if (related && target.contains(related)) return;
+    hide();
+  });
+  // Watchdog: every pointer move on the document re-checks whether the
+  // pointer is still over a `.h-tip`. Production showed two failure
+  // modes the pointerout handler couldn't catch:
+  //   1) Anchor removed from the DOM (background feed poll re-rendered
+  //      cards while hovered) — pointerout never fires for a detached
+  //      element, so the tooltip used to wedge open.
+  //   2) Cursor exits via the document edge — some browsers don't fire
+  //      pointerout reliably when the pointer leaves the viewport.
+  // This handler is deliberately *not* throttled: it's a single
+  // closest() lookup, cheaper than a `requestAnimationFrame` would be.
+  document.addEventListener("pointermove", (e) => {
+    if ($tip.hidden) return;
+    const under = e.target instanceof Element ? e.target.closest(".h-tip") : null;
+    if (!under) {
+      forceHideHighlightsTooltip();
+      return;
+    }
+    // If the anchor element was removed (re-render under the cursor),
+    // re-anchor to whatever's under the pointer now.
+    if (hTooltipAnchor && !document.contains(hTooltipAnchor)) {
+      showFor(under);
+    }
+  });
+  // Keyboard nav: focus a thumbnail to see the tooltip; blur dismisses.
+  document.body.addEventListener("focusin", (e) => {
+    const target = e.target instanceof Element ? e.target.closest(".h-tip") : null;
+    if (!target) return;
+    showFor(target);
+  });
+  document.body.addEventListener("focusout", (e) => {
+    const target = e.target instanceof Element ? e.target.closest(".h-tip") : null;
+    if (!target) return;
+    hide();
+  });
+  // Click-to-blur on tooltip-able thumbnails. Production bug: clicking
+  // a relic/card thumbnail (which is `tabindex="0"` for keyboard a11y)
+  // would land focus on it, and the orange-ring `:focus-visible` style
+  // would persist after the cursor moved off — looking exactly like
+  // a stuck hover. Solution: actively blur whatever a click landed on
+  // inside a `.h-tip`. Keyboard navigation still works (Tab + Enter)
+  // because keydown→focus paths don't go through this handler.
+  document.body.addEventListener("click", (e) => {
+    const tip = e.target instanceof Element ? e.target.closest(".h-tip") : null;
+    if (!tip) return;
+    if (typeof tip.blur === "function") tip.blur();
+    forceHideHighlightsTooltip();
+  });
+  // Touch-device safety net: a tap activates `:hover` on iOS/Safari
+  // and never clears it until the user taps elsewhere. We force-hide
+  // the floating tooltip on every touchend so a tapped relic doesn't
+  // leave its preview wedged open at an old position. The CSS hover
+  // gate (@media hover:hover) handles the lift/glow side; this
+  // handles the JS-driven preview side.
+  document.body.addEventListener("touchend", () => {
+    forceHideHighlightsTooltip();
+  }, { passive: true });
+  // Dismiss on scroll/wheel/resize so the tooltip never drifts away
+  // from its anchor element.
+  ["scroll", "wheel", "resize"].forEach((evt) => {
+    window.addEventListener(evt, () => { forceHideHighlightsTooltip(); }, { passive: true });
+  });
+  // Esc dismisses.
+  window.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") forceHideHighlightsTooltip();
+  });
+  // Window blur (alt-tab, system app switch, etc.) — no pointer events
+  // fire while the tab is in the background, so a stuck tooltip would
+  // outlive the user's intent. Nuke on blur to be safe.
+  window.addEventListener("blur", () => forceHideHighlightsTooltip());
+}
+
+function positionTooltip($tip, anchor) {
+  const rect = anchor.getBoundingClientRect();
+  // Render hidden first to measure, then place.
+  $tip.style.left = "0px";
+  $tip.style.top = "0px";
+  const tipRect = $tip.getBoundingClientRect();
+  const margin = 10;
+  const viewportW = window.innerWidth;
+  const viewportH = window.innerHeight;
+  // Default placement: right of the anchor, vertically centered.
+  let left = rect.right + margin;
+  let top = rect.top + rect.height / 2 - tipRect.height / 2;
+  // Flip horizontally if it would overflow the right edge.
+  if (left + tipRect.width + margin > viewportW) {
+    left = rect.left - tipRect.width - margin;
+  }
+  // If still out of bounds (very narrow viewport), fall back to
+  // below-the-anchor placement so the tooltip stays on-screen.
+  if (left < margin) {
+    left = Math.max(margin, Math.min(viewportW - tipRect.width - margin, rect.left));
+    top = rect.bottom + margin;
+    // If below would clip the bottom, place above instead.
+    if (top + tipRect.height + margin > viewportH) {
+      top = rect.top - tipRect.height - margin;
+    }
+  }
+  // Vertical clamp.
+  if (top < margin) top = margin;
+  if (top + tipRect.height + margin > viewportH) {
+    top = viewportH - tipRect.height - margin;
+  }
+  $tip.style.left = `${Math.round(left)}px`;
+  $tip.style.top = `${Math.round(top)}px`;
+}
+
+// -------------------------------------------------------------------------
+// "New runs" sidebar dot
+//
+// Lights the red dot on the Recent Runs nav row when STS2 has written
+// a run that finished after the timestamp of the last time the user
+// opened that tab. Persisted across reloads via localStorage, so a
+// fresh page-load in the middle of a play session still highlights
+// the run that just landed.
+//
+// Unlike the Highlights dot (which excludes self-authored items), the
+// Runs dot specifically signals *your own* fresh runs — that's the
+// whole point. STS2 writes the run; we want to scream about it.
+// -------------------------------------------------------------------------
+const STORAGE_RUNS_LAST_SEEN_AT = "vault.web.runs.lastSeenAt";
+
+function newestRunEndedAt() {
+  let max = 0;
+  for (const r of parsedRuns || []) {
+    const t = r?.endedAt?.getTime?.() ?? 0;
+    if (t > max) max = t;
+  }
+  return max;
+}
+
+function refreshRunsBadge() {
+  const $badge = document.getElementById("nav-runs-count");
+  if (!$badge) return;
+  // Demo data should not light the badge — there's nothing real for
+  // the user to "see". Once a live import lands, isDemoMode flips
+  // and the next refreshRunsBadge() call will start tracking real
+  // run timestamps.
+  if (isDemoMode || !Array.isArray(parsedRuns) || parsedRuns.length === 0) {
+    $badge.hidden = true;
+    return;
+  }
+  let lastSeen = 0;
+  try { lastSeen = Number(localStorage.getItem(STORAGE_RUNS_LAST_SEEN_AT)) || 0; } catch {}
+  const newestAt = newestRunEndedAt();
+  $badge.hidden = !(newestAt > lastSeen);
+}
+
+function markRunsSeen() {
+  if (!Array.isArray(parsedRuns) || parsedRuns.length === 0) return;
+  const newest = newestRunEndedAt();
+  try { localStorage.setItem(STORAGE_RUNS_LAST_SEEN_AT, String(newest)); } catch {}
+  const $badge = document.getElementById("nav-runs-count");
+  if ($badge) $badge.hidden = true;
+}
+
+// -------------------------------------------------------------------------
+// "New highlights" sidebar dot
+//
+// Red dot on the Highlights nav row when at least one highlight authored
+// by someone *other than you* is newer than the timestamp of the last
+// time you opened the tab. Persists across reloads via localStorage so
+// closing the page doesn't reset the unread state.
+//
+// Why "from others" only: posts you make yourself shouldn't trigger your
+// own unread badge. Otherwise refreshing the feed right after sharing
+// would always nag you.
+// -------------------------------------------------------------------------
+const STORAGE_HIGHLIGHTS_LAST_SEEN = "vault.web.highlights.lastSeenAt";
+
+function newestOtherAuthoredAt(items) {
+  const me = session?.steamID;
+  let max = 0;
+  for (const h of items || []) {
+    if (h.authorID && me && h.authorID === me) continue;
+    const t = Date.parse(h.createdAt) || 0;
+    if (t > max) max = t;
+  }
+  return max;
+}
+
+function refreshHighlightsBadge() {
+  const $badge = document.getElementById("nav-highlights-count");
+  if (!$badge) return;
+  if (!Array.isArray(lastHighlights) || lastHighlights.length === 0) {
+    $badge.hidden = true;
+    return;
+  }
+  let lastSeen = 0;
+  try { lastSeen = Number(localStorage.getItem(STORAGE_HIGHLIGHTS_LAST_SEEN)) || 0; } catch {}
+  const newestAt = newestOtherAuthoredAt(lastHighlights);
+  $badge.hidden = !(newestAt > lastSeen);
+}
+
+function markHighlightsSeen() {
+  if (!Array.isArray(lastHighlights) || lastHighlights.length === 0) return;
+  // Use the absolute newest createdAt (across all authors) so any future
+  // poll that brings in a newer post — by anyone — will re-light the
+  // badge cleanly. The "from others" rule is applied at *display* time
+  // by refreshHighlightsBadge().
+  let newest = 0;
+  for (const h of lastHighlights) {
+    const t = Date.parse(h.createdAt) || 0;
+    if (t > newest) newest = t;
+  }
+  try { localStorage.setItem(STORAGE_HIGHLIGHTS_LAST_SEEN, String(newest)); } catch {}
+  const $badge = document.getElementById("nav-highlights-count");
+  if ($badge) $badge.hidden = true;
 }
 
 function startHighlightsPolling() {
@@ -2780,11 +3388,129 @@ function stopHighlightsPolling() {
  *  populated (feed). Reactions and comment threads are wired via a
  *  single delegated click handler on the feed container — see
  *  wireHighlightsFeedDelegation. */
+// -------------------------------------------------------------------------
+// Highlights filter + sort
+//
+// Filter chips: All / Mine / This week / Featured.
+// Sort dropdown: Newest / Most reactions / Most comments / Highest floor.
+//
+// State lives in localStorage so a returning visitor lands on the same
+// view they had configured. The full server payload is kept in
+// `lastHighlights` and we re-derive the visible slice on every render
+// so filter/sort never goes stale relative to the cached payload.
+// -------------------------------------------------------------------------
+const HIGHLIGHTS_FILTER_KEY = "vault.web.highlights.filter";
+const HIGHLIGHTS_SORT_KEY = "vault.web.highlights.sort";
+
+function getHighlightsFilter() {
+  try { return localStorage.getItem(HIGHLIGHTS_FILTER_KEY) || "all"; } catch { return "all"; }
+}
+function setHighlightsFilter(v) {
+  try { localStorage.setItem(HIGHLIGHTS_FILTER_KEY, v); } catch {}
+}
+function getHighlightsSort() {
+  try { return localStorage.getItem(HIGHLIGHTS_SORT_KEY) || "recent"; } catch { return "recent"; }
+}
+function setHighlightsSort(v) {
+  try { localStorage.setItem(HIGHLIGHTS_SORT_KEY, v); } catch {}
+}
+
+/** Apply the user's current filter + sort to the cached server
+ *  payload. Pure: doesn't mutate the original array. */
+function filterAndSortHighlights(items) {
+  if (!Array.isArray(items)) return [];
+  const filter = getHighlightsFilter();
+  const sort = getHighlightsSort();
+  const myID = session?.steamID || "";
+  const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+
+  const filtered = items.filter((h) => {
+    if (filter === "mine") return myID && String(h.authorID) === String(myID);
+    if (filter === "week") return Number(h.createdAt) >= weekAgo;
+    if (filter === "featured") {
+      const total = Object.values(h.reactions || {}).reduce((s, n) => s + (Number(n) || 0), 0);
+      return total >= 5;
+    }
+    return true;
+  });
+
+  const sorted = filtered.slice();
+  if (sort === "reactions") {
+    sorted.sort((a, b) => {
+      const ra = Object.values(a.reactions || {}).reduce((s, n) => s + (Number(n) || 0), 0);
+      const rb = Object.values(b.reactions || {}).reduce((s, n) => s + (Number(n) || 0), 0);
+      return rb - ra || (b.createdAt || 0) - (a.createdAt || 0);
+    });
+  } else if (sort === "comments") {
+    sorted.sort((a, b) => {
+      const ca = Number(a.commentCount || 0);
+      const cb = Number(b.commentCount || 0);
+      return cb - ca || (b.createdAt || 0) - (a.createdAt || 0);
+    });
+  } else if (sort === "floor") {
+    sorted.sort((a, b) => {
+      const fa = Number(a.run?.floorReached || 0);
+      const fb = Number(b.run?.floorReached || 0);
+      return fb - fa || (b.createdAt || 0) - (a.createdAt || 0);
+    });
+  } else {
+    sorted.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  }
+  return sorted;
+}
+
+/** One-time wiring for the highlights filter chips + sort select.
+ *  Called from boot(). The controls live in the panel-head defined in
+ *  index.html so they're always present even before the first render. */
+function wireHighlightsControls() {
+  document.querySelectorAll(".h-filter-chip[data-h-filter]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      setHighlightsFilter(btn.getAttribute("data-h-filter") || "all");
+      renderHighlightsFeed(lastHighlights);
+    });
+  });
+  const $sort = document.getElementById("h-sort-select");
+  if ($sort) {
+    $sort.value = getHighlightsSort();
+    $sort.addEventListener("change", () => {
+      setHighlightsSort($sort.value || "recent");
+      renderHighlightsFeed(lastHighlights);
+    });
+  }
+}
+
+/** Reflect the current filter/sort state in the controls' visual state.
+ *  Called every render so a programmatic state change is always
+ *  visible in the chip pressed state. */
+function syncHighlightsControlsUI() {
+  const filter = getHighlightsFilter();
+  document.querySelectorAll(".h-filter-chip[data-h-filter]").forEach((btn) => {
+    const matches = (btn.getAttribute("data-h-filter") || "all") === filter;
+    btn.classList.toggle("is-active", matches);
+    btn.setAttribute("aria-pressed", matches ? "true" : "false");
+  });
+  const $sort = document.getElementById("h-sort-select");
+  if ($sort && $sort.value !== getHighlightsSort()) {
+    $sort.value = getHighlightsSort();
+  }
+}
+
 function renderHighlightsFeed(items) {
   const $feed = document.getElementById("highlights-feed");
   if (!$feed) return;
   $feed.setAttribute("aria-busy", "false");
-  if (!Array.isArray(items) || items.length === 0) {
+  // Re-rendering the feed unmounts every `.h-tip` anchor; without an
+  // explicit hide here, a tooltip that was visible at render time
+  // would persist forever (its anchor is gone, no pointerout fires).
+  try { forceHideHighlightsTooltip(); } catch {}
+  // Keep the full payload as the source of truth so re-renders triggered
+  // by filter/sort changes always have everything to work with.
+  if (Array.isArray(items)) lastHighlights = items;
+  syncHighlightsControlsUI();
+
+  const visible = filterAndSortHighlights(lastHighlights);
+
+  if (!Array.isArray(lastHighlights) || lastHighlights.length === 0) {
     $feed.innerHTML = `
       <div class="highlights-empty">
         <p><strong>No highlights yet.</strong></p>
@@ -2792,105 +3518,378 @@ function renderHighlightsFeed(items) {
       </div>`;
     return;
   }
-  $feed.innerHTML = items.map(renderHighlightCard).join("");
+
+  if (visible.length === 0) {
+    const filter = getHighlightsFilter();
+    const emptyCopy = filter === "mine"
+      ? "You haven't shared a highlight yet. Open a run from Recent Runs and hit <em>Share</em>."
+      : filter === "week"
+        ? "Nothing new in the last 7 days. Try <em>All</em> to see the full feed."
+        : filter === "featured"
+          ? "No featured highlights yet — those are runs with 5+ reactions."
+          : "No highlights match this view.";
+    $feed.innerHTML = `
+      <div class="highlights-empty">
+        <p><strong>Nothing here.</strong></p>
+        <p class="muted">${emptyCopy}</p>
+      </div>`;
+    return;
+  }
+
+  $feed.innerHTML = visible.map(renderHighlightCard).join("");
   wireHighlightsFeedDelegation($feed);
+  // Deep-link spotlight: when the URL hash is `#h-<id>` on first
+  // render of the feed, scroll that card into view and pulse a
+  // spotlight glow. We do this once per `#h-` hash; subsequent
+  // re-renders (background poll updates) shouldn't keep yanking
+  // the user back to that card.
+  spotlightDeepLinkedHighlight($feed);
+}
+
+let _lastSpotlightHash = "";
+function spotlightDeepLinkedHighlight($feed) {
+  const hash = (window.location.hash || "").replace(/^#/, "");
+  if (!hash || !hash.startsWith("h-")) return;
+  if (hash === _lastSpotlightHash) return;
+  _lastSpotlightHash = hash;
+  // rAF gives the browser a moment to lay out the freshly-injected
+  // article before we scroll. Without it, smooth scroll occasionally
+  // overshoots because the layout pass landed mid-flight.
+  requestAnimationFrame(() => {
+    const $card = document.getElementById(hash);
+    if (!$card) return;
+    $card.scrollIntoView({ behavior: "smooth", block: "start" });
+    $card.classList.add("is-spotlighted");
+    setTimeout(() => $card.classList.remove("is-spotlighted"), 2200);
+  });
 }
 
 /** One feed card. The whole card is a single static HTML render — no
- *  per-card listeners. The reaction strip is a row of buttons (one per
- *  emoji in the curated set), comment box renders its own form, and a
- *  delete button shows for the author. */
+ *  per-card listeners. Reactions live behind a popover trigger so the
+ *  card foot stays calm; chips appear inline only for emojis with at
+ *  least one reaction. Comments box renders its own form. No delete
+ *  button — once shared, a highlight is a community artifact. */
 function renderHighlightCard(h) {
   const run = h.run || {};
-  const characterLabel = prettifyCharacter(run.character);
-  const result = run.won ? "Win" : "Loss";
-  const resultClass = run.won ? "h-pill-win" : "h-pill-loss";
-  const ascLabel = `A${run.ascension ?? 0}`;
-  const floorLabel = run.won ? "→ kill" : `Floor ${run.floorReached ?? 0}`;
-  const time = formatRunDuration(run.playTimeSeconds);
+  const characterKey = String(run.character || "").toLowerCase();
+  const characterLabel = prettifyCharacterName(run.character);
   const ago = formatRelativeActive(h.createdAt);
-  const isAuthor = !!session?.steamID && session.steamID === h.authorID;
   const isAuthed = !!session?.sessionToken;
   const viewerSet = new Set(h.viewerReactions || []);
+  const heroArt = characterImageSrc(run.character);
+  // Derive a result label that's honest about what happened. Three cases:
+  //   1. won           → Victory
+  //   2. wasAbandoned  → Abandoned (player quit; not the same as a loss)
+  //   3. otherwise     → Defeat
+  let resultLabel, resultClass;
+  if (run.won) { resultLabel = "Victory"; resultClass = "is-win"; }
+  else if (run.wasAbandoned) { resultLabel = "Abandoned"; resultClass = "is-abandoned"; }
+  else { resultLabel = "Defeat"; resultClass = "is-loss"; }
+  const ascLabel = `Ascension ${run.ascension ?? 0}`;
+  // Daily-run detection: trust the `gameMode` field if present.
+  // Fallback: highlights shared before we wired the field through can
+  // still be rescued by checking the user-supplied caption for the
+  // word "daily" (case-insensitive). The fallback ONLY applies when
+  // the server returned no game_mode at all, so it can't mis-tag a
+  // standard run whose author happened to mention dailies in passing.
+  const explicitMode = typeof run.gameMode === "string" ? run.gameMode.toLowerCase() : "";
+  const captionStr = typeof h.caption === "string" ? h.caption.toLowerCase() : "";
+  const captionImpliesDaily = !explicitMode && /\bdaily\b/.test(captionStr);
+  const gameMode = explicitMode || (captionImpliesDaily ? "daily" : "");
+  const isDaily = gameMode === "daily";
+  const isCustom = gameMode === "custom" || gameMode === "trial";
+  const startDate = run.startedAt ? new Date(run.startedAt) : null;
+  const dailyDateLabel = startDate && !Number.isNaN(startDate.getTime())
+    ? startDate.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })
+    : null;
+  const floorLabel = run.won
+    ? `Cleared on Floor ${run.floorReached ?? 0}`
+    : run.wasAbandoned
+      ? `Abandoned on Floor ${run.floorReached ?? 0}`
+      : `Fell on Floor ${run.floorReached ?? 0}`;
+  const runTime = formatHighlightDuration(run.playTimeSeconds);
+  const killedBy = !run.won && !run.wasAbandoned && run.killedBy
+    ? prettifyId(run.killedBy)
+    : null;
+  const totalReactions = Object.values(h.reactions || {})
+    .reduce((s, n) => s + (Number(n) || 0), 0);
+  const featured = totalReactions >= 5;
+  // Modifiers: pretty-printed snake_case to Title Case. Cap at 4 chips
+  // visible to keep the hero card from running riot.
+  const modifierChips = Array.isArray(run.modifiers) && run.modifiers.length > 0
+    ? run.modifiers.slice(0, 4).map((m) => prettifyId(m))
+    : [];
 
-  const relics = (run.relics || []).slice(0, 8).map((id) => `
-    <li class="h-relic" title="${esc(prettifyId(id))}">
-      <img src="${esc(relicImageSrc(id))}" alt="" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='inline'">
-      <span class="h-relic-fallback" style="display:none">${esc(prettifyId(id))}</span>
-    </li>`).join("");
-  const moreRelics = Math.max(0, (run.relics || []).length - 8);
-
-  const cards = (run.deckHighlights || []).slice(0, 8).map((id) => `
-    <li class="h-card" title="${esc(prettifyId(id))}">
-      <img src="${esc(cardImageSrc(id))}" alt="" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='inline'">
-      <span class="h-card-fallback" style="display:none">${esc(prettifyId(id))}</span>
-    </li>`).join("");
-  const moreCards = Math.max(0, (run.deckHighlights || []).length - 8);
-
-  const reactionStrip = HighlightsAPI.ALLOWED_REACTIONS.map((emoji) => {
-    const count = h.reactions?.[emoji] ?? 0;
-    const pressed = viewerSet.has(emoji);
+  // Relics + cards: render the FULL set the server returned. The
+  // backend already caps each at 12, so there's no risk of an
+  // unbounded strip blowing out the card. We deliberately avoid the
+  // earlier "+N more" truncation — the user's whole point of sharing
+  // a run is that someone wants to see what was in it.
+  //
+  // Each tile renders the image when our local manifest knows about
+  // it; otherwise (or on a 404) we show a tiny text fallback. The
+  // hidden fallback span is a sibling of the <img>, swapped in via
+  // a minimal onerror handler — keeps the markup safe (no caller-
+  // supplied strings interpolated into JS).
+  // Relic tiles. Each carries the data attributes the global hover-
+  // tooltip handler reads to position a floating preview card showing
+  // the full relic art at a readable size — replaces the OS-native
+  // `title` tooltip which was both slow to appear and visually ugly.
+  // We KEEP `title` as a graceful fallback for users with reduced
+  // motion / keyboard nav and as a screen-reader hint.
+  const relicItems = (run.relics || []).map((id) => {
+    const src = relicImageSrc(id);
+    const name = prettifyId(id);
     return `
-      <button
-        class="h-reaction ${pressed ? "is-on" : ""}"
-        type="button"
-        data-h-action="react"
-        data-h-id="${esc(h.id)}"
-        data-emoji="${esc(emoji)}"
-        aria-pressed="${pressed ? "true" : "false"}"
-        ${!isAuthed ? "disabled title='Sign in to react'" : ""}>
-        <span class="h-reaction-emoji">${emoji}</span>
-        ${count > 0 ? `<span class="h-reaction-count">${count}</span>` : ""}
-      </button>`;
+      <li class="h-relic h-tip" tabindex="0"
+          data-tip-kind="relic"
+          data-tip-name="${esc(name)}"
+          data-tip-art="${esc(src || "")}"
+          aria-label="${esc(name)}"
+          title="${esc(name)}">
+        ${src
+          ? `<img src="${esc(src)}" alt="" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='inline-flex'">
+             <span class="h-icon-fallback" style="display:none">${esc(name)}</span>`
+          : `<span class="h-icon-fallback">${esc(name)}</span>`}
+      </li>`;
   }).join("");
+
+  const cardItems = (run.deckHighlights || []).map((id) => {
+    const src = cardImageSrc(id);
+    const name = prettifyId(id);
+    // The card class prefix is the most informative metadata we can
+    // surface without shipping a description manifest. Strip the slug
+    // back to its class token (`ironclad_strike` → `Ironclad`) and
+    // expose it as an extra hover-tooltip line.
+    const slugClass = String(id || "").split("_")[0] || "";
+    const classLabel = CLASS_PREFIXES.has(slugClass) ? prettifyId(slugClass) : "";
+    const upgraded = String(id || "").endsWith("+1") || String(id || "").endsWith("_plus");
+    return `
+      <li class="h-card h-tip" tabindex="0"
+          data-tip-kind="card"
+          data-tip-name="${esc(name)}"
+          data-tip-class="${esc(classLabel)}"
+          data-tip-upgraded="${upgraded ? "1" : "0"}"
+          data-tip-art="${esc(src || "")}"
+          aria-label="${esc(name)}"
+          title="${esc(name)}">
+        ${src
+          ? `<img src="${esc(src)}" alt="" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='inline-flex'">
+             <span class="h-icon-fallback" style="display:none">${esc(name)}</span>`
+          : `<span class="h-icon-fallback">${esc(name)}</span>`}
+      </li>`;
+  }).join("");
+
+  // Inline chips: one per emoji that has at least one reaction.
+  // Clicking a chip toggles the user's reaction with that emoji
+  // (server treats it the same as picking from the popover).
+  const summaryChips = HighlightsAPI.ALLOWED_REACTIONS
+    .map((emoji) => {
+      const count = h.reactions?.[emoji] ?? 0;
+      if (count <= 0) return "";
+      const pressed = viewerSet.has(emoji);
+      return `
+        <li>
+          <button
+            class="h-reaction-chip ${pressed ? "is-on" : ""}"
+            type="button"
+            data-h-action="react"
+            data-h-id="${esc(h.id)}"
+            data-emoji="${esc(emoji)}"
+            aria-pressed="${pressed ? "true" : "false"}"
+            aria-label="${pressed ? "Remove" : "Add"} reaction ${esc(emoji)}, currently ${count}"
+            ${!isAuthed ? "disabled title='Sign in to react'" : ""}>
+            <span class="h-reaction-emoji">${emoji}</span>
+            <span class="h-reaction-count">${count}</span>
+          </button>
+        </li>`;
+    })
+    .filter(Boolean)
+    .join("");
+
+  // Popover: full curated set. Each option marks "is-on" if the user
+  // has already reacted with it so they can see + remove via the
+  // popover too.
+  const popoverItems = HighlightsAPI.ALLOWED_REACTIONS
+    .map((emoji) => {
+      const pressed = viewerSet.has(emoji);
+      return `
+        <button
+          class="h-react-popover-item ${pressed ? "is-on" : ""}"
+          type="button"
+          role="menuitem"
+          data-h-action="react"
+          data-h-id="${esc(h.id)}"
+          data-emoji="${esc(emoji)}"
+          aria-pressed="${pressed ? "true" : "false"}"
+          ${!isAuthed ? "disabled title='Sign in to react'" : ""}>
+          ${emoji}
+        </button>`;
+    })
+    .join("");
 
   const commentTeaser = h.commentCount > 0
     ? `${h.commentCount} comment${h.commentCount === 1 ? "" : "s"}`
-    : "Add a comment";
+    : "Comment";
+
+  // Hero banner: character art bleeds across the whole card top, with
+  // a graphic-novel feel — character key colors as gradient, big result
+  // label, mode-aware sub-headline.
+  //
+  // Daily / custom runs get a dedicated badge above the character name
+  // so the user immediately sees "this isn't a standard run" at a
+  // glance. The badge uses the run's startedAt date because that's the
+  // canonical "Daily Run for [date]" anchor in STS2 — endedAt could
+  // bleed into the next day for a long session, which would be wrong.
+  let heroBadge = "";
+  if (isDaily) {
+    heroBadge = `<span class="h-mode-badge h-mode-daily" title="Daily challenge run">
+      <span class="h-mode-icon" aria-hidden="true">★</span>
+      <span>Daily Run${dailyDateLabel ? ` · ${esc(dailyDateLabel)}` : ""}</span>
+    </span>`;
+  } else if (isCustom) {
+    heroBadge = `<span class="h-mode-badge h-mode-custom" title="Custom / trial run">
+      <span class="h-mode-icon" aria-hidden="true">⚙︎</span>
+      <span>${esc(prettifyId(gameMode))}</span>
+    </span>`;
+  }
+  const modifiersLine = modifierChips.length > 0
+    ? `<ul class="h-modifier-strip" aria-label="Run modifiers">
+        ${modifierChips.map((m) => `<li class="h-modifier-chip">${esc(m)}</li>`).join("")}
+      </ul>`
+    : "";
+  const heroBlock = `
+    <div class="h-hero" data-character="${esc(characterKey)}" data-result="${run.won ? "win" : run.wasAbandoned ? "abandoned" : "loss"}" data-mode="${esc(gameMode)}">
+      ${heroArt
+        ? `<img class="h-hero-art" src="${esc(heroArt)}" alt="" loading="lazy" />`
+        : ""}
+      <div class="h-hero-tint" aria-hidden="true"></div>
+      <div class="h-hero-text">
+        <div class="h-hero-row1">
+          <span class="h-hero-result ${resultClass}">${esc(resultLabel)}</span>
+          ${heroBadge}
+          ${featured ? `<span class="h-hero-featured" title="Lots of reactions">★ Featured</span>` : ""}
+        </div>
+        <h3 class="h-hero-character">
+          ${esc(characterLabel)}
+          ${isDaily ? "" : `<span class="h-hero-asc">${esc(ascLabel)}</span>`}
+        </h3>
+        <p class="h-hero-meta">
+          <span>${esc(floorLabel)}</span>
+          <span class="h-hero-sep" aria-hidden="true">•</span>
+          <span>${esc(runTime)}</span>
+          ${killedBy ? `
+            <span class="h-hero-sep" aria-hidden="true">•</span>
+            <span class="h-hero-killer">Killed by ${esc(killedBy)}</span>
+          ` : ""}
+        </p>
+        ${modifiersLine}
+      </div>
+    </div>`;
 
   return `
-    <article class="h-card-root" data-h-id="${esc(h.id)}" data-h-author="${esc(h.authorID)}">
+    <article class="h-card-root" id="h-${esc(h.id)}" data-h-id="${esc(h.id)}" data-h-author="${esc(h.authorID)}" data-character="${esc(characterKey)}">
+      ${heroBlock}
+
       <header class="h-card-head">
         <img class="h-author-avatar" alt="" src="${esc(h.authorAvatar || "/assets/vault-mark.svg")}" />
         <div class="h-author-meta">
           <strong>${esc(h.authorPersona || "Steam User")}</strong>
           <span class="muted small">${esc(ago)}</span>
         </div>
-        ${isAuthor ? `
-          <button class="h-card-menu" type="button" data-h-action="delete" data-h-id="${esc(h.id)}" aria-label="Delete this highlight" title="Delete this highlight">×</button>
-        ` : ""}
       </header>
 
-      ${h.caption ? `<p class="h-caption">${esc(h.caption)}</p>` : ""}
+      ${h.caption ? `<blockquote class="h-caption">${esc(h.caption)}</blockquote>` : ""}
 
-      <div class="h-run-summary">
-        <span class="h-pill h-pill-character" data-character="${esc(run.character || "")}">${esc(characterLabel)}</span>
-        <span class="h-pill">${esc(ascLabel)}</span>
-        <span class="h-pill ${resultClass}">${esc(result)}</span>
-        <span class="h-pill h-pill-ghost">${esc(floorLabel)}</span>
-        <span class="h-pill h-pill-ghost">${esc(time)}</span>
-      </div>
+      <dl class="h-stat-grid">
+        ${isDaily
+          ? `<div class="h-stat">
+              <dt class="h-stat-label">Mode</dt>
+              <dd class="h-stat-num h-stat-num-sm">Daily</dd>
+            </div>`
+          : `<div class="h-stat">
+              <dt class="h-stat-label">Ascension</dt>
+              <dd class="h-stat-num">A${run.ascension ?? 0}</dd>
+            </div>`}
+        <div class="h-stat">
+          <dt class="h-stat-label">${run.won ? "Cleared at floor" : run.wasAbandoned ? "Quit on floor" : "Final floor"}</dt>
+          <dd class="h-stat-num">${run.floorReached ?? 0}</dd>
+        </div>
+        <div class="h-stat">
+          <dt class="h-stat-label">Run time</dt>
+          <dd class="h-stat-num">${esc(runTime)}</dd>
+        </div>
+        ${killedBy ? `
+          <div class="h-stat">
+            <dt class="h-stat-label">Killed by</dt>
+            <dd class="h-stat-num h-stat-num-sm">${esc(killedBy)}</dd>
+          </div>
+        ` : ""}
+        ${run.seed ? `
+          <div class="h-stat" title="Slay the Spire 2 run seed">
+            <dt class="h-stat-label">Seed</dt>
+            <dd class="h-stat-num h-stat-num-sm h-stat-mono">${esc(String(run.seed).slice(0, 12))}</dd>
+          </div>
+        ` : ""}
+      </dl>
 
       ${(run.relics?.length || 0) > 0 ? `
         <div class="h-row">
-          <h4 class="h-row-title">Relics</h4>
-          <ul class="h-icon-strip">${relics}${moreRelics > 0 ? `<li class="h-more">+${moreRelics}</li>` : ""}</ul>
+          <h4 class="h-row-title">
+            <span>Relics</span>
+            <span class="h-row-count">${run.relics.length}</span>
+          </h4>
+          <ul class="h-icon-strip h-icon-strip-relics">${relicItems}</ul>
         </div>
       ` : ""}
 
       ${(run.deckHighlights?.length || 0) > 0 ? `
         <div class="h-row">
-          <h4 class="h-row-title">Deck highlights</h4>
-          <ul class="h-icon-strip">${cards}${moreCards > 0 ? `<li class="h-more">+${moreCards}</li>` : ""}</ul>
+          <h4 class="h-row-title">
+            <span>Deck highlights</span>
+            <span class="h-row-count">${run.deckHighlights.length}</span>
+          </h4>
+          <ul class="h-icon-strip h-icon-strip-cards">${cardItems}</ul>
         </div>
       ` : ""}
 
       <footer class="h-card-foot">
-        <div class="h-reactions" role="group" aria-label="React to this run">
-          ${reactionStrip}
+        <div class="h-react-block" data-h-react-block>
+          ${summaryChips ? `<ul class="h-reaction-summary" role="group" aria-label="Reactions">${summaryChips}</ul>` : ""}
+          <div class="h-react-trigger-wrap">
+            <button
+              class="h-react-trigger"
+              type="button"
+              data-h-action="open-react-menu"
+              data-h-id="${esc(h.id)}"
+              aria-haspopup="menu"
+              aria-expanded="false"
+              ${!isAuthed ? "disabled title='Sign in to react'" : ""}>
+              <span class="h-react-trigger-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="12" cy="12" r="9"/>
+                  <path d="M8 14s1.5 2 4 2 4-2 4-2"/>
+                  <line x1="9" y1="9" x2="9.01" y2="9"/>
+                  <line x1="15" y1="9" x2="15.01" y2="9"/>
+                </svg>
+              </span>
+              <span>React</span>
+            </button>
+            <div class="h-react-popover" data-h-react-popover role="menu" aria-label="Choose a reaction" hidden>
+              ${popoverItems}
+            </div>
+          </div>
         </div>
-        <button class="h-comments-toggle" type="button" data-h-action="toggle-comments" data-h-id="${esc(h.id)}">
-          ${esc(commentTeaser)}
+        <button class="h-comments-toggle" type="button" data-h-action="toggle-comments" data-h-id="${esc(h.id)}" aria-expanded="false">
+          <span aria-hidden="true">💬</span>
+          <span>${esc(commentTeaser)}</span>
+        </button>
+        <button class="h-link-copy" type="button" data-h-action="copy-link" data-h-id="${esc(h.id)}" title="Copy a direct link to this highlight" aria-label="Copy link to this highlight">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 1 0-7.07-7.07l-1.72 1.71"/>
+            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 1 0 7.07 7.07l1.71-1.71"/>
+          </svg>
+          <span>Link</span>
         </button>
       </footer>
 
@@ -2932,10 +3931,17 @@ function wireHighlightsFeedDelegation($feed) {
 
 async function onHighlightsClick(ev) {
   const btn = ev.target.closest("[data-h-action]");
-  if (!btn) return;
+  if (!btn) {
+    // Click landed outside any actionable target — close any open
+    // reaction popover, since a click anywhere on the feed that
+    // misses the popover should dismiss it (matches OS popover UX).
+    closeAllReactionPopovers();
+    return;
+  }
   const action = btn.dataset.hAction;
   const id = btn.dataset.hId;
   if (!id) return;
+
   if (action === "react") {
     if (!session?.sessionToken) {
       toast("Sign in with Steam to react.");
@@ -2943,18 +3949,45 @@ async function onHighlightsClick(ev) {
     }
     const emoji = btn.dataset.emoji;
     if (!emoji) return;
-    // Optimistic flip: toggle the pressed state + count immediately so
-    // the click feels instant. Reconcile with the server response.
+    // Optimistic flip on whichever surface was clicked (chip or
+    // popover item). The authoritative re-render below will replace
+    // the whole card so everything reconciles in one pass.
     const wasPressed = btn.getAttribute("aria-pressed") === "true";
-    flipReactionVisually(btn, !wasPressed);
+    btn.setAttribute("aria-pressed", wasPressed ? "false" : "true");
+    btn.classList.toggle("is-on", !wasPressed);
+    closeAllReactionPopovers();
     const r = await HighlightsAPI.toggleReaction(API_BASE, session.sessionToken, id, emoji);
     if (!r.ok) {
-      flipReactionVisually(btn, wasPressed);
+      btn.setAttribute("aria-pressed", wasPressed ? "true" : "false");
+      btn.classList.toggle("is-on", wasPressed);
       toast(r.error === "rate_limited" ? "Slow down a bit." : "Reaction failed.");
       return;
     }
-    // Authoritative sync — replace just this card from the response.
     if (r.highlight) updateHighlightInPlace(r.highlight);
+    vaultGtagEvent("highlight_react", {
+      // Direction tells us if reactions are being added or removed.
+      // We compute it from the optimistic flip the user just did so
+      // it's cheap and accurate.
+      direction: wasPressed ? "remove" : "add",
+      emoji: String(emoji).slice(0, 8),
+    });
+  } else if (action === "open-react-menu") {
+    if (!session?.sessionToken) {
+      toast("Sign in with Steam to react.");
+      return;
+    }
+    const $card = btn.closest(".h-card-root");
+    const $pop = $card?.querySelector("[data-h-react-popover]");
+    if (!$pop) return;
+    const opening = $pop.hasAttribute("hidden");
+    closeAllReactionPopovers();
+    if (opening) {
+      $pop.removeAttribute("hidden");
+      btn.setAttribute("aria-expanded", "true");
+      // Pop the first option into focus for keyboard users.
+      const $first = $pop.querySelector("[data-h-action='react']:not([disabled])");
+      if ($first) $first.focus();
+    }
   } else if (action === "toggle-comments") {
     const $section = $feed_findCommentsSection(id);
     if (!$section) return;
@@ -2966,17 +3999,6 @@ async function onHighlightsClick(ev) {
     } else {
       btn.setAttribute("aria-expanded", "false");
     }
-  } else if (action === "delete") {
-    if (!confirm("Delete this highlight? This can't be undone.")) return;
-    const r = await HighlightsAPI.deleteHighlight(API_BASE, session.sessionToken, id);
-    if (!r.ok) {
-      toast("Couldn't delete that highlight.");
-      return;
-    }
-    // Remove from local list and re-render.
-    lastHighlights = lastHighlights.filter((h) => h.id !== id);
-    renderHighlightsFeed(lastHighlights);
-    toast("Highlight removed.");
   } else if (action === "delete-comment") {
     const cid = btn.dataset.cid;
     if (!cid) return;
@@ -2988,7 +4010,42 @@ async function onHighlightsClick(ev) {
     }
     await loadCommentsInto(id);
     pullHighlights();
+  } else if (action === "copy-link") {
+    // Build a shareable URL pointing at this exact highlight. The
+    // hash form (`#h-<id>`) makes it dead simple to handle on the
+    // landing side: scrollIntoView + spotlight pulse once the feed
+    // has rendered.
+    const u = new URL(window.location.href);
+    u.searchParams.set("tab", "highlights");
+    u.hash = `h-${id}`;
+    const url = u.toString();
+    try {
+      await navigator.clipboard.writeText(url);
+      toast("Highlight link copied.");
+    } catch {
+      toast(url);
+    }
+    btn.classList.add("is-flashed");
+    const label = btn.querySelector("span:not([aria-hidden])");
+    const prev = label ? label.textContent : "";
+    if (label) label.textContent = "Copied!";
+    setTimeout(() => {
+      btn.classList.remove("is-flashed");
+      if (label) label.textContent = prev;
+    }, 1400);
   }
+}
+
+/** Close every reaction popover currently open. Called on outside
+ *  click, on Esc, and right before opening a new one so only one
+ *  popover is ever visible. */
+function closeAllReactionPopovers() {
+  document.querySelectorAll("[data-h-react-popover]").forEach(($pop) => {
+    if (!$pop.hasAttribute("hidden")) $pop.setAttribute("hidden", "");
+  });
+  document.querySelectorAll(".h-react-trigger[aria-expanded='true']").forEach(($trig) => {
+    $trig.setAttribute("aria-expanded", "false");
+  });
 }
 
 async function onHighlightsSubmit(ev) {
@@ -3052,14 +4109,15 @@ async function loadCommentsInto(id) {
     $list.innerHTML = `<li class="muted small">No comments yet.</li>`;
     return;
   }
-  // Determine the highlight author so we can show delete buttons in
-  // both author-of-comment and author-of-highlight cases (server
-  // permits both).
-  const card = lastHighlights.find((h) => h.id === id);
-  const highlightAuthorID = card?.authorID;
+  // Comment authors can remove their own posts. We deliberately do
+  // *not* surface deletion for highlight authors moderating other
+  // users' comments — the product call here is "no destructive
+  // affordances against other people's words". The server still
+  // permits highlight-author moderation if a future client wants
+  // it, but the public web doesn't expose it.
   const me = session?.steamID;
   $list.innerHTML = comments.map((c) => {
-    const canDelete = me && (me === c.authorID || me === highlightAuthorID);
+    const isOwn = me && me === c.authorID;
     return `
       <li class="h-comment">
         <img class="h-comment-avatar" alt="" src="${esc(c.authorAvatar || "/assets/vault-mark.svg")}" />
@@ -3067,11 +4125,12 @@ async function loadCommentsInto(id) {
           <div class="h-comment-meta">
             <strong>${esc(c.authorPersona || "Steam User")}</strong>
             <span class="muted small">${esc(formatRelativeActive(c.createdAt))}</span>
-            ${canDelete ? `
+            ${isOwn ? `
               <button class="h-comment-delete" type="button"
                 data-h-action="delete-comment"
                 data-h-id="${esc(id)}"
                 data-cid="${esc(c.id)}"
+                aria-label="Delete your comment"
                 title="Delete">×</button>
             ` : ""}
           </div>
@@ -3095,6 +4154,10 @@ function updateHighlightInPlace(highlight) {
   lastHighlights[idx] = highlight;
   const $oldCard = document.querySelector(`.h-card-root[data-h-id="${cssEscapeId(highlight.id)}"]`);
   if (!$oldCard) return;
+  // The replaceWith() below detaches every `.h-tip` anchor inside this
+  // card. If a tooltip was open against one of them, no pointerout
+  // fires for the now-detached node — force-hide so it doesn't wedge.
+  try { forceHideHighlightsTooltip(); } catch {}
   const tmp = document.createElement("div");
   tmp.innerHTML = renderHighlightCard(highlight);
   const $newCard = tmp.firstElementChild;
@@ -3112,26 +4175,30 @@ function updateHighlightInPlace(highlight) {
   }
 }
 
-/** Visually toggle a single reaction button without waiting for the
- *  server. Updates aria-pressed + count text. */
-function flipReactionVisually(btn, on) {
-  btn.setAttribute("aria-pressed", on ? "true" : "false");
-  btn.classList.toggle("is-on", on);
-  const $count = btn.querySelector(".h-reaction-count");
-  const current = $count ? Number($count.textContent || "0") : 0;
-  const next = on ? current + 1 : Math.max(0, current - 1);
-  if ($count) {
-    if (next === 0) $count.remove();
-    else $count.textContent = String(next);
-  } else if (next > 0) {
-    const span = document.createElement("span");
-    span.className = "h-reaction-count";
-    span.textContent = String(next);
-    btn.appendChild(span);
-  }
+/** Wire global dismissal handlers for the reaction popover. Called once
+ *  during boot. The card-internal `onHighlightsClick` already dismisses
+ *  on intra-feed clicks; this covers Esc and clicks anywhere else on
+ *  the page. */
+function wireHighlightsGlobalDismissal() {
+  if (window.__hightlightsGlobalWired) return;
+  window.__hightlightsGlobalWired = true;
+  document.addEventListener("keydown", (ev) => {
+    if (ev.key === "Escape") closeAllReactionPopovers();
+  });
+  document.addEventListener("click", (ev) => {
+    // Ignore clicks that landed on the trigger itself (it already
+    // toggles), the popover, or anything inside it. Anywhere else
+    // on the document → close.
+    if (!ev.target.closest("[data-h-react-popover], .h-react-trigger")) {
+      closeAllReactionPopovers();
+    }
+  }, { capture: true });
 }
 
-function prettifyCharacter(c) {
+// NOTE: prettifyId already exists later in the file (line ~7685) as
+// part of the stats engine. Highlights uses that one — we just provide
+// the two helpers that don't already live elsewhere.
+function prettifyCharacterName(c) {
   if (!c) return "Unknown";
   const map = {
     ironclad: "Ironclad", silent: "Silent", regent: "Regent",
@@ -3141,13 +4208,7 @@ function prettifyCharacter(c) {
   return map[k] || c;
 }
 
-function prettifyId(id) {
-  if (!id) return "";
-  const noPlus = id.replace(/\+\d*$/, "");
-  return noPlus.split("_").map((p) => p.charAt(0).toUpperCase() + p.slice(1)).join(" ");
-}
-
-function formatRunDuration(seconds) {
+function formatHighlightDuration(seconds) {
   const s = Math.max(0, Math.floor(seconds || 0));
   const m = Math.floor(s / 60);
   const h = Math.floor(m / 60);
@@ -3159,6 +4220,16 @@ function formatRunDuration(seconds) {
  *  every field so this is just the client's "best effort to send only
  *  what's interesting." */
 function buildHighlightPayload(run, caption) {
+  // ISO-string conversion: Date objects don't survive JSON.stringify
+  // cleanly across all browsers (some libraries strip them). Convert
+  // to ISO 8601 explicitly so the wire format is predictable. The
+  // backend re-validates with new Date() so any garbage is rejected.
+  const endedAtIso = run.endedAt instanceof Date
+    ? run.endedAt.toISOString()
+    : (run.endedAt ?? new Date().toISOString());
+  const startedAtIso = run.startedAt instanceof Date
+    ? run.startedAt.toISOString()
+    : (run.startedAt ?? null);
   return {
     caption: caption || undefined,
     run: {
@@ -3167,7 +4238,15 @@ function buildHighlightPayload(run, caption) {
       floorReached: run.floorReached ?? 0,
       won: run.won === true,
       playTimeSeconds: run.playTimeSeconds ?? 0,
-      endedAt: run.endedAt ?? new Date().toISOString(),
+      endedAt: endedAtIso,
+      // New fields surface daily-run / abandoned / mode-specific UX.
+      // Backend strips on save when missing — clients on older builds
+      // continue to render fine.
+      startedAt: startedAtIso || undefined,
+      gameMode: typeof run.gameMode === "string" ? run.gameMode : undefined,
+      wasAbandoned: run.wasAbandoned === true ? true : undefined,
+      seed: typeof run.seed === "string" ? run.seed : undefined,
+      modifiers: Array.isArray(run.modifiers) && run.modifiers.length > 0 ? run.modifiers.slice(0, 8) : undefined,
       killedBy: run.killedBy,
       relics: (run.relics || []).slice(0, 12),
       deckHighlights: highlightCards(run).slice(0, 12),
@@ -3941,17 +5020,31 @@ async function sendInviteFromModal(messageId) {
 // =========================================================================
 // History.json upload
 // =========================================================================
+// Tabs where dragging in a save folder makes contextual sense. On the
+// community tabs (highlights / co-op / news) the user is consuming
+// content rather than importing data, so a fullscreen "Drop your STS2
+// save folder here" overlay is just confusing — hide it entirely on
+// those tabs and silently ignore drops, so the page never grabs files
+// the user dragged onto it by accident while reading.
+const DROP_OVERLAY_ALLOWED_TABS = new Set([
+  "overview", "characters", "ascensions", "relics", "cards", "runs", "settings", "overlay",
+]);
+function isDropOverlayAllowedHere() {
+  return DROP_OVERLAY_ALLOWED_TABS.has(activeTab);
+}
+
 function wireDropOverlay() {
   const $ov = document.getElementById("drop-overlay");
   let dragDepth = 0;
 
   window.addEventListener("dragenter", (e) => {
     if (!hasFiles(e)) return;
+    if (!isDropOverlayAllowedHere()) return;
     dragDepth++;
     $ov.hidden = false;
   });
   window.addEventListener("dragover", (e) => {
-    if (hasFiles(e)) e.preventDefault();
+    if (hasFiles(e) && isDropOverlayAllowedHere()) e.preventDefault();
   });
   window.addEventListener("dragleave", () => {
     dragDepth = Math.max(0, dragDepth - 1);
@@ -3959,6 +5052,17 @@ function wireDropOverlay() {
   });
   window.addEventListener("drop", (e) => {
     if (!hasFiles(e)) return;
+    // On non-stat tabs (highlights, co-op, news) silently swallow the
+    // drop without ingesting — prevents accidental imports while
+    // browsing community content. Still preventDefault so the browser
+    // doesn't navigate away to display the dropped file.
+    if (!isDropOverlayAllowedHere()) {
+      e.preventDefault();
+      dragDepth = 0;
+      $ov.hidden = true;
+      toast("Switch to Recent Runs to import save files.");
+      return;
+    }
     e.preventDefault();
     dragDepth = 0;
     $ov.hidden = true;
@@ -4852,6 +5956,46 @@ async function commitParsedRuns(runs, sourceName, { silent, fileCount = 1 }) {
   const previousIds = wasDemo ? new Set() : new Set(parsedRuns.map((r) => r.id));
   const newCount = runs.filter((r) => !previousIds.has(r.id)).length;
 
+  // Schema-bump self-healing: when a fresh re-parse of a run we
+  // already had drops a previously-known field to `null` (because
+  // STS2 shipped a schema change we don't fully handle yet), fall
+  // back to the last good value we have for that run id rather than
+  // overwriting good data with "Unknown" / null. Without this, an
+  // auto-refresh on Chrome that re-reads the disk would silently
+  // demote a correctly-rendered Silent run into a generic "Unknown"
+  // row the moment STS2 changed the on-disk format. The IDB cache
+  // and any cloud-synced data are the source of truth for fields
+  // the new parser couldn't recover.
+  if (!wasDemo && parsedRuns.length > 0) {
+    const previousById = new Map(parsedRuns.map((r) => [r.id, r]));
+    let healedCount = 0;
+    for (let i = 0; i < runs.length; i++) {
+      const fresh = runs[i];
+      if (!fresh || !fresh.id) continue;
+      const prev = previousById.get(fresh.id);
+      if (!prev) continue;
+      // Only retain previous-known fields when the fresh parse
+      // dropped them. Never overwrite a fresh value with a stale
+      // one — the new parse is otherwise authoritative.
+      let healed = false;
+      if (!fresh.character && prev.character) { fresh.character = prev.character; healed = true; }
+      if (fresh.ascension == null && prev.ascension != null) { fresh.ascension = prev.ascension; healed = true; }
+      if (!fresh.seed && prev.seed) { fresh.seed = prev.seed; healed = true; }
+      if (!fresh.killedBy && prev.killedBy) { fresh.killedBy = prev.killedBy; healed = true; }
+      if ((!fresh.relics || fresh.relics.length === 0) && Array.isArray(prev.relics) && prev.relics.length > 0) {
+        fresh.relics = prev.relics; healed = true;
+      }
+      if ((!fresh.deckAtEnd || fresh.deckAtEnd.length === 0) && Array.isArray(prev.deckAtEnd) && prev.deckAtEnd.length > 0) {
+        fresh.deckAtEnd = prev.deckAtEnd; healed = true;
+      }
+      if (healed) healedCount += 1;
+    }
+    if (healedCount > 0) {
+      console.info(`[Vault] healed ${healedCount} run(s) with last-known fields after a partial re-parse`);
+      sendBeacon("ingest-self-heal", `count=${healedCount}/${runs.length}`);
+    }
+  }
+
   // Sort newest-first so Recent Runs always renders chronologically right
   // out of the box, regardless of whether the source was a single rollup
   // (which already arrives in order) or a folder of `.run` files (which
@@ -4935,6 +6079,44 @@ async function commitParsedRuns(runs, sourceName, { silent, fileCount = 1 }) {
     renderStatsTab(activeTab);
   } else {
     switchTab("overview");
+  }
+  // Update the sidebar's "new run" red dot. If the user is currently
+  // *on* the Recent Runs tab, the dot stays cleared because the act
+  // of being on the tab counts as having seen everything.
+  if (activeTab === "runs") {
+    markRunsSeen();
+  } else {
+    refreshRunsBadge();
+  }
+  // Late deep-link resolution: if the URL points at `?run=<id>` and
+  // we now have that run in memory (because it just ingested), open
+  // its modal. Idempotent if already open — won't flicker.
+  try { openDeepLinkedRunIfPresent(); } catch (e) { console.warn("deeplink open failed", e); }
+  // Milestone notifications. We compare the current parsedRuns set
+  // against locally persisted "what we've already celebrated" data
+  // and surface a celebratory toast for anything new. Suppressed for
+  // demo data so a brand-new visitor doesn't get fake congrats.
+  if (!wasDemo && !silent) {
+    try { evaluateMilestones(); } catch (e) { console.warn("milestones failed", e); }
+  } else if (!wasDemo) {
+    // Silent auto-refresh path — still evaluate, since a new run can
+    // arrive in the background. The toast is the user-facing signal
+    // that something cool happened even when their data view didn't
+    // visibly change.
+    try { evaluateMilestones(); } catch (e) { console.warn("milestones failed", e); }
+  }
+  // Analytics: fire one ingest_complete event per real ingest. Demo
+  // data is excluded because it would inflate counts. We tag silent
+  // (background-poll) vs interactive (button-press) ingests so the
+  // funnel can show "auto-refresh works" separately from "user
+  // pressed Refresh" engagement.
+  if (!wasDemo) {
+    vaultGtagEvent("ingest_complete", {
+      run_count: runs.length,
+      new_count: newCount,
+      file_count: fileCount,
+      source: silent ? "auto_refresh" : "interactive",
+    });
   }
   return true;
 }
@@ -5056,6 +6238,11 @@ async function hydrateFromCloudIfAvailable() {
       toast(`Synced ${cloudOnly} run${cloudOnly === 1 ? "" : "s"} from your other device.`);
     }
     renderActiveTab();
+    // Cloud-merged runs from another device are by definition newer-
+    // than-anything-local for that id, so light the sidebar dot if
+    // the user isn't already on the Recent Runs tab.
+    if (activeTab === "runs") markRunsSeen();
+    else refreshRunsBadge();
     return { changed: true, count: merged.length };
   } catch (e) {
     console.warn("[Vault] cloud rehydrate failed", e);
@@ -6506,6 +7693,50 @@ function renderDeathHistogram(runs) {
     </div>`;
 }
 
+/** Mini sparkline of the last N runs, ordered oldest → newest from
+ *  left to right. Two visual layers in one SVG:
+ *    1. A thin rolling-winrate line so the user sees trajectory.
+ *    2. Outcome dots (green = win, red = loss, grey = abandoned)
+ *       so individual data points are visible alongside the trend.
+ *  Pure SVG — no animation — keeps it cheap to render alongside the
+ *  rest of the overview hero panel. */
+function renderRecentFormSparkline(runs) {
+  if (!Array.isArray(runs) || runs.length < 2) return "";
+  const W = 200, H = 38, PAD = 4;
+  const usableW = W - PAD * 2;
+  const usableH = H - PAD * 2;
+  // Rolling winrate over a window of up to 5 runs centered on each
+  // index. Using a centered window means the line can't lag the
+  // most recent run dramatically.
+  const window = 5;
+  const wrSeries = runs.map((_, i) => {
+    const start = Math.max(0, i - Math.floor(window / 2));
+    const end = Math.min(runs.length, i + Math.ceil(window / 2));
+    const slice = runs.slice(start, end);
+    if (slice.length === 0) return 0;
+    const wins = slice.filter((r) => r.won).length;
+    return wins / slice.length;
+  });
+  const stepX = runs.length === 1 ? 0 : usableW / (runs.length - 1);
+  const polylinePts = wrSeries.map((wr, i) => {
+    const x = PAD + i * stepX;
+    const y = PAD + (1 - wr) * usableH;
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(" ");
+  const dots = runs.map((r, i) => {
+    const x = PAD + i * stepX;
+    const cls = r.won ? "spark-dot is-win" : r.wasAbandoned ? "spark-dot is-abandon" : "spark-dot is-loss";
+    const y = r.won ? PAD + 4 : PAD + usableH - 4;
+    return `<circle class="${cls}" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="2.4"/>`;
+  }).join("");
+  return `
+    <svg class="recent-form-spark" viewBox="0 0 ${W} ${H}" role="img" aria-label="Recent run trend over the last ${runs.length} runs">
+      <polyline class="spark-trend" points="${polylinePts}" fill="none" />
+      ${dots}
+    </svg>
+  `;
+}
+
 function renderOverview(report) {
   const total = report.totalRuns;
   const wins  = report.totalWins;
@@ -6554,6 +7785,13 @@ function renderOverview(report) {
   const recent10 = sortedByDate.slice(0, 10);
   const recentWins = recent10.filter((r) => r.won).length;
   const recentForm = recent10.length > 0 ? `${recentWins}W · ${recent10.length - recentWins}L` : "no runs yet";
+  // Last-20 sparkline: oldest-to-newest dots so the eye reads left-
+  // to-right as time. Each dot is colored by outcome; a thin
+  // rolling-average line over the same 20 runs shows whether form
+  // is trending up or down. Built once here and inlined into the
+  // Recent Form tile below.
+  const last20 = sortedByDate.slice(0, 20).reverse();
+  const sparkline = renderRecentFormSparkline(last20);
   const ascNums = parsedRuns.map((r) => Number(r.ascension)).filter((n) => Number.isFinite(n));
   const avgAsc = ascNums.length > 0 ? (ascNums.reduce((a, b) => a + b, 0) / ascNums.length).toFixed(1) : "—";
 
@@ -6609,6 +7847,7 @@ function renderOverview(report) {
           <div class="hero-side-meta">
             <span class="hero-side-label">Recent Form</span>
             <span class="hero-side-value">${esc(recentForm)} <span class="hero-side-sub">· last ${recent10.length}</span></span>
+            ${sparkline}
           </div>
         </div>
         <div class="hero-side-tile" data-action="goto-tab" data-tab="ascensions" title="Open Ascensions">
@@ -6794,6 +8033,292 @@ function renderRecommendationCardHtml(rec, source) {
       <p class="overlay-rec-foot muted">Support, not a verdict. The advisor never reads game memory or automates play.</p>
     </article>
   `;
+}
+
+// =========================================================================
+// Settings tab
+// =========================================================================
+//
+// Centralizes save-data plumbing (link / refresh / disconnect / clear),
+// account state, and user preferences in one place. Born out of the
+// header-action consolidation: Import/Export/Refresh used to live in
+// every panel-head, which made every tab feel like a control surface
+// when most tabs are content surfaces. Now those buttons exist in two
+// places: Overview (the actual control deck) and here (the canonical
+// home for "I want to manage my data").
+//
+// The whole panel is rebuilt every time `renderSettingsTab()` runs —
+// not virtual-DOM — because state transitions are infrequent and a
+// rebuild is the simplest way to keep the displayed permission /
+// linked-folder / cloud-sync status consistent with reality.
+// =========================================================================
+
+function renderSettingsTab() {
+  const $body = document.getElementById("settings-body");
+  if (!$body) return;
+
+  const linkedName = getLinkedFolderName();
+  const isLinked = !!linkedName;
+  const runCount = parsedRuns.length;
+  const isAuthed = !!session?.sessionToken;
+  const personaName = session?.personaName || "";
+  const avatarUrl = session?.avatar || "";
+  const steamID = session?.steamID || "";
+  const lastSyncCount = lastCloudSyncCount;
+  const lastSyncAt = lastCloudSyncAt ? formatRelativeActive(lastCloudSyncAt) : "";
+
+  $body.innerHTML = `
+    <div class="settings-grid">
+      <!-- ───────── Save Data card ───────── -->
+      <section class="settings-card">
+        <header class="settings-card-head">
+          <h3>Save data</h3>
+          <p class="settings-card-sub">
+            ${isLinked
+              ? `Linked to <strong>${esc(linkedName)}</strong>. Auto-refreshing every 60s.`
+              : "Link your STS2 save folder to see your runs."}
+          </p>
+        </header>
+
+        <div class="settings-status-row">
+          <div class="settings-status-cell">
+            <span class="settings-stat-label">Runs loaded</span>
+            <span class="settings-stat-value">${runCount.toLocaleString()}</span>
+          </div>
+          ${isAuthed && lastSyncCount != null ? `
+            <div class="settings-status-cell">
+              <span class="settings-stat-label">Cloud sync</span>
+              <span class="settings-stat-value">${lastSyncCount.toLocaleString()} run${lastSyncCount === 1 ? "" : "s"}</span>
+              ${lastSyncAt ? `<span class="settings-stat-foot">${esc(lastSyncAt)}</span>` : ""}
+            </div>
+          ` : ""}
+          ${isLinked ? `
+            <div class="settings-status-cell settings-status-cell--ok">
+              <span class="settings-stat-label">Auto refresh</span>
+              <span class="settings-stat-value">On</span>
+              <span class="settings-stat-foot">Reading folder every 60 seconds</span>
+            </div>
+          ` : `
+            <div class="settings-status-cell settings-status-cell--warn">
+              <span class="settings-stat-label">Auto refresh</span>
+              <span class="settings-stat-value">Off</span>
+              <span class="settings-stat-foot">Link a folder to enable</span>
+            </div>
+          `}
+        </div>
+
+        <div class="settings-action-row">
+          <button class="btn-primary" type="button" data-action="upload">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21V9"/><polyline points="7 14 12 9 17 14"/><path d="M5 3h14"/></svg>
+            <span>${isLinked ? "Re-pick folder" : "Link save folder"}</span>
+          </button>
+          <button class="btn-ghost" type="button" data-action="reload-saves" ${!isLinked ? "disabled" : ""}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15A9 9 0 1 1 18.36 5.64L23 10"/></svg>
+            <span>Refresh now</span>
+          </button>
+          <button class="btn-ghost" type="button" data-action="settings-export-json" ${runCount === 0 ? "disabled" : ""}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><polyline points="7 10 12 15 17 10"/><path d="M5 21h14"/></svg>
+            <span>Export JSON</span>
+          </button>
+          <button class="btn-ghost" type="button" data-action="settings-export-csv" ${runCount === 0 ? "disabled" : ""}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+            <span>Export CSV</span>
+          </button>
+        </div>
+
+        ${isLinked ? `
+          <div class="settings-danger-row">
+            <button class="btn-link-danger" type="button" data-action="disconnect-saves">
+              Disconnect this folder
+            </button>
+          </div>
+        ` : ""}
+      </section>
+
+      <!-- ───────── Account card ───────── -->
+      <section class="settings-card">
+        <header class="settings-card-head">
+          <h3>Account</h3>
+          <p class="settings-card-sub">
+            ${isAuthed
+              ? "Signed in with Steam. Your runs sync across devices."
+              : "Signed out. Sign in with Steam to enable cross-device sync, the co-op feed, and community highlights."}
+          </p>
+        </header>
+
+        ${isAuthed ? `
+          <div class="settings-account-row">
+            ${avatarUrl ? `<img class="settings-avatar" src="${esc(avatarUrl)}" alt="" />` : `<div class="settings-avatar settings-avatar--placeholder">?</div>`}
+            <div class="settings-account-meta">
+              <strong>${esc(personaName || "Steam User")}</strong>
+              ${steamID ? `<span class="muted small">SteamID ${esc(steamID)}</span>` : ""}
+            </div>
+            <button class="btn-ghost sm" type="button" data-action="settings-sign-out">Sign out</button>
+          </div>
+        ` : `
+          <div class="settings-action-row">
+            <button class="btn-primary" type="button" data-action="settings-sign-in">Sign in with Steam</button>
+          </div>
+        `}
+      </section>
+
+      <!-- ───────── Preferences card ───────── -->
+      <section class="settings-card">
+        <header class="settings-card-head">
+          <h3>Preferences</h3>
+          <p class="settings-card-sub">Tweak how the app behaves. Stored locally — not on the server.</p>
+        </header>
+
+        <div class="settings-pref-list">
+          <label class="settings-pref">
+            <span>
+              <strong>Auto-open new run</strong>
+              <span class="muted small">When STS2 writes a new run, pop the detail modal automatically.</span>
+            </span>
+            <input class="settings-toggle" type="checkbox" data-pref-key="autoOpenNewRun" ${getPref("autoOpenNewRun") ? "checked" : ""}>
+          </label>
+          <label class="settings-pref">
+            <span>
+              <strong>Reduced motion</strong>
+              <span class="muted small">Disable hover lifts, popover animations, and tooltip fades.</span>
+            </span>
+            <input class="settings-toggle" type="checkbox" data-pref-key="reducedMotion" ${getPref("reducedMotion") ? "checked" : ""}>
+          </label>
+          <label class="settings-pref">
+            <span>
+              <strong>Compact stat tiles</strong>
+              <span class="muted small">Tighter density for character + relic + card grids.</span>
+            </span>
+            <input class="settings-toggle" type="checkbox" data-pref-key="compactDensity" ${getPref("compactDensity") ? "checked" : ""}>
+          </label>
+        </div>
+
+        <div class="settings-shortcut-block">
+          <h4>Keyboard shortcuts</h4>
+          <ul class="settings-shortcut-list">
+            <li><kbd>1</kbd>–<kbd>9</kbd> <span>jump to a sidebar tab</span></li>
+            <li><kbd>/</kbd> <span>focus the run search</span></li>
+            <li><kbd>R</kbd> <span>refresh now</span></li>
+            <li><kbd>I</kbd> <span>import a save folder</span></li>
+            <li><kbd>?</kbd> <span>open keyboard help overlay</span></li>
+            <li><kbd>Esc</kbd> <span>close any modal or popover</span></li>
+          </ul>
+        </div>
+      </section>
+
+      <!-- ───────── Danger / advanced card ───────── -->
+      <section class="settings-card settings-card--danger">
+        <header class="settings-card-head">
+          <h3>Reset</h3>
+          <p class="settings-card-sub">
+            Wipe your locally cached run history. Won't touch the actual <code>.run</code> files on disk.
+          </p>
+        </header>
+        <div class="settings-action-row">
+          <button class="btn-link-danger" type="button" data-action="settings-clear-local" ${runCount === 0 ? "disabled" : ""}>
+            Clear local cache (${runCount.toLocaleString()} run${runCount === 1 ? "" : "s"})
+          </button>
+        </div>
+      </section>
+
+      <!-- ───────── About card ───────── -->
+      <section class="settings-card settings-card--about">
+        <header class="settings-card-head">
+          <h3>About</h3>
+        </header>
+        <dl class="settings-about-list">
+          <div><dt>Build</dt><dd><code>${esc(VAULT_BUILD)}</code></dd></div>
+          <div><dt>Engine</dt><dd>JS · Cloudflare Workers</dd></div>
+          <div><dt>Source</dt><dd><a href="https://github.com/c3rooks/SpireVault" target="_blank" rel="noopener">github.com/c3rooks/SpireVault</a></dd></div>
+        </dl>
+      </section>
+    </div>
+  `;
+
+  // Wire the settings-only data-actions that don't share handlers with
+  // the legacy toolbar. Refresh / Import / Disconnect already pick up
+  // the global delegated handlers via their data-action attributes.
+  $body.querySelectorAll('[data-action="settings-export-json"]').forEach((b) => {
+    b.addEventListener("click", () => exportAllRuns("json"));
+  });
+  $body.querySelectorAll('[data-action="settings-export-csv"]').forEach((b) => {
+    b.addEventListener("click", () => exportAllRuns("csv"));
+  });
+  $body.querySelectorAll('[data-action="settings-sign-out"]').forEach((b) => {
+    b.addEventListener("click", () => void signOut());
+  });
+  $body.querySelectorAll('[data-action="settings-sign-in"]').forEach((b) => {
+    b.addEventListener("click", () => startSteamSignIn());
+  });
+  $body.querySelectorAll('[data-action="settings-clear-local"]').forEach((b) => {
+    b.addEventListener("click", () => void clearLocalCacheConfirmed());
+  });
+  $body.querySelectorAll('[data-pref-key]').forEach((box) => {
+    box.addEventListener("change", (e) => {
+      const key = e.target.getAttribute("data-pref-key");
+      setPref(key, e.target.checked === true);
+      applyPrefs();
+    });
+  });
+}
+
+/** Confirm-and-clear flow for the danger button. We don't surface a
+ *  modal — a confirm() is plenty for what amounts to a localStorage
+ *  reset. Wipes IDB cache + in-memory parsedRuns + linked-folder
+ *  metadata; leaves the actual `.run` files on disk untouched. */
+async function clearLocalCacheConfirmed() {
+  const ok = window.confirm(
+    "Clear your locally cached run history?\n\n" +
+    "This wipes the cached parse and disconnects any linked save folder. " +
+    "Your actual STS2 save files are NOT touched. " +
+    "You can re-link the folder anytime to repopulate."
+  );
+  if (!ok) return;
+  try { await HistoryStore.clearHistory({ allScopes: false }); } catch (e) { console.warn(e); }
+  try { await HistoryStore.clearDirectoryHandle(); } catch {}
+  try { await HistoryStore.clearHandle(); } catch {}
+  try { localStorage.removeItem("vault.web.linkedFolderName"); } catch {}
+  parsedRuns = [];
+  lastDirectoryFingerprint = "";
+  lastIngestedMTime = 0;
+  toast("Local cache cleared.");
+  renderActiveTab();
+}
+
+// -------------------------------------------------------------------------
+// User preferences (Settings tab toggles)
+//
+// localStorage-backed, queried by getPref/setPref. applyPrefs() is the
+// single point that converts pref state into observable behavior so we
+// never have a place where a toggle was stored but ignored.
+// -------------------------------------------------------------------------
+const PREFS_KEY = "vault.web.prefs.v1";
+
+function readPrefs() {
+  try { return JSON.parse(localStorage.getItem(PREFS_KEY) || "{}") || {}; }
+  catch { return {}; }
+}
+function writePrefs(obj) {
+  try { localStorage.setItem(PREFS_KEY, JSON.stringify(obj)); } catch {}
+}
+function getPref(key) {
+  const prefs = readPrefs();
+  return prefs[key] === true;
+}
+function setPref(key, value) {
+  const prefs = readPrefs();
+  prefs[key] = value === true;
+  writePrefs(prefs);
+}
+function applyPrefs() {
+  const root = document.documentElement;
+  if (!root) return;
+  // Reduced-motion override is a class on <html> picked up by CSS rules
+  // (we already gate animations with `prefers-reduced-motion`; this
+  // class lets the user force the same path even on a system that
+  // reports motion enabled).
+  root.classList.toggle("prefer-reduced-motion", getPref("reducedMotion"));
+  root.classList.toggle("prefer-compact-density", getPref("compactDensity"));
 }
 
 function renderOverlayTab() {
@@ -7241,6 +8766,19 @@ function renderCharCards(buckets, opts = {}) {
   if (!buckets || !buckets.length) {
     return `<p class="muted">No character data yet.</p>`;
   }
+  // Pinned characters float to the top of the grid. Inside pinned and
+  // unpinned groups we preserve whatever order the caller passed in
+  // (typically winrate-desc, computed in stats.js). Clicking the pin
+  // star toggles membership without otherwise rerunning stats — handled
+  // by the delegated click handler in `wirePinnedCharsDelegation`.
+  const pinned = getPinnedCharacters();
+  const ordered = buckets.slice().sort((a, b) => {
+    const ap = pinned.has(String(a.key).toLowerCase()) ? 1 : 0;
+    const bp = pinned.has(String(b.key).toLowerCase()) ? 1 : 0;
+    if (ap !== bp) return bp - ap;
+    return 0;
+  });
+
   const hint = expandable
     ? `<div class="char-card-cta">
          <span>View details</span>
@@ -7250,18 +8788,29 @@ function renderCharCards(buckets, opts = {}) {
   const cardClass = expandable ? "char-card is-clickable" : "char-card";
   return `
     <div class="char-grid">
-      ${buckets.map((c) => {
+      ${ordered.map((c) => {
         const theme = charTheme(c.key);
         const wr = (c.winrate * 100).toFixed(1);
         const lossCount = c.runs - c.wins;
+        const isPinned = pinned.has(String(c.key).toLowerCase());
         const dataAttrs = expandable
           ? `data-action="char-expand" data-char-key="${esc(c.key)}"`
           : `data-action="goto-tab" data-tab="characters"`;
         return `
-          <div class="${cardClass}" style="--char-color:${theme.color}"
+          <div class="${cardClass}${isPinned ? " is-pinned" : ""}" style="--char-color:${theme.color}"
                role="button" tabindex="0"
                ${dataAttrs}
-               aria-label="${esc(capitalize(c.key))}: ${wr}% winrate over ${c.runs} runs. ${expandable ? "Tap to view details." : ""}">
+               aria-label="${esc(capitalize(c.key))}: ${wr}% winrate over ${c.runs} runs.${isPinned ? " Pinned." : ""} ${expandable ? "Tap to view details." : ""}">
+            <button class="char-card-pin" type="button"
+                    data-action="toggle-pin-character"
+                    data-char-key="${esc(c.key)}"
+                    aria-pressed="${isPinned ? "true" : "false"}"
+                    title="${isPinned ? "Unpin from top of grid" : "Pin to top of grid"}"
+                    aria-label="${isPinned ? "Unpin " : "Pin "}${esc(capitalize(c.key))}">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="${isPinned ? "currentColor" : "none"}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+              </svg>
+            </button>
             <div class="char-card-head">
               <div class="char-card-icon">${charPortraitOrIcon(c.key, theme)}</div>
               <span class="char-card-runs">${c.runs} runs</span>
@@ -7277,6 +8826,369 @@ function renderCharCards(buckets, opts = {}) {
           </div>`;
       }).join("")}
     </div>`;
+}
+
+// =========================================================================
+// Pinned characters
+//
+// Local-only ordering preference — a small Set of character keys the user
+// has marked as favorites. Pinned characters float to the top of every
+// char-grid render. Stored in localStorage as a JSON array (Sets aren't
+// JSON-native).
+// =========================================================================
+const PINNED_CHARS_KEY = "vault.web.pinnedCharacters.v1";
+
+function getPinnedCharacters() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(PINNED_CHARS_KEY) || "[]");
+    return new Set((Array.isArray(raw) ? raw : []).map((s) => String(s).toLowerCase()));
+  } catch { return new Set(); }
+}
+function setPinnedCharacters(set) {
+  try { localStorage.setItem(PINNED_CHARS_KEY, JSON.stringify([...set])); } catch {}
+}
+function togglePinnedCharacter(key) {
+  const k = String(key || "").toLowerCase();
+  if (!k) return;
+  const set = getPinnedCharacters();
+  if (set.has(k)) set.delete(k);
+  else set.add(k);
+  setPinnedCharacters(set);
+}
+
+// =========================================================================
+// Milestone toasts
+//
+// Celebrate meaningful thresholds in a player's run history. Each
+// milestone is keyed; once awarded, it's stored in localStorage so we
+// don't repeat it. Designed to be quiet — milestones only fire on
+// commitParsedRuns (a real ingest), never on idle re-renders, and
+// each one fires at most once.
+//
+// Catalog: first run, first win, run-count tiers (10/25/50/100/250/500),
+// win-count tiers (5/10/25/50), longest streak (3/5/10), first daily,
+// first character clear (Ironclad/Silent/etc.).
+// =========================================================================
+const MILESTONES_KEY = "vault.web.milestones.awarded.v1";
+
+function readAwarded() {
+  try { return new Set(JSON.parse(localStorage.getItem(MILESTONES_KEY) || "[]")); }
+  catch { return new Set(); }
+}
+function writeAwarded(set) {
+  try { localStorage.setItem(MILESTONES_KEY, JSON.stringify([...set])); } catch {}
+}
+function awardMilestone(key, payload) {
+  const set = readAwarded();
+  if (set.has(key)) return false;
+  set.add(key);
+  writeAwarded(set);
+  showMilestoneToast(payload.title, payload.body, payload.icon);
+  // Fire-and-forget analytics ping so we know which milestones land.
+  try { sendBeacon("milestone", `key=${encodeURIComponent(key)}`); } catch {}
+  vaultGtagEvent("milestone_award", {
+    milestone_key: key,
+    milestone_title: String(payload.title || "").slice(0, 80),
+  });
+  return true;
+}
+
+/** Compute and award any milestones the user has crossed. Idempotent
+ *  — already-awarded keys are skipped via the awarded-set check inside
+ *  `awardMilestone`. Cheap to run on every commitParsedRuns. */
+function evaluateMilestones() {
+  if (!Array.isArray(parsedRuns) || parsedRuns.length === 0) return;
+  const total = parsedRuns.length;
+  const wins = parsedRuns.filter((r) => r.won).length;
+  const longestWinStreak = computeLongestWinStreak(parsedRuns);
+
+  // Run-count tiers
+  if (total >= 1)   awardMilestone("runs.1",   { title: "First run logged",      body: "Welcome to The Vault. Your run history is now tracked.", icon: "🎉" });
+  if (total >= 10)  awardMilestone("runs.10",  { title: "10 runs",                body: "You're warmed up. Keep climbing.", icon: "📈" });
+  if (total >= 25)  awardMilestone("runs.25",  { title: "25 runs logged",         body: "Patterns starting to show. Check the Cards tab.", icon: "🃏" });
+  if (total >= 50)  awardMilestone("runs.50",  { title: "50 runs",                body: "Half a hundred climbs. Your stats are getting trustworthy.", icon: "🏔️" });
+  if (total >= 100) awardMilestone("runs.100", { title: "100 runs!",              body: "You've officially put time into the Spire.", icon: "💯" });
+  if (total >= 250) awardMilestone("runs.250", { title: "250 runs",               body: "Veteran territory. Time to share a Highlight?", icon: "⚔️" });
+  if (total >= 500) awardMilestone("runs.500", { title: "500 runs",               body: "Five hundred climbs. The Spire knows your name.", icon: "👑" });
+
+  // Win-count tiers
+  if (wins >= 1)  awardMilestone("wins.1",  { title: "First victory!",       body: "You beat the Spire. Open this run from Recent Runs and share it.", icon: "🏆" });
+  if (wins >= 5)  awardMilestone("wins.5",  { title: "5 victories",          body: "Reliable climbing. Higher ascensions await.", icon: "⭐" });
+  if (wins >= 10) awardMilestone("wins.10", { title: "10 victories",         body: "Double-digit wins. Try the Ascensions tab to push harder.", icon: "🌟" });
+  if (wins >= 25) awardMilestone("wins.25", { title: "25 victories",         body: "Quarter-century. Your build crafting is on point.", icon: "💎" });
+  if (wins >= 50) awardMilestone("wins.50", { title: "50 victories",         body: "Half a hundred wins. Genuinely impressive.", icon: "👑" });
+
+  // Streaks
+  if (longestWinStreak >= 3)  awardMilestone("streak.3",  { title: "3-win streak",  body: "Three in a row. The Spire trembles.", icon: "🔥" });
+  if (longestWinStreak >= 5)  awardMilestone("streak.5",  { title: "5-win streak",  body: "Five consecutive wins. You found something.", icon: "🔥" });
+  if (longestWinStreak >= 10) awardMilestone("streak.10", { title: "10-win streak!", body: "Ten in a row. That's not luck — that's mastery.", icon: "🔥" });
+
+  // Per-character first clears
+  const winsByChar = new Map();
+  for (const r of parsedRuns) {
+    if (!r.won || !r.character) continue;
+    const k = String(r.character).toLowerCase();
+    winsByChar.set(k, (winsByChar.get(k) || 0) + 1);
+  }
+  for (const [character, n] of winsByChar) {
+    if (n >= 1) {
+      awardMilestone(`char.first-clear.${character}`, {
+        title: `First ${capitalize(character)} clear`,
+        body: `You beat the Spire as ${capitalize(character)} for the first time. Every character clear unlocks a new flavor of mastery.`,
+        icon: "✨",
+      });
+    }
+  }
+
+  // First daily run shared
+  const anyDaily = parsedRuns.some((r) => String(r.gameMode || "").toLowerCase() === "daily");
+  if (anyDaily) {
+    awardMilestone("daily.first", {
+      title: "Daily climber",
+      body: "First daily run logged. Daily seeds appear with a special badge in Highlights.",
+      icon: "🌅",
+    });
+  }
+}
+
+/** Walk runs in chronological order (oldest → newest) and return the
+ *  longest run of consecutive wins. Defeats and abandons reset the
+ *  counter. Stable on out-of-order disk reads because we sort first. */
+function computeLongestWinStreak(runs) {
+  if (!Array.isArray(runs)) return 0;
+  const sorted = runs.slice().sort((a, b) => {
+    const ta = a.endedAt instanceof Date ? a.endedAt.getTime() : Number(a.endedAt) || 0;
+    const tb = b.endedAt instanceof Date ? b.endedAt.getTime() : Number(b.endedAt) || 0;
+    return ta - tb;
+  });
+  let best = 0, run = 0;
+  for (const r of sorted) {
+    if (r.won) { run += 1; if (run > best) best = run; }
+    else run = 0;
+  }
+  return best;
+}
+
+/** Render a milestone toast — visually distinct from the standard
+ *  toast used for "Reaction failed" etc. Stays on screen longer
+ *  (5s) and animates in with a small bounce so it actually
+ *  registers as a celebration. Stacks if multiple fire in one
+ *  evaluation pass. */
+function showMilestoneToast(title, body, icon) {
+  let $stack = document.getElementById("milestone-stack");
+  if (!$stack) {
+    $stack = document.createElement("div");
+    $stack.id = "milestone-stack";
+    $stack.className = "milestone-stack";
+    document.body.appendChild($stack);
+  }
+  const $card = document.createElement("div");
+  $card.className = "milestone-card";
+  $card.setAttribute("role", "status");
+  $card.setAttribute("aria-live", "polite");
+  $card.innerHTML = `
+    <span class="milestone-icon" aria-hidden="true">${icon || "✨"}</span>
+    <div class="milestone-text">
+      <strong class="milestone-title">${esc(title)}</strong>
+      <span class="milestone-body">${esc(body)}</span>
+    </div>
+    <button class="milestone-close" type="button" aria-label="Dismiss">&times;</button>
+  `;
+  $stack.appendChild($card);
+  const dismiss = () => {
+    $card.classList.add("is-leaving");
+    setTimeout(() => $card.remove(), 260);
+  };
+  $card.querySelector(".milestone-close").addEventListener("click", dismiss);
+  setTimeout(dismiss, 5400);
+}
+
+// =========================================================================
+// Keyboard shortcuts
+//
+//   1–9 / 0    → jump to a sidebar tab in nav order
+//   /          → focus a search-shaped input on the current page
+//   r          → refresh save history
+//   i          → import (pick a save folder)
+//   ?          → toggle the keyboard-shortcut help overlay
+//   esc        → close any open modal / popover / overlay
+//
+// All shortcuts are suppressed while the user is typing in an input,
+// textarea, or contenteditable element so they don't fight content
+// editing. The help overlay itself is rendered lazily on first use.
+// =========================================================================
+function wireKeyboardShortcuts() {
+  if (window.__keyboardShortcutsWired) return;
+  window.__keyboardShortcutsWired = true;
+
+  const isTypingTarget = (el) => {
+    if (!el) return false;
+    if (el.isContentEditable) return true;
+    const tag = (el.tagName || "").toUpperCase();
+    if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
+    return false;
+  };
+
+  document.addEventListener("keydown", (e) => {
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    const target = e.target;
+    // The "?" key on most US keyboards lands as Shift+/. We let "?"
+    // through even from text inputs because it's an explicit help
+    // request, but suppress everything else when typing.
+    const isQuestion = e.key === "?" || (e.key === "/" && e.shiftKey);
+    if (isTypingTarget(target) && !isQuestion) {
+      // Allow Esc out of inputs (closes overlays without forcing blur first).
+      if (e.key !== "Escape") return;
+    }
+
+    // Escape closes the topmost dismissible UI.
+    if (e.key === "Escape") {
+      const $kbd = document.getElementById("kbd-help");
+      if ($kbd && !$kbd.hidden) { $kbd.hidden = true; e.preventDefault(); return; }
+      const $modal = document.getElementById("run-detail-modal");
+      if ($modal && !$modal.hidden) { closeRunDetailModal(); e.preventDefault(); return; }
+      // Other modals (share, etc.) close themselves via their own Esc handlers.
+      return;
+    }
+
+    if (isQuestion) {
+      e.preventDefault();
+      toggleKbdHelp();
+      return;
+    }
+
+    // Slash → focus the first visible search-style input on the page.
+    if (e.key === "/") {
+      const $search = findFocusableSearchInput();
+      if ($search) {
+        e.preventDefault();
+        $search.focus();
+        try { $search.select(); } catch {}
+      }
+      return;
+    }
+
+    // Number keys → tab navigation. We use whatever order the sidebar
+    // currently presents (which mirrors `KNOWN_TABS` minus Overlay).
+    if (/^[0-9]$/.test(e.key)) {
+      const idx = e.key === "0" ? 9 : parseInt(e.key, 10) - 1;
+      const $rows = Array.from(document.querySelectorAll(".nav-row"))
+        .filter(($b) => !$b.hidden && $b.offsetParent !== null);
+      const $row = $rows[idx];
+      if ($row && $row.dataset.tab) {
+        e.preventDefault();
+        switchTab($row.dataset.tab);
+      }
+      return;
+    }
+
+    // R refreshes save history (linked-folder reload).
+    if (e.key === "r" || e.key === "R") {
+      e.preventDefault();
+      void reloadSavedHistoryInteractive();
+      return;
+    }
+
+    // I imports / re-picks a save folder.
+    if (e.key === "i" || e.key === "I") {
+      e.preventDefault();
+      void scanForHistory();
+      return;
+    }
+  });
+}
+
+/** Find the most plausible search-style input on the current view. We
+ *  fall back through a few selectors because different tabs have
+ *  different inputs (and Recent Runs may not have a search at all). */
+function findFocusableSearchInput() {
+  const candidates = [
+    'input[type="search"]:not([disabled])',
+    'input[placeholder*="search" i]:not([disabled])',
+    'input[name*="search" i]:not([disabled])',
+    '#run-search',
+    '#highlight-search',
+  ];
+  for (const sel of candidates) {
+    const $el = document.querySelector(sel);
+    if ($el && $el.offsetParent !== null) return $el;
+  }
+  return null;
+}
+
+/** Lazily mount and toggle the keyboard-shortcut help overlay. The
+ *  markup lives in JS so we don't have a dormant element in HTML
+ *  cluttering the document tree until it's needed. */
+function toggleKbdHelp() {
+  let $kbd = document.getElementById("kbd-help");
+  if (!$kbd) {
+    $kbd = document.createElement("div");
+    $kbd.id = "kbd-help";
+    $kbd.className = "kbd-help";
+    $kbd.setAttribute("role", "dialog");
+    $kbd.setAttribute("aria-modal", "true");
+    $kbd.setAttribute("aria-labelledby", "kbd-help-title");
+    $kbd.hidden = true;
+    $kbd.innerHTML = `
+      <div class="kbd-help-backdrop" data-kbd-action="close"></div>
+      <div class="kbd-help-card">
+        <header class="kbd-help-head">
+          <h3 id="kbd-help-title">Keyboard shortcuts</h3>
+          <button class="kbd-help-close" type="button" data-kbd-action="close" aria-label="Close">&times;</button>
+        </header>
+        <div class="kbd-help-body">
+          <section>
+            <h4>Navigation</h4>
+            <ul>
+              <li><span><kbd>1</kbd>–<kbd>9</kbd></span><em>jump to a sidebar tab</em></li>
+              <li><span><kbd>0</kbd></span><em>last sidebar tab</em></li>
+              <li><span><kbd>Esc</kbd></span><em>close any modal or overlay</em></li>
+            </ul>
+          </section>
+          <section>
+            <h4>Save data</h4>
+            <ul>
+              <li><span><kbd>R</kbd></span><em>refresh from disk</em></li>
+              <li><span><kbd>I</kbd></span><em>import or re-pick a folder</em></li>
+            </ul>
+          </section>
+          <section>
+            <h4>Search &amp; help</h4>
+            <ul>
+              <li><span><kbd>/</kbd></span><em>focus the search field</em></li>
+              <li><span><kbd>?</kbd></span><em>toggle this help</em></li>
+            </ul>
+          </section>
+        </div>
+      </div>
+    `;
+    document.body.appendChild($kbd);
+    $kbd.addEventListener("click", (e) => {
+      if (e.target.closest('[data-kbd-action="close"]')) {
+        $kbd.hidden = true;
+      }
+    });
+  }
+  $kbd.hidden = !$kbd.hidden;
+}
+
+// Delegated click for character-card pin button. Stops propagation so the
+// pin click never triggers the surrounding `char-expand` handler.
+function wirePinnedCharsDelegation() {
+  if (window.__pinnedCharsWired) return;
+  window.__pinnedCharsWired = true;
+  document.addEventListener("click", (e) => {
+    const btn = e.target.closest && e.target.closest('[data-action="toggle-pin-character"]');
+    if (!btn) return;
+    e.stopPropagation();
+    e.preventDefault();
+    const key = btn.getAttribute("data-char-key") || "";
+    togglePinnedCharacter(key);
+    // Cheap re-render of the active stats tab — the pinned set only
+    // affects sort order on character grids, so a refresh of the tab
+    // body is enough; we don't need to recompute stats.
+    renderActiveTab();
+  });
 }
 
 /** Inline character drill-down — shown below the grid on the
@@ -7941,7 +9853,7 @@ function renderRecentRuns(runs) {
         const outcomeText = r.won ? "VICTORY" : "DEFEAT";
         const runId = esc(String(r.id ?? ""));
         return `
-          <div class="run-row" style="--char-color:${theme.color}" data-run-id="${runId}" tabindex="0" role="button" aria-label="Open run details: ${esc(charName)} ${r.won ? "victory" : "defeat"}${Number.isFinite(r.floorReached) ? ` on floor ${r.floorReached}` : ""}">
+          <div class="run-row" style="--char-color:${theme.color}" data-run-id="${runId}" tabindex="0" role="button" aria-label="Open run details: ${esc(charName)} ${r.won ? "victory" : "defeat"}${Number.isFinite(r.floorReached) ? ` on floor ${r.floorReached}` : ""}" data-run-preview="1">
             <div class="run-stripe"></div>
             <div class="run-row-body">
               <div class="run-icon">${charPortraitOrIcon(r.character, theme)}</div>
@@ -7960,6 +9872,9 @@ function renderRecentRuns(runs) {
                   <span>DURATION</span>
                 </div>` : ""}
               <span class="run-outcome ${wonClass}">${outcomeText}</span>
+              <button class="run-link-btn" type="button" data-action="copy-row-link" data-run-id="${runId}" title="Copy a direct link to this run" aria-label="Copy link">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 1 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 1 0 7.07 7.07l1.71-1.71"/></svg>
+              </button>
               <button class="run-share-btn" type="button" data-action="share-run" data-run-id="${runId}" title="Share this run" aria-label="Share this run">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                   <path d="M4 12v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7"/>
@@ -8828,6 +10743,19 @@ function wireRunDetailModal() {
   // stops propagation in its own handler so this never fires on Share.
   document.addEventListener("click", (e) => {
     if (e.target.closest('[data-action="share-run"]')) return;
+    // Copy-row-link: produces `?tab=runs&run=<id>` URL on the
+    // clipboard so the user can paste it back to themselves or a
+    // friend. Stops propagation so the row click that would open
+    // the modal doesn't also fire.
+    const linkBtn = e.target.closest('[data-action="copy-row-link"]');
+    if (linkBtn) {
+      e.stopPropagation();
+      e.preventDefault();
+      const id = linkBtn.dataset.runId;
+      const run = parsedRuns.find((r) => String(r.id) === String(id));
+      if (run) copyRunDeepLink(run, linkBtn);
+      return;
+    }
     if (e.target.closest('[data-action="open-run"]')) {
       const id = e.target.closest('[data-action="open-run"]').dataset.runId;
       const run = parsedRuns.find((r) => String(r.id) === String(id));
@@ -8852,7 +10780,7 @@ function wireRunDetailModal() {
   });
 }
 
-function openRunDetailModal(run) {
+function openRunDetailModal(run, opts = {}) {
   const $modal = document.getElementById("run-detail-modal");
   const $body  = document.getElementById("run-detail-body");
   if (!$modal || !$body) return;
@@ -8866,17 +10794,91 @@ function openRunDetailModal(run) {
     });
   });
   $body.querySelectorAll('[data-action="close-detail"]').forEach((btn) => {
-    btn.addEventListener("click", closeRunDetailModal);
+    btn.addEventListener("click", () => closeRunDetailModal());
+  });
+  // "Copy link" inside the modal — produces a shareable URL anyone
+  // can paste into Discord that re-opens the same run on load.
+  $body.querySelectorAll('[data-action="copy-run-link"]').forEach((btn) => {
+    btn.addEventListener("click", () => copyRunDeepLink(run, btn));
   });
   $modal.hidden = false;
   document.body.style.overflow = "hidden";
+  // Reflect the open modal in the URL so deep links + browser back
+  // both work. `opts.skipUrl` lets the boot-time deep-link opener
+  // skip the round-trip when the URL already points here.
+  if (!opts.skipUrl) syncRunUrl(run.id);
 }
 
-function closeRunDetailModal() {
+function closeRunDetailModal(opts = {}) {
   const $modal = document.getElementById("run-detail-modal");
   if (!$modal) return;
   $modal.hidden = true;
   document.body.style.overflow = "";
+  if (!opts.skipUrl) syncRunUrl(null);
+}
+
+/** Set or clear the `?run=…` query param without scrolling or
+ *  re-rendering. Used by openRunDetailModal/closeRunDetailModal so
+ *  the URL stays a permanent identity for whatever the user is
+ *  looking at. */
+function syncRunUrl(runId) {
+  try {
+    const u = new URL(window.location.href);
+    if (runId) u.searchParams.set("run", runId);
+    else u.searchParams.delete("run");
+    history.replaceState(null, "", `${u.pathname}${u.search}${u.hash}`);
+  } catch {}
+}
+
+/** Build a sharable absolute URL pointing at `?run=<id>` and copy it
+ *  to clipboard. Falls back to a small toast with the URL if
+ *  clipboard access is denied (browser without permission, http://
+ *  on a non-localhost origin, etc). */
+async function copyRunDeepLink(run, originBtn) {
+  const u = new URL(window.location.href);
+  u.searchParams.set("tab", "runs");
+  u.searchParams.set("run", run.id);
+  u.hash = "";
+  const url = u.toString();
+  try {
+    await navigator.clipboard.writeText(url);
+    toast("Run link copied. Paste it anywhere.");
+  } catch {
+    toast(url);
+  }
+  // Visual confirmation on the button itself.
+  if (originBtn) {
+    const prev = originBtn.textContent;
+    originBtn.textContent = "Copied!";
+    originBtn.classList.add("is-flashed");
+    setTimeout(() => {
+      originBtn.textContent = prev;
+      originBtn.classList.remove("is-flashed");
+    }, 1400);
+  }
+}
+
+/** Boot-time / post-ingest deep-link opener.
+ *
+ *  If the current URL has `?run=<id>` and that id is known to the
+ *  in-memory `parsedRuns` set, open its detail modal automatically.
+ *  Two callers feed this:
+ *    1) end of `boot()` — handles a cold load with a deep link.
+ *    2) end of `commitParsedRuns()` — handles the case where boot
+ *       saw the deep link before disk-ingest had populated the run.
+ *  Idempotent — the second call is a no-op if the modal is already
+ *  open for that id, which is exactly what we want. */
+function openDeepLinkedRunIfPresent() {
+  let runId = "";
+  try { runId = new URL(window.location.href).searchParams.get("run") || ""; } catch {}
+  if (!runId) return;
+  const $modal = document.getElementById("run-detail-modal");
+  // If a modal is already open with the same run, leave it alone.
+  if ($modal && !$modal.hidden && $modal.dataset.runId === runId) return;
+  const run = parsedRuns.find((r) => r.id === runId);
+  if (!run) return;
+  openRunDetailModal(run, { skipUrl: true });
+  if ($modal) $modal.dataset.runId = runId;
 }
 
 function renderRunDetail(r) {
@@ -9024,6 +11026,13 @@ function renderRunDetail(r) {
           <line x1="12" y1="2" x2="12" y2="15"/>
         </svg>
         <span>Share this run</span>
+      </button>
+      <button class="btn-ghost btn-icon-text" type="button" data-action="copy-run-link" title="Copy a direct link to this run">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 1 0-7.07-7.07l-1.72 1.71"/>
+          <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 1 0 7.07 7.07l1.71-1.71"/>
+        </svg>
+        <span>Copy link</span>
       </button>
       <button class="btn-ghost btn-icon-text" type="button" data-action="close-detail">
         Close
@@ -9317,7 +11326,15 @@ function wireShareModal() {
     e.stopPropagation();
     const id = btn.dataset.runId;
     const run = parsedRuns.find((r) => String(r.id) === String(id));
-    if (run) openShareModal(run);
+    if (run) {
+      openShareModal(run);
+      vaultGtagEvent("run_share_open", {
+        character: String(run.character || "unknown"),
+        ascension: Number.isFinite(run.ascension) ? run.ascension : 0,
+        won: run.won === true ? 1 : 0,
+        floor: Number.isFinite(run.floorReached) ? run.floorReached : 0,
+      });
+    }
   });
 }
 

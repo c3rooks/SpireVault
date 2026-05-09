@@ -144,8 +144,57 @@ function analyzeTemplate(file, startLine, body) {
 
 for (const f of FILES) check(f);
 
+// -------------------------------------------------------------------------
+// Strict-mode parse check.
+//
+// `node --check` (and Cloudflare Pages' build step) runs in *sloppy* mode,
+// where `function foo() {}` declared twice is silently legal. Browsers
+// loading the file as `<script type="module">` run it in strict mode,
+// where the second declaration throws `SyntaxError: Cannot declare a
+// function that shadows a let/const/class/function variable 'foo'` and
+// the entire app never boots.
+//
+// History: v117 shipped a duplicate `prettifyId` function and the browser
+// blanked the whole page until it was rolled forward. The earlier preflight
+// (`node --check`) was happy with it. Now we additionally feed each module
+// through `import()` so the strict-mode parse runs locally before we ever
+// deploy. ESM imports also catch other strict-only errors like top-level
+// `let`/`const` collisions.
+// -------------------------------------------------------------------------
+async function strictModeCheck(file) {
+  const path = join(ROOT, file);
+  // Only check modules. script.js is a module (loaded with type="module"),
+  // and everything in lib/ is an ES module by convention. auth.html is not
+  // a JS file, so skip it.
+  if (file.endsWith(".html")) return;
+  try {
+    // file:// URL so import() resolves correctly. cacheBust query so a
+    // re-run picks up edits without restarting the preflight harness.
+    const url = `file://${path}?strictPreflight=${Date.now()}`;
+    await import(url);
+  } catch (err) {
+    const msg = String(err?.message ?? err);
+    // Module resolution / runtime errors aren't our problem here — only
+    // SyntaxErrors are decisive. (For example, lib files that read
+    // `localStorage` at module top level will throw at runtime under
+    // Node, but that's not a parse problem.)
+    if (err instanceof SyntaxError) {
+      console.error(`✘ ${file}: strict-mode parse error — ${msg}`);
+      problemCount++;
+    } else if (msg.includes("Cannot declare") || msg.includes("has already been declared")) {
+      console.error(`✘ ${file}: strict-mode parse error — ${msg}`);
+      problemCount++;
+    }
+    // Any other error type is the ESM runtime tripping over browser
+    // globals (window, document, localStorage). Ignore — we only care
+    // about parse-time issues here.
+  }
+}
+
+for (const f of FILES) await strictModeCheck(f);
+
 if (problemCount > 0) {
-  console.error(`\n${problemCount} runtime template-literal issue${problemCount === 1 ? "" : "s"} found.`);
+  console.error(`\n${problemCount} runtime issue${problemCount === 1 ? "" : "s"} found.`);
   process.exit(1);
 }
 console.log("✓ runtime preflight passed");

@@ -7,6 +7,20 @@
   <link rel="icon" type="image/svg+xml" href="/assets/vault-mark.svg" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/styles.css" />
+
+  <!-- Google tag (gtag.js) — same stream as the main app. We track the
+       Steam OpenID return as its own page_view so the funnel tab in
+       GA4 can show "started sign-in → returned to /auth.html → landed
+       on /". send_page_view stays at the gtag default (true) here
+       because /auth.html has exactly one meaningful state per visit. -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-09LEQ247HN"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){ dataLayer.push(arguments); }
+    window.gtag = gtag;
+    gtag('js', new Date());
+    gtag('config', 'G-09LEQ247HN', { anonymize_ip: true });
+  </script>
 </head>
 <body>
   <div class="bg-glow" aria-hidden="true"></div>
