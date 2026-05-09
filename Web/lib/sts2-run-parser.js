@@ -102,13 +102,26 @@ export function parseSTS2Run(obj, sourceName = "unknown.run") {
   // bare string at `players[0].character` ("CHARACTER.SILENT"). Newer
   // builds (schema 16+) sometimes ship the character under a different
   // key, or as a nested object with an `id` field, or lower-case it,
-  // or drop the namespace prefix entirely. Rather than guess, we walk
-  // a list of likely candidates and return on the first hit. Anything
-  // else falls through to a last-resort scan that picks any string
-  // value on the player whose lowered form matches a known character
-  // key — schema-bump-proof for the four characters we know about
-  // today and forgiving when STS2 ships a fifth.
-  const character = extractCharacter(player) || parseCharacter(player.character);
+  // or drop the namespace prefix entirely, or in the worst case
+  // promote it to the run-root level (`obj.character_id`,
+  // `obj.run_class`). Rather than guess, we walk a list of likely
+  // candidates and return on the first hit. Anything else falls
+  // through to a last-resort scan that picks any string value on the
+  // player or run root whose lowered form matches a known character
+  // key — schema-bump-proof for the five characters we know about
+  // today and forgiving when STS2 ships a sixth.
+  //
+  // Order: player → root. Player wins because in legacy schemas the
+  // root object can carry a `character` field that's actually a
+  // *target* (event reward etc.), not the player's class.
+  const character =
+    extractCharacter(player) ||
+    parseCharacter(player.character) ||
+    extractCharacter(obj) ||
+    parseCharacter(obj.character) ||
+    parseCharacter(obj.character_id) ||
+    parseCharacter(obj.run_class) ||
+    null;
   const ascension = Number.isFinite(obj.ascension) ? Math.max(0, Math.min(20, obj.ascension | 0)) : null;
   const seed = typeof obj.seed === "string" ? obj.seed : null;
   const won = obj.win === true || obj.win === 1;

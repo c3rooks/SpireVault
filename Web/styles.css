@@ -23,6 +23,28 @@
 
 * { box-sizing: border-box; }
 
+/* `[hidden]` BACKSTOP — DO NOT REMOVE.
+ *
+ * Rule of thumb: any class selector with `display: <something>` will
+ * silently override the browser's `[hidden] { display: none }` because
+ * attribute selectors and class selectors share the same specificity
+ * weight (0,0,1,0) — and "later wins" puts our class declarations on
+ * top. That means `el.hidden = true` from JS does literally nothing.
+ *
+ * This wrecked the floating-tooltip lifecycle in prod: the highlights
+ * tooltip is `.h-tooltip { display: flex }`, the run-row preview is
+ * `.run-preview { ... }` (block default), so `forceHideHighlightsTooltip()`
+ * setting `$tip.hidden = true` left the tooltip parked at its last
+ * coordinates forever. Users saw a "Falling Star · CARD" tooltip
+ * floating over Recent Runs because they'd hovered a card on the
+ * Highlights tab a minute earlier and it never got hidden.
+ *
+ * The `!important` is intentional and load-bearing. It's the only way
+ * to win against `display: flex/grid/block` declared elsewhere on
+ * the same element.
+ */
+[hidden] { display: none !important; }
+
 html, body {
   margin: 0;
   padding: 0;
