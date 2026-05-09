@@ -68,7 +68,7 @@ const STS2_APP_ID = "2868840";
  * on an old client — instruct hard refresh. If it DOES match, the
  * bug is real and we can stop chasing cache ghosts.
  */
-const VAULT_BUILD = "v132-2026-05-09-auto-refresh-status";
+const VAULT_BUILD = "v133-2026-05-09-news-redesign-and-global-highlight-badge";
 
 // Feature flag — set to `true` only on local dev when iterating on the
 // Run Companion Overlay. Production stays false until the feature is
@@ -1760,6 +1760,17 @@ async function boot() {
   // tab paints instantly when the user clicks it. Auth optional —
   // guests get the same posts, just without `viewerReactions`.
   pullHighlights();
+  // Start the background poll regardless of which tab is currently
+  // active. The "new highlight" red dot in the sidebar fires from
+  // refreshHighlightsBadge() inside pullHighlights(), so without
+  // continuous polling a user sitting on Recent Runs would never
+  // light the notification when a friend posts. Cost is one fetch
+  // per HIGHLIGHTS_POLL_MS (30s) — trivial.
+  startHighlightsPolling();
+  // Now that we're polling continuously, also wire the news master/
+  // detail UI so its rail is ready the moment a user clicks into
+  // the News tab. Idempotent.
+  wireNewsTabs();
   // Wire the share-modal "Share to community" affordance even before
   // the modal is opened — keeps event listeners idempotent and the
   // boot sequence simpler.
@@ -2095,7 +2106,7 @@ function switchTab(tab) {
  * thing I read still the latest thing published?" — without forcing
  * a chronological compare that could go wrong on a typo.
  */
-const LATEST_NEWS_POST_ID = "post-001-2026-05-05-bug-fixes-and-updates";
+const LATEST_NEWS_POST_ID = "post-002-2026-05-09-run-compare-and-auto-refresh-status";
 const STORAGE_NEWS_LAST_READ = "vault.web.news.lastRead";
 
 /** Show the "NEW" pill on the sidebar News button when the user
@@ -2371,23 +2382,25 @@ function renderActiveTab() {
     if (lastFeed.length) renderFeed(lastFeed);
     renderInbox(lastInbox);
   } else if (activeTab === "highlights") {
-    // Lazy-fetch the feed the first time the user lands here, then
-    // re-render the cached payload on subsequent visits. Polling
-    // happens silently in the background while the tab is open
-    // (see startHighlightsPolling / stopHighlightsPolling).
+    // Foreground polling is already running from boot — just paint
+    // the cached feed now and force a fresh pull so the moment the
+    // user opens this tab they see the absolute latest.
     renderHighlightsFeed(lastHighlights);
     pullHighlights();
-    startHighlightsPolling();
+  } else if (activeTab === "news") {
+    // Defer to the news master/detail wiring — picks the active
+    // post from the URL hash and paints the rail. Idempotent so
+    // it's safe to call on every tab entry.
+    try { wireNewsTabs(); } catch {}
   } else if (activeTab === "overlay") {
     renderOverlayTab();
   } else if (activeTab === "settings") {
     renderSettingsTab();
-    stopHighlightsPolling();
-  } else {
-    // Any other tab: stop background polling for highlights so we
-    // don't waste KV reads when the user isn't looking.
-    stopHighlightsPolling();
   }
+  // Highlights polling now runs continuously regardless of tab so
+  // the sidebar's red "new highlights" notification badge fires for
+  // every signed-in user the moment a new community post lands —
+  // not just when they happen to be looking at the Highlights tab.
 }
 
 /** Paints the amber "Showing sample data — link your STS2 saves to see
@@ -4264,6 +4277,111 @@ function buildHighlightPayload(run, caption) {
       neowBonus: run.neowBonus,
     },
   };
+}
+
+// =========================================================================
+// News tab — master/detail
+//
+// The News panel ships with one <article class="news-post"> per article
+// in chronological order (newest first) directly in index.html so each
+// post is fully editable in any text editor. This function:
+//
+//   1. Generates the left-rail list of clickable article tiles by
+//      walking those <article> elements at boot.
+//   2. Wires click delegation: a click on a tile activates its post
+//      and hides the others, plus updates the URL hash so the
+//      selection survives a refresh and is shareable.
+//   3. Reads the URL hash on load (`#news-002`) and activates the
+//      matching post; otherwise defaults to the newest one.
+//
+// Idempotent — repeat calls bail via `window.__newsTabsWired`. Safe
+// to invoke from boot, from `renderActiveTab()` on every News tab
+// entry, and from a hashchange listener.
+// =========================================================================
+function wireNewsTabs() {
+  const $detail = document.getElementById("news-detail");
+  const $list   = document.getElementById("news-list");
+  if (!$detail || !$list) return;
+
+  const posts = Array.from($detail.querySelectorAll(".news-post[data-news-id]"));
+  if (posts.length === 0) return;
+
+  if (!window.__newsTabsWired) {
+    window.__newsTabsWired = true;
+
+    // Paint the left rail once. We deliberately preserve DOM order
+    // (newest first because that's how the article markup is
+    // ordered in index.html). Each tile has aria-pressed so screen
+    // readers get the active state.
+    const items = posts.map((p) => {
+      const id = p.getAttribute("data-news-id") || "";
+      const eyebrow = p.getAttribute("data-news-eyebrow") || "";
+      const title = (p.querySelector(".news-post-title")?.textContent || "Untitled").trim();
+      const tagsRaw = p.getAttribute("data-news-tags") || "";
+      const tags = tagsRaw.split(",").map((t) => t.trim()).filter(Boolean).slice(0, 2);
+      return `
+        <li>
+          <button type="button" class="news-list-item" data-news-id="${esc(id)}" aria-pressed="false">
+            <span class="news-list-eyebrow">${esc(eyebrow)}</span>
+            <span class="news-list-title">${esc(title)}</span>
+            ${tags.length ? `<span class="news-list-tags">${tags.map((t) => `<span class="news-list-tag">${esc(t)}</span>`).join("")}</span>` : ""}
+          </button>
+        </li>`;
+    }).join("");
+    $list.innerHTML = `<ol class="news-list-ol">${items}</ol>`;
+
+    // Click delegation on the rail.
+    $list.addEventListener("click", (e) => {
+      const btn = e.target instanceof Element ? e.target.closest("[data-news-id]") : null;
+      if (!btn) return;
+      const id = btn.getAttribute("data-news-id");
+      if (id) selectNewsPost(id, { updateHash: true });
+    });
+
+    // Hashchange so paste-link / browser-back navigations land on
+    // the right post. We listen at the window level (not inside
+    // the panel) because the hash can change while the user is on
+    // *any* tab.
+    window.addEventListener("hashchange", () => {
+      if (activeTab !== "news") return;
+      const m = (window.location.hash || "").match(/^#news-(\w+)/);
+      if (m) selectNewsPost(m[1], { updateHash: false });
+    });
+  }
+
+  // Pick the post to activate: URL hash wins, otherwise the newest
+  // (first DOM child in the detail).
+  const m = (window.location.hash || "").match(/^#news-(\w+)/);
+  const initialId = m ? m[1] : (posts[0].getAttribute("data-news-id") || "");
+  if (initialId) selectNewsPost(initialId, { updateHash: false });
+}
+
+function selectNewsPost(id, { updateHash } = { updateHash: true }) {
+  const $detail = document.getElementById("news-detail");
+  const $list = document.getElementById("news-list");
+  if (!$detail) return;
+  const target = $detail.querySelector(`.news-post[data-news-id="${cssEscape(String(id))}"]`);
+  if (!target) return;
+
+  // Show only the matching post.
+  $detail.querySelectorAll(".news-post").forEach((p) => {
+    p.hidden = (p !== target);
+  });
+  // Reflect the active state in the rail.
+  if ($list) {
+    $list.querySelectorAll(".news-list-item").forEach((btn) => {
+      btn.setAttribute("aria-pressed", btn.getAttribute("data-news-id") === id ? "true" : "false");
+    });
+  }
+  // Persist via URL hash so reload / share / browser back all DTRT.
+  if (updateHash) {
+    try { history.replaceState(null, "", `${window.location.pathname}${window.location.search}#news-${id}`); } catch {}
+  }
+  // Scroll the detail to top so a click on an older article doesn't
+  // leave the new content half-scrolled at the previous position.
+  try { $detail.scrollTo({ top: 0, behavior: "smooth" }); } catch { $detail.scrollTop = 0; }
+  // GA4 — which articles do people actually read?
+  try { vaultGtagEvent("news_post_view", { news_id: id }); } catch {}
 }
 
 /** Wire the share-modal's "Share to community" button + caption count.

@@ -41,6 +41,18 @@ final class AppState: ObservableObject {
         return c
     }
 
+    /// Self-update service. Polls GitHub Releases on bootstrap to look
+    /// for a newer DMG, and exposes "Check for updates" + "Install"
+    /// actions to the Settings UI. Single instance for the lifetime of
+    /// the app — its `@Published status` drives every relevant view.
+    let updateService = UpdateService()
+
+    /// Cached community highlights feed. Populated by HighlightsView
+    /// pulls; cached here so navigating away and back doesn't blank
+    /// the panel until the next network round-trip.
+    @Published var communityHighlights: [CommunityHighlight] = []
+    @Published var highlightsLoadedAt: Date?
+
     private var cancellables: Set<AnyCancellable> = []
 
     enum ScanStatus: Equatable {
@@ -124,6 +136,13 @@ final class AppState: ObservableObject {
         if config.overlayEnabled {
             overlayController.enabled = true
         }
+
+        // 8) Silent self-update check. Throttled to once every six
+        //    hours per launch — see UpdateService.autoCheckIfDue().
+        //    On a hit, the Settings tab and any toast banner render
+        //    the available update; we never auto-download or
+        //    auto-install without user consent.
+        Task { await updateService.autoCheckIfDue() }
     }
 
     /// Recompute the viewer's PlayerStats from local runs and stamp it onto

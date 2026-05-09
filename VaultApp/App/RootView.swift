@@ -35,7 +35,10 @@ private struct HSplit: View {
                 .frame(width: 1)
 
             VStack(spacing: 0) {
-                if section != .coop {
+                // Co-op, Highlights, News, and Settings each render
+                // their own header — suppress the generic title bar
+                // for them so we don't get a duplicated title row.
+                if ![SidebarSection.coop, .highlights, .news, .settings].contains(section) {
                     AppHeaderBar(section: section)
                 }
                 DetailView(section: section)
@@ -50,7 +53,9 @@ private struct HSplit: View {
 // MARK: - Sidebar
 
 enum SidebarSection: Hashable, CaseIterable, Identifiable {
-    case overview, characters, ascensions, relics, cards, runs, coop
+    case overview, characters, ascensions, relics, cards, runs
+    case coop, highlights, news
+    case settings
 
     var id: Self { self }
     var title: String {
@@ -62,6 +67,9 @@ enum SidebarSection: Hashable, CaseIterable, Identifiable {
         case .cards:      return "Cards"
         case .runs:       return "Recent Runs"
         case .coop:       return "Co-op"
+        case .highlights: return "Community Highlights"
+        case .news:       return "News"
+        case .settings:   return "Settings"
         }
     }
     var icon: String {
@@ -73,24 +81,29 @@ enum SidebarSection: Hashable, CaseIterable, Identifiable {
         case .cards:      return "rectangle.stack.fill"
         case .runs:       return "clock.fill"
         case .coop:       return "person.2.wave.2.fill"
+        case .highlights: return "star.bubble.fill"
+        case .news:       return "newspaper.fill"
+        case .settings:   return "gearshape.fill"
         }
     }
     /// Stats sections vs. tools — used to group the sidebar.
     var group: SidebarGroup {
         switch self {
         case .overview, .characters, .ascensions, .relics, .cards, .runs: return .stats
-        case .coop: return .community
+        case .coop, .highlights, .news: return .community
+        case .settings: return .system
         }
     }
 }
 
 enum SidebarGroup: String, CaseIterable, Identifiable {
-    case stats, community
+    case stats, community, system
     var id: Self { self }
     var label: String {
         switch self {
         case .stats:     return "STATS"
         case .community: return "COMMUNITY"
+        case .system:    return "SYSTEM"
         }
     }
 }
@@ -192,6 +205,20 @@ struct Sidebar: View {
             let inGame = others.filter(\.inSTS2).count
             if inGame > 0 { return "\(inGame)" }
             return others.isEmpty ? nil : "\(others.count)"
+        case .highlights:
+            // Tiny "•" dot when highlights have arrived since last
+            // visit — same UX as the web app's red sidebar dot.
+            return CommunityHighlightsBadge.unreadDot(for: state.communityHighlights,
+                                                     mySteamID: state.steamAuth.profile?.steamID)
+        case .news:
+            return NewsCatalog.hasUnreadLatest ? "•" : nil
+        case .settings:
+            // Surface an "Update" badge whenever the auto-checker has
+            // discovered a newer release. Nudges users toward the
+            // self-update flow without being modal about it.
+            if case .updateAvailable = state.updateService.status { return "Update" }
+            if case .readyToInstall = state.updateService.status { return "Ready" }
+            return nil
         default: return nil
         }
     }

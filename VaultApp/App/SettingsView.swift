@@ -19,6 +19,7 @@ struct SettingsView: View {
                         .tracking(2)
                         .foregroundStyle(Theme.textSecondary)
 
+                    updateBlock
                     saveFolderBlock
                     historyFileBlock
                     overlayBlock
@@ -35,6 +36,125 @@ struct SettingsView: View {
             customURLInput = state.config.customServerURL?.absoluteString ?? ""
             advancedOpen = state.config.customServerURL != nil
         }
+    }
+
+    /// "Updates" block. Shows the current version, when we last
+    /// checked, and the relevant action button(s) for whatever state
+    /// the UpdateService is in. The whole flow is gated by user
+    /// gestures — we never silently download or install.
+    private var updateBlock: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            SectionTitle("Updates", systemImage: "arrow.down.circle")
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .top, spacing: 10) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("The Vault \(state.updateService.currentVersion)")
+                            .font(.system(size: 12, weight: .heavy))
+                            .foregroundStyle(Theme.textPrimary)
+                        Text(updateStatusLine)
+                            .font(.system(size: 11))
+                            .foregroundStyle(Theme.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer()
+                    updateActions
+                }
+
+                if case let .downloading(progress, _) = state.updateService.status {
+                    ProgressView(value: progress)
+                        .progressViewStyle(.linear)
+                        .tint(Theme.accent)
+                }
+
+                if !releaseNotesPreview.isEmpty {
+                    DisclosureGroup {
+                        Text(releaseNotesPreview)
+                            .font(.system(size: 11, design: .monospaced))
+                            .foregroundStyle(Theme.text)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .textSelection(.enabled)
+                            .padding(.top, 6)
+                    } label: {
+                        Label("What's in this update", systemImage: "list.bullet.rectangle")
+                            .font(.system(size: 11, weight: .heavy))
+                            .foregroundStyle(Theme.textSecondary)
+                    }
+                }
+            }
+            .premiumPanel(padding: 12, cornerRadius: 10)
+        }
+    }
+
+    private var updateStatusLine: String {
+        switch state.updateService.status {
+        case .idle:
+            return "Last checked: never. Click \"Check for updates\" to look for a newer build on GitHub Releases."
+        case .checking:
+            return "Checking GitHub Releases for a newer build…"
+        case let .upToDate(version, _):
+            return "You're on the latest release (\(version))."
+        case let .updateAvailable(latest):
+            return "A newer build is available: \(latest.tag) — \(latest.name)."
+        case let .downloading(progress, latest):
+            let pct = Int((progress * 100).rounded())
+            return "Downloading \(latest.tag) (\(pct)% of \(formatBytes(latest.dmgSize)))…"
+        case let .readyToInstall(_, latest):
+            return "Ready to install \(latest.tag). The Vault will relaunch automatically."
+        case .installing:
+            return "Installing — this should only take a few seconds."
+        case let .failed(message):
+            return "Update failed: \(message)"
+        }
+    }
+
+    @ViewBuilder
+    private var updateActions: some View {
+        switch state.updateService.status {
+        case .idle, .upToDate, .failed:
+            Button("Check for updates") {
+                Task { await state.updateService.checkForUpdates(userInitiated: true) }
+            }
+            .controlSize(.small)
+        case .checking:
+            ProgressView().controlSize(.small)
+        case .updateAvailable:
+            HStack(spacing: 8) {
+                Button("Download update") {
+                    Task { await state.updateService.downloadUpdate() }
+                }
+                .controlSize(.small)
+                .keyboardShortcut(.defaultAction)
+                Button("View on GitHub") { state.updateService.openReleasePage() }
+                    .controlSize(.small)
+            }
+        case .downloading:
+            ProgressView().controlSize(.small)
+        case .readyToInstall:
+            Button("Install & relaunch") {
+                Task { await state.updateService.installAndRelaunch() }
+            }
+            .controlSize(.small)
+            .keyboardShortcut(.defaultAction)
+        case .installing:
+            ProgressView().controlSize(.small)
+        }
+    }
+
+    private var releaseNotesPreview: String {
+        if case let .updateAvailable(info) = state.updateService.status {
+            return String(info.notes.prefix(2400))
+        }
+        if case let .readyToInstall(_, info) = state.updateService.status {
+            return String(info.notes.prefix(2400))
+        }
+        return ""
+    }
+
+    private func formatBytes(_ bytes: Int64) -> String {
+        let f = ByteCountFormatter()
+        f.allowedUnits = [.useMB]
+        f.countStyle = .file
+        return f.string(fromByteCount: bytes)
     }
 
     private var saveFolderBlock: some View {

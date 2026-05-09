@@ -7,37 +7,93 @@ struct DetailView: View {
 
     var body: some View {
         Group {
-            // Co-op renders its own scroll/layout chrome — no padding wrapper.
-            if section == .coop {
+            switch section {
+            case .coop:
+                // Co-op renders its own scroll/layout chrome.
                 CoopView()
-            } else {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 28) {
-                        if let r = state.report, !state.runs.isEmpty {
-                            switch section {
-                            case .overview:   OverviewView(report: r)
-                            case .characters: CharactersView(report: r)
-                            case .ascensions: AscensionsView(report: r)
-                            case .relics:     RelicsView(report: r)
-                            case .cards:      CardsView(report: r)
-                            case .runs:       RecentRunsView(runs: state.filter.apply(state.runs))
-                            case .coop:       EmptyView() // unreachable
-                            }
-                        } else if state.runs.isEmpty {
-                            EmptyStateView()
-                                .frame(maxWidth: .infinity, minHeight: 500)
-                        } else {
-                            ProgressView()
-                                .frame(maxWidth: .infinity, minHeight: 500)
-                        }
-                    }
+            case .highlights:
+                ScrollView { HighlightsView()
                     .padding(.horizontal, 28)
                     .padding(.vertical, 24)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
+                    .frame(maxWidth: .infinity, alignment: .leading) }
+            case .news:
+                NewsView()
+                    .padding(.horizontal, 28)
+                    .padding(.vertical, 24)
+            case .settings:
+                ScrollView { SettingsView()
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 4) }
+            default:
+                statsScroll
             }
         }
         .background(Theme.bgPrimary)
+    }
+
+    private var statsScroll: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 28) {
+                if let r = state.report, !state.runs.isEmpty {
+                    switch section {
+                    case .overview:   OverviewView(report: r)
+                    case .characters: CharactersView(report: r)
+                    case .ascensions: AscensionsView(report: r)
+                    case .relics:     RelicsView(report: r)
+                    case .cards:      CardsView(report: r)
+                    case .runs:       RecentRunsView(runs: state.filter.apply(state.runs))
+                    default:          EmptyView() // handled in body switch
+                    }
+                } else if state.runs.isEmpty {
+                    EmptyStateView()
+                        .frame(maxWidth: .infinity, minHeight: 500)
+                } else {
+                    ProgressView()
+                        .frame(maxWidth: .infinity, minHeight: 500)
+                }
+            }
+            .padding(.horizontal, 28)
+            .padding(.vertical, 24)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+}
+
+/// Tiny helper that reuses the same "newest from someone else"
+/// rule the web app applies. We don't track lastSeenAt per-user
+/// in the macOS app yet — opening the tab just clears the dot for
+/// the current session. Persistence can come later if it matters.
+enum CommunityHighlightsBadge {
+    private static let storageKey = "vault.app.highlights.lastSeenISO"
+
+    static func unreadDot(for items: [CommunityHighlight], mySteamID: String?) -> String? {
+        guard !items.isEmpty else { return nil }
+        let iso = ISO8601DateFormatter()
+        var newestOther: Date?
+        for h in items {
+            if let mine = mySteamID, h.authorID == mine { continue }
+            if let d = iso.date(from: h.createdAt),
+               d > (newestOther ?? .distantPast) {
+                newestOther = d
+            }
+        }
+        guard let newest = newestOther else { return nil }
+        let last = (UserDefaults.standard.string(forKey: storageKey).flatMap { iso.date(from: $0) }) ?? .distantPast
+        return newest > last ? "•" : nil
+    }
+
+    static func markSeen(items: [CommunityHighlight]) {
+        let iso = ISO8601DateFormatter()
+        var newest: Date?
+        for h in items {
+            if let d = iso.date(from: h.createdAt),
+               d > (newest ?? .distantPast) {
+                newest = d
+            }
+        }
+        if let newest {
+            UserDefaults.standard.set(iso.string(from: newest), forKey: storageKey)
+        }
     }
 }
 

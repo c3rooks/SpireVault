@@ -8513,6 +8513,172 @@ html.prefer-compact-density .h-stat-num { font-size: 18px; }
   margin: 0 auto;
   max-width: 880px;
 }
+
+/* News master/detail layout.
+ *
+ * Left rail = chronologically-ordered list of articles. Right pane =
+ * the selected article body. The rail is sticky on desktop so a long
+ * article doesn't lose the navigation as the user scrolls.
+ *
+ * On phones (<880px) the rail collapses to a horizontal pill scroll
+ * along the top so the active article still owns the viewport. */
+.news-master-detail {
+  display: grid;
+  grid-template-columns: minmax(220px, 280px) 1fr;
+  gap: 24px;
+  align-items: flex-start;
+  max-width: 1180px;
+  margin: 0 auto;
+}
+.news-list {
+  position: sticky;
+  top: 16px;
+  align-self: flex-start;
+  background: linear-gradient(180deg, var(--card-raised), var(--card));
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 8px;
+  max-height: calc(100vh - 80px);
+  overflow-y: auto;
+}
+.news-list-ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.news-list-item {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 14px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  text-align: left;
+  cursor: pointer;
+  color: var(--text, #e6e0f3);
+  transition: background 160ms ease, border-color 160ms ease, transform 160ms ease;
+}
+.news-list-item:hover {
+  background: rgba(255,255,255,0.04);
+  border-color: rgba(255,255,255,0.10);
+}
+.news-list-item[aria-pressed="true"] {
+  background: linear-gradient(180deg, rgba(255,107,26,0.14), rgba(255,107,26,0.04));
+  border-color: rgba(255,107,26,0.45);
+  box-shadow:
+    0 0 0 1px rgba(255,107,26,0.30),
+    0 8px 24px rgba(255,107,26,0.10);
+}
+.news-list-eyebrow {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+  color: var(--accent, #ff6b1a);
+}
+.news-list-title {
+  font-size: 13.5px;
+  font-weight: 700;
+  letter-spacing: -0.005em;
+  line-height: 1.3;
+  color: var(--text, #e6e0f3);
+}
+.news-list-tags {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 2px;
+}
+.news-list-tag {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.08);
+  color: var(--text-3, #8a8095);
+}
+.news-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  min-width: 0; /* otherwise wide images blow out the grid */
+  max-height: calc(100vh - 80px);
+  overflow-y: auto;
+  scroll-behavior: smooth;
+  padding-right: 4px;
+}
+@media (max-width: 880px) {
+  .news-master-detail {
+    grid-template-columns: 1fr;
+  }
+  .news-list {
+    position: static;
+    max-height: none;
+    overflow-y: visible;
+  }
+  .news-list-ol {
+    flex-direction: row;
+    overflow-x: auto;
+    scroll-snap-type: x proximity;
+    padding-bottom: 4px;
+    gap: 8px;
+  }
+  .news-list-item {
+    flex: 0 0 240px;
+    scroll-snap-align: start;
+  }
+  .news-detail {
+    max-height: none;
+    overflow-y: visible;
+  }
+}
+.news-bullets {
+  margin: 0 0 14px;
+  padding-left: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.news-bullets li {
+  color: var(--text-2, #c8c0d8);
+  line-height: 1.55;
+}
+.news-roadmap--inflight {
+  padding-left: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.news-roadmap--inflight li {
+  position: relative;
+  padding: 12px 14px 12px 38px;
+  background: linear-gradient(180deg, rgba(212,175,55,0.06), rgba(20,16,28,0.6));
+  border: 1px solid rgba(212,175,55,0.22);
+  border-radius: 10px;
+}
+.news-roadmap--inflight li::before {
+  content: "";
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: linear-gradient(180deg, #ffd97a, #d4af37);
+  box-shadow: 0 0 0 4px rgba(212,175,55,0.16);
+  animation: arPulse 2.4s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .news-roadmap--inflight li::before { animation: none; }
+}
 .news-post {
   display: flex;
   flex-direction: column;
