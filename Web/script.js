@@ -68,7 +68,7 @@ const STS2_APP_ID = "2868840";
  * on an old client — instruct hard refresh. If it DOES match, the
  * bug is real and we can stop chasing cache ghosts.
  */
-const VAULT_BUILD = "v130-2026-05-09-hidden-attr-backstop";
+const VAULT_BUILD = "v131-2026-05-09-run-compare";
 
 // Feature flag — set to `true` only on local dev when iterating on the
 // Run Companion Overlay. Production stays false until the feature is
@@ -1563,6 +1563,7 @@ async function boot() {
   // immediately while preserving caret position in the search box.
   wireRunDetailModal();
   wireRunFilters();
+  wireCompareUI();
 
   // Load asset manifest in parallel with the message catalog. Both are
   // best-effort: failures degrade gracefully (no card art / no preset
@@ -2001,6 +2002,12 @@ function switchTab(tab) {
   try { forceHideHighlightsTooltip(); } catch {}
   try { forceHideRunRowPreview(); } catch {}
   try { closeAllReactionPopovers(); } catch {}
+  // Leaving Recent Runs cancels Compare mode. Selection is in-memory
+  // only and the dangling state would just confuse the user when
+  // they came back later. The toggle is one click to re-enter.
+  if (tab !== "runs" && compareMode) {
+    try { setCompareMode(false); } catch {}
+  }
   activeTab = tab;
   localStorage.setItem(STORAGE_LAST_TAB, tab);
   syncTabUrl(tab);
@@ -9738,6 +9745,92 @@ function persistRunFilters() {
   try { localStorage.setItem(STORAGE_RUN_FILTERS, JSON.stringify(runFilters)); } catch {}
 }
 
+// =========================================================================
+// Compare-runs mode
+//
+// User flow:
+//   1. Click "Compare" in the Recent Runs filter bar (or press `c` while
+//      the Recent Runs tab is active) → compareMode flips on.
+//   2. Each run row sprouts a checkbox; clicking the row now toggles
+//      selection rather than opening the run-detail modal.
+//   3. A sticky bottom bar appears reading "N runs selected · Compare"
+//      with the action button enabled when 2 ≤ N ≤ 3.
+//   4. Click Compare → side-by-side modal with stats + relic / card
+//      overlap highlighted.
+//
+// Cap is 3 because beyond 3 columns the modal feels cramped on
+// laptop widths and the overlap math (2-of-3 vs 3-of-3) starts
+// drifting into "complicated infographic" territory which is the
+// exact opposite of the platform's golden-rule UX.
+//
+// Selection state is kept in-memory only — leaving the Recent Runs
+// tab clears it because mid-flow comparison rarely survives a tab
+// switch and persisting to localStorage just creates dangling
+// references when the run list refreshes.
+// =========================================================================
+const COMPARE_MAX = 3;
+let compareMode = false;
+let compareSelected = new Set(); // run ids
+
+function setCompareMode(on) {
+  compareMode = !!on;
+  if (!compareMode) compareSelected.clear();
+  document.body.classList.toggle("compare-mode", compareMode);
+  // Re-render the Recent Runs panel so each row picks up its
+  // checkbox / no-checkbox state. We also refresh the bottom bar
+  // here so dismissing compare mode hides it cleanly.
+  try { renderStatsTab("runs"); } catch {}
+  refreshCompareBar();
+  vaultGtagEvent("compare_mode_toggle", { value: compareMode ? 1 : 0 });
+}
+
+function toggleCompareSelection(runId) {
+  if (!compareMode) return;
+  const id = String(runId);
+  if (compareSelected.has(id)) {
+    compareSelected.delete(id);
+  } else if (compareSelected.size < COMPARE_MAX) {
+    compareSelected.add(id);
+  } else {
+    // Soft cap — flash the bar so the user sees why nothing happened.
+    const $bar = document.getElementById("compare-bar");
+    if ($bar) {
+      $bar.classList.remove("is-shake");
+      // Force reflow so the animation re-triggers on a second click.
+      void $bar.offsetWidth;
+      $bar.classList.add("is-shake");
+    }
+    return;
+  }
+  // Toggle the row's visual state without re-rendering the whole list.
+  const $row = document.querySelector(`.run-row[data-run-id="${cssEscape(id)}"]`);
+  if ($row) $row.classList.toggle("is-compare-selected", compareSelected.has(id));
+  refreshCompareBar();
+}
+
+function cssEscape(s) {
+  // Tiny CSS.escape polyfill scoped to the characters we know we'll
+  // emit in run ids ("sts2-<epoch>" or "sts2-<seed>-<rand>"). Lets
+  // querySelector keep working on Safari/Firefox where some legacy
+  // engines still don't ship CSS.escape.
+  if (typeof CSS !== "undefined" && typeof CSS.escape === "function") return CSS.escape(s);
+  return String(s).replace(/[^a-zA-Z0-9_-]/g, (ch) => `\\${ch}`);
+}
+
+function refreshCompareBar() {
+  const $bar = document.getElementById("compare-bar");
+  if (!$bar) return;
+  const $count = document.getElementById("compare-bar-count");
+  const $go = document.getElementById("compare-bar-go");
+  const n = compareSelected.size;
+  $bar.hidden = !compareMode;
+  if ($count) $count.textContent = n === 1 ? "1 run selected" : `${n} runs selected`;
+  if ($go) {
+    $go.disabled = n < 2;
+    $go.textContent = n >= 2 ? `Compare ${n}` : "Compare";
+  }
+}
+
 function applyRunFilters(runs) {
   const q = (runFilters.search || "").toLowerCase().trim();
   return runs.filter((r) => {
@@ -9799,6 +9892,23 @@ function renderRunFilters(allRuns, filteredCount) {
     ? `Showing <strong>${filteredCount}</strong> of <strong>${allRuns.length}</strong> runs after filters. <button class="run-filter-clear" type="button" data-action="clear-filters">Clear all</button>`
     : `Showing all <strong>${allRuns.length}</strong> runs.`;
 
+  // Compare-mode toggle. We render the button regardless of whether
+  // the mode is active so the entry-point is always discoverable;
+  // the active state is reflected via aria-pressed and a CSS variant.
+  const compareToggle = `
+    <button
+      class="run-filter-compare"
+      type="button"
+      data-action="compare-toggle"
+      aria-pressed="${compareMode ? "true" : "false"}"
+      title="Compare mode (c) — pick 2 or 3 runs and see them side by side">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <rect x="3" y="4" width="7" height="16" rx="1.5"/>
+        <rect x="14" y="4" width="7" height="16" rx="1.5"/>
+      </svg>
+      <span>${compareMode ? "Exit compare" : "Compare"}</span>
+    </button>`;
+
   return `
     <div class="run-filters" role="region" aria-label="Filter runs">
       <div class="run-filter-group">
@@ -9817,6 +9927,7 @@ function renderRunFilters(allRuns, filteredCount) {
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
         <input type="search" placeholder="Search seed, character, win/loss…" value="${esc(runFilters.search || "")}" data-filter-kind="search" />
       </label>
+      ${compareToggle}
       <p class="run-filter-summary">${summary}</p>
     </div>`;
 }
@@ -9852,8 +9963,13 @@ function renderRecentRuns(runs) {
         const wonClass = r.won ? "is-victory" : "is-defeat";
         const outcomeText = r.won ? "VICTORY" : "DEFEAT";
         const runId = esc(String(r.id ?? ""));
+        const isSelected = compareSelected.has(String(runId));
         return `
-          <div class="run-row" style="--char-color:${theme.color}" data-run-id="${runId}" tabindex="0" role="button" aria-label="Open run details: ${esc(charName)} ${r.won ? "victory" : "defeat"}${Number.isFinite(r.floorReached) ? ` on floor ${r.floorReached}` : ""}" data-run-preview="1">
+          <div class="run-row${isSelected ? " is-compare-selected" : ""}" style="--char-color:${theme.color}" data-run-id="${runId}" tabindex="0" role="${compareMode ? "checkbox" : "button"}" aria-checked="${compareMode ? (isSelected ? "true" : "false") : "false"}" aria-label="${compareMode ? `${isSelected ? "Deselect" : "Select"} run for compare: ` : "Open run details: "}${esc(charName)} ${r.won ? "victory" : "defeat"}${Number.isFinite(r.floorReached) ? ` on floor ${r.floorReached}` : ""}" data-run-preview="${compareMode ? "0" : "1"}">
+            ${compareMode ? `
+              <div class="run-compare-check" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+              </div>` : ""}
             <div class="run-stripe"></div>
             <div class="run-row-body">
               <div class="run-icon">${charPortraitOrIcon(r.character, theme)}</div>
@@ -10765,6 +10881,15 @@ function wireRunDetailModal() {
     const row = e.target.closest('.run-row');
     if (!row) return;
     const id = row.dataset.runId;
+    // Compare-mode short-circuit: a row click here toggles selection
+    // for the compare modal instead of opening the run-detail modal.
+    // The share / copy-link buttons still work because they stop
+    // propagation in their own handlers above.
+    if (compareMode) {
+      e.preventDefault();
+      toggleCompareSelection(id);
+      return;
+    }
     const run = parsedRuns.find((r) => String(r.id) === String(id));
     if (run) openRunDetailModal(run);
   });
@@ -10775,6 +10900,10 @@ function wireRunDetailModal() {
     const row = document.activeElement?.closest?.('.run-row');
     if (!row) return;
     e.preventDefault();
+    if (compareMode) {
+      toggleCompareSelection(row.dataset.runId);
+      return;
+    }
     const run = parsedRuns.find((r) => String(r.id) === String(row.dataset.runId));
     if (run) openRunDetailModal(run);
   });
@@ -10815,6 +10944,273 @@ function closeRunDetailModal(opts = {}) {
   $modal.hidden = true;
   document.body.style.overflow = "";
   if (!opts.skipUrl) syncRunUrl(null);
+}
+
+// =========================================================================
+// Run compare modal
+// =========================================================================
+function wireCompareUI() {
+  if (window.__compareWired) return;
+  window.__compareWired = true;
+
+  // Compare-toggle button (lives in the run-filters bar; re-rendered
+  // on every filter change so we listen at the document level rather
+  // than binding directly).
+  document.addEventListener("click", (e) => {
+    const t = e.target instanceof Element ? e.target.closest('[data-action="compare-toggle"]') : null;
+    if (!t) return;
+    e.preventDefault();
+    setCompareMode(!compareMode);
+  });
+
+  // Bottom bar: Cancel + Compare actions.
+  document.addEventListener("click", (e) => {
+    if (!(e.target instanceof Element)) return;
+    if (e.target.closest('[data-action="compare-cancel"]')) {
+      e.preventDefault();
+      setCompareMode(false);
+      return;
+    }
+    if (e.target.closest('[data-action="compare-open"]')) {
+      e.preventDefault();
+      const ids = Array.from(compareSelected);
+      const runs = ids
+        .map((id) => parsedRuns.find((r) => String(r.id) === String(id)))
+        .filter(Boolean);
+      if (runs.length >= 2) openCompareModal(runs);
+      return;
+    }
+  });
+
+  // Modal close (× button + backdrop click + Esc).
+  const $modal = document.getElementById("run-compare-modal");
+  const $close = document.getElementById("run-compare-close");
+  if ($close) $close.addEventListener("click", closeCompareModal);
+  if ($modal) {
+    $modal.addEventListener("click", (e) => {
+      if (e.target === $modal) closeCompareModal();
+    });
+  }
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape") return;
+    if ($modal && !$modal.hidden) {
+      closeCompareModal();
+      return;
+    }
+    // Esc outside the modal but in compare mode = bail out of compare mode.
+    if (compareMode) setCompareMode(false);
+  });
+
+  // Keyboard shortcut: `c` toggles compare mode while on Recent Runs.
+  // Skipped while typing in inputs / textareas / contenteditable so it
+  // doesn't fight the user.
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "c" && e.key !== "C") return;
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    const tag = (e.target instanceof Element ? e.target.tagName : "") || "";
+    if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+    if (e.target instanceof HTMLElement && e.target.isContentEditable) return;
+    // Only meaningful from the Recent Runs tab.
+    const activeTab = document.querySelector('.tab-panel:not([hidden])')?.dataset?.tab;
+    if (activeTab !== "runs") return;
+    e.preventDefault();
+    setCompareMode(!compareMode);
+  });
+
+  refreshCompareBar();
+}
+
+function openCompareModal(runs) {
+  const $modal = document.getElementById("run-compare-modal");
+  const $body = document.getElementById("run-compare-body");
+  if (!$modal || !$body) return;
+  $body.innerHTML = renderCompare(runs);
+  $modal.hidden = false;
+  document.body.style.overflow = "hidden";
+  vaultGtagEvent("compare_open", { runs: runs.length });
+}
+
+function closeCompareModal() {
+  const $modal = document.getElementById("run-compare-modal");
+  if (!$modal) return;
+  $modal.hidden = true;
+  document.body.style.overflow = "";
+}
+
+/** Render the side-by-side comparison body. Pure function on the
+ *  selected run records — no DOM access. Computes relic and card
+ *  intersections so the modal can highlight what every run in the
+ *  selection has in common (the "what made these runs work?" view)
+ *  vs what's unique to each column. */
+function renderCompare(runs) {
+  if (!Array.isArray(runs) || runs.length < 2) return "";
+
+  // Normalize: deck strips upgrade suffix (`+1`) for set membership,
+  // but keeps the raw entry for the unique-cards display so we can
+  // show "+1 Strike" vs "Strike" as visually distinct picks.
+  const relicSets = runs.map((r) => new Set(Array.isArray(r.relics) ? r.relics : []));
+  const deckSets = runs.map((r) => {
+    const arr = Array.isArray(r.deckAtEnd) ? r.deckAtEnd : [];
+    return new Set(arr.map((id) => String(id).split("+")[0]));
+  });
+
+  // Intersection: relics / cards present in EVERY selected run.
+  const intersect = (sets) => {
+    if (!sets.length) return new Set();
+    const [first, ...rest] = sets;
+    const out = new Set();
+    for (const v of first) {
+      if (rest.every((s) => s.has(v))) out.add(v);
+    }
+    return out;
+  };
+  const sharedRelics = Array.from(intersect(relicSets));
+  const sharedCards = Array.from(intersect(deckSets));
+
+  // Per-run column. Stats grid + relics + a "unique cards" preview
+  // (cards in this run's deck that no other selected run has).
+  const columns = runs.map((r, i) => {
+    const theme = charTheme(r.character);
+    const charName = r.character ? capitalize(r.character) : "Unknown";
+    const won = r.won === true;
+    const abandoned = r.wasAbandoned === true;
+    const result = won ? "Victory" : abandoned ? "Abandoned" : "Defeat";
+    const resultClass = won ? "is-win" : abandoned ? "is-abandon" : "is-loss";
+    const dur = formatPlayTimeStrict(r.playTimeSeconds) || "—";
+    const dateStr = r.endedAt
+      ? formatRunDate(r.endedAt)
+      : (r.startedAt ? formatRunDate(r.startedAt) : "");
+    const relicArr = Array.isArray(r.relics) ? r.relics : [];
+    const deckArr = Array.isArray(r.deckAtEnd) ? r.deckAtEnd : [];
+
+    // Unique cards = cards in THIS deck not present in ALL others.
+    // We strip upgrade markers when computing uniqueness so "Strike"
+    // and "Strike+1" don't both register as "unique".
+    const otherDecks = deckSets.filter((_, j) => j !== i);
+    const otherUnion = new Set();
+    for (const s of otherDecks) for (const v of s) otherUnion.add(v);
+    const uniqueDeck = deckArr.filter((id) => {
+      const base = String(id).split("+")[0];
+      return !otherUnion.has(base);
+    }).slice(0, 8);
+
+    const portraitSrc = characterImageSrc(r.character);
+    const portrait = portraitSrc
+      ? `<img src="${esc(portraitSrc)}" alt="${esc(charName)}" loading="lazy">`
+      : `<span class="run-compare-portrait-fallback">${esc(charName.slice(0, 2))}</span>`;
+
+    const relicsHTML = relicArr.slice(0, 8).map((id) => {
+      const src = relicImageSrc(id);
+      const name = relicLabel(id);
+      const isShared = sharedRelics.includes(id);
+      return `
+        <li class="run-compare-relic${isShared ? " is-shared" : ""}" title="${esc(name)}${isShared ? " · shared with all selected runs" : ""}">
+          ${src
+            ? `<img src="${esc(src)}" alt="${esc(name)}" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='inline-flex'"><span class="run-compare-relic-fb" style="display:none">${esc(name.slice(0, 2))}</span>`
+            : `<span class="run-compare-relic-fb">${esc(name.slice(0, 2))}</span>`}
+        </li>`;
+    }).join("");
+    const moreRelics = Math.max(0, relicArr.length - 8);
+
+    const uniqueHTML = uniqueDeck.length
+      ? `<ul class="run-compare-cards">${uniqueDeck.map((id) => {
+          const upgraded = String(id).includes("+");
+          const base = String(id).split("+")[0];
+          const src = cardImageSrc(base);
+          const name = cardLabel(base);
+          return `
+            <li class="run-compare-card${upgraded ? " is-upgraded" : ""}" title="${esc(name)}${upgraded ? " (upgraded)" : ""}">
+              ${src
+                ? `<img src="${esc(src)}" alt="${esc(name)}" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='inline-flex'"><span class="run-compare-card-fb" style="display:none">${esc(name.slice(0, 2))}</span>`
+                : `<span class="run-compare-card-fb">${esc(name.slice(0, 2))}</span>`}
+            </li>`;
+        }).join("")}</ul>`
+      : `<p class="run-compare-empty">No unique cards — this deck overlaps fully with the others.</p>`;
+
+    const killedBy = !won && !abandoned && r.killedBy ? prettifyId(r.killedBy) : "";
+
+    return `
+      <article class="run-compare-col" style="--char-color:${theme.color}" data-result="${won ? "win" : abandoned ? "abandon" : "loss"}">
+        <header class="run-compare-col-head">
+          <div class="run-compare-portrait">${portrait}</div>
+          <div class="run-compare-id">
+            <h3 class="run-compare-name">${esc(charName)}</h3>
+            <div class="run-compare-meta">
+              ${Number.isFinite(r.ascension) ? `<span class="pill pill-gold">A${r.ascension}</span>` : ""}
+              <span class="run-compare-result ${resultClass}">${result}</span>
+            </div>
+            ${dateStr ? `<p class="run-compare-date muted small">${esc(dateStr)}</p>` : ""}
+          </div>
+        </header>
+        <dl class="run-compare-stats">
+          <div><dt>Floor</dt><dd>${Number.isFinite(r.floorReached) ? r.floorReached : "—"}</dd></div>
+          <div><dt>Time</dt><dd>${esc(dur)}</dd></div>
+          <div><dt>Deck</dt><dd>${deckArr.length}</dd></div>
+          <div><dt>Relics</dt><dd>${relicArr.length}</dd></div>
+        </dl>
+        <section class="run-compare-section">
+          <h4 class="run-compare-section-title">Relics${moreRelics > 0 ? ` <span class="muted">(top 8 of ${relicArr.length})</span>` : ""}</h4>
+          <ul class="run-compare-relics">${relicsHTML || `<li class="run-compare-empty">No relics recorded.</li>`}</ul>
+        </section>
+        <section class="run-compare-section">
+          <h4 class="run-compare-section-title">Unique cards${uniqueDeck.length ? ` <span class="muted">(top ${uniqueDeck.length})</span>` : ""}</h4>
+          ${uniqueHTML}
+        </section>
+        ${killedBy ? `<p class="run-compare-killed">Killed by <strong>${esc(killedBy)}</strong></p>` : ""}
+      </article>`;
+  }).join("");
+
+  // "Shared by all" panel above the columns. Only renders when the
+  // overlap is non-empty; otherwise we'd be eating vertical space
+  // showing nothing. The chips reuse the same image lookups so the
+  // shared row stays consistent with the per-column thumbnails.
+  const sharedHTML = (sharedRelics.length || sharedCards.length) ? `
+    <section class="run-compare-shared">
+      <header class="run-compare-shared-head">
+        <h3>Shared by all ${runs.length} runs</h3>
+        <p class="muted small">The relics + cards every selected run had in common.</p>
+      </header>
+      <div class="run-compare-shared-grid">
+        ${sharedRelics.length ? `
+          <div class="run-compare-shared-block">
+            <h4>${sharedRelics.length} relic${sharedRelics.length === 1 ? "" : "s"}</h4>
+            <ul class="run-compare-relics">
+              ${sharedRelics.slice(0, 12).map((id) => {
+                const src = relicImageSrc(id);
+                const name = relicLabel(id);
+                return `
+                  <li class="run-compare-relic is-shared" title="${esc(name)}">
+                    ${src
+                      ? `<img src="${esc(src)}" alt="${esc(name)}" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='inline-flex'"><span class="run-compare-relic-fb" style="display:none">${esc(name.slice(0, 2))}</span>`
+                      : `<span class="run-compare-relic-fb">${esc(name.slice(0, 2))}</span>`}
+                  </li>`;
+              }).join("")}
+            </ul>
+          </div>` : ""}
+        ${sharedCards.length ? `
+          <div class="run-compare-shared-block">
+            <h4>${sharedCards.length} card${sharedCards.length === 1 ? "" : "s"}</h4>
+            <ul class="run-compare-cards">
+              ${sharedCards.slice(0, 16).map((id) => {
+                const src = cardImageSrc(id);
+                const name = cardLabel(id);
+                return `
+                  <li class="run-compare-card is-shared" title="${esc(name)}">
+                    ${src
+                      ? `<img src="${esc(src)}" alt="${esc(name)}" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='inline-flex'"><span class="run-compare-card-fb" style="display:none">${esc(name.slice(0, 2))}</span>`
+                      : `<span class="run-compare-card-fb">${esc(name.slice(0, 2))}</span>`}
+                  </li>`;
+              }).join("")}
+            </ul>
+          </div>` : ""}
+      </div>
+    </section>` : `
+    <p class="run-compare-no-overlap muted small">No shared relics or cards across these runs — they're meaningfully different builds.</p>`;
+
+  return `
+    ${sharedHTML}
+    <div class="run-compare-grid run-compare-grid--${runs.length}">${columns}</div>
+    <p class="run-compare-foot muted small">Tip: press <kbd>Esc</kbd> to close · <kbd>c</kbd> to toggle compare mode on Recent Runs.</p>`;
 }
 
 /** Set or clear the `?run=…` query param without scrolling or
