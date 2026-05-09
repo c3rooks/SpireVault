@@ -16,6 +16,7 @@
 import * as Stats from "/lib/stats-engine.js?v=4";
 import * as HistoryStore from "/lib/history-store.js?v=8";
 import * as InviteAPI from "/lib/invites.js?v=4";
+import * as HighlightsAPI from "/lib/highlights.js?v=1";
 import * as AscInfo from "/lib/ascension-info.js?v=1";
 import * as CharInfo from "/lib/character-info.js?v=1";
 import * as RelicInfo from "/lib/relic-info.js?v=1";
@@ -67,7 +68,7 @@ const STS2_APP_ID = "2868840";
  * on an old client — instruct hard refresh. If it DOES match, the
  * bug is real and we can stop chasing cache ghosts.
  */
-const VAULT_BUILD = "v116-2026-05-09-overlay-polish-weekend";
+const VAULT_BUILD = "v117-2026-05-09-community-highlights";
 
 // Feature flag — set to `true` only on local dev when iterating on the
 // Run Companion Overlay. Production stays false until the feature is
@@ -803,11 +804,13 @@ let parsedRuns = [];          // current normalized history runs (in memory)
 let lastFeed   = [];          // last feed snapshot
 let lastInbox  = [];          // last inbox snapshot
 let lastOutbox = [];          // last outbox snapshot (invites we've sent)
+let lastHighlights = [];      // last community highlights snapshot
 let activeTab  = "overview";  // which tab panel is showing
 let pendingInviteToID = null; // who the modal is targeting
 let pollFeedTimer       = null;
 let pollInboxTimer      = null;
 let pollOutboxTimer     = null;
+let pollHighlightsTimer = null;
 let heartbeatTimer      = null;
 let heartbeatWatchdog   = null;
 let pushTimer           = null;
@@ -1678,6 +1681,26 @@ async function boot() {
     setInterval(refreshGuestRoster, POLL_FEED_MS);
   }
 
+  // Fetch the public community-highlights feed once on boot so the
+  // tab paints instantly when the user clicks it. Auth optional —
+  // guests get the same posts, just without `viewerReactions`.
+  pullHighlights();
+  // Wire the share-modal "Share to community" affordance even before
+  // the modal is opened — keeps event listeners idempotent and the
+  // boot sequence simpler.
+  wireShareToCommunity();
+  // Top-of-tab refresh button.
+  const $hRefresh = document.getElementById("highlights-refresh");
+  if ($hRefresh && !$hRefresh.dataset.wired) {
+    $hRefresh.dataset.wired = "1";
+    $hRefresh.addEventListener("click", () => {
+      lastHighlights = [];
+      const $feed = document.getElementById("highlights-feed");
+      if ($feed) $feed.setAttribute("aria-busy", "true");
+      pullHighlights();
+    });
+  }
+
   // When the tab regains focus after being hidden, force an immediate
   // refresh. For signed-in users that's a heartbeat + feed pull; for
   // guests it's just a stats reload from disk if a saved file handle
@@ -1692,6 +1715,7 @@ async function boot() {
     } else {
       void refreshGuestRoster();
     }
+    if (activeTab === "highlights") pullHighlights();
     void autoReloadHistoryIfPermitted({ silent: true });
   });
 
@@ -2214,8 +2238,20 @@ function renderActiveTab() {
     if (!session) return;
     if (lastFeed.length) renderFeed(lastFeed);
     renderInbox(lastInbox);
+  } else if (activeTab === "highlights") {
+    // Lazy-fetch the feed the first time the user lands here, then
+    // re-render the cached payload on subsequent visits. Polling
+    // happens silently in the background while the tab is open
+    // (see startHighlightsPolling / stopHighlightsPolling).
+    renderHighlightsFeed(lastHighlights);
+    pullHighlights();
+    startHighlightsPolling();
   } else if (activeTab === "overlay") {
     renderOverlayTab();
+  } else {
+    // Any other tab: stop background polling for highlights so we
+    // don't waste KV reads when the user isn't looking.
+    stopHighlightsPolling();
   }
 }
 
@@ -2698,6 +2734,516 @@ async function pullOutbox() {
   } catch (e) {
     console.warn("outbox fetch failed", e);
   }
+}
+
+// =========================================================================
+// Community highlights — feed, reactions, comments
+// =========================================================================
+//
+// Polling cadence is conservative: 30s while the tab is foregrounded,
+// nothing while backgrounded. Reactions and posts call pullHighlights()
+// after a successful write so the feed never lags behind the user's
+// own actions.
+const HIGHLIGHTS_POLL_MS = 30_000;
+
+/** Fetch the global feed. Auth is optional — guests see the same posts,
+ *  just without the "you reacted" indicator. */
+async function pullHighlights() {
+  try {
+    const token = session?.sessionToken ?? null;
+    const r = await HighlightsAPI.fetchFeed(API_BASE, token);
+    if (!r.ok) return;
+    lastHighlights = r.items ?? [];
+    if (activeTab === "highlights") {
+      renderHighlightsFeed(lastHighlights);
+    }
+  } catch (e) {
+    console.warn("highlights fetch failed", e);
+  }
+}
+
+function startHighlightsPolling() {
+  if (pollHighlightsTimer) return;
+  pollHighlightsTimer = setInterval(pullHighlights, HIGHLIGHTS_POLL_MS);
+}
+function stopHighlightsPolling() {
+  if (pollHighlightsTimer) {
+    clearInterval(pollHighlightsTimer);
+    pollHighlightsTimer = null;
+  }
+}
+
+/** Render the whole feed into #highlights-feed. Idempotent — called
+ *  on every poll tick + every modify-success.
+ *
+ *  Renders three states: loading (initial blank), empty (no posts),
+ *  populated (feed). Reactions and comment threads are wired via a
+ *  single delegated click handler on the feed container — see
+ *  wireHighlightsFeedDelegation. */
+function renderHighlightsFeed(items) {
+  const $feed = document.getElementById("highlights-feed");
+  if (!$feed) return;
+  $feed.setAttribute("aria-busy", "false");
+  if (!Array.isArray(items) || items.length === 0) {
+    $feed.innerHTML = `
+      <div class="highlights-empty">
+        <p><strong>No highlights yet.</strong></p>
+        <p class="muted">Finish a run you're proud of, open it from Recent Runs, click <em>Share</em>, and post it to the community.</p>
+      </div>`;
+    return;
+  }
+  $feed.innerHTML = items.map(renderHighlightCard).join("");
+  wireHighlightsFeedDelegation($feed);
+}
+
+/** One feed card. The whole card is a single static HTML render — no
+ *  per-card listeners. The reaction strip is a row of buttons (one per
+ *  emoji in the curated set), comment box renders its own form, and a
+ *  delete button shows for the author. */
+function renderHighlightCard(h) {
+  const run = h.run || {};
+  const characterLabel = prettifyCharacter(run.character);
+  const result = run.won ? "Win" : "Loss";
+  const resultClass = run.won ? "h-pill-win" : "h-pill-loss";
+  const ascLabel = `A${run.ascension ?? 0}`;
+  const floorLabel = run.won ? "→ kill" : `Floor ${run.floorReached ?? 0}`;
+  const time = formatRunDuration(run.playTimeSeconds);
+  const ago = formatRelativeActive(h.createdAt);
+  const isAuthor = !!session?.steamID && session.steamID === h.authorID;
+  const isAuthed = !!session?.sessionToken;
+  const viewerSet = new Set(h.viewerReactions || []);
+
+  const relics = (run.relics || []).slice(0, 8).map((id) => `
+    <li class="h-relic" title="${esc(prettifyId(id))}">
+      <img src="${esc(relicImageSrc(id))}" alt="" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='inline'">
+      <span class="h-relic-fallback" style="display:none">${esc(prettifyId(id))}</span>
+    </li>`).join("");
+  const moreRelics = Math.max(0, (run.relics || []).length - 8);
+
+  const cards = (run.deckHighlights || []).slice(0, 8).map((id) => `
+    <li class="h-card" title="${esc(prettifyId(id))}">
+      <img src="${esc(cardImageSrc(id))}" alt="" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='inline'">
+      <span class="h-card-fallback" style="display:none">${esc(prettifyId(id))}</span>
+    </li>`).join("");
+  const moreCards = Math.max(0, (run.deckHighlights || []).length - 8);
+
+  const reactionStrip = HighlightsAPI.ALLOWED_REACTIONS.map((emoji) => {
+    const count = h.reactions?.[emoji] ?? 0;
+    const pressed = viewerSet.has(emoji);
+    return `
+      <button
+        class="h-reaction ${pressed ? "is-on" : ""}"
+        type="button"
+        data-h-action="react"
+        data-h-id="${esc(h.id)}"
+        data-emoji="${esc(emoji)}"
+        aria-pressed="${pressed ? "true" : "false"}"
+        ${!isAuthed ? "disabled title='Sign in to react'" : ""}>
+        <span class="h-reaction-emoji">${emoji}</span>
+        ${count > 0 ? `<span class="h-reaction-count">${count}</span>` : ""}
+      </button>`;
+  }).join("");
+
+  const commentTeaser = h.commentCount > 0
+    ? `${h.commentCount} comment${h.commentCount === 1 ? "" : "s"}`
+    : "Add a comment";
+
+  return `
+    <article class="h-card-root" data-h-id="${esc(h.id)}" data-h-author="${esc(h.authorID)}">
+      <header class="h-card-head">
+        <img class="h-author-avatar" alt="" src="${esc(h.authorAvatar || "/assets/vault-mark.svg")}" />
+        <div class="h-author-meta">
+          <strong>${esc(h.authorPersona || "Steam User")}</strong>
+          <span class="muted small">${esc(ago)}</span>
+        </div>
+        ${isAuthor ? `
+          <button class="h-card-menu" type="button" data-h-action="delete" data-h-id="${esc(h.id)}" aria-label="Delete this highlight" title="Delete this highlight">×</button>
+        ` : ""}
+      </header>
+
+      ${h.caption ? `<p class="h-caption">${esc(h.caption)}</p>` : ""}
+
+      <div class="h-run-summary">
+        <span class="h-pill h-pill-character" data-character="${esc(run.character || "")}">${esc(characterLabel)}</span>
+        <span class="h-pill">${esc(ascLabel)}</span>
+        <span class="h-pill ${resultClass}">${esc(result)}</span>
+        <span class="h-pill h-pill-ghost">${esc(floorLabel)}</span>
+        <span class="h-pill h-pill-ghost">${esc(time)}</span>
+      </div>
+
+      ${(run.relics?.length || 0) > 0 ? `
+        <div class="h-row">
+          <h4 class="h-row-title">Relics</h4>
+          <ul class="h-icon-strip">${relics}${moreRelics > 0 ? `<li class="h-more">+${moreRelics}</li>` : ""}</ul>
+        </div>
+      ` : ""}
+
+      ${(run.deckHighlights?.length || 0) > 0 ? `
+        <div class="h-row">
+          <h4 class="h-row-title">Deck highlights</h4>
+          <ul class="h-icon-strip">${cards}${moreCards > 0 ? `<li class="h-more">+${moreCards}</li>` : ""}</ul>
+        </div>
+      ` : ""}
+
+      <footer class="h-card-foot">
+        <div class="h-reactions" role="group" aria-label="React to this run">
+          ${reactionStrip}
+        </div>
+        <button class="h-comments-toggle" type="button" data-h-action="toggle-comments" data-h-id="${esc(h.id)}">
+          ${esc(commentTeaser)}
+        </button>
+      </footer>
+
+      <section class="h-comments" data-h-comments="${esc(h.id)}" hidden>
+        <ol class="h-comments-list" data-h-comments-list="${esc(h.id)}">
+          <li class="muted small">Loading comments…</li>
+        </ol>
+        ${isAuthed ? `
+          <form class="h-comment-form" data-h-action="comment" data-h-id="${esc(h.id)}">
+            <textarea
+              class="h-comment-input"
+              maxlength="280"
+              rows="2"
+              placeholder="Add a comment…"
+              aria-label="Add a comment"
+              required></textarea>
+            <div class="h-comment-actions">
+              <span class="muted small h-comment-count">0 / 280</span>
+              <button class="btn-primary sm" type="submit">Post</button>
+            </div>
+          </form>
+        ` : `
+          <p class="muted small">Sign in with Steam to comment.</p>
+        `}
+      </section>
+    </article>`;
+}
+
+/** Single delegated click + submit handler for the whole feed. Avoids
+ *  re-binding listeners on every render — the feed re-renders frequently
+ *  (every 30s + after every modify) and per-button binds would leak. */
+function wireHighlightsFeedDelegation($feed) {
+  if ($feed.dataset.wired === "1") return;
+  $feed.dataset.wired = "1";
+  $feed.addEventListener("click", onHighlightsClick);
+  $feed.addEventListener("submit", onHighlightsSubmit);
+  $feed.addEventListener("input", onHighlightsInput);
+}
+
+async function onHighlightsClick(ev) {
+  const btn = ev.target.closest("[data-h-action]");
+  if (!btn) return;
+  const action = btn.dataset.hAction;
+  const id = btn.dataset.hId;
+  if (!id) return;
+  if (action === "react") {
+    if (!session?.sessionToken) {
+      toast("Sign in with Steam to react.");
+      return;
+    }
+    const emoji = btn.dataset.emoji;
+    if (!emoji) return;
+    // Optimistic flip: toggle the pressed state + count immediately so
+    // the click feels instant. Reconcile with the server response.
+    const wasPressed = btn.getAttribute("aria-pressed") === "true";
+    flipReactionVisually(btn, !wasPressed);
+    const r = await HighlightsAPI.toggleReaction(API_BASE, session.sessionToken, id, emoji);
+    if (!r.ok) {
+      flipReactionVisually(btn, wasPressed);
+      toast(r.error === "rate_limited" ? "Slow down a bit." : "Reaction failed.");
+      return;
+    }
+    // Authoritative sync — replace just this card from the response.
+    if (r.highlight) updateHighlightInPlace(r.highlight);
+  } else if (action === "toggle-comments") {
+    const $section = $feed_findCommentsSection(id);
+    if (!$section) return;
+    const wasHidden = $section.hidden;
+    $section.hidden = !wasHidden;
+    if (wasHidden) {
+      btn.setAttribute("aria-expanded", "true");
+      await loadCommentsInto(id);
+    } else {
+      btn.setAttribute("aria-expanded", "false");
+    }
+  } else if (action === "delete") {
+    if (!confirm("Delete this highlight? This can't be undone.")) return;
+    const r = await HighlightsAPI.deleteHighlight(API_BASE, session.sessionToken, id);
+    if (!r.ok) {
+      toast("Couldn't delete that highlight.");
+      return;
+    }
+    // Remove from local list and re-render.
+    lastHighlights = lastHighlights.filter((h) => h.id !== id);
+    renderHighlightsFeed(lastHighlights);
+    toast("Highlight removed.");
+  } else if (action === "delete-comment") {
+    const cid = btn.dataset.cid;
+    if (!cid) return;
+    if (!confirm("Delete this comment?")) return;
+    const r = await HighlightsAPI.deleteComment(API_BASE, session.sessionToken, id, cid);
+    if (!r.ok) {
+      toast("Couldn't delete that comment.");
+      return;
+    }
+    await loadCommentsInto(id);
+    pullHighlights();
+  }
+}
+
+async function onHighlightsSubmit(ev) {
+  const form = ev.target.closest("form[data-h-action='comment']");
+  if (!form) return;
+  ev.preventDefault();
+  const id = form.dataset.hId;
+  const $ta = form.querySelector(".h-comment-input");
+  if (!id || !$ta) return;
+  const text = ($ta.value || "").trim();
+  if (!text) return;
+  if (!session?.sessionToken) {
+    toast("Sign in with Steam to comment.");
+    return;
+  }
+  const $btn = form.querySelector("button[type='submit']");
+  if ($btn) $btn.disabled = true;
+  const r = await HighlightsAPI.postComment(API_BASE, session.sessionToken, id, text);
+  if ($btn) $btn.disabled = false;
+  if (!r.ok) {
+    toast(r.error === "rate_limited" ? "Slow down — give it a moment." : "Couldn't post that.");
+    return;
+  }
+  $ta.value = "";
+  const $count = form.querySelector(".h-comment-count");
+  if ($count) $count.textContent = "0 / 280";
+  await loadCommentsInto(id);
+  if (r.highlight) updateHighlightInPlace(r.highlight);
+}
+
+function onHighlightsInput(ev) {
+  const $ta = ev.target.closest(".h-comment-input");
+  if (!$ta) return;
+  const form = $ta.closest("form");
+  const $count = form?.querySelector(".h-comment-count");
+  if ($count) $count.textContent = `${($ta.value || "").length} / 280`;
+}
+
+function $feed_findCommentsSection(id) {
+  return document.querySelector(`[data-h-comments="${cssEscapeId(id)}"]`);
+}
+
+function cssEscapeId(s) {
+  // Hex IDs are always safe selectors (only [0-9a-f]) but route through
+  // CSS.escape if the function exists for future-proofing.
+  if (typeof CSS !== "undefined" && CSS.escape) return CSS.escape(s);
+  return s;
+}
+
+async function loadCommentsInto(id) {
+  const $list = document.querySelector(`[data-h-comments-list="${cssEscapeId(id)}"]`);
+  if (!$list) return;
+  $list.innerHTML = `<li class="muted small">Loading comments…</li>`;
+  const r = await HighlightsAPI.fetchComments(API_BASE, id);
+  if (!r.ok) {
+    $list.innerHTML = `<li class="muted small">Couldn't load comments.</li>`;
+    return;
+  }
+  const comments = r.comments || [];
+  if (comments.length === 0) {
+    $list.innerHTML = `<li class="muted small">No comments yet.</li>`;
+    return;
+  }
+  // Determine the highlight author so we can show delete buttons in
+  // both author-of-comment and author-of-highlight cases (server
+  // permits both).
+  const card = lastHighlights.find((h) => h.id === id);
+  const highlightAuthorID = card?.authorID;
+  const me = session?.steamID;
+  $list.innerHTML = comments.map((c) => {
+    const canDelete = me && (me === c.authorID || me === highlightAuthorID);
+    return `
+      <li class="h-comment">
+        <img class="h-comment-avatar" alt="" src="${esc(c.authorAvatar || "/assets/vault-mark.svg")}" />
+        <div class="h-comment-body">
+          <div class="h-comment-meta">
+            <strong>${esc(c.authorPersona || "Steam User")}</strong>
+            <span class="muted small">${esc(formatRelativeActive(c.createdAt))}</span>
+            ${canDelete ? `
+              <button class="h-comment-delete" type="button"
+                data-h-action="delete-comment"
+                data-h-id="${esc(id)}"
+                data-cid="${esc(c.id)}"
+                title="Delete">×</button>
+            ` : ""}
+          </div>
+          <p class="h-comment-text">${esc(c.text)}</p>
+        </div>
+      </li>`;
+  }).join("");
+}
+
+/** Replace just the one card's data in `lastHighlights` and re-render
+ *  in place, without disturbing scroll position or the user's typed
+ *  comment drafts in other cards. */
+function updateHighlightInPlace(highlight) {
+  const idx = lastHighlights.findIndex((h) => h.id === highlight.id);
+  if (idx === -1) return;
+  // Preserve the comments visibility state across re-render — the
+  // delegation handler reads it from the DOM, so we just need to
+  // copy the hidden flag back after replacing the card markup.
+  const prevSection = $feed_findCommentsSection(highlight.id);
+  const prevWasOpen = prevSection && !prevSection.hidden;
+  lastHighlights[idx] = highlight;
+  const $oldCard = document.querySelector(`.h-card-root[data-h-id="${cssEscapeId(highlight.id)}"]`);
+  if (!$oldCard) return;
+  const tmp = document.createElement("div");
+  tmp.innerHTML = renderHighlightCard(highlight);
+  const $newCard = tmp.firstElementChild;
+  if (!$newCard) return;
+  $oldCard.replaceWith($newCard);
+  if (prevWasOpen) {
+    const $section = $feed_findCommentsSection(highlight.id);
+    if ($section) {
+      $section.hidden = false;
+      const $toggle = $newCard.querySelector(`[data-h-action="toggle-comments"]`);
+      if ($toggle) $toggle.setAttribute("aria-expanded", "true");
+      // Re-fetch so the count + thread stay in sync.
+      loadCommentsInto(highlight.id);
+    }
+  }
+}
+
+/** Visually toggle a single reaction button without waiting for the
+ *  server. Updates aria-pressed + count text. */
+function flipReactionVisually(btn, on) {
+  btn.setAttribute("aria-pressed", on ? "true" : "false");
+  btn.classList.toggle("is-on", on);
+  const $count = btn.querySelector(".h-reaction-count");
+  const current = $count ? Number($count.textContent || "0") : 0;
+  const next = on ? current + 1 : Math.max(0, current - 1);
+  if ($count) {
+    if (next === 0) $count.remove();
+    else $count.textContent = String(next);
+  } else if (next > 0) {
+    const span = document.createElement("span");
+    span.className = "h-reaction-count";
+    span.textContent = String(next);
+    btn.appendChild(span);
+  }
+}
+
+function prettifyCharacter(c) {
+  if (!c) return "Unknown";
+  const map = {
+    ironclad: "Ironclad", silent: "Silent", regent: "Regent",
+    necrobinder: "Necrobinder", defect: "Defect",
+  };
+  const k = String(c).toLowerCase();
+  return map[k] || c;
+}
+
+function prettifyId(id) {
+  if (!id) return "";
+  const noPlus = id.replace(/\+\d*$/, "");
+  return noPlus.split("_").map((p) => p.charAt(0).toUpperCase() + p.slice(1)).join(" ");
+}
+
+function formatRunDuration(seconds) {
+  const s = Math.max(0, Math.floor(seconds || 0));
+  const m = Math.floor(s / 60);
+  const h = Math.floor(m / 60);
+  if (h > 0) return `${h}h ${m % 60}m`;
+  return `${m}m`;
+}
+
+/** Build the highlight payload from a parsed run. The server re-sanitizes
+ *  every field so this is just the client's "best effort to send only
+ *  what's interesting." */
+function buildHighlightPayload(run, caption) {
+  return {
+    caption: caption || undefined,
+    run: {
+      character: run.character ?? "",
+      ascension: run.ascension ?? 0,
+      floorReached: run.floorReached ?? 0,
+      won: run.won === true,
+      playTimeSeconds: run.playTimeSeconds ?? 0,
+      endedAt: run.endedAt ?? new Date().toISOString(),
+      killedBy: run.killedBy,
+      relics: (run.relics || []).slice(0, 12),
+      deckHighlights: highlightCards(run).slice(0, 12),
+      neowBonus: run.neowBonus,
+    },
+  };
+}
+
+/** Wire the share-modal's "Share to community" button + caption count.
+ *  Idempotent — safe to call multiple times. */
+function wireShareToCommunity() {
+  const $btn = document.getElementById("share-to-community");
+  const $cap = document.getElementById("share-community-caption");
+  const $cnt = document.getElementById("share-community-caption-count");
+  const $status = document.getElementById("share-community-status");
+  const $view = document.getElementById("share-community-view");
+  if ($btn && !$btn.dataset.wired) {
+    $btn.dataset.wired = "1";
+    $btn.addEventListener("click", async () => {
+      if (!session?.sessionToken) {
+        setShareCommunityStatus("Sign in with Steam first to share.", "warn");
+        return;
+      }
+      if (!currentShareRun) {
+        setShareCommunityStatus("No run loaded.", "warn");
+        return;
+      }
+      $btn.disabled = true;
+      const caption = ($cap?.value || "").trim();
+      const payload = buildHighlightPayload(currentShareRun, caption);
+      const r = await HighlightsAPI.shareRun(API_BASE, session.sessionToken, payload);
+      $btn.disabled = false;
+      if (!r.ok) {
+        if (r.error === "rate_limited") {
+          setShareCommunityStatus("You can share again in a few minutes.", "warn");
+        } else {
+          setShareCommunityStatus("Couldn't share — try again in a moment.", "warn");
+        }
+        return;
+      }
+      setShareCommunityStatus("Shared! It's live on the Community feed.", "ok");
+      if ($cap) $cap.value = "";
+      if ($cnt) $cnt.textContent = "0 / 280";
+      // Bring the new highlight into the cached feed at the head so a
+      // tab switch shows it instantly.
+      if (r.highlight) {
+        lastHighlights = [r.highlight, ...lastHighlights.filter((h) => h.id !== r.highlight.id)];
+      }
+      // Background re-fetch to pick up server-canonical state.
+      pullHighlights();
+    });
+  }
+  if ($cap && !$cap.dataset.wired) {
+    $cap.dataset.wired = "1";
+    $cap.addEventListener("input", () => {
+      if ($cnt) $cnt.textContent = `${($cap.value || "").length} / 280`;
+    });
+  }
+  if ($view && !$view.dataset.wired) {
+    $view.dataset.wired = "1";
+    $view.addEventListener("click", (ev) => {
+      ev.preventDefault();
+      switchTab("highlights");
+      closeShareModal();
+    });
+  }
+}
+
+function setShareCommunityStatus(msg, kind) {
+  const $status = document.getElementById("share-community-status");
+  if (!$status) return;
+  $status.textContent = msg;
+  $status.classList.remove("is-ok", "is-warn");
+  if (kind === "ok") $status.classList.add("is-ok");
+  if (kind === "warn") $status.classList.add("is-warn");
+  $status.hidden = !msg;
 }
 
 /**
@@ -8779,6 +9325,14 @@ function openShareModal(run) {
   currentShareRun = run;
   const $modal = document.getElementById("share-modal");
   setShareHint("Drop the image straight into Discord, Reddit, or X.", "");
+  // Reset the community-share status so a previous "Shared!" pill
+  // doesn't carry over to a new modal open.
+  setShareCommunityStatus("", "");
+  const $cap = document.getElementById("share-community-caption");
+  const $cnt = document.getElementById("share-community-caption-count");
+  if ($cap) $cap.value = "";
+  if ($cnt) $cnt.textContent = "0 / 280";
+  wireShareToCommunity();
   // First draw with whatever's already cached (typically nothing on the
   // first share of a session). Then async-load the character portrait,
   // every relic icon, and the highlighted card art in parallel and

@@ -31,7 +31,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Playfair+Display:wght@700;900&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/styles.css?v=96" />
+  <link rel="stylesheet" href="/styles.css?v=97" />
 </head>
 <body>
   <div class="bg-glow" aria-hidden="true"></div>
@@ -163,6 +163,11 @@
             <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M9 11a3 3 0 100-6 3 3 0 000 6zm6 0a3 3 0 100-6 3 3 0 000 6zm-9 8a5 5 0 0110 0zm9-1a5 5 0 015-5v6h-5z"/></svg></span>
             <span class="nav-label">Co-op</span>
             <span class="nav-badge" id="nav-coop-count" hidden></span>
+          </button>
+          <button class="nav-row" data-tab="highlights">
+            <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.39 6.95H22l-5.93 4.31L18.46 22 12 17.27 5.54 22l2.39-8.74L2 8.95h7.61z"/></svg></span>
+            <span class="nav-label">Highlights</span>
+            <span class="nav-badge nav-badge--new" id="nav-highlights-count" hidden>NEW</span>
           </button>
           <button class="nav-row" data-tab="news">
             <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M4 4h12a2 2 0 012 2v12a3 3 0 003 3H6a2 2 0 01-2-2V4zm2 2v13h12.17A1 1 0 0118 18V6H6zm2 3h8v2H8V9zm0 4h8v2H8v-2zm0 4h5v2H8v-2z"/></svg></span>
@@ -652,6 +657,31 @@
         </div>
       </article>
 
+      <!-- =================== Community highlights ===================
+           Shared runs from the community. Anyone signed in can share a
+           run, react to others, and comment. The whole tab is a single
+           feed (#highlights-feed) re-rendered on poll. Sharing happens
+           from the run-share modal, not from this tab — keeps the
+           sharing flow attached to the run a user is admiring. -->
+      <article class="tab-panel" data-tab="highlights" aria-labelledby="tab-highlights-title" hidden>
+        <div class="panel-head">
+          <div class="panel-head-coop-row">
+            <div>
+              <h2 id="tab-highlights-title">Community highlights</h2>
+              <p class="panel-sub">Runs the community is excited to share. React, leave a quick comment, or post your own from the share modal on any run.</p>
+            </div>
+            <div class="panel-head-actions">
+              <button class="btn-ghost" id="highlights-refresh" type="button" title="Refresh feed">Refresh</button>
+            </div>
+          </div>
+        </div>
+        <div class="panel-body">
+          <div id="highlights-feed" class="highlights-feed" aria-live="polite" aria-busy="true">
+            <div class="highlights-empty"><p>Loading community highlights…</p></div>
+          </div>
+        </div>
+      </article>
+
       <!-- News tab. Static for now — every post lives directly in the
            markup. When we have more than ~5 posts we'll move them to a
            data file and render in JS, but for the launch cadence (one
@@ -878,6 +908,33 @@
           <button class="btn-ghost" id="share-copy-md" type="button">Copy as markdown</button>
         </div>
         <p class="share-hint" id="share-hint">Drop the image straight into Discord, Reddit, or X.</p>
+        <!-- Share-to-Community block. Lives inside the same modal as the
+             image-card flow so the user is already looking at the run
+             they care about. Caption is optional, capped at 280 chars
+             (server enforces). The whole block disables itself for
+             guests with a sign-in nudge instead of hiding — discovery
+             matters more than tidiness here. -->
+        <section class="share-community" aria-labelledby="share-community-title">
+          <div class="share-community-head">
+            <h3 id="share-community-title">Share to community</h3>
+            <p class="muted small">Drop this run on the Highlights feed so other players can react and comment. You can delete it any time.</p>
+          </div>
+          <div class="share-community-body">
+            <label class="share-community-label" for="share-community-caption">Optional note <span class="muted small" id="share-community-caption-count">0 / 280</span></label>
+            <textarea
+              id="share-community-caption"
+              class="share-community-caption"
+              maxlength="280"
+              rows="2"
+              placeholder="Brag a little. What was the moment that made it?"
+            ></textarea>
+            <div class="share-community-actions">
+              <button class="btn-primary" id="share-to-community" type="button">Share to community</button>
+              <a class="btn-ghost btn-link" id="share-community-view" href="#" data-tab-link="highlights">View feed</a>
+            </div>
+            <p class="share-community-status" id="share-community-status" hidden></p>
+          </div>
+        </section>
       </div>
     </div>
   </div>
@@ -911,6 +968,6 @@
     </div>
   </footer>
 
-  <script src="/script.js?v=116" type="module"></script>
+  <script src="/script.js?v=117" type="module"></script>
 </body>
 </html>

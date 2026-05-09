@@ -35,6 +35,17 @@ import {
   uploadRuns,
   deleteRuns,
 } from "./runs";
+import {
+  shareHighlight,
+  listHighlights,
+  getHighlight,
+  toggleReaction,
+  postComment,
+  listComments,
+  deleteHighlight,
+  deleteComment,
+} from "./highlights";
+import { steamIDForRequest } from "./auth";
 import { checkAndConsume, clientIP, hashID } from "./ratelimit";
 
 /**
@@ -417,6 +428,119 @@ async function handle(
         const auth = await requireSession(req, env);
         if (auth instanceof Response) return auth;
         await deleteRuns(env, auth.steamID);
+        return json({ ok: true });
+      }
+
+      // ----- Community highlights -----
+      //
+      // GET    /highlights              public read of recent shared runs.
+      //                                 Auth optional — when present, the
+      //                                 response is enriched with
+      //                                 `viewerReactions` per item.
+      // POST   /highlights              auth-required, share a run.
+      // GET    /highlights/:id          single highlight (refresh after
+      //                                 react/comment without re-paginating).
+      // DELETE /highlights/:id          auth-required, author-only.
+      // POST   /highlights/:id/reactions auth-required, toggle one of the
+      //                                 curated emojis.
+      // GET    /highlights/:id/comments public list (so you can browse
+      //                                 comments without an account).
+      // POST   /highlights/:id/comments auth-required.
+      // DELETE /highlights/:id/comments/:cid auth-required, author-of-comment
+      //                                       or author-of-highlight.
+      if (method === "GET" && pathname === "/highlights") {
+        const viewer = await steamIDForRequest(req, env);
+        const items = await listHighlights(env, viewer);
+        return json({ items });
+      }
+      if (method === "POST" && pathname === "/highlights") {
+        const auth = await requireSession(req, env);
+        if (auth instanceof Response) return auth;
+        // 1 share / 5 min / user. The per-user cap of 5 active highlights
+        // already bounds growth; this rate cap stops a single tab from
+        // hammering the share button.
+        const userLimit = await checkAndConsume(env, {
+          bucket: "highlights-share",
+          id: auth.steamID,
+          max: 1,
+          windowSeconds: 5 * 60,
+        });
+        if (!userLimit.allowed) {
+          return json(
+            { error: "rate_limited", retry_after_sec: userLimit.retryAfterSec },
+            { status: 429, headers: { "retry-after": String(userLimit.retryAfterSec) } }
+          );
+        }
+        const ipLimit = await ipWriteLimit(env, req, "highlights-share-ip", 5, 60 * 60);
+        if (!ipLimit.ok) return ipLimit.resp;
+        const body = await req.json().catch(() => null);
+        const result = await shareHighlight(env, auth.steamID, body);
+        if (!result.ok) return json({ error: result.error }, { status: result.status });
+        return json({ highlight: result.highlight });
+      }
+
+      const highlightIdMatch = pathname.match(/^\/highlights\/([0-9a-f]{32})$/);
+      if (highlightIdMatch && method === "GET") {
+        const viewer = await steamIDForRequest(req, env);
+        const item = await getHighlight(env, highlightIdMatch[1], viewer);
+        if (!item) return notFound();
+        return json({ highlight: item });
+      }
+      if (highlightIdMatch && method === "DELETE") {
+        const auth = await requireSession(req, env);
+        if (auth instanceof Response) return auth;
+        const result = await deleteHighlight(env, highlightIdMatch[1], auth.steamID);
+        if (!result.ok) return json({ error: result.error }, { status: result.status });
+        return json({ ok: true });
+      }
+
+      const reactionMatch = pathname.match(/^\/highlights\/([0-9a-f]{32})\/reactions$/);
+      if (reactionMatch && method === "POST") {
+        const auth = await requireSession(req, env);
+        if (auth instanceof Response) return auth;
+        const ipLimit = await ipWriteLimit(env, req, "highlights-react", 60, 60);
+        if (!ipLimit.ok) return ipLimit.resp;
+        const body = await req.json().catch(() => null) as { emoji?: unknown } | null;
+        const result = await toggleReaction(env, reactionMatch[1], auth.steamID, body?.emoji);
+        if (!result.ok) return json({ error: result.error }, { status: result.status });
+        return json({ highlight: result.highlight });
+      }
+
+      const commentsMatch = pathname.match(/^\/highlights\/([0-9a-f]{32})\/comments$/);
+      if (commentsMatch && method === "GET") {
+        const result = await listComments(env, commentsMatch[1]);
+        if ("ok" in result && result.ok === false) {
+          return json({ error: result.error }, { status: result.status });
+        }
+        return json(result);
+      }
+      if (commentsMatch && method === "POST") {
+        const auth = await requireSession(req, env);
+        if (auth instanceof Response) return auth;
+        const userLimit = await checkAndConsume(env, {
+          bucket: "highlights-comment",
+          id: auth.steamID,
+          max: 10,
+          windowSeconds: 5 * 60,
+        });
+        if (!userLimit.allowed) {
+          return json(
+            { error: "rate_limited", retry_after_sec: userLimit.retryAfterSec },
+            { status: 429, headers: { "retry-after": String(userLimit.retryAfterSec) } }
+          );
+        }
+        const body = await req.json().catch(() => null) as { text?: unknown } | null;
+        const result = await postComment(env, commentsMatch[1], auth.steamID, body?.text);
+        if (!result.ok) return json({ error: result.error }, { status: result.status });
+        return json({ comment: result.comment, highlight: result.highlight });
+      }
+
+      const commentIdMatch = pathname.match(/^\/highlights\/([0-9a-f]{32})\/comments\/([0-9a-f]{32})$/);
+      if (commentIdMatch && method === "DELETE") {
+        const auth = await requireSession(req, env);
+        if (auth instanceof Response) return auth;
+        const result = await deleteComment(env, commentIdMatch[1], commentIdMatch[2], auth.steamID);
+        if (!result.ok) return json({ error: result.error }, { status: result.status });
         return json({ ok: true });
       }
 

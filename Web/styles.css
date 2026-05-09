@@ -7929,3 +7929,379 @@ select#me-note option { background: var(--bg-deep); color: var(--text); }
   }
 }
 
+
+/* ─────────────────────────────────────────────────────────────────
+ * Community highlights — feed cards, reactions, comments
+ *
+ * Layout is a vertical stack of cards (one per shared run) inside
+ * .panel-body. Each card has:
+ *   .h-card-head    — author avatar + persona + relative time + delete
+ *   .h-caption      — optional author note (≤ 280 chars)
+ *   .h-run-summary  — pill row of character / asc / win-loss / floor
+ *   .h-row × 2      — relics + deck highlights (icon strips)
+ *   .h-card-foot    — reaction strip + comments toggle
+ *   .h-comments     — collapsible thread + composer
+ *
+ * The reaction buttons are the only place we re-use the orange accent
+ * — pressed state is a soft tint so a card with five reactions stays
+ * readable. Counts only appear when > 0 to keep the strip quiet on
+ * fresh posts.
+ * ───────────────────────────────────────────────────────────────── */
+.highlights-feed {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-width: 760px;
+}
+.highlights-empty {
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  padding: 40px 24px;
+  text-align: center;
+  color: var(--text-3);
+}
+.highlights-empty p { margin: 0 0 6px; }
+.highlights-empty p:last-child { margin: 0; }
+
+.h-card-root {
+  background: var(--card-bg, #15101e);
+  border: 1px solid rgba(255,255,255,0.07);
+  border-radius: 14px;
+  padding: 16px 18px;
+  box-shadow: 0 1px 0 rgba(255,255,255,0.03) inset;
+}
+
+.h-card-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.h-author-avatar {
+  width: 36px; height: 36px;
+  border-radius: 50%;
+  border: 1px solid rgba(255,255,255,0.10);
+  flex-shrink: 0;
+}
+.h-author-meta { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.h-author-meta strong {
+  font-size: 13.5px;
+  font-weight: 700;
+  letter-spacing: -0.005em;
+  color: var(--text, #e6e0f3);
+}
+.h-card-menu {
+  margin-left: auto;
+  background: transparent;
+  border: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  color: var(--text-3, #8a8095);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 160ms ease, color 160ms ease;
+}
+.h-card-menu:hover { background: rgba(255,255,255,0.06); color: var(--text-2, #c8c0d8); }
+
+.h-caption {
+  margin: 4px 0 12px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text-2, #c8c0d8);
+}
+
+.h-run-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+.h-pill {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  padding: 4px 9px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.06);
+  color: var(--text-2, #c8c0d8);
+}
+.h-pill-ghost { background: transparent; }
+.h-pill-character[data-character="ironclad"]    { background: rgba(198,40,40,0.18);  color: #ff8c8c; border-color: rgba(198,40,40,0.32); }
+.h-pill-character[data-character="silent"]      { background: rgba(46,125,50,0.18);  color: #88e09a; border-color: rgba(46,125,50,0.32); }
+.h-pill-character[data-character="regent"]      { background: rgba(249,168,37,0.18); color: #ffd073; border-color: rgba(249,168,37,0.32); }
+.h-pill-character[data-character="necrobinder"] { background: rgba(106,27,154,0.22); color: #d6a3ff; border-color: rgba(106,27,154,0.36); }
+.h-pill-character[data-character="defect"]      { background: rgba(21,101,192,0.18); color: #8fc4ff; border-color: rgba(21,101,192,0.32); }
+.h-pill-win  { background: rgba(76,175,80,0.18); color: #88e09a; border-color: rgba(76,175,80,0.32); }
+.h-pill-loss { background: rgba(229,57,53,0.18); color: #ff9d9d; border-color: rgba(229,57,53,0.32); }
+
+.h-row { margin: 8px 0 12px; }
+.h-row:last-of-type { margin-bottom: 14px; }
+.h-row-title {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-3, #8a8095);
+  margin: 0 0 6px;
+}
+.h-icon-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.h-relic, .h-card {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  background: rgba(255,255,255,0.04);
+  border-radius: 8px;
+  border: 1px solid rgba(255,255,255,0.05);
+  overflow: hidden;
+}
+.h-card { width: 28px; height: 38px; border-radius: 6px; }
+.h-relic img, .h-card img { width: 100%; height: 100%; object-fit: contain; }
+.h-relic-fallback, .h-card-fallback {
+  font-size: 9px;
+  text-align: center;
+  padding: 2px 4px;
+  color: var(--text-3, #8a8095);
+}
+.h-more {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-3, #8a8095);
+  padding: 0 8px;
+}
+
+.h-card-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 6px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255,255,255,0.05);
+}
+.h-reactions { display: flex; flex-wrap: wrap; gap: 6px; }
+
+.h-reaction {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 999px;
+  padding: 5px 10px;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    background 160ms cubic-bezier(0.16, 1, 0.3, 1),
+    border-color 160ms cubic-bezier(0.16, 1, 0.3, 1),
+    transform 160ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.h-reaction:hover { background: rgba(255,255,255,0.07); transform: translateY(-1px); }
+.h-reaction:disabled { opacity: 0.55; cursor: not-allowed; }
+.h-reaction.is-on {
+  background: rgba(255,107,26,0.18);
+  border-color: rgba(255,107,26,0.45);
+  color: #ffb380;
+}
+.h-reaction-emoji { font-size: 14px; }
+.h-reaction-count {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--text-2, #c8c0d8);
+}
+.h-reaction.is-on .h-reaction-count { color: #ffb380; }
+
+.h-comments-toggle {
+  background: transparent;
+  border: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-3, #8a8095);
+  cursor: pointer;
+  padding: 6px 10px;
+  border-radius: 6px;
+  transition: background 160ms ease, color 160ms ease;
+}
+.h-comments-toggle:hover { background: rgba(255,255,255,0.05); color: var(--text-2, #c8c0d8); }
+
+.h-comments {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255,255,255,0.05);
+}
+.h-comments-list {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.h-comment {
+  display: flex;
+  gap: 8px;
+  padding: 8px 10px;
+  background: rgba(255,255,255,0.025);
+  border-radius: 8px;
+  border: 1px solid rgba(255,255,255,0.04);
+}
+.h-comment-avatar {
+  width: 24px; height: 24px;
+  border-radius: 50%;
+  border: 1px solid rgba(255,255,255,0.08);
+  flex-shrink: 0;
+}
+.h-comment-body { flex: 1; min-width: 0; }
+.h-comment-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 2px;
+}
+.h-comment-meta strong { font-size: 12px; font-weight: 700; color: var(--text, #e6e0f3); }
+.h-comment-text {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-2, #c8c0d8);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.h-comment-delete {
+  margin-left: auto;
+  background: transparent;
+  border: 0;
+  width: 22px; height: 22px;
+  font-size: 14px;
+  line-height: 1;
+  color: var(--text-3, #8a8095);
+  cursor: pointer;
+  border-radius: 4px;
+}
+.h-comment-delete:hover { background: rgba(229,57,53,0.18); color: #ff9d9d; }
+
+.h-comment-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.h-comment-input {
+  width: 100%;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.08);
+  color: var(--text, #e6e0f3);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 12.5px;
+  resize: vertical;
+  min-height: 44px;
+  transition: border-color 160ms ease, background 160ms ease;
+}
+.h-comment-input:focus {
+  outline: none;
+  border-color: rgba(255,107,26,0.55);
+  background: rgba(255,255,255,0.05);
+}
+.h-comment-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+@media (max-width: 720px) {
+  .highlights-feed { max-width: none; }
+  .h-card-root { padding: 14px; }
+  .h-card-foot { flex-direction: column; align-items: stretch; }
+  .h-reactions { justify-content: flex-start; }
+}
+
+/* Share-modal "Share to community" sub-section. Lives below the
+   image-card export buttons inside the same modal so the user
+   stays attached to the run they're sharing. */
+.share-community {
+  margin-top: 18px;
+  padding-top: 18px;
+  border-top: 1px solid rgba(255,255,255,0.06);
+}
+.share-community-head h3 {
+  margin: 0 0 4px;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+.share-community-body {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.share-community-label {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-3, #8a8095);
+}
+.share-community-caption {
+  width: 100%;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.08);
+  color: var(--text, #e6e0f3);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 13px;
+  resize: vertical;
+  min-height: 48px;
+  transition: border-color 160ms ease, background 160ms ease;
+}
+.share-community-caption:focus {
+  outline: none;
+  border-color: rgba(255,107,26,0.55);
+  background: rgba(255,255,255,0.05);
+}
+.share-community-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 4px;
+}
+.share-community-status {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--text-3, #8a8095);
+}
+.share-community-status.is-ok { color: #88e09a; }
+.share-community-status.is-warn { color: #ffb380; }
+.btn-link {
+  background: transparent !important;
+  border: 0 !important;
+  padding: 6px 10px;
+  color: var(--text-3, #8a8095);
+  font-weight: 600;
+  text-decoration: none;
+}
+.btn-link:hover { color: var(--text-2, #c8c0d8); }
