@@ -9770,6 +9770,97 @@ html.prefer-compact-density .h-stat-num { font-size: 18px; }
 .btn-link:hover { color: var(--text-2, #c8c0d8); }
 
 /* ============================================================
+ * Auto-refresh status pill (Recent Runs)
+ *
+ * Lives between the filter row and the list. Three visual states:
+ *   - .is-ok       :  green dot, "Auto-refresh on · last checked Xs ago"
+ *   - .is-paused   :  amber dot, "Browser revoked access" + Resume button
+ *   - .is-error    :  red dot, "Hit a snag" + Retry button
+ *
+ * The pill is the user's primary signal that auto-refresh is healthy.
+ * Production users were silently getting stale stats for hours because
+ * Chrome would drop FSA permissions back to "prompt" and the loop
+ * just no-op'd. Surfacing state turns "auto-refresh is broken" into a
+ * one-click fix.
+ * ============================================================ */
+.auto-refresh-pill {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 0 14px;
+  padding: 10px 14px;
+  background: linear-gradient(180deg, rgba(22,18,32,0.96), rgba(14,11,22,0.96));
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 12px;
+  font-size: 13px;
+}
+.auto-refresh-pill[hidden] { display: none !important; }
+.auto-refresh-pill .auto-refresh-text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.auto-refresh-pill strong {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text, #e6e0f3);
+  letter-spacing: -0.005em;
+}
+.auto-refresh-sub {
+  font-size: 12px;
+  color: var(--text-3, #8a8095);
+  letter-spacing: 0.01em;
+}
+.auto-refresh-dot {
+  flex-shrink: 0;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #6dd97c;
+  box-shadow: 0 0 0 4px rgba(109,217,124,0.16);
+  position: relative;
+}
+.auto-refresh-pill.is-ok .auto-refresh-dot {
+  background: #6dd97c;
+  box-shadow: 0 0 0 4px rgba(109,217,124,0.16);
+  animation: arPulse 2.4s ease-in-out infinite;
+}
+.auto-refresh-pill.is-paused {
+  border-color: rgba(255,179,128,0.40);
+  background: linear-gradient(180deg, rgba(255,167,46,0.10), rgba(28,22,40,0.96));
+}
+.auto-refresh-pill.is-paused .auto-refresh-dot {
+  background: #ffb380;
+  box-shadow: 0 0 0 4px rgba(255,179,128,0.18);
+}
+.auto-refresh-pill.is-error {
+  border-color: rgba(255,95,109,0.40);
+  background: linear-gradient(180deg, rgba(255,95,109,0.08), rgba(28,22,40,0.96));
+}
+.auto-refresh-pill.is-error .auto-refresh-dot {
+  background: #ff5f6d;
+  box-shadow: 0 0 0 4px rgba(255,95,109,0.18);
+}
+.auto-refresh-resume,
+.auto-refresh-retry {
+  white-space: nowrap;
+}
+@keyframes arPulse {
+  0%, 100% { box-shadow: 0 0 0 4px rgba(109,217,124,0.16); }
+  50%      { box-shadow: 0 0 0 6px rgba(109,217,124,0.30); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .auto-refresh-dot { animation: none !important; }
+}
+@media (max-width: 720px) {
+  .auto-refresh-pill { flex-wrap: wrap; }
+  .auto-refresh-resume,
+  .auto-refresh-retry { width: 100%; margin-top: 6px; }
+}
+
+/* ============================================================
  * Run Compare mode
  *
  * The Recent Runs tab gains a "Compare" toggle in its filter row.

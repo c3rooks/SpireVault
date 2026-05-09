@@ -111,10 +111,17 @@ export function parseSTS2Run(obj, sourceName = "unknown.run") {
   // key — schema-bump-proof for the five characters we know about
   // today and forgiving when STS2 ships a sixth.
   //
-  // Order: player → root. Player wins because in legacy schemas the
-  // root object can carry a `character` field that's actually a
-  // *target* (event reward etc.), not the player's class.
-  const character =
+  // Order: player → root → deck-card-namespace inference. Player wins
+  // because in legacy schemas the root object can carry a `character`
+  // field that's actually a *target* (event reward etc.), not the
+  // player's class. Deck inference is the LAST resort because it's
+  // load-bearing for schema-16+ partial writes where the explicit
+  // character field is missing or empty but the deck has already
+  // been seeded with the starter strike+defend cards, every one of
+  // which is namespaced to the character (e.g. "CARD.SILENT_STRIKE",
+  // "CARD.IRONCLAD_STRIKE"). The user reported "Unknown" rendering
+  // for fresh Silent runs — this is the safety net.
+  let character =
     extractCharacter(player) ||
     parseCharacter(player.character) ||
     extractCharacter(obj) ||
@@ -122,6 +129,9 @@ export function parseSTS2Run(obj, sourceName = "unknown.run") {
     parseCharacter(obj.character_id) ||
     parseCharacter(obj.run_class) ||
     null;
+  if (!character) {
+    character = inferCharacterFromDeck(player) || inferCharacterFromRelics(player) || null;
+  }
   const ascension = Number.isFinite(obj.ascension) ? Math.max(0, Math.min(20, obj.ascension | 0)) : null;
   const seed = typeof obj.seed === "string" ? obj.seed : null;
   const won = obj.win === true || obj.win === 1;
@@ -321,6 +331,65 @@ function extractCharacter(player) {
     if (typeof v !== "string") continue;
     const got = parseCharacter(v);
     if (got) return got;
+  }
+  return null;
+}
+
+/**
+ * Last-resort character extraction: scan the player's deck for cards
+ * whose id is namespaced to a known character class. STS2 cards ship
+ * with ids like "CARD.SILENT_STRIKE", "CARD.IRONCLAD_STRIKE",
+ * "CARD.DEFECT_STRIKE", etc. Even on a fresh / partial / schema-bumped
+ * `.run` file where the explicit character field is missing, the
+ * starter deck is always present (you can't begin a run without a
+ * character's starting cards) so this fingerprint is reliable.
+ *
+ * Returns the canonical character key on the first match, null
+ * otherwise. We tally rather than first-match because some classes
+ * share a few neutral cards via curse pools and a single neutral
+ * shouldn't outvote a deck of namespaced strikes.
+ */
+function inferCharacterFromDeck(player) {
+  if (!player || !Array.isArray(player.deck)) return null;
+  const tally = { ironclad: 0, silent: 0, defect: 0, regent: 0, necrobinder: 0 };
+  for (const c of player.deck) {
+    const raw = typeof c?.id === "string" ? c.id : "";
+    if (!raw) continue;
+    const stripped = stripPrefix("CARD.", raw).toLowerCase();
+    if (stripped.startsWith("ironclad_") || stripped.startsWith("ic_")) tally.ironclad++;
+    else if (stripped.startsWith("silent_") || stripped.startsWith("si_")) tally.silent++;
+    else if (stripped.startsWith("defect_") || stripped.startsWith("df_") || stripped.startsWith("de_")) tally.defect++;
+    else if (stripped.startsWith("regent_") || stripped.startsWith("watcher_") || stripped.startsWith("re_") || stripped.startsWith("rg_")) tally.regent++;
+    else if (stripped.startsWith("necrobinder_") || stripped.startsWith("binder_") || stripped.startsWith("nb_")) tally.necrobinder++;
+  }
+  let best = null;
+  let bestCount = 0;
+  for (const k of Object.keys(tally)) {
+    if (tally[k] > bestCount) { best = k; bestCount = tally[k]; }
+  }
+  // Require at least 2 namespaced cards before we trust the inference
+  // — a single neutral with a coincidental prefix shouldn't decide
+  // the character class.
+  return bestCount >= 2 ? best : null;
+}
+
+/** Same idea as `inferCharacterFromDeck` but using starting relics.
+ *  Each character's starter relic is unique (Burning Blood, Ring of
+ *  the Snake, Cracked Core, etc.). When the deck inference comes back
+ *  empty we look here as a final fallback. */
+function inferCharacterFromRelics(player) {
+  if (!player || !Array.isArray(player.relics)) return null;
+  for (const r of player.relics) {
+    const raw = typeof r?.id === "string" ? r.id : "";
+    if (!raw) continue;
+    const slug = stripPrefix("RELIC.", raw).toLowerCase();
+    // Starter relics → character. Conservative list — only the canonical
+    // starting relics, no upgrade variants.
+    if (slug === "burningblood" || slug === "burning_blood") return "ironclad";
+    if (slug === "ringofthesnake" || slug === "ring_of_the_snake") return "silent";
+    if (slug === "crackedcore" || slug === "cracked_core") return "defect";
+    if (slug === "puretruth" || slug === "pure_truth" || slug === "holytrinity") return "regent";
+    if (slug === "necronomicon" || slug === "binders_book" || slug === "bindersbook") return "necrobinder";
   }
   return null;
 }

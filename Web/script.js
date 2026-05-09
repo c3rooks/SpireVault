@@ -68,7 +68,7 @@ const STS2_APP_ID = "2868840";
  * on an old client — instruct hard refresh. If it DOES match, the
  * bug is real and we can stop chasing cache ghosts.
  */
-const VAULT_BUILD = "v131-2026-05-09-run-compare";
+const VAULT_BUILD = "v132-2026-05-09-auto-refresh-status";
 
 // Feature flag — set to `true` only on local dev when iterating on the
 // Run Companion Overlay. Production stays false until the feature is
@@ -213,8 +213,12 @@ const STORAGE_LAST_TAB      = "vault.web.last-tab";
 // fixed climber can re-pick it in two clicks.
 const STORAGE_COMPANION     = "vault.web.companion.v2";
 const STORAGE_OVERLAY_STATE = "vault.web.overlay.v1";
-/** Last fingerprint of the linked save-folder file list — skips redundant full re-parsing when nothing changed. */
-const STORAGE_DIR_FP        = "vault.web.history.dir-fp";
+/** Last fingerprint of the linked save-folder file list — skips redundant full re-parsing when nothing changed.
+ *  Suffix is bumped whenever the parser changes shape (new fields, new
+ *  schema tolerance) so the next auto-refresh forces a re-parse with
+ *  the new parser instead of trusting a cached "nothing changed" verdict
+ *  that was made before the fix existed. */
+const STORAGE_DIR_FP        = "vault.web.history.dir-fp.v2";
 /** Display name of the linked save folder ("SlayTheSpire2", "history", …) — survives reloads so the "Linked" pill paints instantly. */
 const STORAGE_LINKED_NAME   = "vault.web.history.linked-name";
 
@@ -5585,22 +5589,37 @@ async function autoReloadHistoryIfPermitted({
 }
 
 async function autoReloadHistoryFromDirectory(dirHandle, { silent, allowPermissionPrompt, bypassFingerprint }) {
+  publishAutoRefreshState({
+    phase: "running",
+    lastCheckedAt: Date.now(),
+    linkedTarget: dirHandle.name || getLinkedFolderName() || "",
+  });
   let perm = "prompt";
   try {
     perm = await dirHandle.queryPermission({ mode: "read" });
   } catch (e) {
     console.warn("autoReloadHistoryFromDirectory: queryPermission failed", e);
+    publishAutoRefreshState({ phase: "error" });
     return false;
   }
   if (perm !== "granted") {
-    if (!allowPermissionPrompt) return false;
+    if (!allowPermissionPrompt) {
+      // The browser dropped the grant. Surface this to the user — it's
+      // the single most common reason auto-refresh "stops working".
+      publishAutoRefreshState({ phase: "paused-permission" });
+      return false;
+    }
     try {
       perm = await dirHandle.requestPermission({ mode: "read" });
     } catch (e) {
       console.warn("autoReloadHistoryFromDirectory: requestPermission failed", e);
+      publishAutoRefreshState({ phase: "paused-permission" });
       return false;
     }
-    if (perm !== "granted") return false;
+    if (perm !== "granted") {
+      publishAutoRefreshState({ phase: "paused-permission" });
+      return false;
+    }
   }
 
   let files;
@@ -5608,47 +5627,94 @@ async function autoReloadHistoryFromDirectory(dirHandle, { silent, allowPermissi
     files = await collectFilesFromDirectoryHandle(dirHandle);
   } catch (e) {
     console.warn("autoReloadHistoryFromDirectory: collect failed", e);
+    publishAutoRefreshState({ phase: "error" });
     return false;
   }
-  if (files.length === 0) return false;
+  if (files.length === 0) {
+    publishAutoRefreshState({ phase: "ok", lastSuccessAt: Date.now(), lastNewCount: 0 });
+    return false;
+  }
 
   const fp = fingerprintFromFiles(files);
   if (silent && !bypassFingerprint && lastDirectoryFingerprint && fp === lastDirectoryFingerprint) {
+    // No change since the last successful pass — still a healthy
+    // outcome, just nothing new on disk. Mark the state as "ok" so
+    // the pill ticks the timestamp forward.
+    publishAutoRefreshState({ phase: "ok", lastSuccessAt: Date.now(), lastNewCount: 0 });
     return false;
   }
 
+  const beforeIds = new Set(parsedRuns.map((r) => r.id));
   const ok = await ingestHistoryFiles(files, { silent });
-  if (ok) persistDirectoryFingerprint(fp);
+  if (ok) {
+    persistDirectoryFingerprint(fp);
+    const newCount = parsedRuns.filter((r) => !beforeIds.has(r.id)).length;
+    publishAutoRefreshState({ phase: "ok", lastSuccessAt: Date.now(), lastNewCount: newCount });
+    if (silent && newCount > 0) {
+      // Quiet but visible confirmation that the silent loop did
+      // something useful. The Recent Runs nav badge is already
+      // pulsing for the unread state; this is the toast layer so
+      // users on other tabs see it too.
+      toast(`${newCount} new run${newCount === 1 ? "" : "s"} auto-loaded.`);
+      vaultGtagEvent("auto_refresh_picked_up", { runs: newCount });
+    }
+  } else {
+    publishAutoRefreshState({ phase: "error" });
+  }
   return ok;
 }
 
 async function autoReloadHistoryFromFileHandle({ silent, allowPermissionPrompt }) {
-  if (!HistoryStore.supportsFSA()) return false;
+  if (!HistoryStore.supportsFSA()) {
+    publishAutoRefreshState({ phase: "off" });
+    return false;
+  }
   let handle;
   try {
     handle = await HistoryStore.loadHandle();
   } catch (e) {
     console.warn("autoReloadHistoryFromFileHandle: loadHandle failed", e);
+    publishAutoRefreshState({ phase: "error" });
     return false;
   }
-  if (!handle) return false;
+  if (!handle) {
+    // No file handle and no directory handle — there's literally
+    // nothing for the loop to read. Publish "off" so the pill stays
+    // hidden instead of claiming "auto-refresh on" while doing nothing.
+    publishAutoRefreshState({ phase: "off" });
+    return false;
+  }
+
+  publishAutoRefreshState({
+    phase: "running",
+    lastCheckedAt: Date.now(),
+    linkedTarget: handle.name || "history.json",
+  });
 
   let perm = "prompt";
   try {
     perm = await handle.queryPermission({ mode: "read" });
   } catch (e) {
     console.warn("autoReloadHistoryFromFileHandle: queryPermission failed", e);
+    publishAutoRefreshState({ phase: "error" });
     return false;
   }
   if (perm !== "granted") {
-    if (!allowPermissionPrompt) return false;
+    if (!allowPermissionPrompt) {
+      publishAutoRefreshState({ phase: "paused-permission" });
+      return false;
+    }
     try {
       perm = await handle.requestPermission({ mode: "read" });
     } catch (e) {
       console.warn("autoReloadHistoryFromFileHandle: requestPermission failed", e);
+      publishAutoRefreshState({ phase: "paused-permission" });
       return false;
     }
-    if (perm !== "granted") return false;
+    if (perm !== "granted") {
+      publishAutoRefreshState({ phase: "paused-permission" });
+      return false;
+    }
   }
 
   let file;
@@ -5656,14 +5722,27 @@ async function autoReloadHistoryFromFileHandle({ silent, allowPermissionPrompt }
     file = await handle.getFile();
   } catch (e) {
     console.warn("autoReloadHistoryFromFileHandle: getFile failed", e);
+    publishAutoRefreshState({ phase: "error" });
     return false;
   }
   const mtime = file.lastModified || 0;
   if (silent && !allowPermissionPrompt && mtime > 0 && mtime === lastIngestedMTime) {
+    publishAutoRefreshState({ phase: "ok", lastSuccessAt: Date.now(), lastNewCount: 0 });
     return false;
   }
+  const beforeIds = new Set(parsedRuns.map((r) => r.id));
   const ok = await ingestHistoryFile(file, { silent });
-  if (ok) lastIngestedMTime = mtime;
+  if (ok) {
+    lastIngestedMTime = mtime;
+    const newCount = parsedRuns.filter((r) => !beforeIds.has(r.id)).length;
+    publishAutoRefreshState({ phase: "ok", lastSuccessAt: Date.now(), lastNewCount: newCount });
+    if (silent && newCount > 0) {
+      toast(`${newCount} new run${newCount === 1 ? "" : "s"} auto-loaded.`);
+      vaultGtagEvent("auto_refresh_picked_up", { runs: newCount });
+    }
+  } else {
+    publishAutoRefreshState({ phase: "error" });
+  }
   return ok;
 }
 
@@ -5704,9 +5783,194 @@ async function reloadSavedHistoryInteractive() {
 }
 
 // How often the auto-refresh loop re-checks linked saves (folder or
-// history.json) for new runs. 60s balances "feels live" vs. disk churn.
-const HISTORY_REREAD_INTERVAL_MS = 60_000;
+// history.json) for new runs. 30s balances "feels live" vs. disk churn.
+// Was 60s — bumped down because users completing a run want their stats
+// refreshed *fast*, not "in the next minute".
+const HISTORY_REREAD_INTERVAL_MS = 30_000;
 let historyRereadTimer = null;
+
+/**
+ * Auto-refresh state.
+ *
+ * Why we surface this to the UI: in production users were seeing stale
+ * stats for hours because the `setInterval` loop *was* firing — but the
+ * browser had silently downgraded the FSA permission from "granted"
+ * back to "prompt" between sessions, so every silent attempt no-op'd
+ * with no user-visible signal. From the user's POV, "auto-refresh is
+ * broken" is indistinguishable from "auto-refresh isn't running".
+ *
+ * Phases:
+ *   - "off"               :  user is on Safari/Firefox (no FSA), or no
+ *                            handle linked yet — auto-refresh genuinely
+ *                            cannot run.
+ *   - "ok"                :  last attempt succeeded (or saw nothing new).
+ *   - "paused-permission" :  handle exists but browser dropped the
+ *                            permission. One click resumes.
+ *   - "running"           :  currently checking the linked source.
+ *   - "error"             :  last attempt threw — usually a transient
+ *                            disk read error.
+ *
+ * `lastSuccessAt` is the user-meaningful timestamp ("last checked X
+ * ago"). `lastNewCount` is the number of new runs the most recent
+ * successful refresh discovered — used by the toast notification.
+ */
+let autoRefreshState = {
+  phase: "off",
+  lastCheckedAt: 0,
+  lastSuccessAt: 0,
+  lastNewCount: 0,
+  linkedTarget: "",
+};
+const autoRefreshSubscribers = new Set();
+function publishAutoRefreshState(patch) {
+  Object.assign(autoRefreshState, patch);
+  refreshAutoRefreshPill();
+  for (const fn of autoRefreshSubscribers) {
+    try { fn(autoRefreshState); } catch (e) { console.warn("auto-refresh subscriber threw", e); }
+  }
+}
+
+/** Re-paint the auto-refresh status pill that lives above the Recent
+ *  Runs list. We re-render JUST the pill (not the whole panel) so the
+ *  UI doesn't visibly thrash every 30s when the timer ticks. */
+function refreshAutoRefreshPill() {
+  const $pill = document.getElementById("auto-refresh-pill");
+  if (!$pill) return;
+  $pill.outerHTML = renderAutoRefreshPill();
+}
+
+/** Format "Xs ago" / "Xm ago" / "Xh ago" relative timestamp. */
+function relativeAgo(ts) {
+  if (!ts) return "never";
+  const dt = Math.max(0, Date.now() - ts);
+  if (dt < 5_000) return "just now";
+  if (dt < 60_000) return `${Math.round(dt / 1000)}s ago`;
+  if (dt < 3_600_000) return `${Math.round(dt / 60_000)}m ago`;
+  return `${Math.round(dt / 3_600_000)}h ago`;
+}
+
+/** Build the auto-refresh status pill HTML. Phase-aware: green dot
+ *  when active, orange when paused (with a one-click Resume button),
+ *  hidden when there's no FSA / nothing linked. */
+function renderAutoRefreshPill() {
+  const s = autoRefreshState;
+  if (s.phase === "off") {
+    // Nothing to show — this is the "Safari / no handle" state. The
+    // empty-state hero already explains how to import in that case.
+    return `<div id="auto-refresh-pill" class="auto-refresh-pill is-off" hidden></div>`;
+  }
+  if (s.phase === "paused-permission") {
+    const target = s.linkedTarget ? esc(s.linkedTarget) : "your linked folder";
+    return `
+      <div id="auto-refresh-pill" class="auto-refresh-pill is-paused" role="status">
+        <span class="auto-refresh-dot"></span>
+        <div class="auto-refresh-text">
+          <strong>Auto-refresh paused</strong>
+          <span class="auto-refresh-sub">The browser revoked access to ${target}. One click resumes.</span>
+        </div>
+        <button class="btn-primary auto-refresh-resume" type="button" data-action="resume-auto-refresh">Resume</button>
+      </div>`;
+  }
+  if (s.phase === "error") {
+    return `
+      <div id="auto-refresh-pill" class="auto-refresh-pill is-error" role="status">
+        <span class="auto-refresh-dot"></span>
+        <div class="auto-refresh-text">
+          <strong>Auto-refresh hit a snag</strong>
+          <span class="auto-refresh-sub">Last checked ${esc(relativeAgo(s.lastCheckedAt))} — will retry.</span>
+        </div>
+        <button class="btn-ghost auto-refresh-retry" type="button" data-action="resume-auto-refresh">Retry now</button>
+      </div>`;
+  }
+  // Default: "ok" / "running" — quiet green status pill.
+  const ts = s.lastSuccessAt || s.lastCheckedAt;
+  const label = s.phase === "running" ? "Checking now…" : `Last checked ${esc(relativeAgo(ts))}`;
+  return `
+    <div id="auto-refresh-pill" class="auto-refresh-pill is-ok" role="status">
+      <span class="auto-refresh-dot"></span>
+      <div class="auto-refresh-text">
+        <strong>Auto-refresh on</strong>
+        <span class="auto-refresh-sub">${label}${s.linkedTarget ? ` · ${esc(s.linkedTarget)}` : ""}</span>
+      </div>
+    </div>`;
+}
+
+/** Refresh just the relative-time text inside the pill so it updates
+ *  even when no auto-refresh fires (e.g. the user is staring at the
+ *  Recent Runs tab between ticks). Cheap — single DOM write per
+ *  10-second interval. */
+setInterval(() => {
+  const $pill = document.getElementById("auto-refresh-pill");
+  if (!$pill || $pill.hidden) return;
+  if (autoRefreshState.phase !== "ok" && autoRefreshState.phase !== "running") return;
+  refreshAutoRefreshPill();
+}, 10_000);
+
+/** Wire the one-click Resume button (event-delegated so re-renders
+ *  don't lose it) and a global activation listener that opportunistically
+ *  re-requests permission whenever the user interacts and the state is
+ *  paused. Browsers honor `requestPermission` only inside a user
+ *  activation gesture — this is the smallest possible "ask once, ask
+ *  cheaply" UX. */
+function wireAutoRefreshUI() {
+  if (window.__autoRefreshUIWired) return;
+  window.__autoRefreshUIWired = true;
+
+  document.addEventListener("click", (e) => {
+    if (!(e.target instanceof Element)) return;
+    if (!e.target.closest('[data-action="resume-auto-refresh"]')) return;
+    e.preventDefault();
+    void resumeAutoRefresh({ fromButton: true });
+  });
+
+  // Opportunistic: any pointerdown / keydown counts as a user gesture,
+  // so when we know we're paused-permission we silently piggyback on
+  // the next interaction to ask for the grant. Browsers explicitly
+  // allow requestPermission inside the same task as a user activation.
+  // We DON'T attach this until the state is paused so we don't pay the
+  // listener cost in the happy path.
+  let oneShotArmed = false;
+  function tryArm() {
+    if (autoRefreshState.phase !== "paused-permission") return;
+    if (oneShotArmed) return;
+    oneShotArmed = true;
+    const handler = (e) => {
+      // Don't burn the gesture on the Resume button itself — the click
+      // handler above will run with its own gesture chain.
+      if (e.target instanceof Element && e.target.closest('[data-action="resume-auto-refresh"]')) {
+        return;
+      }
+      document.removeEventListener("pointerdown", handler, true);
+      document.removeEventListener("keydown", handler, true);
+      oneShotArmed = false;
+      void resumeAutoRefresh({ fromButton: false });
+    };
+    document.addEventListener("pointerdown", handler, true);
+    document.addEventListener("keydown", handler, true);
+  }
+  // Re-evaluate every state change via the subscriber list.
+  autoRefreshSubscribers.add(tryArm);
+  tryArm();
+}
+
+/** Re-request permission inside a user gesture and run a single
+ *  refresh cycle. On success we transition the state to "ok" and
+ *  toast; on failure we stay paused. */
+async function resumeAutoRefresh({ fromButton } = {}) {
+  publishAutoRefreshState({ phase: "running", lastCheckedAt: Date.now() });
+  const ok = await autoReloadHistoryIfPermitted({
+    silent: true,
+    allowPermissionPrompt: true,
+    bypassFingerprint: true,
+  });
+  if (ok) {
+    publishAutoRefreshState({ phase: "ok", lastSuccessAt: Date.now() });
+    if (fromButton) toast("Auto-refresh resumed.");
+  } else {
+    publishAutoRefreshState({ phase: "paused-permission", lastCheckedAt: Date.now() });
+    if (fromButton) toast("Couldn't access your save folder — pick it again from the Overview tab.");
+  }
+}
 
 /** Start the periodic background auto-refresh loop. Runs on Chromium-class
  *  browsers (File System Access API); on Safari / Firefox this is a no-op
@@ -5721,7 +5985,13 @@ let historyRereadTimer = null;
 function startHistoryAutoRefresh() {
   const canFSA =
     HistoryStore.supportsFSA() || typeof window.showDirectoryPicker === "function";
-  if (!canFSA) return;
+  if (!canFSA) {
+    publishAutoRefreshState({ phase: "off" });
+    return;
+  }
+  // Snapshot the linked target name so the pill can display it.
+  publishAutoRefreshState({ linkedTarget: getLinkedFolderName() || "" });
+  wireAutoRefreshUI();
   if (historyRereadTimer) return;
   historyRereadTimer = setInterval(() => {
     void autoReloadHistoryIfPermitted({ silent: true });
@@ -9945,11 +10215,13 @@ function renderRecentRuns(runs) {
   if (!slice.length) {
     return `
       ${filtersHTML}
+      ${renderAutoRefreshPill()}
       ${secTitle("Recent runs", "clock")}
       <p class="muted">No runs match the current filters. <button class="run-filter-clear" type="button" data-action="clear-filters">Clear filters</button></p>`;
   }
   return `
     ${filtersHTML}
+    ${renderAutoRefreshPill()}
     ${secTitle("Recent runs", "clock")}
     <p class="muted small recent-runs-hint">
       <strong>Tap any run</strong> to see your full Act timeline — every combat, elite, shop, and rest you walked through, with the floor where the run ended marked.
