@@ -22,7 +22,23 @@ struct AppConfig: Codable, Equatable {
 
     var isUsingDefault: Bool { customServerURL == nil }
 
-    static let `default` = AppConfig(customServerURL: nil)
+    // MARK: - Overlay
+    //
+    // The in-game floating overlay is opt-in. Off by default because users
+    // playing without co-op shouldn't have a stranger floating over their
+    // window. When enabled, the overlay shows a tiny pill (status + online
+    // count) that expands on click. Position is persisted across launches
+    // so the user only positions it once.
+    var overlayEnabled: Bool = false
+    var overlayOriginX: Double? = nil
+    var overlayOriginY: Double? = nil
+
+    static let `default` = AppConfig(
+        customServerURL: nil,
+        overlayEnabled: false,
+        overlayOriginX: nil,
+        overlayOriginY: nil
+    )
 
     // MARK: - Build-time constants
 

@@ -67,7 +67,7 @@ const STS2_APP_ID = "2868840";
  * on an old client — instruct hard refresh. If it DOES match, the
  * bug is real and we can stop chasing cache ghosts.
  */
-const VAULT_BUILD = "v111-2026-05-07-profile-dock-bottom";
+const VAULT_BUILD = "v116-2026-05-09-overlay-polish-weekend";
 
 // Feature flag — set to `true` only on local dev when iterating on the
 // Run Companion Overlay. Production stays false until the feature is
@@ -802,10 +802,12 @@ let session = readSession();
 let parsedRuns = [];          // current normalized history runs (in memory)
 let lastFeed   = [];          // last feed snapshot
 let lastInbox  = [];          // last inbox snapshot
+let lastOutbox = [];          // last outbox snapshot (invites we've sent)
 let activeTab  = "overview";  // which tab panel is showing
 let pendingInviteToID = null; // who the modal is targeting
 let pollFeedTimer       = null;
 let pollInboxTimer      = null;
+let pollOutboxTimer     = null;
 let heartbeatTimer      = null;
 let heartbeatWatchdog   = null;
 let pushTimer           = null;
@@ -1655,9 +1657,10 @@ async function boot() {
   // that requires Steam verification.
   if (session) {
     schedulePush(0);
-    pollFeedTimer  = setInterval(pullFeed,  POLL_FEED_MS);
-    pollInboxTimer = setInterval(pullInbox, POLL_INBOX_MS);
-    heartbeatTimer = setInterval(() => pushNow(true), HEARTBEAT_MS);
+    pollFeedTimer   = setInterval(pullFeed,   POLL_FEED_MS);
+    pollInboxTimer  = setInterval(pullInbox,  POLL_INBOX_MS);
+    pollOutboxTimer = setInterval(pullOutbox, POLL_INBOX_MS);
+    heartbeatTimer  = setInterval(() => pushNow(true), HEARTBEAT_MS);
 
     // Watchdog: forces a heartbeat if the primary scheduler stalled.
     heartbeatWatchdog = setInterval(() => {
@@ -1668,7 +1671,7 @@ async function boot() {
       }
     }, 60_000);
 
-    await Promise.all([pullFeed(), pullInbox()]);
+    await Promise.all([pullFeed(), pullInbox(), pullOutbox()]);
   } else {
     // Guests still see the live presence count update on the Co-op tab.
     void refreshGuestRoster();
@@ -1685,6 +1688,7 @@ async function boot() {
       pushNow(true);
       pullFeed();
       pullInbox();
+      pullOutbox();
     } else {
       void refreshGuestRoster();
     }
@@ -1714,6 +1718,7 @@ async function boot() {
       pushNow(true);
       pullFeed();
       pullInbox();
+      pullOutbox();
     } else {
       void refreshGuestRoster();
     }
@@ -1896,7 +1901,14 @@ function switchTab(tab) {
     else b.removeAttribute("aria-current");
   });
   document.querySelectorAll(".tab-panel").forEach((p) => {
-    p.hidden = p.dataset.tab !== tab;
+    const visible = p.dataset.tab === tab;
+    p.hidden = !visible;
+    p.classList.remove("is-entering");
+    if (visible) {
+      // Trigger the entrance keyframe by re-adding the class on the
+      // next frame so the browser actually sees a transition.
+      requestAnimationFrame(() => p.classList.add("is-entering"));
+    }
   });
   // Each stats tab has its own `.companion-slot` in the panel-head.
   // Invalidate the cached scene so this navigation gets a fresh
@@ -2596,6 +2608,7 @@ async function pushNow(silent) {
   // the user gets visible feedback that their status switch landed,
   // even before the server round-trip completes.
   renderProfileDock();
+  refreshProfilePopoverIfOpen();
   if (!silent) showPushingPill(true);
   try {
     const resp = await fetch(`${API_BASE}/presence`, {
@@ -2667,8 +2680,23 @@ async function pullInbox() {
     updateTabTitle();
     announceNewInvites(previousInbox, lastInbox);
     renderProfileDock();
+    // If the popover is open, refresh its contents in place so the
+    // user sees new invites land or accepted ones flip without
+    // having to close and re-open the panel.
+    refreshProfilePopoverIfOpen();
   } catch (e) {
     console.warn("inbox fetch failed", e);
+  }
+}
+
+async function pullOutbox() {
+  try {
+    const r = await InviteAPI.fetchOutbox(API_BASE, session.sessionToken);
+    if (!r.ok) return;
+    lastOutbox = r.invites ?? [];
+    refreshProfilePopoverIfOpen();
+  } catch (e) {
+    console.warn("outbox fetch failed", e);
   }
 }
 
@@ -2850,6 +2878,12 @@ function renderFeed(list) {
   // appears within ~one poll cycle of acceptance and disappears the
   // moment either side ends the pair (or the 4h TTL elapses).
   renderMyPairStatus(me);
+  // Bottom-of-sidebar popover and status pill need the same fresh
+  // pair state so "In a co-op session with @X" stays in sync with
+  // what the Co-op tab shows. Cheap re-render — both calls early-out
+  // if the relevant DOM nodes don't exist yet.
+  renderProfileDock();
+  refreshProfilePopoverIfOpen();
 
   const others = list.filter((p) => p.steamID !== session.steamID);
   const inGame = others.filter((p) => p.inSTS2).length;
@@ -7448,38 +7482,670 @@ function setStatus(state, label) {
  *  Reads the current draft (looking/inRun/inCoop/afk) and the latest
  *  inbox count so the user always sees their live state at the bottom
  *  of the viewport without having to open Co-op tab first. */
+// =========================================================================
+// Profile dock + click-to-open popover
+// -------------------------------------------------------------------------
+// The bottom-of-sidebar pill ("c3rooks · Steam connected") is now a real
+// control. Clicking it opens a popover anchored above the footer with:
+//
+//   • Current co-op pair status     (1:1 today; multi-partner ready)
+//   • Pending invites + Accept/Decline inline
+//   • Sent invites (outbox) + status + Withdraw on pending ones
+//   • Quick status dropdown (Looking / In a solo run / In co-op / AFK)
+//   • Sign out
+//
+// Source-of-truth notes:
+//   - `lastFeed` carries the verified pair state under `me.paired`.
+//     If the server says we're paired, the pill ALWAYS shows "In co-op"
+//     regardless of the user's draft choice — drift between the two
+//     lies to the user.
+//   - `lastInbox` and `lastOutbox` drive the message lists. They poll
+//     every POLL_INBOX_MS and refresh the popover in place via
+//     `refreshProfilePopoverIfOpen()` so it never goes stale while open.
+// =========================================================================
+
+const PROFILE_STATUS_LABELS = {
+  looking: "Looking",
+  inRun:   "In a solo run",
+  inCoop:  "In co-op",
+  afk:     "AFK",
+};
+
+/**
+ * Walk `lastFeed` to find our own roster row and pull its `paired`
+ * field. Returns null when the server says we're not in an active
+ * pair, OR when the feed hasn't loaded yet (first paint). Callers
+ * should treat null as "not paired" — we never assume paired without
+ * server confirmation.
+ */
+function getMyPairFromFeed() {
+  if (!session?.steamID) return null;
+  const me = (lastFeed || []).find((p) => p.steamID === session.steamID);
+  if (!me?.paired?.partnerID) return null;
+  return {
+    partners: [{
+      partnerID: me.paired.partnerID,
+      partnerPersona: me.paired.partnerPersona || "your partner",
+      partnerAvatar: me.paired.partnerAvatar || null,
+    }],
+    since: me.paired.since || null,
+  };
+}
+
+/**
+ * Effective status for the bottom-of-sidebar pill. When the server has
+ * confirmed a pair, this overrides whatever the user typed into the
+ * status form — staying out of sync with the verified pair state would
+ * be misleading. Otherwise we honor the user's drafted choice.
+ */
+function getEffectiveStatus() {
+  if (getMyPairFromFeed()) return "inCoop";
+  const draft = readDraft();
+  return draft.status || "looking";
+}
+
 function renderProfileDock() {
+  const $pillBtn = document.getElementById("me-pill");
   const $row = document.getElementById("me-pill-status-row");
   const $pill = document.getElementById("me-pill-status-pill");
   const $inv = document.getElementById("me-pill-invites");
+  const $dot = document.getElementById("me-pill-dot");
   if (!$row || !$pill || !$inv) return;
+
   if (!session?.steamID) {
     $row.hidden = true;
+    if ($dot) $dot.hidden = true;
+    if ($pillBtn) {
+      $pillBtn.disabled = true;
+      $pillBtn.classList.remove("is-actionable");
+    }
     return;
   }
+
   $row.hidden = false;
-  const draft = readDraft();
-  const status = draft.status || "looking";
-  const labels = {
-    looking: "Looking",
-    inRun: "In a solo run",
-    inCoop: "In co-op",
-    afk: "AFK",
-  };
+  if ($pillBtn) {
+    $pillBtn.disabled = false;
+    $pillBtn.classList.add("is-actionable");
+  }
+
+  const status = getEffectiveStatus();
   $pill.dataset.status = status;
-  $pill.textContent = labels[status] || status;
+  $pill.textContent = PROFILE_STATUS_LABELS[status] || status;
+
   const pendingCount = (lastInbox || []).filter((i) => i?.status === "pending").length;
   if (pendingCount > 0) {
     $inv.hidden = false;
     $inv.textContent = `${pendingCount} invite${pendingCount === 1 ? "" : "s"}`;
+    if ($dot) { $dot.hidden = false; }
   } else {
     $inv.hidden = true;
     $inv.textContent = "0";
+    if ($dot) { $dot.hidden = true; }
   }
+
+  // Wire the pill to open the popover on first render. We deliberately
+  // bind once and use a delegated toggle so subsequent renders don't
+  // pile up listeners.
+  if ($pillBtn && !$pillBtn.dataset.popoverWired) {
+    $pillBtn.dataset.popoverWired = "1";
+    $pillBtn.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      toggleProfilePopover();
+    });
+  }
+  // Invite count badge: no longer jumps to Co-op tab on its own —
+  // it just opens the popover where the user can act on every
+  // invite inline. Less navigation, fewer surprises.
   if (!$inv.dataset.wired) {
     $inv.dataset.wired = "1";
-    $inv.addEventListener("click", () => switchTab("coop"));
+    $inv.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      openProfilePopover();
+    });
   }
+}
+
+// ---- Popover ----------------------------------------------------------
+
+let profilePopoverEl = null;
+let profilePopoverOpen = false;
+let profilePopoverDocClickBound = false;
+
+function ensureProfilePopover() {
+  if (profilePopoverEl && document.body.contains(profilePopoverEl)) {
+    return profilePopoverEl;
+  }
+  // Portal to <body> rather than nesting inside .sidebar-footer.
+  // The footer creates a `z-index: 2` stacking context, which
+  // would trap the popover's z-index underneath the main panel-
+  // head (`position: sticky; z-index: 5`) and any overview cards
+  // that overflow the 248px sidebar boundary. Rendering at body
+  // level + `position: fixed` lets the global z-index actually
+  // matter so nothing in the main content area can paint over it.
+  const el = document.createElement("div");
+  el.id = "profile-popover";
+  el.className = "profile-popover";
+  el.setAttribute("role", "dialog");
+  el.setAttribute("aria-label", "Profile and invites");
+  el.hidden = true;
+  document.body.appendChild(el);
+  profilePopoverEl = el;
+  attachProfilePopoverSwipeToDismiss(el);
+  return el;
+}
+
+/**
+ * On phones the popover renders as a bottom sheet. The visible drag
+ * handle hints that swipe-down dismisses it — this is the matching
+ * gesture handler. We only act on touch events ≤720px, skip when the
+ * popover is mid-scroll (so internal scroll wins), and snap-back if
+ * the user releases under the dismiss threshold.
+ */
+function attachProfilePopoverSwipeToDismiss(el) {
+  let startY = null;
+  let lastDelta = 0;
+
+  function onStart(ev) {
+    if (window.matchMedia && !window.matchMedia("(max-width: 720px)").matches) return;
+    if (el.scrollTop > 4) return;
+    const t = ev.touches ? ev.touches[0] : ev;
+    if (!t) return;
+    startY = t.clientY;
+    lastDelta = 0;
+    el.setAttribute("data-dragging", "1");
+  }
+  function onMove(ev) {
+    if (startY === null) return;
+    const t = ev.touches ? ev.touches[0] : ev;
+    if (!t) return;
+    const delta = t.clientY - startY;
+    if (delta < 0) {
+      lastDelta = 0;
+      el.style.transform = "translateY(0)";
+      return;
+    }
+    lastDelta = delta;
+    el.style.transform = `translateY(${delta}px)`;
+  }
+  function onEnd() {
+    if (startY === null) return;
+    const sheetHeight = el.offsetHeight || 400;
+    const threshold = Math.min(120, sheetHeight * 0.25);
+    el.removeAttribute("data-dragging");
+    el.style.transform = "";
+    if (lastDelta > threshold) closeProfilePopover();
+    startY = null;
+    lastDelta = 0;
+  }
+
+  el.addEventListener("touchstart", onStart, { passive: true });
+  el.addEventListener("touchmove", onMove, { passive: true });
+  el.addEventListener("touchend", onEnd, { passive: true });
+  el.addEventListener("touchcancel", onEnd, { passive: true });
+}
+
+// Pin the popover to the trigger pill. We use fixed-positioning
+// from the bottom-left of the viewport so its bottom edge sits
+// just above the pill and its left edge aligns with the sidebar
+// padding. On narrow viewports the bottom-sheet @media rule in
+// styles.css takes over and we clear the inline overrides so the
+// CSS values win.
+function positionProfilePopover() {
+  const el = profilePopoverEl;
+  if (!el || el.hidden) return;
+  const isMobile = typeof window.matchMedia === "function"
+    && window.matchMedia("(max-width: 720px)").matches;
+  if (isMobile) {
+    el.style.left = "";
+    el.style.right = "";
+    el.style.bottom = "";
+    el.style.top = "";
+    return;
+  }
+  const $pill = document.getElementById("me-pill");
+  if (!$pill) return;
+  const r = $pill.getBoundingClientRect();
+  // 10px gap above the pill; clamp so the popover never tucks
+  // beneath the viewport edge if the pill ever moves off-screen.
+  const bottomGap = Math.max(8, window.innerHeight - r.top + 10);
+  // Align with the pill's left edge but never closer than 8px to
+  // the viewport edge.
+  const leftEdge = Math.max(8, r.left);
+  el.style.left = `${leftEdge}px`;
+  el.style.right = "auto";
+  el.style.bottom = `${bottomGap}px`;
+  el.style.top = "auto";
+}
+
+function openProfilePopover() {
+  const el = ensureProfilePopover();
+  if (!el) return;
+  if (!session?.steamID) return;
+  profilePopoverOpen = true;
+  el.hidden = false;
+  document.getElementById("me-pill")?.setAttribute("aria-expanded", "true");
+  renderProfilePopover();
+  positionProfilePopover();
+  // Defer the document-click handler to the next tick so the click
+  // that opened us doesn't immediately count as an outside click.
+  if (!profilePopoverDocClickBound) {
+    profilePopoverDocClickBound = true;
+    setTimeout(() => {
+      document.addEventListener("click", onProfilePopoverDocClick, true);
+      document.addEventListener("keydown", onProfilePopoverKeydown, true);
+    }, 0);
+  }
+  // Keep the popover anchored to the pill while it's open, even if
+  // the user resizes the window or scrolls the underlying page.
+  // Scroll uses capture so we catch scrolls inside any ancestor
+  // (e.g. the main content scrolling under us).
+  window.addEventListener("resize", positionProfilePopover);
+  window.addEventListener("scroll", positionProfilePopover, true);
+  // Kick a fresh fetch so what's in the popover is current the
+  // moment it opens, even if the next poll is 25s away.
+  if (session) {
+    void pullInbox();
+    void pullOutbox();
+    void pullFeed();
+  }
+}
+
+function closeProfilePopover() {
+  const el = profilePopoverEl;
+  profilePopoverOpen = false;
+  if (el) el.hidden = true;
+  document.getElementById("me-pill")?.setAttribute("aria-expanded", "false");
+  if (profilePopoverDocClickBound) {
+    profilePopoverDocClickBound = false;
+    document.removeEventListener("click", onProfilePopoverDocClick, true);
+    document.removeEventListener("keydown", onProfilePopoverKeydown, true);
+  }
+  window.removeEventListener("resize", positionProfilePopover);
+  window.removeEventListener("scroll", positionProfilePopover, true);
+}
+
+function toggleProfilePopover() {
+  if (profilePopoverOpen) closeProfilePopover();
+  else openProfilePopover();
+}
+
+function refreshProfilePopoverIfOpen() {
+  if (profilePopoverOpen) renderProfilePopover();
+}
+
+function onProfilePopoverDocClick(ev) {
+  if (!profilePopoverEl) return;
+  if (profilePopoverEl.contains(ev.target)) return;
+  // Clicks on the trigger pill are handled by its own listener;
+  // skip them here so we don't immediately re-close after re-open.
+  const $pillBtn = document.getElementById("me-pill");
+  if ($pillBtn && $pillBtn.contains(ev.target)) return;
+  closeProfilePopover();
+}
+
+function onProfilePopoverKeydown(ev) {
+  if (ev.key === "Escape") {
+    closeProfilePopover();
+    document.getElementById("me-pill")?.focus();
+  }
+}
+
+/**
+ * Tiny helper for the section-head "· N" suffix: renders nothing for
+ * 0 (most empty states already say "no invites yet" inline), and a
+ * subtly-muted dot-separated count otherwise.
+ */
+function renderSectionCount(n) {
+  if (!n) return "";
+  return ` <span class="muted">· ${n}</span>`;
+}
+
+function renderProfilePopover() {
+  const el = ensureProfilePopover();
+  if (!el || !session?.steamID) return;
+
+  const meRow = (lastFeed || []).find((p) => p.steamID === session.steamID);
+  const persona = meRow?.personaName
+    || document.getElementById("me-pill-name")?.textContent
+    || "Your profile";
+  const avatar = meRow?.avatarURL
+    || document.getElementById("me-pill-avatar")?.getAttribute("src")
+    || "/assets/vault-mark.svg";
+  const handle = `Steam · ${persona}`;
+
+  const pair = getMyPairFromFeed();
+  const effectiveStatus = getEffectiveStatus();
+  const inbox = (lastInbox || []).slice().sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  const outbox = (lastOutbox || []).slice().sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  const pending = inbox.filter((i) => i.status === "pending");
+  const sentPending = outbox.filter((i) => i.status === "pending").length;
+
+  // Server enforces "in co-op" while paired, so the segmented control
+  // visually locks rather than fights the server. We still show the
+  // pressed pill — just block presses on the others.
+  const statusLocked = !!pair;
+  const segOrder = ["looking", "inRun", "inCoop", "afk"];
+  const segShort = { looking: "Looking", inRun: "In a run", inCoop: "Co-op", afk: "AFK" };
+  const segHtml = segOrder.map((k) => {
+    const pressed = effectiveStatus === k;
+    return `<button type="button"
+                    role="radio"
+                    aria-pressed="${pressed}"
+                    aria-checked="${pressed}"
+                    data-pop-action="set-status"
+                    data-status="${k}"
+                    ${statusLocked && !pressed ? "tabindex=\"-1\" aria-disabled=\"true\"" : ""}
+            >${esc(segShort[k])}</button>`;
+  }).join("");
+
+  el.innerHTML = `
+    <div class="profile-pop-head">
+      <img class="profile-pop-avatar" alt="" src="${esc(avatar)}" />
+      <div class="profile-pop-id">
+        <strong>${esc(persona)}</strong>
+        <span class="muted">${esc(handle)}</span>
+      </div>
+      <button class="profile-pop-close" type="button" data-pop-action="close" aria-label="Close">&times;</button>
+    </div>
+
+    <section class="profile-pop-section" data-pop-section="status">
+      <header class="profile-pop-section-head">
+        <span>Status</span>
+      </header>
+      <div class="profile-pop-status-seg" role="radiogroup" aria-label="Status" data-locked="${statusLocked}">
+        ${segHtml}
+      </div>
+      ${statusLocked ? `<p class="profile-pop-status-lock">Auto-set while you're in a co-op session.</p>` : ""}
+    </section>
+
+    <section class="profile-pop-section" data-pop-section="party">
+      <header class="profile-pop-section-head">
+        <span class="profile-pop-section-dot ${pair ? "is-live" : ""}" aria-hidden="true"></span>
+        <span>Co-op session</span>
+      </header>
+      ${renderProfilePopoverPair(pair)}
+    </section>
+
+    <section class="profile-pop-section" data-pop-section="invites-in">
+      <header class="profile-pop-section-head">
+        <span class="profile-pop-section-dot ${pending.length ? "is-hot" : ""}" aria-hidden="true"></span>
+        <span>Invites received${renderSectionCount(pending.length)}</span>
+      </header>
+      ${inbox.length
+        ? `<ul class="profile-pop-list">${inbox.map(renderProfilePopoverInboxRow).join("")}</ul>`
+        : `<p class="profile-pop-empty">No invites yet.</p>`}
+    </section>
+
+    <section class="profile-pop-section" data-pop-section="invites-out">
+      <header class="profile-pop-section-head">
+        <span class="profile-pop-section-dot ${sentPending ? "is-hot" : ""}" aria-hidden="true"></span>
+        <span>Invites sent${renderSectionCount(outbox.length)}</span>
+      </header>
+      ${outbox.length
+        ? `<ul class="profile-pop-list">${outbox.map(renderProfilePopoverOutboxRow).join("")}</ul>`
+        : `<p class="profile-pop-empty">No outgoing invites.</p>`}
+    </section>
+
+    <footer class="profile-pop-foot">
+      <button class="profile-pop-link" type="button" data-pop-action="open-coop">Open Co-op</button>
+      <button class="profile-pop-link profile-pop-link--danger" type="button" data-pop-action="signout">Sign out</button>
+    </footer>
+  `;
+
+  wireProfilePopover(el);
+  // Content height changes when invites arrive/clear, so re-anchor
+  // the popover so its bottom edge stays parked above the pill.
+  if (profilePopoverOpen) positionProfilePopover();
+}
+
+function renderProfilePopoverPair(pair) {
+  if (!pair) {
+    return `<p class="profile-pop-empty">Not in a co-op session. Accept or send an invite to pair up.</p>`;
+  }
+  const partner = pair.partners[0];
+  const others = pair.partners.slice(1);
+  const sinceRel = pair.since ? formatRelativeActive(pair.since) : "";
+  const sinceLabel = sinceRel
+    ? sinceRel === "just now" ? "paired just now" : `paired ${sinceRel.replace(/ ago$/, "")} ago`
+    : "paired";
+  // Steam Chat deep-link: opens the desktop client straight to a
+  // chat window with the partner, no friend-add roundtrip needed
+  // (works for any user as long as both clients are running).
+  // Falls back gracefully if the user isn't on a desktop with the
+  // Steam client — the link does nothing and the Steam profile
+  // button next to it still works.
+  const chatHref = `steam://friends/message/${esc(partner.partnerID)}`;
+  const profileHref = `https://steamcommunity.com/profiles/${esc(partner.partnerID)}`;
+  return `
+    <div class="profile-pop-pair">
+      <img class="profile-pop-pair-avatar" alt="" src="${esc(partner.partnerAvatar || "/assets/vault-mark.svg")}" />
+      <div class="profile-pop-pair-meta">
+        <strong>${esc(partner.partnerPersona)}</strong>
+        <span class="muted">${esc(sinceLabel)}</span>
+      </div>
+      <div class="profile-pop-pair-actions">
+        <a class="btn-primary sm" href="${chatHref}"
+           title="Open Steam Chat with ${esc(partner.partnerPersona)}">Message</a>
+        <a class="btn-ghost sm" target="_blank" rel="noopener"
+           href="${profileHref}"
+           title="Open ${esc(partner.partnerPersona)}'s Steam profile">Profile</a>
+        <button class="btn-ghost sm" type="button" data-pop-action="end-coop"
+          title="Leave this co-op session">End</button>
+      </div>
+      ${others.length
+        ? `<ul class="profile-pop-pair-extra">${others.map((p) =>
+            `<li>${esc(p.partnerPersona)}</li>`).join("")}</ul>`
+        : ""}
+      <p class="profile-pop-pair-hint muted">
+        Once you're chatting, share your STS2 lobby link
+        (Steam → friend's name → <em>Invite to Game</em>).
+      </p>
+    </div>`;
+}
+
+function renderProfilePopoverInboxRow(invite) {
+  const safeAvatar = (() => {
+    try {
+      const u = new URL(invite.fromAvatar ?? "");
+      if (u.protocol === "https:" || u.protocol === "http:") return u.toString();
+    } catch {}
+    return "/assets/vault-mark.svg";
+  })();
+  const messageText = InviteAPI.getMessageText(invite.messageId) ?? "Wants to play.";
+  const when = invite.createdAt ? formatRelativeActive(invite.createdAt) : "";
+  const persona = invite.fromPersona || "Someone";
+
+  if (invite.status === "pending") {
+    return `
+      <li class="profile-pop-msg" data-msg-state="pending">
+        <img class="profile-pop-msg-avatar" alt="" src="${esc(safeAvatar)}" />
+        <div class="profile-pop-msg-body">
+          <div class="profile-pop-msg-row">
+            <strong>${esc(persona)}</strong>
+            ${when ? `<span class="profile-pop-msg-when muted">${esc(when)}</span>` : ""}
+          </div>
+          <p class="profile-pop-msg-text">"${esc(messageText)}"</p>
+          <div class="profile-pop-msg-actions">
+            <button class="btn-primary sm" type="button" data-pop-action="invite-respond" data-id="${esc(invite.id)}" data-resp="accept">Accept</button>
+            <button class="btn-ghost sm" type="button" data-pop-action="invite-respond" data-id="${esc(invite.id)}" data-resp="decline">Decline</button>
+          </div>
+        </div>
+      </li>`;
+  }
+
+  // Past states (accepted, declined, expired). Read-only history so
+  // the user can see what happened without scrolling the Co-op tab.
+  const stateLabel = ({
+    accepted: "Accepted",
+    declined: "Declined",
+    expired: "Expired",
+    withdrawn: "Withdrawn",
+  })[invite.status] || invite.status;
+  return `
+    <li class="profile-pop-msg" data-msg-state="${esc(invite.status)}">
+      <img class="profile-pop-msg-avatar" alt="" src="${esc(safeAvatar)}" />
+      <div class="profile-pop-msg-body">
+        <div class="profile-pop-msg-row">
+          <strong>${esc(persona)}</strong>
+          <span class="profile-pop-msg-state">${esc(stateLabel)}</span>
+          ${when ? `<span class="profile-pop-msg-when muted">${esc(when)}</span>` : ""}
+        </div>
+        <p class="profile-pop-msg-text">"${esc(messageText)}"</p>
+      </div>
+    </li>`;
+}
+
+function renderProfilePopoverOutboxRow(invite) {
+  const safeAvatar = (() => {
+    try {
+      const u = new URL(invite.toAvatar ?? "");
+      if (u.protocol === "https:" || u.protocol === "http:") return u.toString();
+    } catch {}
+    return "/assets/vault-mark.svg";
+  })();
+  const messageText = InviteAPI.getMessageText(invite.messageId) ?? "Wants to play.";
+  const when = invite.createdAt ? formatRelativeActive(invite.createdAt) : "";
+  const persona = invite.toPersona || "Player";
+  const stateLabel = ({
+    pending: "Pending",
+    accepted: "Accepted",
+    declined: "Declined",
+    expired: "Expired",
+    withdrawn: "Withdrawn",
+  })[invite.status] || invite.status;
+  const showWithdraw = invite.status === "pending";
+  return `
+    <li class="profile-pop-msg" data-msg-state="${esc(invite.status)}">
+      <img class="profile-pop-msg-avatar" alt="" src="${esc(safeAvatar)}" />
+      <div class="profile-pop-msg-body">
+        <div class="profile-pop-msg-row">
+          <strong>${esc(persona)}</strong>
+          <span class="profile-pop-msg-state">${esc(stateLabel)}</span>
+          ${when ? `<span class="profile-pop-msg-when muted">${esc(when)}</span>` : ""}
+        </div>
+        <p class="profile-pop-msg-text">"${esc(messageText)}"</p>
+        ${showWithdraw
+          ? `<div class="profile-pop-msg-actions">
+               <button class="btn-ghost sm" type="button" data-pop-action="invite-withdraw" data-id="${esc(invite.id)}">Withdraw</button>
+             </div>`
+          : ""}
+      </div>
+    </li>`;
+}
+
+function wireProfilePopover(el) {
+  el.querySelectorAll("[data-pop-action]").forEach((node) => {
+    if (node.dataset.popWired) return;
+    node.dataset.popWired = "1";
+    node.addEventListener("click", async (ev) => {
+      const action = node.dataset.popAction;
+      if (action === "close") {
+        closeProfilePopover();
+        return;
+      }
+      if (action === "open-coop") {
+        closeProfilePopover();
+        switchTab("coop");
+        return;
+      }
+      if (action === "signout") {
+        closeProfilePopover();
+        document.getElementById("signout-btn")?.click();
+        return;
+      }
+      if (action === "set-status") {
+        // Segmented control: pressed pill is the active status.
+        // No-op when locked (server enforces "in co-op" while paired).
+        const seg = node.closest(".profile-pop-status-seg");
+        if (seg && seg.dataset.locked === "true") return;
+        const next = node.dataset.status;
+        if (!next) return;
+        const draft = readDraft();
+        if (draft.status === next) return;
+        draft.status = next;
+        saveDraft(draft);
+        try { setRadio("status", next); } catch {}
+        // Optimistic visual update before the round-trip lands.
+        seg?.querySelectorAll("[data-pop-action='set-status']").forEach((btn) => {
+          const pressed = btn.dataset.status === next;
+          btn.setAttribute("aria-pressed", String(pressed));
+          btn.setAttribute("aria-checked", String(pressed));
+        });
+        renderProfileDock();
+        void pushNow(false);
+        return;
+      }
+      if (action === "end-coop") {
+        ev.preventDefault();
+        node.disabled = true;
+        try {
+          const r = await fetch(`${API_BASE}/pair`, {
+            method: "DELETE",
+            credentials: "include",
+            headers: { authorization: `Bearer ${session?.sessionToken ?? "__cookie__"}` },
+          });
+          if (!r.ok) {
+            toast(`Couldn't end co-op (${r.status}).`);
+            node.disabled = false;
+            return;
+          }
+          toast("Ended co-op.");
+          await pullFeed();
+          renderProfilePopover();
+        } catch (e) {
+          toast(`Couldn't end co-op: ${String(e?.message ?? e)}`);
+          node.disabled = false;
+        }
+        return;
+      }
+      if (action === "invite-respond") {
+        const id = node.dataset.id;
+        const resp = node.dataset.resp;
+        if (!id || !resp) return;
+        node.disabled = true;
+        try {
+          const r = await InviteAPI.respondToInvite(API_BASE, session.sessionToken, id, resp);
+          if (!r.ok) {
+            toast(`Couldn't ${resp}: ${r.error ?? "unknown error"}`);
+            node.disabled = false;
+            return;
+          }
+          if (resp === "accept") toast("Accepted.");
+          else toast("Declined.");
+          await Promise.all([pullInbox(), pullFeed()]);
+          renderProfilePopover();
+        } catch (e) {
+          toast(`Couldn't ${resp}: ${String(e?.message ?? e)}`);
+          node.disabled = false;
+        }
+        return;
+      }
+      if (action === "invite-withdraw") {
+        const id = node.dataset.id;
+        if (!id) return;
+        node.disabled = true;
+        try {
+          const r = await InviteAPI.withdrawInvite(API_BASE, session.sessionToken, id);
+          if (!r.ok) {
+            toast(`Couldn't withdraw: ${r.error ?? "unknown error"}`);
+            node.disabled = false;
+            return;
+          }
+          toast("Invite withdrawn.");
+          await pullOutbox();
+          renderProfilePopover();
+        } catch (e) {
+          toast(`Couldn't withdraw: ${String(e?.message ?? e)}`);
+          node.disabled = false;
+        }
+        return;
+      }
+    });
+  });
+
+  // Segmented status pills are wired through the generic
+  // [data-pop-action="set-status"] handler above; nothing else
+  // to bind here.
 }
 
 function showPushingPill(visible) {

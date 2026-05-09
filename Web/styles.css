@@ -900,20 +900,25 @@ main.main-public,
   border: 0;
   background: transparent;
   color: var(--text-2);
-  font-size: 14px;
-  font-weight: 600;
-  border-radius: 8px;
   border-radius: 8px;
   text-align: left;
   font-size: 13px;
   font-weight: 500;
-  transition: background 0.12s, color 0.12s;
+  letter-spacing: -0.005em;
+  cursor: pointer;
+  transition:
+    background 180ms cubic-bezier(0.16, 1, 0.3, 1),
+    color 180ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 .nav-row:hover { background: rgba(255,255,255,0.04); color: var(--text); }
+.nav-row:focus-visible {
+  outline: 2px solid var(--accent, #d4af37);
+  outline-offset: 2px;
+}
 .nav-row.is-active {
   background: rgba(255, 107, 26, 0.12);
   color: var(--text);
-  font-weight: 800;
+  font-weight: 700;
   position: relative;
 }
 .nav-row.is-active::after {
@@ -1029,6 +1034,509 @@ main.main-public,
   padding: 8px;
   border-radius: 8px;
   background: rgba(255,255,255,0.02);
+  position: relative;
+}
+/* Pill behaves like a button when authenticated. Default state is
+   ambient — only the avatar + name read at a glance. The caret fades
+   in on hover to telegraph "this is interactive" without crowding
+   the steady state. Disabled (guests) drops the affordance entirely. */
+.me-pill-button {
+  width: 100%;
+  border: 1px solid transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background 180ms cubic-bezier(0.16, 1, 0.3, 1),
+    border-color 180ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.me-pill-button:disabled {
+  cursor: default;
+  opacity: 0.85;
+}
+.me-pill-button.is-actionable:hover {
+  background: rgba(255,255,255,0.045);
+  border-color: rgba(255,255,255,0.07);
+}
+.me-pill-button.is-actionable:focus-visible {
+  outline: 2px solid var(--accent, #d4af37);
+  outline-offset: 2px;
+}
+.me-pill-button[aria-expanded="true"] {
+  background: rgba(255,255,255,0.06);
+  border-color: rgba(255,255,255,0.10);
+}
+.me-pill-caret {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-3, #8a8095);
+  opacity: 0;
+  transition:
+    opacity 180ms cubic-bezier(0.16, 1, 0.3, 1),
+    transform 220ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.me-pill-button.is-actionable:hover .me-pill-caret,
+.me-pill-button[aria-expanded="true"] .me-pill-caret {
+  opacity: 1;
+}
+.me-pill-button[aria-expanded="true"] .me-pill-caret {
+  transform: rotate(180deg);
+}
+/* Orange dot is reserved strictly for "you have something to act on
+   right now" — pending invites, nothing else. The 2px shadow pulls
+   it cleanly off the dark sidebar. */
+.me-pill-dot {
+  position: absolute;
+  top: 7px;
+  right: 30px;
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: #ff6b1a;
+  box-shadow: 0 0 0 2px #0a0812;
+}
+.me-pill-dot[hidden] { display: none; }
+
+/* ── Profile popover ─────────────────────────────────────────
+   The popover anchors to the bottom-of-sidebar pill but breaks
+   out of the 248px sidebar so content has real breathing room.
+   Width is fixed at 340px on desktop, with a viewport-clamping
+   max so it can't overflow on narrow displays. On phones it
+   becomes a bottom sheet via the @media block at the end of
+   this section.
+
+   The popover is portaled to <body> at runtime (see
+   ensureProfilePopover() in script.js) and positioned with
+   `position: fixed` + JS-computed coordinates. This escapes
+   the .sidebar-footer's z-index:2 stacking context so it can
+   never paint underneath the main panel-head (z-index:5 sticky)
+   or any of the overview cards that overflow the sidebar
+   boundary. */
+.profile-popover {
+  position: fixed;
+  left: 14px;
+  right: auto;
+  bottom: 14px;
+  width: min(360px, calc(100vw - 28px));
+  max-height: min(72vh, 620px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+
+  /* IMPORTANT: fully opaque background + NO backdrop-filter.
+     Earlier revs used rgba(20,16,32,0.98) + backdrop-filter blur so
+     the page would soften behind the popover. On Safari and on any
+     light-tinted region the page bled through and the popover felt
+     unfinished. Solid wins. The deep shadow + 1px hairline give it
+     lift without needing translucency. */
+  background: #15101e;
+  color: var(--text, #e6e0f3);
+  border: 1px solid rgba(255,255,255,0.10);
+  border-radius: 16px;
+  box-shadow:
+    0 1px 0 rgba(255,255,255,0.04) inset,
+    0 28px 70px rgba(0,0,0,0.7),
+    0 8px 22px rgba(0,0,0,0.45);
+  padding: 0;
+  z-index: 9000;
+  isolation: isolate;
+  /* Apple-style decel curve: gentle, never overshoots, lands clean. */
+  animation: profilePopoverIn 220ms cubic-bezier(0.16, 1, 0.3, 1);
+  transform-origin: bottom left;
+}
+.profile-popover[hidden] { display: none; }
+@keyframes profilePopoverIn {
+  from { opacity: 0; transform: translateY(8px) scale(0.985); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .profile-popover { animation: profilePopoverFade 120ms linear; }
+  @keyframes profilePopoverFade {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+  }
+  .me-pill-button,
+  .me-pill-caret,
+  .profile-pop-status-seg button,
+  .profile-pop-msg,
+  .profile-pop-close { transition: none !important; }
+}
+
+/* Header: oversized avatar + name + small subtitle. Padding lives
+   at the popover edge, not on the section, so dividers run edge to edge. */
+.profile-pop-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 16px 14px;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+.profile-pop-avatar {
+  width: 44px; height: 44px;
+  border-radius: 50%;
+  border: 1px solid rgba(255,255,255,0.10);
+  flex-shrink: 0;
+}
+.profile-pop-id { display: flex; flex-direction: column; min-width: 0; gap: 2px; }
+.profile-pop-id strong {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.profile-pop-id .muted {
+  font-size: 11.5px;
+  color: var(--text-3, #8a8095);
+  letter-spacing: 0;
+  font-weight: 500;
+}
+.profile-pop-close {
+  margin-left: auto;
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  border: 0;
+  background: transparent;
+  color: var(--text-3, #b6abc4);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+.profile-pop-close:hover { background: rgba(255,255,255,0.06); color: var(--text); }
+.profile-pop-close:focus-visible {
+  outline: 2px solid var(--accent, #d4af37);
+  outline-offset: 1px;
+}
+
+/* Generic section: edge-to-edge with internal padding so the
+   divider hairlines feel intentional rather than boxed-in. */
+.profile-pop-section {
+  padding: 16px;
+  border-bottom: 1px solid rgba(255,255,255,0.07);
+}
+.profile-pop-section:last-of-type { border-bottom: 0; }
+.profile-pop-section-head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 0 0 12px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-2, #d2cae0);
+  letter-spacing: -0.005em;
+}
+.profile-pop-section-head .muted {
+  color: var(--text-3, #8a8095);
+  font-weight: 500;
+}
+.profile-pop-section-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px; height: 16px;
+  color: var(--text-3, #b6abc4);
+  flex-shrink: 0;
+}
+.profile-pop-section-dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.18);
+  flex-shrink: 0;
+}
+.profile-pop-section-dot.is-hot { background: #ff6b1a; box-shadow: 0 0 0 4px rgba(255,107,26,0.18); }
+.profile-pop-section-dot.is-live { background: #6dd97c; box-shadow: 0 0 0 4px rgba(109,217,124,0.18); }
+.profile-pop-empty {
+  font-size: 12.5px;
+  line-height: 1.45;
+  margin: 0;
+  color: var(--text-3, #8a8095);
+}
+
+/* Status — segmented control. Four equal pills. The active one
+   gets the accent fill; disabled state (server-locked while
+   paired) shows a discreet lock label below. Tap targets are
+   28px tall — enough to feel deliberate, not chunky. */
+.profile-pop-status-seg {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 10px;
+  padding: 4px;
+}
+.profile-pop-status-seg button {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--text-2, #c8c0d8);
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  height: 30px;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: background 140ms ease, color 140ms ease, transform 140ms ease;
+}
+.profile-pop-status-seg button:active { transform: scale(0.97); }
+.profile-pop-status-seg button:hover { background: rgba(255,255,255,0.05); color: var(--text); }
+.profile-pop-status-seg button[aria-pressed="true"] {
+  background: linear-gradient(180deg, rgba(255,107,26,0.95), rgba(255,107,26,0.85));
+  color: #fff;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.08), 0 1px 2px rgba(0,0,0,0.25);
+}
+.profile-pop-status-seg button:focus-visible {
+  outline: 2px solid var(--accent, #d4af37);
+  outline-offset: 1px;
+}
+.profile-pop-status-seg[data-locked="true"] button:not([aria-pressed="true"]) { opacity: 0.45; cursor: not-allowed; }
+.profile-pop-status-seg[data-locked="true"] button:not([aria-pressed="true"]):hover { background: transparent; color: inherit; }
+.profile-pop-status-lock {
+  margin: 8px 0 0;
+  font-size: 10.5px;
+  color: var(--text-3, #8a8095);
+  letter-spacing: 0;
+}
+
+/* Co-op session — pair card. Quiet ambient style when not paired
+   (a single muted line); hero treatment when paired (filled card,
+   partner avatar, action buttons). */
+.profile-pop-pair {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 12px;
+  padding: 12px;
+  background: linear-gradient(180deg, rgba(109,217,124,0.10), rgba(109,217,124,0.04));
+  border: 1px solid rgba(109,217,124,0.24);
+  border-radius: 12px;
+}
+.profile-pop-pair-avatar {
+  width: 38px; height: 38px;
+  border-radius: 50%;
+  border: 1px solid rgba(109,217,124,0.45);
+  flex-shrink: 0;
+}
+.profile-pop-pair-meta { display: flex; flex-direction: column; min-width: 0; gap: 2px; flex: 1; }
+.profile-pop-pair-meta strong {
+  font-size: 13.5px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--text, #e6e0f3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.profile-pop-pair-meta .muted {
+  font-size: 11px;
+  color: var(--text-3, #8a8095);
+  font-weight: 500;
+}
+.profile-pop-pair-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.profile-pop-pair-extra {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.profile-pop-pair-extra li {
+  font-size: 11px;
+  font-weight: 600;
+  background: rgba(255,255,255,0.06);
+  padding: 3px 8px;
+  border-radius: 999px;
+  color: var(--text-2, #c8c0d8);
+}
+.profile-pop-pair-hint {
+  flex: 1 0 100%;
+  margin: 4px 0 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-3, #8a8095);
+}
+.profile-pop-pair-hint em {
+  font-style: normal;
+  font-weight: 700;
+  color: var(--text-2, #c8c0d8);
+}
+.profile-pop-pair-extra {
+  flex: 1 0 100%;
+}
+
+/* Invite/message rows. Pending = warm orange ambient. Resolved
+   states stay readable but at lower contrast so the eye lands
+   on actionable items first. */
+.profile-pop-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.profile-pop-msg {
+  display: flex;
+  gap: 10px;
+  padding: 10px 12px;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 12px;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+.profile-pop-msg[data-msg-state="pending"] {
+  border-color: rgba(255, 107, 26, 0.32);
+  background: rgba(255, 107, 26, 0.07);
+}
+.profile-pop-msg[data-msg-state="accepted"] {
+  border-color: rgba(109,217,124,0.30);
+  background: rgba(109,217,124,0.05);
+}
+.profile-pop-msg[data-msg-state="declined"],
+.profile-pop-msg[data-msg-state="expired"],
+.profile-pop-msg[data-msg-state="withdrawn"] {
+  opacity: 0.62;
+}
+.profile-pop-msg-avatar {
+  width: 32px; height: 32px;
+  border-radius: 50%;
+  border: 1px solid rgba(255,255,255,0.10);
+  flex-shrink: 0;
+}
+.profile-pop-msg-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.profile-pop-msg-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.profile-pop-msg-row strong {
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: -0.005em;
+}
+.profile-pop-msg-state {
+  font-size: 10px;
+  letter-spacing: 0.02em;
+  color: var(--text-3, #b6abc4);
+  font-weight: 600;
+}
+.profile-pop-msg[data-msg-state="accepted"] .profile-pop-msg-state { color: #95dba1; }
+.profile-pop-msg[data-msg-state="declined"] .profile-pop-msg-state,
+.profile-pop-msg[data-msg-state="withdrawn"] .profile-pop-msg-state { color: #d99a9a; }
+.profile-pop-msg[data-msg-state="pending"] .profile-pop-msg-state { color: #ffb27a; }
+.profile-pop-msg-when {
+  font-size: 10.5px;
+  color: var(--text-3, #8a8095);
+  font-weight: 500;
+  margin-left: auto;
+}
+.profile-pop-msg-text {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-2, #c8c0d8);
+  overflow-wrap: anywhere;
+}
+.profile-pop-msg-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+/* Footer — text-link style for low-stakes navigation.
+   Top hairline so it reads as a distinct foot zone, not a
+   stranded row. */
+.profile-pop-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px 14px;
+  border-top: 1px solid rgba(255,255,255,0.07);
+  background: rgba(255,255,255,0.015);
+}
+.profile-pop-link {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--text-2, #c8c0d8);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 4px 0;
+  letter-spacing: -0.005em;
+  transition: color 120ms ease;
+}
+.profile-pop-link:hover { color: var(--text); text-decoration: underline; }
+.profile-pop-link:focus-visible {
+  outline: 2px solid var(--accent, #d4af37);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+.profile-pop-link--danger { color: #d99a9a; }
+.profile-pop-link--danger:hover { color: #ff8585; }
+
+/* Phone / narrow viewport: bottom sheet rather than anchored
+   popover. Easier to thumb-reach, keyboard-safe. A visible drag
+   handle hints that you can swipe-down to dismiss; the JS
+   listener attaches `data-dragging="1"` while the gesture is in
+   flight so we drop the entrance animation and translate live. */
+@media (max-width: 720px) {
+  .profile-popover {
+    position: fixed;
+    left: 8px;
+    right: 8px;
+    bottom: max(8px, env(safe-area-inset-bottom));
+    width: auto;
+    max-height: 78vh;
+    border-radius: 18px;
+    transform-origin: bottom center;
+    animation: profileSheetIn 240ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  @keyframes profileSheetIn {
+    from { opacity: 0; transform: translateY(20px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .profile-popover::before {
+    content: "";
+    position: sticky;
+    top: 6px;
+    display: block;
+    width: 36px;
+    height: 4px;
+    margin: 6px auto 0;
+    border-radius: 999px;
+    background: rgba(255,255,255,0.18);
+  }
+  .profile-popover[data-dragging="1"] {
+    animation: none;
+    transition: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) and (max-width: 720px) {
+  .profile-popover { animation: profilePopoverFade 120ms linear; }
 }
 .me-pill-avatar {
   width: 30px; height: 30px;
@@ -1087,6 +1595,22 @@ main.main-public,
   background: var(--bg);
 }
 .tab-panel { padding: 0; }
+/* Tab swap micro-animation: a soft 14ms-frame-budget fade keeps the
+   transition perceptible without ever feeling laggy. switchTab()
+   adds the `.is-entering` class on the now-visible panel for one
+   tick; the keyframe runs and clears via CSS, no JS cleanup needed. */
+.tab-panel.is-entering { animation: tabPanelIn 220ms cubic-bezier(0.16, 1, 0.3, 1); }
+@keyframes tabPanelIn {
+  from { opacity: 0; transform: translateY(2px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tab-panel.is-entering { animation: tabPanelFade 100ms linear; }
+  @keyframes tabPanelFade {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+  }
+}
 
 /* ─────────────────────────────────────────────────────────────────
  * Per-tab atmospheric scene backdrops
@@ -3995,28 +4519,45 @@ main.main-public,
   border: 1px solid var(--border);
 }
 
-/* ─── Toast ────────────────────────────────────────────── */
+/* ─── Toast ──────────────────────────────────────────────
+   Apple-style entrance with the same decel curve we use on the
+   profile popover so micro-interactions feel like one product. */
 .toast {
   position: fixed;
   bottom: 24px;
   left: 50%;
-  transform: translateX(-50%) translateY(20px);
-  padding: 10px 18px;
+  transform: translateX(-50%) translateY(16px);
+  padding: 11px 18px;
   background: var(--card-raised);
   border: 1px solid var(--border-strong);
-  border-radius: 10px;
+  border-radius: 12px;
   color: var(--text);
   font-size: 13px;
   font-weight: 600;
-  box-shadow: 0 10px 30px -10px rgba(0,0,0,0.6);
+  letter-spacing: -0.005em;
+  max-width: min(440px, calc(100vw - 32px));
+  text-align: center;
+  box-shadow:
+    0 1px 0 rgba(255,255,255,0.05) inset,
+    0 18px 50px -12px rgba(0,0,0,0.6),
+    0 6px 20px -8px rgba(0,0,0,0.4);
   opacity: 0;
   pointer-events: none;
-  z-index: 60;
-  transition: opacity 0.2s, transform 0.2s;
+  z-index: 9050;
+  transition:
+    opacity 220ms cubic-bezier(0.16, 1, 0.3, 1),
+    transform 220ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 .toast.is-visible {
   opacity: 1;
   transform: translateX(-50%) translateY(0);
+}
+@media (prefers-reduced-motion: reduce) {
+  .toast { transition: opacity 120ms linear; transform: translateX(-50%); }
+  .toast.is-visible { transform: translateX(-50%); }
+}
+@media (max-width: 720px) {
+  .toast { bottom: max(20px, env(safe-area-inset-bottom)); font-size: 12.5px; }
 }
 
 /* ─── select styling (note dropdown) ─────────────────── */

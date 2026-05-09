@@ -5,6 +5,57 @@ Dates in YYYY-MM-DD. The project follows [Semantic Versioning](https://semver.or
 loosely — patch bumps for fixes, minor for features, major if I ever
 break the wire format.
 
+## v0.6.0 — 2026-05-09
+
+The "polish weekend" release. Profile popover got a second pass,
+the macOS app got a real co-op overlay, and the web companion
+finally has a working post-pair handoff.
+
+**New: native macOS in-game overlay (opt-in).**
+
+- Floating pill (~150×38) with always-on-top + all-spaces +
+  fullscreen-auxiliary collection behavior. Sits over Slay the
+  Spire 2 even in fullscreen without stealing focus from the game.
+- Click expands to a 320×360 panel with status quick-switch
+  (Looking / In a run / In co-op / AFK), live online + looking +
+  in-co-op counts, and an Open-The-Vault shortcut.
+- Hidden from screen recordings (`NSWindow.SharingType.none`) so
+  streamers don't get random UI in their captures.
+- Drag-to-position; origin persists across launches in
+  `app-config.json` alongside `overlayEnabled`.
+- Off by default. Settings → "In-game overlay" toggle controls it.
+- Reuses the existing `PresenceService` — no new network surface.
+- Code lives in `VaultApp/App/Overlay/`. Roadmap notes for v1
+  (invites + pair card surface) in
+  `docs/run-companion-overlay-plan.md`.
+
+**New: Steam Chat handoff on the pair card.**
+
+- Profile popover's pair card now has a "Message" button that
+  deep-links to `steam://friends/message/<partnerSID>`, opening
+  the Steam Chat window with the partner directly. Old "Steam"
+  button kept as "Profile" for the cases where you want their
+  Steam page instead.
+- Footer hint walks the user through the rest of the lobby
+  handshake (Steam → friend → "Invite to Game").
+
+**Polish: cross-app UI/UX.**
+
+- Profile popover entrance retuned to Apple's standard decel
+  curve (`cubic-bezier(0.16, 1, 0.3, 1)` over 220ms). Reduced-
+  motion users now get a flat 120ms fade.
+- Sidebar profile pill is quieter — caret and dot fade in only
+  when interactive. Orange dot reserved strictly for pending
+  invites.
+- Mobile bottom-sheet picked up a visible drag handle plus a
+  swipe-to-dismiss gesture. Safe-area-bottom respected so the
+  sheet doesn't sit under the iOS home indicator.
+- Toasts re-styled to match popover language (same easing, same
+  shadow stack, max-width capped, safe-area-aware on phones).
+- Tab panels gain a soft 220ms entrance fade so navigation
+  feels deliberate rather than instantaneous-flash.
+- Nav rows pick up a focus-visible ring for keyboard users.
+
 ## v0.5.0 — 2026-05-04
 
 The "stop scrolling, start reading" release. Most of the visible

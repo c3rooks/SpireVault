@@ -21,6 +21,7 @@ struct SettingsView: View {
 
                     saveFolderBlock
                     historyFileBlock
+                    overlayBlock
                     matchmakingBlock
                     steamProfileBlock
                     diagnosticsBlock
@@ -63,6 +64,36 @@ struct SettingsView: View {
                 Button("Reveal") {
                     NSWorkspace.shared.activateFileViewerSelecting([state.historyURL])
                 }
+                .controlSize(.small)
+            }
+            .premiumPanel(padding: 12, cornerRadius: 10)
+        }
+    }
+
+    /// In-game overlay opt-in. Default off. When enabled, a tiny pill
+    /// floats above all windows (including fullscreen STS2) showing
+    /// online + looking counts plus a status quick-switch. Position is
+    /// remembered across launches; users can drag it anywhere.
+    private var overlayBlock: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            SectionTitle("In-game overlay", systemImage: "rectangle.on.rectangle")
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Floating co-op pill")
+                        .font(.system(size: 12, weight: .heavy))
+                        .foregroundStyle(Theme.textPrimary)
+                    Text("Shows online count and a status quick-switch on top of every window — including fullscreen Slay the Spire 2. Drag to position. Hidden in screen recordings.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Theme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 12)
+                Toggle("", isOn: Binding(
+                    get: { state.overlayController.enabled },
+                    set: { state.overlayController.enabled = $0 }
+                ))
+                .labelsHidden()
+                .toggleStyle(.switch)
                 .controlSize(.small)
             }
             .premiumPanel(padding: 12, cornerRadius: 10)

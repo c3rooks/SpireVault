@@ -108,12 +108,73 @@ Rules:
 
 ## 7) Future Scope
 
-- Native macOS always-on-top companion window
-- Draggable compact mini-window behavior in native app
+- Native macOS always-on-top companion window — **shipped (v0)**
+  in `VaultApp/App/Overlay/` as of v0.6.0. See section 11 below.
+- Draggable compact mini-window behavior in native app — shipped
+  (drag the pill anywhere; origin persists across launches).
 - Optional local profile templates (per character)
 - Optional import from current run snapshot
 - Optional co-op shared planning (explicit opt-in only)
 - Optional AI helper prompts only when user provides key/config
+
+## 11) Native macOS Overlay (v0)
+
+The native overlay is the in-game-priority surface that the web
+overlay can't be — it sits on top of fullscreen STS2 because it's
+an `NSPanel` with `.floating` window level and full-screen-auxiliary
+collection behavior, not a browser tab.
+
+### What it does today (v0)
+
+- Opt-in via Settings → "In-game overlay". Off by default.
+- Tiny floating pill (152×38) showing avatar, status dot, persona,
+  and live online + looking counts.
+- Click the pill → expands to a 320×360 panel with:
+  - status segmented control (Looking / In a run / Co-op / AFK)
+  - three live-feed counters (Online, Looking, In co-op)
+  - Open The Vault shortcut → brings the main app window forward
+  - Sign out shortcut
+- Drag-to-position. Origin persisted in `app-config.json`
+  (`overlayOriginX/Y`).
+- Hidden from screen recordings via `NSWindow.SharingType.none`
+  so streamers don't get random UI in OBS captures.
+- Reuses existing `PresenceService` from `AppState` — no new
+  network surface, no extra heartbeat.
+
+### Architecture
+
+- `OverlayController.swift` — owns the `NSPanel` lifecycle
+  (`OverlayPanel: NSPanel` subclass with `canBecomeMain = false`
+  so it never steals main-window status from the real app).
+- `OverlayViews.swift` — SwiftUI views (`OverlayRootView`,
+  `OverlayPillView`, `OverlayExpandedView`).
+- `AppState` lazily creates the controller. Settings binds to
+  `state.overlayController.enabled`, which writes through to
+  `AppConfig.overlayEnabled`.
+
+### What it does NOT do yet (v1+)
+
+- No invite inbox surface — the macOS app's `PresenceService` reads
+  the public `/presence` endpoint, which doesn't carry per-user
+  pair state. v1 wires it through the authenticated `/presence/
+  roster` endpoint plus `InviteAPI` so the overlay can show
+  pending invites and a pair card just like the web popover.
+- No deck/path reminders — that's still scoped to the web
+  Overlay tab; the native overlay is currently presence-only.
+- No accessibility-permission upgrade for full screen-tap-through —
+  modern fullscreen apps cooperate well enough with `.floating` +
+  `fullScreenAuxiliary` that we don't need elevated permissions.
+  We can revisit only if a user reports the overlay being eaten
+  by exclusive-fullscreen mode in STS2.
+
+### Steam Chat handoff (web)
+
+Complementary to the overlay: the web profile popover's pair card
+now has a "Message" button that deep-links to
+`steam://friends/message/<partnerSID>`. Once a SpireVault match
+turns into "we're paired", clicking Message opens Steam's chat
+window with the partner directly — closing the loop on "I matched,
+how do I actually start playing with this person."
 
 ## 8) Technical Risks
 

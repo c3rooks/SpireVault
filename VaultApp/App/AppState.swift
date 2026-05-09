@@ -29,6 +29,18 @@ final class AppState: ObservableObject {
     /// so the only gate is auth.
     @Published private(set) var presenceService: PresenceService?
 
+    /// Floating in-game overlay controller. Lazily created so apps that
+    /// never enable the overlay don't pay the NSPanel + view cost. The
+    /// overlay piggybacks on `presenceService` for live data, never on
+    /// its own URL session.
+    private var _overlayController: OverlayController?
+    var overlayController: OverlayController {
+        if let c = _overlayController { return c }
+        let c = OverlayController(appState: self)
+        _overlayController = c
+        return c
+    }
+
     private var cancellables: Set<AnyCancellable> = []
 
     enum ScanStatus: Equatable {
@@ -105,6 +117,13 @@ final class AppState: ObservableObject {
 
         // 6) Boot presence loops if we're already signed in from a prior session
         presenceService?.start()
+
+        // 7) Restore the floating overlay if the user had it enabled in a
+        //    prior session. Does nothing if `overlayEnabled == false` —
+        //    this is purely opt-in.
+        if config.overlayEnabled {
+            overlayController.enabled = true
+        }
     }
 
     /// Recompute the viewer's PlayerStats from local runs and stamp it onto
