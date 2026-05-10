@@ -5,6 +5,79 @@ Dates in YYYY-MM-DD. The project follows [Semantic Versioning](https://semver.or
 loosely — patch bumps for fixes, minor for features, major if I ever
 break the wire format.
 
+## v0.9.5 — 2026-05-10
+
+Hotfix for the recurring login-keychain prompt that was hitting every
+DMG user as soon as they saved an API key in Run Coach (Beta). The
+prompt looked like:
+
+> The Vault wants to use your confidential information stored in
+> "com.coreycrooks.thevault.overlay" in your keychain.
+
+…and it came back on every overlay action. Apologies — that was
+unusable.
+
+**Why it was happening.**
+
+The overlay's per-provider API key was stored in the user's macOS
+login keychain (`SecItemAdd` against `kSecClassGenericPassword`,
+service `com.coreycrooks.thevault.overlay`). The keychain item's
+default ACL is "only the exact code signature that created this item
+can read it without prompting" — and every release of an ad-hoc-
+signed DMG has a *different* ad-hoc code signature. So the running
+app's signature never matched the signature recorded on the item,
+and macOS asked for the login keychain password on every read of the
+key (which is to say, every overlay action — Assist, chip prompts,
+chat sends, settings panel mount). `SecItemDelete` exhibits the same
+prompt for items the running signature didn't create, so even a
+"best-effort migrate then delete" path couldn't quietly recover.
+
+The keychain wasn't actually buying anything for this distribution
+model anyway — without a Team ID and an access-group entitlement
+there's no shared keychain group, and any process running as the user
+can already read the file system. It was protecting against a threat
+that doesn't exist in a sideloaded ad-hoc-signed app while breaking
+the actual product.
+
+**The fix.**
+
+`OverlayKeychain` keeps its name and its public surface
+(`apiKey(for:)`, `hasKey(for:)`, `setAPIKey(_:for:)`, `delete(account:)`)
+so call sites don't move, but it now delegates to a new file-backed
+`OverlayKeyStore`:
+
+- File: `~/Library/Application Support/AscensionCompanion/vault/overlay-keys.json`
+- Directory perms `0700`, file perms `0600`, atomic temp-file rename
+  on every write.
+- Each value XOR-scrambled against a fixed bundled key before going
+  to disk — pure obfuscation so `cat` / `grep` / Spotlight don't emit
+  raw `sk-…` strings, not encryption against a determined attacker.
+- Versioned envelope on disk so we can swap in OS-protected storage
+  later without forcing users to re-paste.
+- Single-process serial dispatch queue serialises reads and writes
+  inside the running app.
+
+**Migration.**
+
+There is none, on purpose: any code path that read or deleted the
+legacy keychain entry would have surfaced the exact prompt this
+release exists to suppress. Existing users will see "No API key on
+file" once after upgrading and need to paste their key into
+**Beta → Run Coach** one more time. The legacy keychain entry,
+if any, sits unread in your login keychain and can be removed via
+Keychain Access.app at your leisure — we won't touch it.
+
+**Versioning.**
+
+- `Info.plist` / `project.yml` → `CFBundleShortVersionString = 0.9.5`,
+  `CFBundleVersion = 14`.
+- `HistoryStore.current = "0.9.5"`.
+- DMG built as `The-Vault-0.9.5.dmg`, ad-hoc signed, attached to the
+  GitHub release. **Vault → Check for Updates…** in any v0.9.x
+  install will offer the upgrade automatically; Steam session, run
+  history, sidebar layout, and Run Coach settings (other than the
+  API key, see above) all carry over.
+
 ## v0.9.4 — 2026-05-10
 
 UI polish on the Run Coach overlay (Beta) and a refreshed marketing
