@@ -84,11 +84,13 @@ final class OverlayAIService: ObservableObject {
     /// fallback when the structured parse fails.
     ///
     /// Exactly zero or one of the structured plans should be set. Each
-    /// matches a different game phase (path / reward / shop / event)
-    /// and renders its own card view above the bubble.
+    /// matches a different game phase (path / reward / shop / event /
+    /// combat). The `tracker` payload is special — it's posted by the
+    /// snapshot diff watcher (no model call, no cost) and renders as a
+    /// thin inline chip rather than a chat bubble.
     struct Message: Identifiable, Equatable {
         let id: UUID
-        enum Role: Equatable { case user, assistant, system }
+        enum Role: Equatable { case user, assistant, system, tracker }
         let role: Role
         let text: String
         let createdAt: Date
@@ -103,13 +105,21 @@ final class OverlayAIService: ObservableObject {
         let shopPlan: ShopPlan?
         /// Visual event card for the "Event" action — `?` map nodes.
         let eventPlan: EventPlan?
+        /// Visual play-order card for the "Fight" action — energy
+        /// budget + ordered card plays for THIS turn.
+        let combatPlan: CombatPlan?
+        /// Inline observation chip ("→ Took Streamline+ · matches my pick")
+        /// posted by the snapshot watcher when the live save changes.
+        let tracker: TrackerNote?
 
         init(role: Role, text: String,
              attachedScreenshot: Bool = false,
              pathPlan: PathPlan? = nil,
              rewardPlan: RewardPlan? = nil,
              shopPlan: ShopPlan? = nil,
-             eventPlan: EventPlan? = nil) {
+             eventPlan: EventPlan? = nil,
+             combatPlan: CombatPlan? = nil,
+             tracker: TrackerNote? = nil) {
             self.id = UUID()
             self.role = role
             self.text = text
@@ -119,6 +129,8 @@ final class OverlayAIService: ObservableObject {
             self.rewardPlan = rewardPlan
             self.shopPlan = shopPlan
             self.eventPlan = eventPlan
+            self.combatPlan = combatPlan
+            self.tracker = tracker
         }
     }
 
@@ -204,6 +216,66 @@ final class OverlayAIService: ObservableObject {
         let why: String?
     }
 
+    /// Combat play-order plan for the "Fight" action. The model is told
+    /// the player's hand, energy, block, HP, and the enemy intent and
+    /// asked to return an ORDERED play sequence. The card view renders
+    /// it like a turn checklist: "1. Defend  2. Bash → Cultist  3. Strike".
+    struct CombatPlan: Equatable, Codable {
+        let summary: String
+        /// Energy available this turn (from the live save). Optional
+        /// because the model may not always know e.g. mid-Time Eater.
+        let energy: Int?
+        /// Estimated incoming damage so the player sees the math.
+        let incomingDamage: Int?
+        /// Plays in the order they should be performed.
+        let plays: [CombatPlay]
+        /// Cards to keep in hand / save for next turn (e.g. "Save Bash for
+        /// the second-to-last attack"). Optional.
+        let reserve: [String]?
+        /// One-line guidance for the next turn.
+        let nextTurn: String?
+    }
+
+    struct CombatPlay: Equatable, Codable, Identifiable {
+        var id: String { "\(order)-\(card)" }
+        /// 1-based ordinal so the UI doesn't have to renumber.
+        let order: Int
+        /// Card name as it appears on the card.
+        let card: String
+        /// Optional target enemy name.
+        let target: String?
+        /// Optional why bullet (≤ 14 words).
+        let why: String?
+    }
+
+    /// Snapshot-watcher observation rendered as a thin inline chip in the
+    /// chat. Carries an optional verdict against the most recent advice
+    /// so we can show "matches my pick" / "different from my pick" /
+    /// "you skipped" without needing a model call.
+    struct TrackerNote: Equatable {
+        enum Kind: String, Equatable {
+            case cardAdded, cardRemoved, cardUpgraded
+            case relicAdded, relicLost
+            case potionAdded, potionUsed
+            case goldGained, goldSpent
+            case hpHealed, hpLost
+            case floorAdvanced
+        }
+        enum MatchVerdict: String, Equatable {
+            case matched   // player took what we recommended
+            case different // player took something we ranked but not TAKE
+            case skipped   // player took nothing / skipped a reward
+            case unrelated // we never gave advice for this beat
+        }
+        let kind: Kind
+        let label: String
+        let detail: String?
+        let floor: Int
+        let matchVerdict: MatchVerdict
+        /// Optional comparison line — "I picked Streamline+", "I had it as MAYBE", etc.
+        let matchComment: String?
+    }
+
     // MARK: - Published state
 
     @Published private(set) var messages: [Message] = []
@@ -232,12 +304,28 @@ final class OverlayAIService: ObservableObject {
         self.session = URLSession(configuration: cfg)
     }
 
-    /// Read the live save right now (bypasses cache). Used by the
-    /// overlay's "refresh save" button + the live header's tap to pin
-    /// the freshest snapshot to the panel without making a model call.
+    /// Read the live save right now (bypasses cache) AND emit any
+    /// tracker chips that result from the diff against the previous
+    /// snapshot. Called by the 4-second poll loop and by the manual
+    /// "refresh save" button.
+    ///
+    /// Why both paths share this method: outcome detection needs to see
+    /// every change, including the ones the user triggers by manually
+    /// refreshing. Splitting "passive" vs "active" refresh would just
+    /// drop tracker beats whenever the user got impatient.
     @discardableResult
     func refreshLiveSnapshot() -> STS2LiveSaveReader.LiveRunSnapshot? {
         let snap = liveReader.snapshot(saveFolder: appState?.saveFolder, forceRefresh: true)
+        // Emit tracker chips for any diff. We hold the snapshot used
+        // for the LAST diff separately from `liveSnapshot` so settings
+        // changes that re-read the save don't double-emit deltas.
+        if let snap, snap.inProgress {
+            let deltas = SnapshotDelta.diff(previous: lastDiffedSnapshot, current: snap)
+            for delta in deltas {
+                postTracker(for: delta)
+            }
+            lastDiffedSnapshot = snap
+        }
         liveSnapshot = snap
         return snap
     }
@@ -246,6 +334,12 @@ final class OverlayAIService: ObservableObject {
     /// the @Published surface lets SwiftUI redraw the header without
     /// each view holding its own cache or peeking into the reader.
     @Published private(set) var liveSnapshot: STS2LiveSaveReader.LiveRunSnapshot?
+
+    /// The snapshot we last computed a diff against. Distinct from
+    /// `liveSnapshot` because the latter can refresh purely for header
+    /// rendering whereas this one only advances when we've actually
+    /// processed (and posted tracker chips for) the deltas.
+    private var lastDiffedSnapshot: STS2LiveSaveReader.LiveRunSnapshot?
 
     // MARK: - Public actions
 
@@ -258,6 +352,145 @@ final class OverlayAIService: ObservableObject {
         lastError = nil
         statusLine = nil
         resetSpend()
+        // Snapshot diff baseline stays — we still want tracker chips
+        // for whatever happens next without first re-baselining off a
+        // stale read. Setting to current snap ensures the very next
+        // diff is empty (no spurious "removed everything" beat).
+        lastDiffedSnapshot = liveSnapshot
+    }
+
+    /// Convert a snapshot delta into a tracker chip and post it into
+    /// the chat. Cheap (no model call) — runs on every poll tick when
+    /// something changed. Also matches the delta against the most
+    /// recent structured advice so the chip can show "matches my pick"
+    /// or "different from my pick".
+    private func postTracker(for delta: SnapshotDelta) {
+        let (verdict, comment) = matchAgainstRecentAdvice(delta: delta)
+        let note = TrackerNote(
+            kind: TrackerNote.Kind(rawValue: delta.kind.rawValue) ?? .floorAdvanced,
+            label: delta.label,
+            detail: delta.detail,
+            floor: delta.floor,
+            matchVerdict: verdict,
+            matchComment: comment
+        )
+        messages.append(.init(role: .tracker, text: delta.label, tracker: note))
+    }
+
+    /// Walk back through the recent assistant messages looking for a
+    /// structured plan whose options match the player's actual pick.
+    /// Returns a verdict + optional comparison line.
+    ///
+    /// We only look back ~6 assistant messages — older advice isn't
+    /// relevant to "did you take that card?" beats. We deliberately
+    /// don't fetch the model again to interpret; the matching here is
+    /// pure string compare against the labels we already have.
+    private func matchAgainstRecentAdvice(delta: SnapshotDelta)
+        -> (TrackerNote.MatchVerdict, String?) {
+        let recentAssistant = messages
+            .reversed()
+            .prefix(20)
+            .filter { $0.role == .assistant }
+            .prefix(6)
+
+        switch delta.kind {
+        case .cardAdded, .relicAdded, .potionAdded:
+            // Look for the most recent reward / shop / event plan and
+            // compare the label to the picked item.
+            for msg in recentAssistant {
+                if let plan = msg.rewardPlan {
+                    if let verdict = compareLabelToReward(label: delta.label, plan: plan) {
+                        return verdict
+                    }
+                }
+                if let plan = msg.shopPlan, delta.kind == .relicAdded || delta.kind == .potionAdded || delta.kind == .cardAdded {
+                    if let verdict = compareLabelToShop(label: delta.label, plan: plan) {
+                        return verdict
+                    }
+                }
+                if let plan = msg.eventPlan, delta.kind == .relicAdded || delta.kind == .potionAdded || delta.kind == .cardAdded {
+                    if let verdict = compareLabelToEvent(label: delta.label, plan: plan) {
+                        return verdict
+                    }
+                }
+            }
+        case .goldSpent:
+            // Look for a shop plan; verify the spend roughly matches our
+            // recommended buy total (within 50g — the player may have
+            // skipped one MAYBE item).
+            for msg in recentAssistant {
+                if let plan = msg.shopPlan,
+                   let start = plan.goldStart, let after = plan.goldAfter {
+                    let recommended = start - after
+                    let actual = abs(Int(delta.label.dropLast()) ?? 0) // "-150g"
+                    if abs(recommended - actual) <= 50 {
+                        return (.matched, "Matches the buy plan I laid out (\(recommended)g)")
+                    }
+                    return (.different, "I had the buy plan at \(recommended)g")
+                }
+            }
+        default:
+            break
+        }
+        return (.unrelated, nil)
+    }
+
+    private func compareLabelToReward(label: String, plan: RewardPlan)
+        -> (TrackerNote.MatchVerdict, String?)? {
+        guard let pick = plan.options.first(where: { labelsMatch($0.label, label) }) else {
+            return nil
+        }
+        let take = plan.options.first(where: { $0.verdict.uppercased() == "TAKE" })
+        if pick.verdict.uppercased() == "TAKE" {
+            return (.matched, "Matches my pick")
+        }
+        if let take {
+            return (.different, "I had \(take.label) as TAKE; you took \(pick.label)")
+        }
+        return (.different, "I had this as \(pick.verdict)")
+    }
+
+    private func compareLabelToShop(label: String, plan: ShopPlan)
+        -> (TrackerNote.MatchVerdict, String?)? {
+        guard let item = plan.items.first(where: { labelsMatch($0.label, label) }) else {
+            return nil
+        }
+        if item.verdict.uppercased() == "BUY" {
+            return (.matched, "Matches the buy plan")
+        }
+        return (.different, "I had this as \(item.verdict)")
+    }
+
+    private func compareLabelToEvent(label: String, plan: EventPlan)
+        -> (TrackerNote.MatchVerdict, String?)? {
+        guard let opt = plan.options.first(where: { labelsMatch($0.label, label) }) else {
+            return nil
+        }
+        if opt.verdict.uppercased() == "TAKE" {
+            return (.matched, "Matches my pick")
+        }
+        return (.different, "I had this as \(opt.verdict)")
+    }
+
+    /// Tolerant label matching for `Streamline+` vs `Streamline+1` vs
+    /// `streamline+0`. Lowercase, strip non-alphanumerics, compare
+    /// stems. The model's labels are human-friendly ("Streamline+");
+    /// the snapshot labels are derived from the save's IDs after pretty
+    /// printing — they're close but rarely byte-identical.
+    private func labelsMatch(_ a: String, _ b: String) -> Bool {
+        let na = stem(a)
+        let nb = stem(b)
+        if na == nb { return true }
+        // Allow prefix match for cases where one side has an upgrade
+        // suffix the other doesn't ("streamline" vs "streamline1").
+        return na.hasPrefix(nb) || nb.hasPrefix(na)
+    }
+
+    private func stem(_ s: String) -> String {
+        let allowed = CharacterSet.alphanumerics
+        return s.lowercased().unicodeScalars
+            .filter { allowed.contains($0) }
+            .reduce(into: "") { $0.append(Character($1)) }
     }
 
     /// Send the current input to the model. If the user has the
@@ -349,7 +582,7 @@ final class OverlayAIService: ObservableObject {
     /// Which structured phase we're asking about. Drives both the
     /// schema we send and which Message payload we attach.
     enum StructuredKind {
-        case path, cardReward, bossRelic, shop, event
+        case path, cardReward, bossRelic, shop, event, combat
     }
 
     /// Execute a structured request end-to-end: refresh save, capture
@@ -444,6 +677,10 @@ final class OverlayAIService: ObservableObject {
         case .event:
             if let plan: EventPlan = decodeJSON(raw), !plan.options.isEmpty {
                 return .init(role: .assistant, text: plan.summary, eventPlan: plan)
+            }
+        case .combat:
+            if let plan: CombatPlan = decodeJSON(raw), !plan.plays.isEmpty {
+                return .init(role: .assistant, text: plan.summary, combatPlan: plan)
             }
         }
         return .init(role: .assistant, text: raw.trimmingCharacters(in: .whitespacesAndNewlines))
@@ -587,6 +824,38 @@ final class OverlayAIService: ObservableObject {
     - "why" ≤ 18 words per item
     """
 
+    /// Schema for in-fight combat play-order. Returns an ordered list
+    /// of plays with optional targets, plus a reserve list for cards
+    /// the player should hold for next turn.
+    private static let combatJSONInstructions: String = """
+    Respond with exactly one JSON object — no prose before or after — \
+    matching this schema:
+
+    {
+      "summary": "One-sentence rationale for this turn.",
+      "energy": 3,
+      "incomingDamage": 11,
+      "plays": [
+        { "order": 1, "card": "Defend", "target": null, "why": "Block first — incoming 11 hits Bash later." },
+        { "order": 2, "card": "Bash", "target": "Cultist", "why": "Apply Vulnerable for the Strike+." },
+        { "order": 3, "card": "Strike+", "target": "Cultist", "why": "Vulnerable doubles 9 → 13." }
+      ],
+      "reserve": ["Iron Wave"],
+      "nextTurn": "Save Bash for the second-to-last attack so Vulnerable lands on the boss intent."
+    }
+
+    Constraints:
+    - "energy" = energy you start the turn with (use the snapshot if available)
+    - "incomingDamage" = total raw damage from enemy intents this turn (omit if unreadable)
+    - Each play.card MUST be a card the player can actually play this turn (in hand and within energy budget)
+    - "plays" length ≤ energy + free-card count; do NOT propose plays that exceed budget
+    - Order plays so blocks happen before attacks unless the math says otherwise
+    - "target" only when there are ≥2 enemies; otherwise null
+    - "reserve" lists cards to KEEP in hand (e.g. Bash for next turn) — strings only, ≤ 3 entries
+    - "nextTurn" ≤ 22 words
+    - "why" ≤ 14 words per play
+    """
+
     /// Schema for event (`?`) screens.
     private static let eventJSONInstructions: String = """
     Respond with exactly one JSON object — no prose before or after — \
@@ -695,6 +964,7 @@ final class OverlayAIService: ObservableObject {
             let reward: RewardPlan?
             let shop: ShopPlan?
             let event: EventPlan?
+            let combat: CombatPlan?
         }
         guard let wrapper: Wrapper = decodeJSON(raw) else {
             return .init(role: .assistant, text: raw.trimmingCharacters(in: .whitespacesAndNewlines))
@@ -704,6 +974,7 @@ final class OverlayAIService: ObservableObject {
                          ?? wrapper.reward?.summary
                          ?? wrapper.shop?.summary
                          ?? wrapper.event?.summary
+                         ?? wrapper.combat?.summary
                          ?? raw))
         return .init(
             role: .assistant,
@@ -711,7 +982,8 @@ final class OverlayAIService: ObservableObject {
             pathPlan: wrapper.path,
             rewardPlan: wrapper.reward,
             shopPlan: wrapper.shop,
-            eventPlan: wrapper.event
+            eventPlan: wrapper.event,
+            combatPlan: wrapper.combat
         )
     }
 
@@ -729,7 +1001,8 @@ final class OverlayAIService: ObservableObject {
       "path":   { ...PathPlan when phase=map... },
       "reward": { ...RewardPlan when phase=card_reward or boss_relic... },
       "shop":   { ...ShopPlan when phase=shop... },
-      "event":  { ...EventPlan when phase=event... }
+      "event":  { ...EventPlan when phase=event... },
+      "combat": { ...CombatPlan when phase=combat... }
     }
 
     Sub-schemas:
@@ -737,10 +1010,12 @@ final class OverlayAIService: ObservableObject {
     RewardPlan = { "summary": "...", "kind": "card_reward" | "boss_relic", "options": [{ "label": "Bash", "verdict": "TAKE" | "MAYBE" | "SKIP", "rank": "S" | "A" | "B" | "C" | "D", "why": "...", "synergies": ["..."] }] }
     ShopPlan   = { "summary": "...", "goldStart": 145, "goldAfter": 20, "items":   [{ "label": "Pen Nib", "kind": "relic" | "card" | "potion" | "removal", "price": 150, "verdict": "BUY" | "MAYBE" | "SKIP", "why": "..." }] }
     EventPlan  = { "summary": "...", "eventName": "Big Fish", "options": [{ "label": "...", "verdict": "TAKE" | "MAYBE" | "SKIP" | "AVOID", "why": "..." }] }
+    CombatPlan = { "summary": "...", "energy": 3, "incomingDamage": 11, "plays": [{ "order": 1, "card": "Defend", "target": null, "why": "..." }], "reserve": ["Bash"], "nextTurn": "..." }
 
     Rules:
     - Pick exactly ONE phase based on what's on screen.
-    - For combat / rest / other, just set "phase" + "summary" — no payload needed.
+    - For rest / other, just set "phase" + "summary" — no payload needed.
+    - For combat, ALWAYS fill the "combat" payload with an ordered play list — don't fall back to prose.
     - All "why" / "summary" strings are short: ≤ 20 words.
     - Exactly one "TAKE" or "BUY" verdict where the schema says "exactly one".
     """
@@ -916,17 +1191,23 @@ final class OverlayAIService: ObservableObject {
         )
     }
 
-    /// In-fight tactical advice. Frames the model around the actual cards
-    /// the player can play this turn.
+    /// In-fight tactical advice. Returns a structured `CombatPlan` so
+    /// the chat renders an energy-budgeted, ordered play list with
+    /// targets and a "save for next turn" reserve. Saves the player
+    /// from rereading prose every turn.
     func askCombat() async {
-        await ask(
-            """
-            I'm mid-combat. Look at my hand, energy, block, HP, and the \
-            enemy's intent on screen and tell me the exact play order this \
-            turn. Reference my hand by card name. End with the priority for \
-            next turn (e.g., "Save Bash for the second-to-last attack").
+        await runStructured(
+            kind: .combat,
+            userQuestion: """
+            I'm mid-combat. Read my hand, current energy, block, HP, and \
+            every enemy's intent. Output an ORDERED list of plays that \
+            respects my energy budget and minimizes net HP loss this turn. \
+            Cross-reference card costs against my actual cards (deck \
+            glossary in the context block). Mark cards I should HOLD for \
+            next turn under "reserve".
             """,
-            includeScreenshot: true
+            schema: Self.combatJSONInstructions,
+            statusVerb: "Planning turn"
         )
     }
 
@@ -986,7 +1267,11 @@ final class OverlayAIService: ObservableObject {
     /// window — the recap action is the right tool for "remember
     /// everything".
     private func chatHistoryForPrompt() -> [(Message.Role, String)] {
-        let kept = messages.suffix(12).filter { $0.role != .system }
+        // Drop both `system` and `tracker` rows — trackers are internal
+        // observations from the snapshot watcher, not real conversation
+        // turns. Forwarding them to the model would just dilute the
+        // history with "Took Streamline+" lines.
+        let kept = messages.suffix(12).filter { $0.role == .user || $0.role == .assistant }
         return kept.map { ($0.role, $0.text) }
     }
 
@@ -995,6 +1280,7 @@ final class OverlayAIService: ObservableObject {
             "You are an in-game Slay the Spire 2 run coach embedded in The Vault, a macOS companion app.",
             "Speak like an experienced friend coaching the player live: short, concrete, decision-first.",
             "When a [live-run-snapshot] block is provided below, TRUST IT as the source of truth for the player's deck, relics, HP, gold, character, ascension, and game mode. The screenshot is just the current decision UI — combine the snapshot with the screenshot to give specific advice.",
+            "When a [deck-glossary] block is provided, TRUST ITS card and relic effects over your training data. STS2 has reworked many cards from STS1 and added new ones (e.g. Necrobinder cards) — the glossary is canonical.",
             "When recommending a card from a reward, NAME IT (e.g. \"Take Streamline+ — your deck has Cold Snap and 3 channel triggers.\"). Don't say \"the rare card on the right\".",
             "If the snapshot says deck has Strike ×4 and Defend ×4, you can confidently call this an early-floor decision and weight removal/upgrade picks accordingly.",
             "If you can't read the screen confidently, say so and ask the player for the specific decision (\"What three cards are offered?\").",
@@ -1031,9 +1317,22 @@ final class OverlayAIService: ObservableObject {
     private func buildRunContext() -> String {
         guard let appState else { return "" }
         var bits: [String] = []
-        if let snap = liveSnapshot ?? liveReader.snapshot(saveFolder: appState.saveFolder),
-           snap.inProgress {
+        let snap = liveSnapshot ?? liveReader.snapshot(saveFolder: appState.saveFolder)
+        if let snap, snap.inProgress {
             bits.append(snap.promptBlock())
+            // Glossary: only include entries that match cards / relics
+            // ACTUALLY in the player's deck. Bounds the prompt size to
+            // O(deck size) instead of O(every card in the game), and
+            // means the model gets exactly the references it needs to
+            // reason about THIS run's deck without fluff.
+            let glossary = STS2CardGlossary.glossaryBlock(
+                deckCards: snap.deck,
+                relicIDs: snap.relics,
+                characterHint: snap.character
+            )
+            if !glossary.isEmpty {
+                bits.append("[deck-glossary] // canonical effects for cards / relics in your live deck — TRUST THESE over your training data\n" + glossary)
+            }
         }
         if let p = appState.steamAuth.profile {
             bits.append("Steam: \(p.personaName) (\(p.steamID))")

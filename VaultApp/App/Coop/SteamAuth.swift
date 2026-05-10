@@ -62,6 +62,37 @@ final class SteamAuth: ObservableObject {
         try? FileManager.default.removeItem(at: storeURL)
     }
 
+    /// Seat a session that was minted via the embedded WKWebView's
+    /// Steam OpenID round-trip. The browser-hop legacy path used
+    /// `signIn(via:)` and verified the nonce in `handleURL`; this
+    /// path skips the nonce check because the entire OpenID flow
+    /// happened inside our own process — the worker verified the
+    /// claim with Steam, minted the session, and posted the result
+    /// straight to native code through the JS bridge. There's no
+    /// untrusted hop where a replay could be injected.
+    ///
+    /// We still validate the shape of the inputs (17-digit SteamID,
+    /// non-trivial session length) so a malformed or empty bridge
+    /// payload can't blank out the user's profile.
+    func acceptWebSession(steamID: String,
+                          persona: String,
+                          avatar: String?,
+                          session: String) {
+        guard steamID.count == 17, steamID.allSatisfy(\.isNumber) else { return }
+        guard session.count >= 16 else { return }
+        // Drop any outstanding native-flow nonce — the user just
+        // signed in via the web path and we've taken responsibility
+        // for the resulting session.
+        pendingNonce = nil
+        profile = PlayerProfile(
+            steamID: steamID,
+            personaName: persona.isEmpty ? "Steam User" : persona,
+            avatarURL: avatar?.isEmpty == false ? avatar : nil
+        )
+        sessionToken = session
+        save()
+    }
+
     /// Refresh the cached `PlayerStats` portion of `profile` from local run history.
     func updateStats(_ stats: PlayerStats) {
         guard var p = profile else { return }

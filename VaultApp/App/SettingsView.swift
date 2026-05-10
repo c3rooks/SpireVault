@@ -309,7 +309,12 @@ struct SettingsView: View {
                             .foregroundStyle(Theme.textSecondary)
                         Spacer()
                         Button("Sign in with Steam") {
-                            state.steamAuth.signIn(via: state.config.effectiveServerURL)
+                            // Drive the embedded WebView's OpenID
+                            // flow rather than opening the worker
+                            // URL in the user's default browser,
+                            // which would leak the cookie out of
+                            // our WKWebView's data store.
+                            state.requestEmbeddedSignIn(currentTab: .coop)
                         }
                         .controlSize(.small)
                     }

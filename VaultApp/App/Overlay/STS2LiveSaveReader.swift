@@ -422,3 +422,329 @@ extension STS2LiveSaveReader.LiveRunSnapshot {
         }.joined(separator: " · ")
     }
 }
+
+// =========================================================================
+// SnapshotDelta
+// -------------------------------------------------------------------------
+// "What just happened?" between two `LiveRunSnapshot` reads. The overlay
+// poll loop computes one of these every ~4 seconds and posts an inline
+// "tracker" chip in the chat when something player-visible changed.
+//
+// The whole point: the chat is already auto-monitoring the save file,
+// so when the player picks Streamline from a card reward we can SEE
+// the deck went from N to N+1 and the new card is "streamline+0". The
+// coach posts "→ Took Streamline" automatically — no follow-up question
+// needed. If we'd recommended Streamline a few turns ago we can also
+// say "matches my pick" and start tracking accuracy over time.
+//
+// We're deliberately conservative about what counts as "player-visible":
+//   * Floor advanced — always track (every transition matters).
+//   * Card added/removed — always track (reward picks, removals).
+//   * Relic added — always track.
+//   * Gold delta ≥ 50 — track (filters out per-floor +5 trickle).
+//   * HP delta ≥ 8 — track (filters out small chip damage).
+//   * Potion added — track.
+//
+// What we IGNORE:
+//   * HP changes inside a single combat (would spam during a fight).
+//     Heuristic: only post HP deltas when the floor also advanced.
+//   * Modifier toggles (the player can't change these mid-run).
+// =========================================================================
+
+struct SnapshotDelta: Equatable {
+
+    /// The high-level kind so the chip can pick an icon + tint.
+    enum Kind: String, Equatable {
+        case cardAdded       // reward pick / shop card / event card
+        case cardRemoved     // removal at shop / event / rest site
+        case cardUpgraded    // rest site smith / armaments / event
+        case relicAdded
+        case relicLost
+        case potionAdded
+        case potionUsed
+        case goldGained      // shop sale rare; combat reward common
+        case goldSpent       // shop / event gold cost
+        case hpHealed        // rest / event
+        case hpLost          // event downside / boss residual
+        case floorAdvanced   // pure progression beat
+    }
+
+    let kind: Kind
+    /// Player-facing label, e.g. "Streamline+", "Pen Nib", "+150g".
+    let label: String
+    /// Optional secondary detail for the chip (e.g. "from card reward").
+    let detail: String?
+    /// The floor the delta was observed on, for log/recap context.
+    let floor: Int
+    /// When we noticed it. Used to age out tracker chips in the UI if
+    /// we ever want to (today they just live in the message log).
+    let observedAt: Date
+
+    /// Compare two snapshots and emit zero or more deltas. Order is
+    /// deterministic: cards before relics before currency, so a single
+    /// "I bought a Pen Nib" beat reads naturally in the chat (relic +
+    /// gold spent both surface).
+    static func diff(previous: STS2LiveSaveReader.LiveRunSnapshot?,
+                     current: STS2LiveSaveReader.LiveRunSnapshot) -> [SnapshotDelta] {
+        guard let previous else { return [] }
+        // Only diff within the same run. If the character changed or the
+        // floor reset, a new run started — treat as no-op so we don't
+        // post "lost 4 relics" the moment a new run begins.
+        if previous.character != current.character { return [] }
+        if current.floor < previous.floor { return [] }
+
+        var out: [SnapshotDelta] = []
+        let now = Date()
+        let floor = current.floor
+
+        // ---- Card additions / removals ----
+        // Use multi-set semantics so a deck with Strike ×4 → ×5 emits
+        // "+Strike" not "no change".
+        let prevBag  = bag(previous.deck)
+        let currBag  = bag(current.deck)
+        let added    = bagDiff(currBag, minus: prevBag)
+        let removed  = bagDiff(prevBag, minus: currBag)
+        // Special-case "X+0 → X+1" — treat as upgrade rather than add+remove.
+        let (upgrades, addsAfterUpgrade, removesAfterUpgrade) =
+            extractUpgrades(added: added, removed: removed)
+
+        for (cardID, count) in upgrades {
+            let pretty = prettyCardName(cardID)
+            for _ in 0 ..< count {
+                out.append(.init(
+                    kind: .cardUpgraded,
+                    label: "\(pretty)+",
+                    detail: "Upgraded",
+                    floor: floor,
+                    observedAt: now
+                ))
+            }
+        }
+        for (cardID, count) in addsAfterUpgrade {
+            let pretty = prettyCardName(cardID)
+            for _ in 0 ..< count {
+                out.append(.init(
+                    kind: .cardAdded,
+                    label: pretty,
+                    detail: nil,
+                    floor: floor,
+                    observedAt: now
+                ))
+            }
+        }
+        for (cardID, count) in removesAfterUpgrade {
+            let pretty = prettyCardName(cardID)
+            for _ in 0 ..< count {
+                out.append(.init(
+                    kind: .cardRemoved,
+                    label: pretty,
+                    detail: nil,
+                    floor: floor,
+                    observedAt: now
+                ))
+            }
+        }
+
+        // ---- Relics ----
+        let relicAdds = arrayDiff(current.relics, minus: previous.relics)
+        let relicGone = arrayDiff(previous.relics, minus: current.relics)
+        for r in relicAdds {
+            out.append(.init(
+                kind: .relicAdded,
+                label: prettyRelicName(r),
+                detail: nil,
+                floor: floor,
+                observedAt: now
+            ))
+        }
+        for r in relicGone {
+            out.append(.init(
+                kind: .relicLost,
+                label: prettyRelicName(r),
+                detail: nil,
+                floor: floor,
+                observedAt: now
+            ))
+        }
+
+        // ---- Potions ----
+        let potionAdds = arrayDiff(current.potions, minus: previous.potions)
+        let potionsGone = arrayDiff(previous.potions, minus: current.potions)
+        for p in potionAdds {
+            out.append(.init(
+                kind: .potionAdded,
+                label: prettyRelicName(p),
+                detail: nil,
+                floor: floor,
+                observedAt: now
+            ))
+        }
+        for p in potionsGone {
+            out.append(.init(
+                kind: .potionUsed,
+                label: prettyRelicName(p),
+                detail: nil,
+                floor: floor,
+                observedAt: now
+            ))
+        }
+
+        // ---- Gold ----
+        if let p = previous.gold, let c = current.gold {
+            let delta = c - p
+            if delta >= 50 {
+                out.append(.init(
+                    kind: .goldGained,
+                    label: "+\(delta)g",
+                    detail: nil,
+                    floor: floor,
+                    observedAt: now
+                ))
+            } else if delta <= -50 {
+                out.append(.init(
+                    kind: .goldSpent,
+                    label: "\(delta)g",
+                    detail: nil,
+                    floor: floor,
+                    observedAt: now
+                ))
+            }
+        }
+
+        // ---- HP (only when the floor advanced — avoid in-combat spam) ----
+        if current.floor > previous.floor,
+           let p = previous.currentHP, let c = current.currentHP {
+            let delta = c - p
+            if delta >= 8 {
+                out.append(.init(
+                    kind: .hpHealed,
+                    label: "+\(delta) HP",
+                    detail: nil,
+                    floor: floor,
+                    observedAt: now
+                ))
+            } else if delta <= -8 {
+                out.append(.init(
+                    kind: .hpLost,
+                    label: "\(delta) HP",
+                    detail: nil,
+                    floor: floor,
+                    observedAt: now
+                ))
+            }
+        }
+
+        // ---- Floor advance — emit ONLY if nothing else surfaced.
+        // Otherwise the chat fills with "Floor 13 →" lines that compete
+        // with the more interesting "Took Streamline" chip.
+        if current.floor > previous.floor && out.isEmpty {
+            out.append(.init(
+                kind: .floorAdvanced,
+                label: "Floor \(current.floor)",
+                detail: previous.lastRoomType.map { "from \($0)" },
+                floor: current.floor,
+                observedAt: now
+            ))
+        }
+
+        return out
+    }
+
+    // MARK: - Diff helpers
+
+    private static func bag(_ items: [String]) -> [String: Int] {
+        var out: [String: Int] = [:]
+        for it in items { out[it, default: 0] += 1 }
+        return out
+    }
+
+    private static func bagDiff(_ a: [String: Int], minus b: [String: Int]) -> [String: Int] {
+        var out: [String: Int] = [:]
+        for (k, v) in a {
+            let leftover = v - (b[k] ?? 0)
+            if leftover > 0 { out[k] = leftover }
+        }
+        return out
+    }
+
+    private static func arrayDiff(_ a: [String], minus b: [String]) -> [String] {
+        var bagB = bag(b)
+        var out: [String] = []
+        for x in a {
+            if let n = bagB[x], n > 0 {
+                bagB[x] = n - 1
+            } else {
+                out.append(x)
+            }
+        }
+        return out
+    }
+
+    /// Detect (added "X+1", removed "X+0") pairs and reclassify as
+    /// upgrades. Walks both bags and consumes matching base IDs.
+    private static func extractUpgrades(
+        added: [String: Int],
+        removed: [String: Int]
+    ) -> (upgrades: [String: Int], addsLeft: [String: Int], removesLeft: [String: Int]) {
+        var upgrades: [String: Int] = [:]
+        var addsLeft = added
+        var removesLeft = removed
+        for (addedKey, addedCount) in added {
+            // Strip "+N" to find the base ID.
+            let base = stripUpgrade(addedKey)
+            // Look for a matching removed entry that's the unupgraded
+            // version (or a lower upgrade tier).
+            for (removedKey, removedCount) in removed {
+                let removedBase = stripUpgrade(removedKey)
+                guard removedBase == base else { continue }
+                // Both share a base. Treat the smaller of the two counts
+                // as "upgrade" beats; the rest stay as add/remove.
+                let upgraded = min(addedCount, removedCount)
+                if upgraded > 0 {
+                    upgrades[base, default: 0] += upgraded
+                    addsLeft[addedKey] = (addsLeft[addedKey] ?? 0) - upgraded
+                    if (addsLeft[addedKey] ?? 0) <= 0 { addsLeft.removeValue(forKey: addedKey) }
+                    removesLeft[removedKey] = (removesLeft[removedKey] ?? 0) - upgraded
+                    if (removesLeft[removedKey] ?? 0) <= 0 { removesLeft.removeValue(forKey: removedKey) }
+                }
+            }
+        }
+        return (upgrades, addsLeft, removesLeft)
+    }
+
+    private static func stripUpgrade(_ id: String) -> String {
+        if let plus = id.firstIndex(of: "+") {
+            return String(id[..<plus])
+        }
+        return id
+    }
+
+    /// "streamline+1" → "Streamline+1", "iron_wave" → "Iron Wave".
+    /// Cheap title-casing keyed off the underscore convention used by
+    /// STS2 IDs. The glossary has nicer names but we want this to work
+    /// even for cards we don't have glossary entries for.
+    private static func prettyCardName(_ id: String) -> String {
+        if let entry = STS2CardGlossary.entryForCard(rawID: id) {
+            // Append upgrade marker so "streamline+1" reads "Streamline+1".
+            if let plus = id.firstIndex(of: "+") {
+                let suffix = String(id[plus...])
+                return entry.name + suffix
+            }
+            return entry.name
+        }
+        return titlecase(id)
+    }
+
+    private static func prettyRelicName(_ id: String) -> String {
+        if let entry = STS2CardGlossary.entryForRelic(rawID: id) {
+            return entry.name
+        }
+        return titlecase(id)
+    }
+
+    private static func titlecase(_ id: String) -> String {
+        id.split(separator: "_")
+          .map { $0.prefix(1).uppercased() + $0.dropFirst() }
+          .joined(separator: " ")
+    }
+}

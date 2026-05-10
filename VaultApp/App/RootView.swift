@@ -18,6 +18,17 @@ struct RootView: View {
         .frame(minWidth: 1080, minHeight: 700)
         .background(Theme.bgDeep)
         .preferredColorScheme(.dark)
+        // AppState can ask us to hop tabs (e.g. when "Sign in with
+        // Steam" is tapped while the user's on the native Beta or
+        // Settings tab — we need a web-hosted view on screen for
+        // the embedded WKWebView to drive sign-in). We consume the
+        // request once so a stale @Published value can't keep
+        // forcing the tab back.
+        .onChange(of: state.pendingSidebarHop) { hop in
+            guard let hop else { return }
+            section = hop
+            DispatchQueue.main.async { state.pendingSidebarHop = nil }
+        }
     }
 }
 
@@ -347,7 +358,16 @@ struct Sidebar: View {
     private var guestPill: some View {
         VStack(alignment: .leading, spacing: 6) {
             Button {
-                state.steamAuth.signIn(via: state.config.effectiveServerURL)
+                // Drive the embedded WebView's OpenID flow. This used
+                // to be `state.steamAuth.signIn(via:)` which shelled
+                // out to NSWorkspace; that left the cookie in the
+                // user's default browser and (on machines with two
+                // copies of The Vault.app installed) re-launched the
+                // wrong one via `thevault://`, giving the user two
+                // desktop windows. The new path keeps everything in
+                // the embedded WKWebView and feeds the verified
+                // session straight back into native SteamAuth.
+                state.requestEmbeddedSignIn(currentTab: selection)
             } label: {
                 HStack(spacing: 8) {
                     Image(systemName: "person.crop.square")

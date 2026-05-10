@@ -1422,6 +1422,9 @@ struct ChatBubble: View {
                     if let plan = message.eventPlan {
                         EventPlanCard(plan: plan)
                     }
+                    if let plan = message.combatPlan {
+                        CombatPlanCard(plan: plan)
+                    }
                     bubble(
                         fill: AnyShapeStyle(Color.white.opacity(0.07)),
                         textColor: .white.opacity(0.92),
@@ -1429,6 +1432,11 @@ struct ChatBubble: View {
                     )
                 }
                 Spacer(minLength: 36)
+            case .tracker:
+                if let note = message.tracker {
+                    TrackerChip(note: note)
+                }
+                Spacer(minLength: 0)
             case .system:
                 EmptyView()
             }
@@ -2200,5 +2208,354 @@ private struct EventOptionRow: View {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .stroke(isTake ? meta.tint.opacity(0.55) : Color.white.opacity(0.06), lineWidth: 1)
         )
+    }
+}
+
+// =========================================================================
+// CombatPlanCard
+// -------------------------------------------------------------------------
+// In-fight play-order checklist. Renders the model's structured
+// `CombatPlan` as a numbered turn:
+//   * Header with energy budget chip + incoming-damage chip.
+//   * Vertical play list ① ② ③ with card name (bold) → optional target
+//     and a one-line rationale per play. The first play gets a "PLAY"
+//     accent so the player's eye lands there first; subsequent plays
+//     deemphasize gracefully.
+//   * Reserve row showing cards to HOLD for next turn.
+//   * Footer: one-sentence "next-turn" guidance.
+//
+// Why this exists: combat advice was the last action still returning
+// plain text. Players had to re-read a paragraph every turn. With this
+// card they glance, play, glance, play. STS2 combat rewards exact
+// ordering ("Bash before Strike+ for the Vulnerable double") and a
+// numbered checklist communicates that visually.
+// =========================================================================
+
+struct CombatPlanCard: View {
+    let plan: OverlayAIService.CombatPlan
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            header
+            playsStack
+            if let reserve = plan.reserve, !reserve.isEmpty {
+                reserveRow(reserve)
+            }
+            if let next = plan.nextTurn, !next.isEmpty {
+                nextTurnRow(next)
+            }
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(LinearGradient(colors: [
+                    Color(red: 0.10, green: 0.12, blue: 0.18),
+                    Color(red: 0.06, green: 0.07, blue: 0.10),
+                ], startPoint: .topLeading, endPoint: .bottomTrailing))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(Color(red: 0.95, green: 0.30, blue: 0.30).opacity(0.32), lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(0.30), radius: 6, y: 2)
+        .frame(maxWidth: 320, alignment: .leading)
+    }
+
+    private var header: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "bolt.shield.fill")
+                .font(.system(size: 10, weight: .heavy))
+                .foregroundStyle(Color(red: 0.95, green: 0.40, blue: 0.40))
+            Text("Turn plan")
+                .font(.system(size: 10.5, weight: .heavy))
+                .tracking(0.6)
+                .foregroundStyle(.white.opacity(0.78))
+            Spacer()
+            if let e = plan.energy {
+                statChip(icon: "bolt.fill",
+                         value: "\(e)",
+                         tint: Color(red: 1.0, green: 0.78, blue: 0.30))
+            }
+            if let d = plan.incomingDamage {
+                statChip(icon: "shield.lefthalf.filled",
+                         value: "\(d)",
+                         tint: Color(red: 0.95, green: 0.40, blue: 0.40))
+            }
+        }
+        .padding(.bottom, 8)
+    }
+
+    private func statChip(icon: String, value: String, tint: Color) -> some View {
+        HStack(spacing: 3) {
+            Image(systemName: icon)
+                .font(.system(size: 9, weight: .heavy))
+                .foregroundStyle(tint)
+            Text(value)
+                .font(.system(size: 10, weight: .heavy))
+                .foregroundStyle(.white)
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 3)
+        .background(Capsule().fill(Color.white.opacity(0.06)))
+        .overlay(Capsule().stroke(tint.opacity(0.35), lineWidth: 1))
+    }
+
+    private var playsStack: some View {
+        VStack(spacing: 6) {
+            ForEach(plan.plays) { play in
+                CombatPlayRow(play: play, isFirst: play.order == 1)
+            }
+        }
+    }
+
+    private func reserveRow(_ reserve: [String]) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("HOLD FOR NEXT TURN")
+                .font(.system(size: 9, weight: .heavy))
+                .tracking(0.7)
+                .foregroundStyle(.white.opacity(0.45))
+            HStack(spacing: 4) {
+                ForEach(reserve, id: \.self) { name in
+                    Text(name)
+                        .font(.system(size: 10.5, weight: .heavy))
+                        .foregroundStyle(.white.opacity(0.85))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
+                        .background(
+                            Capsule().fill(Color(red: 0.40, green: 0.65, blue: 1.00).opacity(0.12))
+                        )
+                        .overlay(
+                            Capsule().stroke(Color(red: 0.40, green: 0.65, blue: 1.00).opacity(0.45),
+                                            lineWidth: 1)
+                        )
+                }
+                Spacer(minLength: 0)
+            }
+        }
+        .padding(.top, 8)
+    }
+
+    private func nextTurnRow(_ next: String) -> some View {
+        HStack(alignment: .top, spacing: 6) {
+            Image(systemName: "arrow.uturn.right.circle")
+                .font(.system(size: 10, weight: .heavy))
+                .foregroundStyle(.white.opacity(0.45))
+                .padding(.top, 1)
+            Text(next)
+                .font(.system(size: 11))
+                .foregroundStyle(.white.opacity(0.75))
+                .fixedSize(horizontal: false, vertical: true)
+                .textSelection(.enabled)
+            Spacer(minLength: 0)
+        }
+        .padding(.top, 8)
+    }
+}
+
+private struct CombatPlayRow: View {
+    let play: OverlayAIService.CombatPlay
+    let isFirst: Bool
+
+    private var accent: Color {
+        isFirst
+            ? Color(red: 0.95, green: 0.40, blue: 0.40)
+            : Color.white.opacity(0.14)
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            ZStack {
+                Circle()
+                    .fill(isFirst ? accent : Color.white.opacity(0.06))
+                    .overlay(Circle().stroke(accent.opacity(isFirst ? 0.85 : 0.35), lineWidth: 1))
+                Text("\(play.order)")
+                    .font(.system(size: 11, weight: .heavy, design: .rounded))
+                    .foregroundStyle(isFirst ? .white : .white.opacity(0.75))
+            }
+            .frame(width: 22, height: 22)
+
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(alignment: .firstTextBaseline, spacing: 4) {
+                    Text(play.card)
+                        .font(.system(size: 12, weight: .heavy))
+                        .foregroundStyle(.white)
+                    if let target = play.target, !target.isEmpty {
+                        Image(systemName: "arrow.right")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundStyle(.white.opacity(0.4))
+                        Text(target)
+                            .font(.system(size: 11, weight: .heavy))
+                            .foregroundStyle(.white.opacity(0.75))
+                    }
+                    if isFirst {
+                        Text("PLAY")
+                            .font(.system(size: 8.5, weight: .heavy))
+                            .tracking(0.8)
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 1)
+                            .background(Capsule().fill(accent))
+                    }
+                    Spacer(minLength: 0)
+                }
+                if let why = play.why, !why.isEmpty {
+                    Text(why)
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(.white.opacity(0.62))
+                        .fixedSize(horizontal: false, vertical: true)
+                        .textSelection(.enabled)
+                }
+            }
+        }
+        .padding(.vertical, 5)
+        .padding(.horizontal, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .fill(isFirst ? accent.opacity(0.08) : Color.white.opacity(0.03))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .stroke(isFirst ? accent.opacity(0.45) : Color.white.opacity(0.06), lineWidth: 1)
+        )
+    }
+}
+
+// =========================================================================
+// TrackerChip
+// -------------------------------------------------------------------------
+// Slim inline chip posted by the snapshot watcher when the player's
+// live save changes. Renders very differently from a chat bubble — no
+// avatar, no border-radius bubble, no full-width fill — just a thin
+// row with an icon, a label, and an optional "matches my pick" badge.
+//
+// Why thin: trackers can fire several times per turn (card pick + gold
+// spent, relic added + HP delta on a chest open). If they each took
+// the visual weight of a chat bubble the log would feel like noise.
+// Compact rows let the player skim ten observations as fast as they'd
+// skim two chat bubbles, which is the right ratio.
+//
+// The optional "MATCHES" / "DIFFERENT" badge converts the chip into a
+// silent accuracy log — over time the player can scroll back and see
+// "the Coach was right 7/10 times this run" without us ever asking.
+// =========================================================================
+
+struct TrackerChip: View {
+    let note: OverlayAIService.TrackerNote
+
+    var body: some View {
+        HStack(spacing: 7) {
+            Image(systemName: kindMeta.icon)
+                .font(.system(size: 10, weight: .heavy))
+                .foregroundStyle(kindMeta.tint)
+                .frame(width: 14)
+            VStack(alignment: .leading, spacing: 1) {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text(headline)
+                        .font(.system(size: 11, weight: .heavy))
+                        .foregroundStyle(.white.opacity(0.85))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    matchBadge
+                    Spacer(minLength: 0)
+                    Text("F\(note.floor)")
+                        .font(.system(size: 9, weight: .heavy))
+                        .foregroundStyle(.white.opacity(0.35))
+                }
+                if let comment = note.matchComment, !comment.isEmpty {
+                    Text(comment)
+                        .font(.system(size: 10))
+                        .foregroundStyle(.white.opacity(0.55))
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+        .padding(.vertical, 5)
+        .padding(.horizontal, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color.white.opacity(0.03))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(borderTint, lineWidth: 1)
+        )
+        .frame(maxWidth: 320, alignment: .leading)
+    }
+
+    private var headline: String {
+        switch note.kind {
+        case .cardAdded:     return "Took \(note.label)"
+        case .cardRemoved:   return "Removed \(note.label)"
+        case .cardUpgraded:  return "Upgraded \(note.label)"
+        case .relicAdded:    return "Relic: \(note.label)"
+        case .relicLost:     return "Lost relic: \(note.label)"
+        case .potionAdded:   return "Potion: \(note.label)"
+        case .potionUsed:    return "Used \(note.label)"
+        case .goldGained:    return "Gold \(note.label)"
+        case .goldSpent:     return "Spent \(note.label)"
+        case .hpHealed:      return "Healed \(note.label)"
+        case .hpLost:        return "Lost \(note.label)"
+        case .floorAdvanced: return note.label
+        }
+    }
+
+    private var kindMeta: (icon: String, tint: Color) {
+        switch note.kind {
+        case .cardAdded:     return ("rectangle.portrait.on.rectangle.portrait.fill",
+                                     Color(red: 0.30, green: 0.85, blue: 0.45))
+        case .cardRemoved:   return ("trash.fill", Color.white.opacity(0.4))
+        case .cardUpgraded:  return ("arrow.up.circle.fill",
+                                     Color(red: 1.00, green: 0.55, blue: 0.10))
+        case .relicAdded:    return ("crown.fill",
+                                     Color(red: 1.00, green: 0.78, blue: 0.30))
+        case .relicLost:     return ("crown", Color.white.opacity(0.4))
+        case .potionAdded:   return ("flask.fill",
+                                     Color(red: 0.55, green: 0.80, blue: 1.00))
+        case .potionUsed:    return ("flask",
+                                     Color(red: 0.55, green: 0.80, blue: 1.00).opacity(0.7))
+        case .goldGained:    return ("dollarsign.circle.fill",
+                                     Color(red: 1.00, green: 0.78, blue: 0.30))
+        case .goldSpent:     return ("dollarsign.circle",
+                                     Color(red: 1.00, green: 0.78, blue: 0.30).opacity(0.7))
+        case .hpHealed:      return ("heart.fill",
+                                     Color(red: 0.30, green: 0.85, blue: 0.45))
+        case .hpLost:        return ("heart.slash.fill",
+                                     Color(red: 0.95, green: 0.30, blue: 0.30))
+        case .floorAdvanced: return ("arrow.right.circle", Color.white.opacity(0.5))
+        }
+    }
+
+    @ViewBuilder
+    private var matchBadge: some View {
+        switch note.matchVerdict {
+        case .matched:
+            badge(text: "MATCHES", tint: Color(red: 0.30, green: 0.85, blue: 0.45))
+        case .different:
+            badge(text: "DIFFERENT", tint: Color(red: 1.00, green: 0.75, blue: 0.30))
+        case .skipped:
+            badge(text: "SKIPPED", tint: Color.white.opacity(0.35))
+        case .unrelated:
+            EmptyView()
+        }
+    }
+
+    private func badge(text: String, tint: Color) -> some View {
+        Text(text)
+            .font(.system(size: 8, weight: .heavy))
+            .tracking(0.7)
+            .foregroundStyle(.white)
+            .padding(.horizontal, 4)
+            .padding(.vertical, 1)
+            .background(Capsule().fill(tint))
+    }
+
+    private var borderTint: Color {
+        switch note.matchVerdict {
+        case .matched:   return Color(red: 0.30, green: 0.85, blue: 0.45).opacity(0.30)
+        case .different: return Color(red: 1.00, green: 0.75, blue: 0.30).opacity(0.30)
+        case .skipped:   return Color.white.opacity(0.10)
+        case .unrelated: return Color.white.opacity(0.06)
+        }
     }
 }

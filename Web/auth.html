@@ -170,6 +170,33 @@
       // Success beacon too, so the funnel can show "client confirmed
       // landing" vs "server thinks they auth'd but they never made it".
       beacon("client-landed", `persona=${persona.slice(0,32)}`);
+      // Native host hand-off. The macOS desktop app loads this page
+      // inside a WKWebView during the OpenID round-trip; once we've
+      // verified the nonce + session here, post the credentials
+      // straight to native code so SteamAuth.acceptWebSession() can
+      // light up the sidebar pill, Co-op presence, and every native
+      // API call simultaneously. Without this hand-off, the embedded
+      // page would be signed in but the surrounding native chrome
+      // would still render the guest pill — the worst kind of bug
+      // because users blame the web part for working.
+      try {
+        const isDesktopHost =
+          (typeof window !== "undefined" && window.__VAULT_DESKTOP__ === true) ||
+          (typeof navigator !== "undefined" &&
+            /Spire-Vault-macOS\//.test(navigator.userAgent || ""));
+        if (isDesktopHost &&
+            window.webkit &&
+            window.webkit.messageHandlers &&
+            window.webkit.messageHandlers.vaultHost) {
+          window.webkit.messageHandlers.vaultHost.postMessage({
+            kind: "auth",
+            steamid: steamid,
+            persona: persona,
+            avatar: avatar || "",
+            session: session,
+          });
+        }
+      } catch { /* host not present — web path keeps working */ }
       status.textContent = "Welcome, " + persona + ".";
       setTimeout(() => { window.location.replace("/"); }, 350);
     }

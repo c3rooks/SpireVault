@@ -38,12 +38,56 @@ struct WebHostView: NSViewRepresentable {
     /// converts ISO date strings back into Date objects.
     let runs: [RunRecord]
 
+    /// Monotonically-incrementing counter the parent flips when the
+    /// native sidebar's "Sign in with Steam" button is tapped. We
+    /// observe this in `updateNSView` and call the embedded page's
+    /// `window.SpireVault.startSignIn()` so the OpenID flow runs
+    /// inside the WKWebView (which is the only way the resulting
+    /// cookie can land in our data store and stay signed in).
+    /// Bug history: before this existed, every sign-in click went
+    /// through `NSWorkspace.shared.open()` to the user's default
+    /// browser; the cookie would land in Safari, not in our
+    /// WKWebView, so the embedded view stayed signed-out forever.
+    /// And on machines that had two copies of The Vault.app
+    /// installed, the `thevault://` return URL re-launched the
+    /// *other* copy, giving the user two desktop windows side by
+    /// side. Driving sign-in inside the WebView solves both.
+    var signInTicket: Int = 0
+
+    /// Called when the embedded page's `auth.html` reports a
+    /// successful Steam OpenID round-trip back through the JS
+    /// bridge. The native side uses this to seat the same session
+    /// in `SteamAuth` so the sidebar pill, Co-op presence, and
+    /// every native API call all reflect login at once.
+    var onAuthSuccess: ((WebAuthPayload) -> Void)? = nil
+
     /// The full canonical web companion URL. This is the one place we
     /// hard-code "app.spirevault.app" so swapping deploy targets later
     /// only touches one symbol.
     static let companionBaseURL = URL(string: "https://app.spirevault.app/")!
 
-    func makeCoordinator() -> Coordinator { Coordinator(tab: $tab) }
+    /// Hosts that are allowed to navigate *inside* the WKWebView (in
+    /// addition to the companion host itself). These cover the full
+    /// Steam OpenID round-trip:
+    ///   1. POST to `<worker>/auth/steam/start`
+    ///   2. 302 to `steamcommunity.com/openid/login`
+    ///   3. Steam 302 back to `<worker>/auth/steam/callback`
+    ///   4. Worker 302 to `app.spirevault.app/auth.html`
+    /// Without these, step 1 hits the navigation delegate, which
+    /// kicks the URL out to NSWorkspace and the cookie/session ends
+    /// up somewhere we can't read.
+    static let inlineAuthHostSuffixes: [String] = [
+        "steamcommunity.com",
+        "steampowered.com",
+    ]
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(
+            tab: $tab,
+            workerHost: serverURL.host,
+            onAuthSuccess: onAuthSuccess
+        )
+    }
 
     func makeNSView(context: Context) -> WKWebView {
         let cfg = WKWebViewConfiguration()
@@ -109,6 +153,15 @@ struct WebHostView: NSViewRepresentable {
         // the embedded page. Internally throttled to a content hash so
         // a no-op re-render doesn't repeatedly re-encode the array.
         context.coordinator.pushRunsIfChanged(runs, on: webView)
+        // Sign-in fan-out: a bumped ticket means the native sidebar's
+        // "Sign in with Steam" button was clicked. We forward to the
+        // embedded page's bridge which calls the same function the
+        // web's CTAs use, so the OpenID flow stays inside this
+        // WKWebView and the cookie ends up in our data store.
+        context.coordinator.requestSignInIfNeeded(ticket: signInTicket, on: webView)
+        // Latest auth callback closure — keep it fresh in case AppState
+        // was rebuilt (e.g., a config change rebuilt presenceService).
+        context.coordinator.onAuthSuccess = onAuthSuccess
     }
 
     private func loadInitial(into view: WKWebView, tab: SidebarSection, serverURL: URL) {
@@ -178,6 +231,16 @@ extension WebHostView {
 
         weak var webView: WKWebView?
 
+        /// Host of the configured worker (e.g. `vault-coop.coreycrooks.workers.dev`).
+        /// Allowed to navigate inside the WebView so the Steam OpenID
+        /// round-trip can happen without bouncing to NSWorkspace.
+        let workerHost: String?
+
+        /// Closure the parent passes in to seat a successful auth
+        /// payload into native `SteamAuth`. Re-set on every
+        /// `updateNSView` so AppState rebuilds don't strand it.
+        var onAuthSuccess: ((WebAuthPayload) -> Void)?
+
         /// Marks whether the page has reported back via window.SpireVault.
         /// Until then we don't try to call switchTab — the function isn't
         /// in scope yet, and we'd just bin the call.
@@ -194,8 +257,24 @@ extension WebHostView {
         /// Cached encoded runs we'll replay once the bridge reports ready.
         private var pendingRunsJSON: String?
 
-        init(tab: Binding<SidebarSection>) {
+        /// Last sign-in ticket we acted on. The parent flips this on
+        /// every "Sign in with Steam" tap; we only fire when it
+        /// genuinely changes so a re-render of the parent doesn't
+        /// accidentally retrigger sign-in mid-flow.
+        private var lastHandledSignInTicket: Int = 0
+        /// True while we're waiting on a Steam OpenID round-trip we
+        /// kicked off ourselves. If a sign-in retry comes in while
+        /// this is set, we no-op (the page is already navigating).
+        private var signInInFlight = false
+
+        init(
+            tab: Binding<SidebarSection>,
+            workerHost: String?,
+            onAuthSuccess: ((WebAuthPayload) -> Void)?
+        ) {
             _tab = tab
+            self.workerHost = workerHost
+            self.onAuthSuccess = onAuthSuccess
         }
 
         // MARK: Driving the embedded page
@@ -273,6 +352,49 @@ extension WebHostView {
             }
         }
 
+        // MARK: - Sign-in fan-out
+
+        /// Called from `updateNSView`. If the parent's ticket changed,
+        /// invoke the embedded page's `startSignIn()` (defined in
+        /// Web/script.js' `window.SpireVault`). The OpenID flow runs
+        /// inside the WKWebView, so the cookie + localStorage end up
+        /// in our data store rather than the user's default browser.
+        func requestSignInIfNeeded(ticket: Int, on webView: WKWebView) {
+            guard ticket != lastHandledSignInTicket else { return }
+            lastHandledSignInTicket = ticket
+            guard ticket > 0 else { return } // 0 is the boot value; ignore
+            guard !signInInFlight else { return }
+            signInInFlight = true
+            // If the bridge isn't up yet (very fast click on a fresh
+            // launch), defer until the page reports ready. Otherwise
+            // call straight in.
+            if bridgeReady {
+                fireStartSignIn(on: webView)
+            }
+        }
+
+        private func fireStartSignIn(on webView: WKWebView) {
+            // Belt-and-braces: the page may not have wired startSignIn
+            // yet on very old web revisions. The optional-chain on the
+            // JS side keeps us safe if so — sign-in just won't fire
+            // and the user can click again after the page reloads.
+            let js = """
+            (function() {
+              try {
+                if (window.SpireVault && typeof window.SpireVault.startSignIn === 'function') {
+                  window.SpireVault.startSignIn();
+                } else if (typeof startSteamSignIn === 'function') {
+                  // Older script.js builds didn't expose startSignIn on
+                  // the SpireVault object — fall back to the global
+                  // helper so a user on a stale web cache still works.
+                  startSteamSignIn();
+                }
+              } catch (e) { console.warn('[VaultHost] startSignIn failed', e); }
+            })();
+            """
+            webView.evaluateJavaScript(js, completionHandler: nil)
+        }
+
         // MARK: - WKScriptMessageHandler
 
         func userContentController(_ userContentController: WKUserContentController,
@@ -298,6 +420,13 @@ extension WebHostView {
                     pendingRunsJSON = nil
                     ingestRunsJSON(json, on: view)
                 }
+                // If a sign-in tap arrived before the page bridge was
+                // ready, fire it now. Common path: user lands on the
+                // app, sees the sidebar pill, hits "Sign in with
+                // Steam" before the WKWebView has finished booting.
+                if signInInFlight, let view = webView {
+                    fireStartSignIn(on: view)
+                }
                 // If the page booted on a tab the host doesn't agree with
                 // (e.g. user landed on `?tab=coop` because that was their
                 // last tab), surface that so the sidebar reflects reality.
@@ -310,6 +439,25 @@ extension WebHostView {
                    webTab != tab {
                     DispatchQueue.main.async { [weak self] in self?.tab = webTab }
                 }
+            case "auth":
+                // The embedded `auth.html` finished a Steam OpenID
+                // round-trip and forwarded the verified payload to us.
+                // Seat it in native SteamAuth so the sidebar pill,
+                // co-op presence, and every native API call all
+                // reflect login at once. We don't second-guess the
+                // values — they were minted by our own worker after
+                // an OpenID check we just performed inside this very
+                // WebView, end-to-end inside our process.
+                signInInFlight = false
+                if let payload = WebAuthPayload(messageBody: body) {
+                    let cb = onAuthSuccess
+                    DispatchQueue.main.async { cb?(payload) }
+                }
+            case "auth-cancel":
+                // The page told us the user bailed out of sign-in or
+                // the OpenID round-trip failed. Clear the in-flight
+                // flag so the next click re-fires the flow.
+                signInInFlight = false
             case "error":
                 if let msg = body["message"] as? String {
                     NSLog("[WebHost] page error: %@", msg)
@@ -322,10 +470,19 @@ extension WebHostView {
         // MARK: - WKNavigationDelegate
 
         /// Decide whether to load the URL inside the WebView or hand it off
-        /// to the OS. Rule of thumb: only navigations within the companion
-        /// origin stay inside; everything else (Steam, mailto, http(s) to
-        /// other hosts, GitHub help links, deep-link schemes) opens in the
-        /// user's actual browser.
+        /// to the OS. Rule of thumb: companion-origin navigations and
+        /// the Steam OpenID round-trip (worker + steamcommunity.com)
+        /// stay inside; everything else (Steam profile pages, mailto,
+        /// http(s) to other hosts, the `steam://` game launcher, etc.)
+        /// opens in the user's actual browser/app.
+        ///
+        /// The Steam OpenID inclusion is what makes sign-in work: the
+        /// flow is `worker /auth/steam/start` → `steamcommunity.com
+        /// /openid/login` → `worker /auth/steam/callback` →
+        /// `app.spirevault.app/auth.html`. If any of those bounce out
+        /// to NSWorkspace, the cookie and the localStorage session
+        /// end up in Safari/Chrome, not in our WKWebView's data
+        /// store, and the embedded page stays signed-out forever.
         func webView(_ webView: WKWebView,
                      decidePolicyFor navigationAction: WKNavigationAction,
                      decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
@@ -344,10 +501,30 @@ extension WebHostView {
                 decisionHandler(.allow); return
             }
 
+            // Worker domain — start, callback, /api/_session, /notify,
+            // anything else the page legitimately POSTs to. Without
+            // this the Steam OpenID redirect bounces out to the
+            // browser and the cookie ends up in Safari.
+            if let workerHost, !workerHost.isEmpty, url.host == workerHost {
+                decisionHandler(.allow); return
+            }
+
+            // Steam OpenID provider host(s). User picks "Sign in" /
+            // confirms identity at steamcommunity.com, Steam 302s
+            // back to the worker callback. Has to stay inside.
+            if let host = url.host,
+               WebHostView.inlineAuthHostSuffixes.contains(where: {
+                   host == $0 || host.hasSuffix("." + $0)
+               }) {
+                decisionHandler(.allow); return
+            }
+
             // Everything else: kick to NSWorkspace and cancel here.
             // This catches Steam profile links, mailto, external https,
             // GitHub README links from in-page footers, the `steam://`
-            // scheme co-op uses to launch the game, etc.
+            // scheme co-op uses to launch the game, etc. We do NOT
+            // route this back through `thevault://` — that scheme is
+            // used only by the legacy native sign-in handler.
             NSWorkspace.shared.open(url)
             decisionHandler(.cancel)
         }
@@ -443,6 +620,42 @@ extension SidebarSection {
         case .beta, .settings: return false
         default: return true
         }
+    }
+}
+
+// MARK: - Web auth payload ----------------------------------------------------
+
+/// Shape of the `kind: "auth"` bridge message the embedded `auth.html`
+/// posts back after a verified Steam OpenID round-trip. The native
+/// side stores this in `SteamAuth` so the desktop sidebar pill, Co-op
+/// presence service, and every native API call all reflect login at
+/// the same instant.
+struct WebAuthPayload {
+    let steamID: String
+    let persona: String
+    let avatar: String?
+    let session: String
+
+    /// Decode from the `[String: Any]` JS bridge body. Returns nil if
+    /// the payload is missing the two fields we cannot fabricate
+    /// (steamID + session) — both are mandatory because every native
+    /// write call is keyed on them.
+    init?(messageBody body: [String: Any]) {
+        guard
+            let sid = (body["steamid"] as? String)?.trimmingCharacters(in: .whitespaces),
+            !sid.isEmpty,
+            sid.count == 17,
+            sid.allSatisfy(\.isNumber),
+            let session = (body["session"] as? String)?.trimmingCharacters(in: .whitespaces),
+            session.count >= 16
+        else { return nil }
+        self.steamID = sid
+        self.session = session
+        self.persona = (body["persona"] as? String).flatMap {
+            $0.isEmpty ? nil : $0
+        } ?? "Steam User"
+        let av = body["avatar"] as? String
+        self.avatar = (av?.isEmpty == true) ? nil : av
     }
 }
 

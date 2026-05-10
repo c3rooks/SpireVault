@@ -33,12 +33,19 @@ targets:
       path: Info.plist
       properties:
         CFBundleDisplayName: "The Vault"
-        CFBundleShortVersionString: "0.9.2"
-        CFBundleVersion: "11"
+        CFBundleShortVersionString: "0.9.3"
+        CFBundleVersion: "12"
         LSApplicationCategoryType: public.app-category.utilities
         NSHumanReadableCopyright: "© 2026 Corey Crooks"
         NSPrincipalClass: NSApplication
         LSMinimumSystemVersion: "13.0"
+        # Force single-instance launch. Without this, a `thevault://`
+        # deep-link return from Steam OpenID could be delivered to a
+        # second copy of the app (e.g. /Applications/The Vault.app vs
+        # ~/Desktop/The Vault.app), giving the user two windows on
+        # screen at once. With this set, macOS brings the running
+        # instance forward instead of spawning a new one.
+        LSMultipleInstancesProhibited: true
         # Custom URL scheme so Steam OpenID can deep-link results back to us.
         CFBundleURLTypes:
           - CFBundleURLName: com.coreycrooks.thevault.auth

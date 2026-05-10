@@ -62,7 +62,14 @@ struct VaultApp: App {
                         Task { await state.presenceService?.goOffline() }
                         state.steamAuth.signOut()
                     } else {
-                        state.steamAuth.signIn(via: state.config.effectiveServerURL)
+                        // Drive the embedded WKWebView's OpenID flow.
+                        // The legacy `signIn(via:)` opened the worker
+                        // start URL in the user's default browser,
+                        // which left the cookie in Safari/Chrome (the
+                        // embedded view never saw it) and on dual-
+                        // installs spawned a second app instance via
+                        // the `thevault://` return scheme.
+                        state.requestEmbeddedSignIn(currentTab: .coop)
                     }
                 }
             }

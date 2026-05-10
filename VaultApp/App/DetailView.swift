@@ -28,9 +28,26 @@ struct DetailView: View {
                 // Relics, Cards, Recent Runs, Co-op, Community Highlights,
                 // News) is rendered by the embedded web companion. One UI,
                 // one set of animations, no parallel SwiftUI port to drift.
-                WebHostView(tab: $section,
-                            serverURL: state.config.effectiveServerURL,
-                            runs: state.runs)
+                //
+                // We forward the sign-in ticket so a tap on the native
+                // "Sign in with Steam" button in the sidebar drives the
+                // embedded WebView's OpenID flow (no browser hop, no
+                // duplicate-window). The auth callback feeds the
+                // verified session straight back into `state.steamAuth`.
+                WebHostView(
+                    tab: $section,
+                    serverURL: state.config.effectiveServerURL,
+                    runs: state.runs,
+                    signInTicket: state.embeddedSignInTicket,
+                    onAuthSuccess: { payload in
+                        state.steamAuth.acceptWebSession(
+                            steamID: payload.steamID,
+                            persona: payload.persona,
+                            avatar: payload.avatar,
+                            session: payload.session
+                        )
+                    }
+                )
             }
         }
         .background(Theme.bgPrimary)

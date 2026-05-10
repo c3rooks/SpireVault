@@ -78,6 +78,42 @@ final class AppState: ObservableObject {
     @Published var communityHighlights: [CommunityHighlight] = []
     @Published var highlightsLoadedAt: Date?
 
+    /// Monotonically-incrementing counter the sidebar's "Sign in
+    /// with Steam" button bumps. The embedded `WebHostView`
+    /// observes this and triggers Steam OpenID *inside* its
+    /// WKWebView — which is the only way the resulting cookie can
+    /// land in our data store and stick. The previous behavior of
+    /// shelling out to `NSWorkspace` would (a) drop the cookie in
+    /// Safari/Chrome where the embedded view couldn't see it, and
+    /// (b) on machines with two copies of The Vault.app installed,
+    /// re-launch the *other* copy via the `thevault://` deep link
+    /// and present the user with two desktop windows side by side.
+    @Published var embeddedSignInTicket: Int = 0
+
+    /// Public entrypoint used by every native "Sign in with Steam"
+    /// button. Tabs the sidebar over to a web-hosted view so the
+    /// embedded WKWebView is on screen, then bumps the ticket so
+    /// `WebHostView` fires `window.SpireVault.startSignIn()` inside
+    /// the embedded page. The OpenID flow stays in-process; on
+    /// success, `acceptWebSession` is called via the JS bridge.
+    func requestEmbeddedSignIn(currentTab: SidebarSection) {
+        if !currentTab.isWebHosted {
+            // The web-hosted view is the one with the WKWebView. If
+            // the sidebar is currently on Beta or Settings (both
+            // native), hopping back to Co-op is the friendliest
+            // landing page for sign-in: it's the tab that needs
+            // auth and has the most context for what comes next.
+            pendingSidebarHop = .coop
+        }
+        embeddedSignInTicket &+= 1
+    }
+
+    /// One-shot sidebar hop the RootView observes and clears. We
+    /// avoid driving navigation directly from AppState (the sidebar
+    /// `@Binding` lives in RootView) because that would couple
+    /// every model change to a SwiftUI binding rebuild.
+    @Published var pendingSidebarHop: SidebarSection?
+
     private var cancellables: Set<AnyCancellable> = []
 
     enum ScanStatus: Equatable {

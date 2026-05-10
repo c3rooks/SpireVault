@@ -79,6 +79,21 @@ pushed into the embedded page over the same bridge so the user sees
 their real history without any cloud round-trip. Beta and Settings stay
 native because they need `NSPanel` / Keychain / `NSOpenPanel`.
 
+**Single-WebView Steam sign-in (v0.9.3).** The full Steam OpenID
+round-trip — `worker /auth/steam/start` → `steamcommunity.com` →
+`worker /auth/steam/callback` → `app.spirevault.app/auth.html` — runs
+*inside* the embedded `WKWebView`, not the user's default browser. The
+result: the session cookie + localStorage land in
+`cfg.websiteDataStore = .default()` (visible to the embedded view),
+and `auth.html` posts the verified payload through the JS bridge as
+`kind: "auth"` so `SteamAuth.acceptWebSession(...)` seats the same
+session natively. The sidebar pill, Co-op presence, and every native
+API write all light up the moment the embedded view does. The
+previous flow (NSWorkspace.open → browser → `thevault://` callback)
+left the cookie in Safari and, on dual-installs, delivered the deep
+link to a *second* copy of The Vault.app — both fixed in v0.9.3,
+plus `LSMultipleInstancesProhibited = true` for belt-and-braces.
+
 **Cross-device run sync (v0.5).** When you sign in with Steam, the web
 companion uploads your parsed run history to a Steam-ID-keyed cloud
 copy. Open the iOS app on the same Steam account and your runs are

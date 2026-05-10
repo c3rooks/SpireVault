@@ -5,6 +5,68 @@ Dates in YYYY-MM-DD. The project follows [Semantic Versioning](https://semver.or
 loosely — patch bumps for fixes, minor for features, major if I ever
 break the wire format.
 
+## v0.9.3 — 2026-05-10
+
+Hotfix for the two highest-pain bugs reported against v0.9.2: clicking
+"Sign in with Steam" did nothing in the desktop app, and on machines
+with two copies of The Vault.app installed it spawned a second
+window. Both came from the same root cause — the sign-in flow was
+shelling out to `NSWorkspace.open()` for the worker URL, which dropped
+the session cookie into the user's default browser (where the embedded
+WebView could never see it) and on dual-installs delivered the
+`thevault://` return to the *other* copy of the app.
+
+**Sign-in stays inside the WKWebView now.**
+
+- `WebHostView` allows the worker host and `steamcommunity.com` (plus
+  `steampowered.com`) to navigate *inside* the embedded WebView. The
+  full Steam OpenID round-trip (`worker /auth/steam/start` → Steam →
+  `worker /auth/steam/callback` → `app.spirevault.app/auth.html`) now
+  happens in-process, so the resulting cookie + localStorage end up in
+  `cfg.websiteDataStore = .default()` where the embedded view
+  actually reads them.
+- New JS bridge message `kind: "auth"` lets `auth.html` post the
+  verified Steam payload (steamID, persona, avatar, session) straight
+  to native code, and `SteamAuth.acceptWebSession(...)` seats it. The
+  sidebar pill, Co-op presence, and every native API write all light
+  up at the same instant the embedded view does — no more "I'm
+  signed-in inside the page but the surrounding chrome thinks I'm a
+  guest" mismatch.
+- New `window.SpireVault.startSignIn()` is the entrypoint the native
+  app calls when its sidebar / menu / settings "Sign in with Steam"
+  buttons are tapped. AppState bumps `embeddedSignInTicket` and
+  optionally hops the sidebar to a web-hosted tab first (so the
+  WebView is on screen to drive the OpenID flow), and the coordinator
+  fires `startSignIn()` once the bridge handshake completes.
+
+**No more duplicate desktop windows.**
+
+- Added `LSMultipleInstancesProhibited = true` to `Info.plist`. With
+  this, macOS Launch Services brings the running instance forward
+  instead of launching a second copy when a deep-link is delivered.
+  Combined with the in-WebView sign-in path (which removes the
+  NSWorkspace hop entirely), the two-window failure mode is gone.
+
+**Touched files.**
+
+- `VaultApp/App/WebHostView.swift` — Steam-OpenID-aware nav policy,
+  `WebAuthPayload`, `kind: "auth"` handler, sign-in ticket fan-out.
+- `VaultApp/App/Coop/SteamAuth.swift` — `acceptWebSession(...)`.
+- `VaultApp/App/AppState.swift` — `embeddedSignInTicket`,
+  `requestEmbeddedSignIn(currentTab:)`, `pendingSidebarHop`.
+- `VaultApp/App/RootView.swift` — observes `pendingSidebarHop`,
+  guest pill calls `requestEmbeddedSignIn`.
+- `VaultApp/App/{VaultApp,SettingsView,Coop/CoopView}.swift` — same
+  rewire for menu, settings, and the dead-code Co-op fallback.
+- `VaultApp/App/DetailView.swift` — passes ticket + auth callback to
+  `WebHostView`.
+- `Web/script.js` — `window.SpireVault.startSignIn()` and
+  `seedSession(profile)`.
+- `Web/auth.html` — posts `kind: "auth"` to the native bridge in
+  desktop-host mode.
+- `VaultApp/Info.plist` + `project.yml` — version bump,
+  `LSMultipleInstancesProhibited`.
+
 ## v0.9.2 — 2026-05-10
 
 The desktop app stops maintaining a parallel SwiftUI copy of every cloud

@@ -118,7 +118,12 @@ private struct CoopSignInGate: View {
                 }
 
                 Button {
-                    app.steamAuth.signIn(via: app.config.effectiveServerURL)
+                    // Routed through AppState so the embedded
+                    // WebView drives the OpenID flow. (CoopView is
+                    // dead code in v0.9.2+ — Co-op is rendered by
+                    // the WebView — but kept compiling in case a
+                    // future fallback path mounts it again.)
+                    app.requestEmbeddedSignIn(currentTab: .coop)
                 } label: {
                     HStack(spacing: 10) {
                         Image(systemName: "globe")

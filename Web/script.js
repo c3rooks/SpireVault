@@ -13162,6 +13162,55 @@ try {
           return false;
         }
       },
+      // Kick off the Steam OpenID round-trip from inside the
+      // WKWebView. The macOS app calls this when the user clicks
+      // any native "Sign in with Steam" button (sidebar pill,
+      // menu bar, settings) — driving sign-in in-place is the
+      // only way the resulting cookie can land in our WKWebView's
+      // data store. Returns true on success, false if we couldn't
+      // start the flow (no `startSteamSignIn` defined yet).
+      startSignIn: () => {
+        try {
+          if (typeof startSteamSignIn !== "function") return false;
+          startSteamSignIn();
+          return true;
+        } catch (e) {
+          console.warn("[SpireVault] startSignIn failed", e);
+          return false;
+        }
+      },
+      // Tell the embedded page who's signed in based on what the
+      // native app has already established (e.g. via Steam
+      // Mobile App or a previously seated session). The page
+      // bypasses its own OpenID flow and renders the signed-in
+      // state directly. We accept the shape that web's normal
+      // sign-in path produces, so all the downstream consumers
+      // (Co-op, Highlights post composer, Account menu) light up
+      // identically. NOTE: this trusts the host completely — only
+      // call from a WKWebView whose data store you control.
+      seedSession: (profile) => {
+        try {
+          if (!profile || typeof profile !== "object") return false;
+          if (typeof window.persistAuthFromHost === "function") {
+            return !!window.persistAuthFromHost(profile);
+          }
+          // Older builds didn't expose persistAuthFromHost; fall
+          // back to writing localStorage directly so the next
+          // `boot()` picks the session up. Best-effort only.
+          const blob = JSON.stringify({
+            steamID: String(profile.steamID || profile.steamid || ""),
+            personaName: String(profile.personaName || profile.persona || "Steam User"),
+            avatarURL: profile.avatarURL || profile.avatar || undefined,
+            sessionToken: String(profile.sessionToken || profile.session || ""),
+            signedInAt: new Date().toISOString(),
+          });
+          localStorage.setItem("vault.web.session", blob);
+          return true;
+        } catch (e) {
+          console.warn("[SpireVault] seedSession failed", e);
+          return false;
+        }
+      },
     });
   }
 } catch (e) { /* ignore — non-browser env */ }
