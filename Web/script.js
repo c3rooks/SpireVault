@@ -68,7 +68,7 @@ const STS2_APP_ID = "2868840";
  * on an old client — instruct hard refresh. If it DOES match, the
  * bug is real and we can stop chasing cache ghosts.
  */
-const VAULT_BUILD = "v138-2026-05-09-news-banner-rev3-canonical-party-scene";
+const VAULT_BUILD = "v139-2026-05-10-news-banner-rev4-stilllife-and-eager-load";
 
 // Feature flag — set to `true` only on local dev when iterating on the
 // Run Companion Overlay. Production stays false until the feature is
