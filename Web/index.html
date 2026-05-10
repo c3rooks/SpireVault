@@ -31,7 +31,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Playfair+Display:wght@700;900&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/styles.css?v=110" />
+  <link rel="stylesheet" href="/styles.css?v=111" />
 
   <!-- Google tag (gtag.js) — Spire Vault GA4 stream G-09LEQ247HN.
        Loaded async so it never blocks the critical rendering path; the
@@ -212,25 +212,26 @@
             <span class="nav-label">News</span>
             <span class="nav-badge nav-badge--new" id="nav-news-count" hidden>NEW</span>
           </button>
-          <button class="nav-row" data-tab="overlay" id="nav-overlay-btn" hidden>
-            <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 4h18v14H3zM7 8h10v2H7zm0 4h7v2H7zm14 10H3v-2h18z"/></svg></span>
-            <span class="nav-label">Overlay</span>
-            <span class="nav-badge nav-badge--new">BETA</span>
+          <button class="nav-row" data-tab="beta" id="nav-beta-btn">
+            <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M9 2v6.586L3.293 14.293A1 1 0 004 16h16a1 1 0 00.707-1.707L15 8.586V2H9zm2 2h2v5.414l4.293 4.293L17 14H7l-.293.293L11 9.414V4z"/></svg></span>
+            <span class="nav-label">Beta</span>
+            <span class="nav-badge nav-badge--new">NEW</span>
           </button>
+          <!-- Old "Overlay" sidebar row was removed in v0.9. The Run
+               Coach overlay now lives inside the Beta tab so it sits
+               next to the API key + provider config, instead of being
+               a top-level surface that requires explaining "what is
+               this and why is it gated?" before the user sees the
+               settings UI. -->
         </div>
 
-        <div class="nav-group">
-          <span class="nav-group-label">YOU</span>
-          <!-- Settings tab — single canonical home for save-data plumbing
-               (link/disconnect folder, export, refresh, clear) plus
-               preferences, account info, keyboard shortcuts. Removed
-               those buttons from every panel-head as part of the
-               header-action consolidation pass. -->
-          <button class="nav-row" data-tab="settings">
-            <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M19.4 13a7.5 7.5 0 000-2l2.1-1.6a.5.5 0 00.1-.6l-2-3.4a.5.5 0 00-.6-.2l-2.5 1a7.5 7.5 0 00-1.7-1l-.4-2.6a.5.5 0 00-.5-.4h-4a.5.5 0 00-.5.4l-.4 2.6a7.5 7.5 0 00-1.7 1l-2.5-1a.5.5 0 00-.6.2l-2 3.4a.5.5 0 00.1.6L4.6 11a7.5 7.5 0 000 2L2.5 14.6a.5.5 0 00-.1.6l2 3.4a.5.5 0 00.6.2l2.5-1a7.5 7.5 0 001.7 1l.4 2.6a.5.5 0 00.5.4h4a.5.5 0 00.5-.4l.4-2.6a7.5 7.5 0 001.7-1l2.5 1a.5.5 0 00.6-.2l2-3.4a.5.5 0 00-.1-.6L19.4 13zM12 15.5a3.5 3.5 0 110-7 3.5 3.5 0 010 7z"/></svg></span>
-            <span class="nav-label">Settings</span>
-          </button>
-        </div>
+        <!-- The standalone "Settings" sidebar row was removed in v0.9.
+             Settings now opens from the me-pill profile popover at the
+             bottom of the sidebar — clicking your Steam name reveals a
+             "Settings" link, alongside status + invites + sign-out.
+             This collapses two persistent footer surfaces (the pill
+             and the Settings tab) into one place where everything
+             "about you" lives. -->
       </nav>
 
       <div class="sidebar-spacer"></div>
@@ -255,23 +256,30 @@
           </span>
           <span class="me-pill-dot" id="me-pill-dot" aria-hidden="true" hidden></span>
         </button>
-        <div class="me-pill-status-row" id="me-pill-status-row" hidden>
-          <span class="me-pill-status-pill" id="me-pill-status-pill" data-status="looking">Looking</span>
+
+        <!-- Unified status row. Replaces the previous two-row layout
+             (a separate "AFK pill / invites" strip stacked above a
+             "● Live on the feed · Sign out" strip) which felt
+             cluttered and surfaced a redundant Sign out link — the
+             profile popover already has a proper Sign out menu item.
+             Now: one row with the live-on-the-feed dot + status
+             label, followed by the AFK / Looking / In-co-op pill
+             and the invite count. Reads cleanly at a glance, no
+             redundant CTAs. -->
+        <div class="sidebar-status-row" id="me-pill-status-row">
+          <span class="status-dot" id="status-dot" aria-hidden="true"></span>
+          <span class="sidebar-status-label" id="status-label">Connecting…</span>
+          <span class="me-pill-status-pill" id="me-pill-status-pill" data-status="looking" hidden>Looking</span>
           <button class="me-pill-invites" id="me-pill-invites" type="button" hidden title="Open profile menu to respond">0</button>
         </div>
-        <div class="sidebar-status">
-          <span class="status-dot" id="status-dot"></span>
-          <span id="status-label">Connecting…</span>
-          <!-- Hidden by default; boot() reveals it only when there's
-               an authenticated session. Earlier this button was
-               always visible, so a guest visitor saw "Browsing as
-               guest · Sign out" simultaneously with the "Sign in
-               with Steam" pill above it — a confusing combo that
-               made people think they were signed in but broken,
-               and clicking the dead "Sign out" link did nothing
-               (it had no handler in guest mode). -->
-          <button class="status-signout" id="signout-btn" title="Sign out" hidden>Sign out</button>
-        </div>
+
+        <!-- Sign out is exposed in the profile popover (clicking the
+             avatar pill above) and via the keyboard shortcut. We keep
+             this element in the DOM so the kbd-shortcut handler that
+             does `getElementById('signout-btn').click()` still
+             resolves, but it's never visually shown — the click
+             handler that signs out is bound by boot() either way. -->
+        <button class="status-signout" id="signout-btn" type="button" hidden aria-hidden="true" tabindex="-1" style="display:none">Sign out</button>
       </div>
 
       <!-- Mobile-only account row. Lives below the horizontal tab strip
@@ -1158,6 +1166,25 @@
         <div class="panel-body" id="overlay-body"></div>
       </article>
 
+      <!-- =================== Beta =================== -->
+      <!-- Beta tab. Houses experimental features that need a config
+           surface of their own. Currently: Run Coach (the cloud
+           overlay) and a Document Picture-in-Picture demo. We keep
+           the markup minimal — renderBetaTab() in script.js owns
+           the entire body so live state (browser support, API key
+           presence, Coach status) stays in sync. -->
+      <article class="tab-panel beta-panel" data-tab="beta" aria-labelledby="tab-beta-title" hidden>
+        <div class="panel-head">
+          <div class="panel-head-coop-row">
+            <div>
+              <h2 id="tab-beta-title">Beta features</h2>
+              <p class="panel-sub">Experimental tools — your feedback shapes what ships.</p>
+            </div>
+          </div>
+        </div>
+        <div class="panel-body" id="beta-body"></div>
+      </article>
+
       <!-- =================== Settings =================== -->
       <!-- Body filled by renderSettings() in script.js. We keep the markup
            minimal here because the contents (linked-folder status, sync
@@ -1354,6 +1381,12 @@
     </div>
   </footer>
 
-  <script src="/script.js?v=142" type="module"></script>
+  <!-- run-coach.js installs window.RunCoach (browser-side BYO-key Run
+       Coach + Document Picture-in-Picture overlay). Loaded as a regular
+       script before the module so it's available synchronously when
+       script.js's renderActiveTab() is called for the Beta tab. Cache
+       bust string is bumped alongside the script.js bust on each ship. -->
+  <script src="/run-coach.js?v=1" defer></script>
+  <script src="/script.js?v=143" type="module"></script>
 </body>
 </html>

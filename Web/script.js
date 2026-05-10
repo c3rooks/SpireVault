@@ -68,7 +68,7 @@ const STS2_APP_ID = "2868840";
  * on an old client — instruct hard refresh. If it DOES match, the
  * bug is real and we can stop chasing cache ghosts.
  */
-const VAULT_BUILD = "v142-2026-05-10-news-scroll-to-top-on-select";
+const VAULT_BUILD = "v143-2026-05-10-sidebar-dock-cleanup-and-header-align";
 
 // Feature flag — set to `true` only on local dev when iterating on the
 // Run Companion Overlay. Production stays false until the feature is
@@ -471,7 +471,7 @@ const POLL_INBOX_MS         = 30_000;  // was 10_000
 const HEARTBEAT_MS          = 180_000; // was 90_000
 
 const TABS_WITH_DATA = ["overview", "characters", "ascensions", "relics", "cards", "runs"];
-const KNOWN_TABS = ["overview", "characters", "ascensions", "relics", "cards", "runs", "coop", "news", "highlights", "settings", "overlay"];
+const KNOWN_TABS = ["overview", "characters", "ascensions", "relics", "cards", "runs", "coop", "news", "highlights", "settings", "overlay", "beta"];
 
 // Where the desktop app keeps history.json on each platform. These are
 // declared at the top of the module because boot code (switchTab → empty
@@ -1311,12 +1311,23 @@ async function boot() {
     const $mePill = document.getElementById("me-pill");
     if ($mePill) {
       $mePill.classList.add("me-pill-guest");
+      // Guests still need Settings (folder linking, import/export, prefs)
+      // even without Steam — when we removed the standalone sidebar row
+      // in v0.9 we replaced it with a footer Settings link inside the
+      // me-pill profile popover, but that popover is gated on a Steam
+      // session. So the guest pill exposes a tiny "Settings" link inline
+      // alongside the sign-in CTA so save-data plumbing never gets
+      // hidden behind auth.
       $mePill.innerHTML = `
         <button class="btn-primary me-pill-signin" type="button" data-action="signin-cta">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3 5l8-1.1V11H3V5zm0 7h8v7.1L3 18V12zm9 7.2V12h9v8L12 19.2zM12 11V3.9L21 3v8h-9z"/></svg>
           <span>Sign in with Steam</span>
         </button>
-        <p class="me-pill-guest-note">Optional — only needed for the co-op feed.</p>`;
+        <p class="me-pill-guest-note">Optional — only needed for the co-op feed.</p>
+        <button class="me-pill-guest-settings" type="button" data-action="open-settings-guest" title="Open Settings">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09a1.65 1.65 0 00-1-1.51 1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 110-4h.09a1.65 1.65 0 001.51-1 1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+          <span>Settings</span>
+        </button>`;
     }
     const $mobileSign = document.getElementById("me-pill-name-mobile");
     if ($mobileSign) $mobileSign.textContent = "Guest";
@@ -1432,6 +1443,18 @@ async function boot() {
     if (!btn) return;
     e.preventDefault();
     startSteamSignIn();
+  });
+
+  // Guest-mode "Settings" link inside the me-pill — see renderMePill
+  // for the markup. Lives outside the popover (which is gated on a
+  // Steam session) so first-time visitors who land in guest mode can
+  // still link a save folder, import history, and toggle prefs.
+  document.addEventListener("click", (e) => {
+    const btn = e.target.closest('[data-action="open-settings-guest"]');
+    if (!btn) return;
+    e.preventDefault();
+    e.stopPropagation();
+    switchTab("settings");
   });
 
   // Companion avatar — see renderCompanion() for details. Wired once
@@ -2420,6 +2443,8 @@ function renderActiveTab() {
     try { wireNewsTabs(); } catch {}
   } else if (activeTab === "overlay") {
     renderOverlayTab();
+  } else if (activeTab === "beta") {
+    if (window.RunCoach?.renderBetaTab) window.RunCoach.renderBetaTab();
   } else if (activeTab === "settings") {
     renderSettingsTab();
   }
@@ -10572,14 +10597,20 @@ function getEffectiveStatus() {
 
 function renderProfileDock() {
   const $pillBtn = document.getElementById("me-pill");
-  const $row = document.getElementById("me-pill-status-row");
+  // The unified status row (#me-pill-status-row) is always visible
+  // because it carries the connection-status dot + label
+  // ("Live on the feed" / "Connecting…") for guests and members
+  // alike. Only the inner status pill + invite count toggle with
+  // the session — guests don't have a "Looking / In a run / AFK"
+  // status to show, and they have no invites.
   const $pill = document.getElementById("me-pill-status-pill");
   const $inv = document.getElementById("me-pill-invites");
   const $dot = document.getElementById("me-pill-dot");
-  if (!$row || !$pill || !$inv) return;
+  if (!$pill || !$inv) return;
 
   if (!session?.steamID) {
-    $row.hidden = true;
+    $pill.hidden = true;
+    $inv.hidden = true;
     if ($dot) $dot.hidden = true;
     if ($pillBtn) {
       $pillBtn.disabled = true;
@@ -10588,7 +10619,7 @@ function renderProfileDock() {
     return;
   }
 
-  $row.hidden = false;
+  $pill.hidden = false;
   if ($pillBtn) {
     $pillBtn.disabled = false;
     $pillBtn.classList.add("is-actionable");
@@ -10913,8 +10944,22 @@ function renderProfilePopover() {
     </section>
 
     <footer class="profile-pop-foot">
-      <button class="profile-pop-link" type="button" data-pop-action="open-coop">Open Co-op</button>
-      <button class="profile-pop-link profile-pop-link--danger" type="button" data-pop-action="signout">Sign out</button>
+      <button class="profile-pop-link" type="button" data-pop-action="open-settings">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09a1.65 1.65 0 00-1-1.51 1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 110-4h.09a1.65 1.65 0 001.51-1 1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+        <span>Settings</span>
+      </button>
+      <button class="profile-pop-link" type="button" data-pop-action="open-beta">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 2v6.5L3.5 16A2 2 0 005 19h14a2 2 0 001.5-3L15 8.5V2"/><path d="M9 2h6"/></svg>
+        <span>Beta features</span>
+      </button>
+      <button class="profile-pop-link" type="button" data-pop-action="open-coop">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
+        <span>Open Co-op</span>
+      </button>
+      <button class="profile-pop-link profile-pop-link--danger" type="button" data-pop-action="signout">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+        <span>Sign out</span>
+      </button>
     </footer>
   `;
 
@@ -11072,6 +11117,16 @@ function wireProfilePopover(el) {
       if (action === "open-coop") {
         closeProfilePopover();
         switchTab("coop");
+        return;
+      }
+      if (action === "open-settings") {
+        closeProfilePopover();
+        switchTab("settings");
+        return;
+      }
+      if (action === "open-beta") {
+        closeProfilePopover();
+        switchTab("beta");
         return;
       }
       if (action === "signout") {

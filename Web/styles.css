@@ -1062,12 +1062,33 @@ main.main-public,
   background: #0a0812;
   z-index: 6;
 }
+/* Unified profile-dock status row.
+ *
+ * Layout: [● dot] [Live on the feed] [AFK pill]      [0 invites]
+ *
+ * The connection dot + label always show. The status pill is hidden
+ * for guests (they don't have a co-op status). The invite count is
+ * pushed to the right via margin-left:auto on .me-pill-invites and
+ * is only shown when there are pending invites. Replaces the old
+ * stacked two-row layout that surfaced a redundant Sign out link
+ * already present in the profile popover. */
+.sidebar-status-row,
 .me-pill-status-row {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 8px 0;
+  padding: 8px 8px 0;
   font-size: 11px;
+  color: var(--text-2, #b6abc4);
+  min-width: 0;
+}
+.sidebar-status-label {
+  flex: 0 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 600;
   color: var(--text-2, #b6abc4);
 }
 .me-pill-status-pill {
@@ -1540,15 +1561,16 @@ main.main-public,
   margin-top: 6px;
 }
 
-/* Footer — text-link style for low-stakes navigation.
-   Top hairline so it reads as a distinct foot zone, not a
-   stranded row. */
+/* Footer — vertical menu of icon+label rows. v0.9 grew this from a
+   2-button row (Open Co-op / Sign out) into the canonical home for
+   "settings-style" actions (Settings, Beta, Co-op, Sign out) when we
+   removed the standalone Settings sidebar item. So the footer needs
+   to read as a tidy menu, not a horizontal pill row. */
 .profile-pop-foot {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 12px 16px 14px;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 8px 10px;
   border-top: 1px solid rgba(255,255,255,0.07);
   background: rgba(255,255,255,0.015);
 }
@@ -1557,21 +1579,28 @@ main.main-public,
   border: 0;
   background: transparent;
   color: var(--text-2, #c8c0d8);
-  font-size: 12px;
+  font-size: 12.5px;
   font-weight: 600;
   cursor: pointer;
-  padding: 4px 0;
+  padding: 8px 10px;
+  border-radius: 8px;
   letter-spacing: -0.005em;
-  transition: color 120ms ease;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-align: left;
+  width: 100%;
+  transition: color 120ms ease, background 120ms ease;
 }
-.profile-pop-link:hover { color: var(--text); text-decoration: underline; }
+.profile-pop-link svg { flex: 0 0 14px; opacity: 0.85; }
+.profile-pop-link:hover { color: var(--text); background: rgba(255,255,255,0.04); text-decoration: none; }
+.profile-pop-link:hover svg { opacity: 1; }
 .profile-pop-link:focus-visible {
   outline: 2px solid var(--accent, #d4af37);
   outline-offset: 2px;
-  border-radius: 4px;
 }
 .profile-pop-link--danger { color: #d99a9a; }
-.profile-pop-link--danger:hover { color: #ff8585; }
+.profile-pop-link--danger:hover { color: #ff8585; background: rgba(255, 90, 90, 0.08); }
 
 /* Phone / narrow viewport: bottom sheet rather than anchored
    popover. Easier to thumb-reach, keyboard-safe. A visible drag
@@ -1636,18 +1665,18 @@ main.main-public,
   text-overflow: ellipsis;
 }
 
+/* Legacy .sidebar-status row removed in v0.10 in favor of the
+ * unified .sidebar-status-row above. The selector is kept here as
+ * a no-op so any cached HTML still in the wild renders without
+ * a hard layout failure — the new HTML uses .sidebar-status-row. */
 .sidebar-status {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 4px 0;
-  font-size: 11px;
-  color: var(--text-2);
+  display: none;
 }
 .status-dot {
   width: 8px; height: 8px;
   border-radius: 50%;
   background: var(--text-3);
+  flex-shrink: 0;
 }
 .status-dot[data-state="online"]    { background: var(--win); box-shadow: 0 0 8px rgba(109,217,124,0.5); }
 .status-dot[data-state="connecting"]{ background: var(--gold); animation: pulse 2s infinite; }
@@ -1863,7 +1892,12 @@ main.main-public,
   align-items: flex-end;
   justify-content: space-between;
   gap: 16px;
-  padding: 8px 32px 18px;
+  /* Top padding matches .sidebar-brand's 22px so the panel title's
+   * top edge lines up visually with the sidebar logo's top edge.
+   * Was 8px, which left the title sitting ~14px higher than the
+   * sidebar wordmark and gave the page a slightly off, "the
+   * sidebar is taller than the content" feel. */
+  padding: 22px 32px 18px;
   border-bottom: 1px solid var(--border);
   position: sticky;
   top: 0;
@@ -5404,6 +5438,30 @@ select#me-note option { background: var(--bg-deep); color: var(--text); }
   line-height: 1.4;
   color: var(--text-3);
 }
+/* Guest-mode "Settings" inline link inside the me-pill. Lives below
+   the sign-in CTA so first-time visitors who never sign in still have
+   a path to save-folder linking, import/export, and prefs (the
+   standalone Settings sidebar row was retired in v0.9). Visually
+   subordinate to the primary sign-in button — it's a fallback, not
+   a competing CTA. */
+.me-pill-guest-settings {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 5px 8px;
+  margin: 0 auto;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-3);
+  cursor: pointer;
+  transition: color 120ms ease, background 120ms ease;
+}
+.me-pill-guest-settings:hover { color: var(--text-1); background: rgba(255,255,255,0.05); }
 
 /* ── Guest co-op tab body ── */
 .guest-coop {
@@ -5745,6 +5803,261 @@ select#me-note option { background: var(--bg-deep); color: var(--text); }
   backdrop-filter: none;
   font-size: 12px;
 }
+
+/* ── Beta tab (v0.9) ──────────────────────────────────────────────
+   Home for experimental features that need a config surface of their
+   own. Currently: the cloud Run Coach overlay (Document PiP). Same
+   visual language as the Settings panel — card grid, matte fills,
+   strong heads — but with one hero card up top that explains the
+   feature before it asks for an API key. */
+.beta-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  padding: 20px 24px 32px;
+}
+@media (max-width: 900px) {
+  .beta-grid { grid-template-columns: 1fr; padding: 16px; }
+}
+.beta-card {
+  background: rgba(255,255,255,0.025);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 14px;
+  padding: 18px 20px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.beta-hero {
+  grid-column: 1 / -1;
+  background: linear-gradient(160deg, rgba(245,158,11,0.10), rgba(255,107,26,0.04) 60%, rgba(255,255,255,0.02));
+  border-color: rgba(245,158,11,0.28);
+}
+.beta-hero-head {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.beta-hero-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: 12px;
+  background: linear-gradient(160deg, rgba(245,158,11,0.40), rgba(255,107,26,0.10));
+  border: 1px solid rgba(245,158,11,0.40);
+  display: grid;
+  place-items: center;
+  flex: 0 0 56px;
+  box-shadow: 0 6px 24px rgba(245,158,11,0.20);
+}
+.beta-hero-icon img { width: 32px; height: 32px; }
+.beta-hero-text { display: flex; flex-direction: column; gap: 4px; }
+.beta-hero-kicker {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 2.4px;
+  color: rgba(245,158,11,0.95);
+}
+.beta-hero-text h3 {
+  margin: 0;
+  font-family: 'Playfair Display', serif;
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
+.beta-hero-text p {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--text-2, #c8c0d8);
+  max-width: 64ch;
+}
+.beta-card-head { display: flex; flex-direction: column; gap: 4px; }
+.beta-card-head h4 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+  color: var(--text);
+}
+.beta-card-sub { margin: 0; font-size: 12.5px; line-height: 1.5; color: var(--text-2); }
+
+.beta-form { display: flex; flex-direction: column; gap: 14px; }
+.beta-field { display: flex; flex-direction: column; gap: 6px; }
+.beta-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.beta-hint {
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--text-3);
+}
+.beta-hint code {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 11px;
+  padding: 1px 4px;
+  background: rgba(255,255,255,0.05);
+  border-radius: 4px;
+}
+.beta-input {
+  appearance: none;
+  width: 100%;
+  padding: 9px 11px;
+  border-radius: 8px;
+  border: 1px solid rgba(255,255,255,0.10);
+  background: rgba(0,0,0,0.30);
+  color: var(--text);
+  font-size: 13px;
+  outline: none;
+  font-family: inherit;
+}
+.beta-input:focus { border-color: rgba(245,158,11,0.55); }
+.beta-key { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 12px; }
+.beta-key-row { display: flex; align-items: center; gap: 6px; }
+.beta-textarea {
+  appearance: none;
+  width: 100%;
+  padding: 9px 11px;
+  border-radius: 8px;
+  border: 1px solid rgba(255,255,255,0.10);
+  background: rgba(0,0,0,0.30);
+  color: var(--text);
+  font-size: 12.5px;
+  outline: none;
+  resize: vertical;
+  font-family: inherit;
+  line-height: 1.45;
+}
+.beta-textarea:focus { border-color: rgba(245,158,11,0.55); }
+.beta-advanced { font-size: 12px; color: var(--text-3); display: flex; flex-direction: column; gap: 8px; }
+.beta-advanced summary { cursor: pointer; font-weight: 600; padding: 4px 0; }
+.beta-advanced summary:hover { color: var(--text); }
+
+.beta-seg {
+  display: inline-flex;
+  background: rgba(0,0,0,0.30);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 8px;
+  padding: 3px;
+  width: fit-content;
+}
+.beta-seg button {
+  appearance: none;
+  background: transparent;
+  color: var(--text-2);
+  border: 0;
+  padding: 6px 14px;
+  font-size: 12px;
+  font-weight: 700;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+.beta-seg button[aria-pressed="true"],
+.beta-seg button[aria-checked="true"] {
+  background: linear-gradient(180deg, rgba(245,158,11,0.30), rgba(245,158,11,0.18));
+  color: var(--text);
+}
+.beta-seg button:hover { color: var(--text); }
+
+.beta-toggle-list { display: flex; flex-direction: column; gap: 10px; }
+.beta-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  cursor: pointer;
+  padding: 8px 0;
+}
+.beta-toggle input { position: absolute; opacity: 0; pointer-events: none; }
+.beta-toggle-track {
+  flex: 0 0 36px;
+  width: 36px;
+  height: 20px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.10);
+  border: 1px solid rgba(255,255,255,0.12);
+  position: relative;
+  transition: background 140ms ease, border-color 140ms ease;
+  margin-top: 2px;
+}
+.beta-toggle-track::after {
+  content: "";
+  position: absolute;
+  top: 1px;
+  left: 1px;
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  background: #f5f5f7;
+  transition: transform 140ms ease;
+}
+.beta-toggle input:checked + .beta-toggle-track {
+  background: rgba(245,158,11,0.55);
+  border-color: rgba(245,158,11,0.7);
+}
+.beta-toggle input:checked + .beta-toggle-track::after { transform: translateX(16px); }
+.beta-toggle-text { display: flex; flex-direction: column; gap: 3px; font-size: 12.5px; line-height: 1.4; }
+.beta-toggle-text strong { color: var(--text); font-weight: 700; }
+.beta-toggle-text span { color: var(--text-2); }
+
+.beta-launch { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.beta-launch-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  font-size: 13px;
+  font-weight: 700;
+  border-radius: 10px;
+}
+.beta-trust-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-2);
+}
+.beta-trust-list li { padding-left: 12px; position: relative; }
+.beta-trust-list li::before {
+  content: "";
+  position: absolute;
+  left: 0; top: 8px;
+  width: 4px; height: 4px;
+  border-radius: 50%;
+  background: rgba(245,158,11,0.6);
+}
+.beta-trust-list strong { color: var(--text); font-weight: 700; }
+
+.beta-support-warn {
+  display: flex;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: rgba(255, 92, 92, 0.06);
+  border: 1px solid rgba(255, 92, 92, 0.30);
+}
+.beta-support-icon {
+  flex: 0 0 22px;
+  width: 22px; height: 22px;
+  border-radius: 50%;
+  background: rgba(255, 92, 92, 0.30);
+  color: #ffd1d1;
+  display: grid; place-items: center;
+  font-weight: 800;
+  font-size: 14px;
+}
+.beta-support-body { display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; line-height: 1.5; }
+.beta-support-body strong { color: #ffb3b3; }
+.beta-support-body p { margin: 0; color: var(--text-2); }
 
 /* ── Settings tab ─────────────────────────────────────────────────
    Two-column card grid on desktop, single column on phone. Cards
