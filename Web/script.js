@@ -68,7 +68,7 @@ const STS2_APP_ID = "2868840";
  * on an old client — instruct hard refresh. If it DOES match, the
  * bug is real and we can stop chasing cache ghosts.
  */
-const VAULT_BUILD = "v139-2026-05-10-news-banner-rev4-stilllife-and-eager-load";
+const VAULT_BUILD = "v140-2026-05-10-news-banner-padding-top-fix";
 
 // Feature flag — set to `true` only on local dev when iterating on the
 // Run Companion Overlay. Production stays false until the feature is
@@ -4406,6 +4406,25 @@ function selectNewsPost(id, { updateHash } = { updateHash: true }) {
   // Scroll the detail to top so a click on an older article doesn't
   // leave the new content half-scrolled at the previous position.
   try { $detail.scrollTo({ top: 0, behavior: "smooth" }); } catch { $detail.scrollTop = 0; }
+  // Belt-and-braces banner load. Safari sometimes skips fetching <img>
+  // children of an element that was display:none on first paint and
+  // only gets shown later, even with loading="eager". Force the fetch
+  // by re-assigning the same src in a microtask once the article is
+  // visible. Cheap, idempotent, no-op if the image is already loaded.
+  try {
+    const $img = target.querySelector(".news-post-banner img");
+    if ($img) {
+      const src = $img.getAttribute("src") || "";
+      if (src && (!$img.complete || $img.naturalWidth === 0)) {
+        // Reassign to retrigger the load. Identical URL means the
+        // browser will use the cached bytes if it has them, or fetch
+        // them if it doesn't — both outcomes are what we want.
+        $img.removeAttribute("loading");
+        $img.setAttribute("decoding", "async");
+        $img.src = src;
+      }
+    }
+  } catch {}
   // GA4 — which articles do people actually read?
   try { vaultGtagEvent("news_post_view", { news_id: id }); } catch {}
 }
