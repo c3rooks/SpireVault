@@ -169,6 +169,58 @@ export const RELIC_INFO = {
     tip: "One free death. Best on aggressive plans where you're routinely low — turns a wipe into a clean win.",
     synergy: ["Aggro plans", "Glass-cannon"],
   },
+
+  // -------------------------------------------------------------------------
+  // STS2 v0.105.0 (May 8, 2026) — Beta patch additions and reworks.
+  //
+  // The Neow pool gained three relics; one Tezcatara reward got reworked,
+  // and Defect's Infused Core got a strict buff. We mirror the in-game
+  // strings here verbatim so a hover preview shows what the player
+  // actually reads in the game, not paraphrased copy.
+  //
+  // The temporary "Kaleidoscope" name is exactly what Mega Crit shipped
+  // with — see https://sts2.untapped.gg/en/articles/slay-the-spire-2-v01050-patch-notes
+  // — and we keep the "(temporary name)" qualifier so users aren't
+  // surprised when the in-game label changes in a later patch.
+  // -------------------------------------------------------------------------
+  kaleidoscope: {
+    rarity: "event",
+    effect: "Upon pickup, gain 2 card rewards with cards from other characters.",
+    tip: "Free off-class flex picks. Adds depth to a deck early when your own pool is still skeletal — strongest on classes whose Act 1 commons are weakest.",
+    synergy: ["Off-class flex", "Deck-building", "Early-act tempo"],
+  },
+  fishingrod: {
+    rarity: "event",
+    effect: "Every 3 normal combats, Upgrade a random card in your Deck.",
+    tip: "Passive deck-wide upgrades on a generous trigger. Best in tall decks where any upgrade is value — runs hot with Searing Blow / Glass Knife scaling.",
+    synergy: ["Tall decks", "Searing Blow", "Long-game scaling"],
+  },
+  silkentress: {
+    rarity: "event",
+    effect: "Enchant all cards in the first card reward with Glam.",
+    tip: "Front-loads a whole reward with Regent's Glam enchantment. Pick up at least one card or the value evaporates — even a Strike turns into real tempo when Glammed.",
+    synergy: ["Regent", "Glam decks", "Sword Sage"],
+  },
+};
+
+// =========================================================================
+// Updates that overwrite specific entries above. Kept as explicit
+// reassignments at the bottom of the module so the patch trail is
+// readable: "this is what changed in STS2 v0.105.0", side-by-side
+// with the original strings if you grep history. Cheap to merge into
+// the master record on the next manifest regen.
+// =========================================================================
+RELIC_INFO.pumpkincandle = {
+  rarity: "event",
+  effect: "Gain 1 Energy at the start of each turn. Extinguishes after 5 combats. Can be Kindled at rest sites.",
+  tip: "Reworked in v0.105.0 — used to expire at the start of Act 3, now refreshable at campfires. Trade rest-site healing for sustained extra energy on tight ascensions.",
+  synergy: ["Energy decks", "Tezcatara", "Rest-site economy"],
+};
+RELIC_INFO.infusedcore = {
+  rarity: "starter",
+  effect: "Defect upgrade — channel 1 Lightning at the start of combat AND Lightning Orbs deal 1 additional damage.",
+  tip: "Buffed in v0.105.0 — the +1 lightning damage compounds with every Frost-passive proc. Sets a much higher floor on Lightning-orb decks.",
+  synergy: ["Defect", "Lightning builds", "Focus stacking"],
 };
 
 /** Relic rarity color → matches in-game. */

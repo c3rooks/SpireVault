@@ -260,9 +260,37 @@ enum NewsCatalog {
     /// The most recently *published* post lives at index 0. Bumping
     /// this constant when adding a new post lights the sidebar's
     /// "NEW" pill for every existing user until they open News.
-    static let latestPostID = "002-2026-05-09-run-compare-and-auto-refresh-status"
+    static let latestPostID = "003-2026-05-09-sts2-v0_105_0-support"
 
     static let posts: [NewsPost] = [
+        NewsPost(
+            id: "003-2026-05-09-sts2-v0_105_0-support",
+            eyebrow: "Patch · May 9, 2026",
+            title: "STS2 v0.105.0 (Bestiary, Aeonglass) is supported",
+            readMinutes: 2,
+            tags: ["Patch", "Game data", "v0.105.0"],
+            body: [
+                .lede("Mega Crit shipped a beta patch on May 8 that touched the Neow pool, reworked an Ancients reward, and replaced the Act 3 boss. Runs from the new build now show up correctly in Spire Vault — names, labels, and tooltips included."),
+
+                .heading("What we added"),
+                .feature(
+                    title: "Three new Neow relics",
+                    body: "Kaleidoscope (temporary name), Fishing Rod, and Silken Tress are now recognized in run history. Each gets a hand-curated tooltip with the exact in-game effect plus a quick \"when to pick\" note. Art icons will slot in once Mega Crit publishes the assets — until then, the renderer shows the same 2-letter glyph fallback we use for any unfamiliar relic."
+                ),
+                .feature(
+                    title: "Pumpkin Candle reworked, Infused Core buffed",
+                    body: "Pumpkin Candle swapped its \"extinguishes at the start of Act 3\" rider for \"extinguishes after 5 combats, kindle at rest sites.\" Defect's Infused Core picked up a bonus \"Lightning Orbs deal 1 additional damage\" line. Both tooltips reflect the new copy, so hovering them in Recent Runs reads what your actual game shows you."
+                ),
+                .feature(
+                    title: "Aeonglass replaces Doormaker",
+                    body: "The new Act 3 boss is in the boss label table — \"Killed by\" rows now read Aeonglass rather than a raw slug. Doormaker stays in the label table too so older runs in your history don't suddenly mis-render."
+                ),
+
+                .heading("What this means for unknown future relics"),
+                .paragraph("The parser was already designed to forward unknown content as raw slugs — nothing about Spire Vault assumes a closed list of relics. Any post-v0.105.0 patch that ships brand-new relics will tally in the Top Relics tab, show up in deck lists, and roll up into win-rate buckets the moment your save file lands. We just won't have a hand-written tooltip for them until we patch this list. — Corey"),
+            ]
+        ),
+
         NewsPost(
             id: "002-2026-05-09-run-compare-and-auto-refresh-status",
             eyebrow: "Update · May 9, 2026",

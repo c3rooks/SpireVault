@@ -68,7 +68,7 @@ const STS2_APP_ID = "2868840";
  * on an old client — instruct hard refresh. If it DOES match, the
  * bug is real and we can stop chasing cache ghosts.
  */
-const VAULT_BUILD = "v133-2026-05-09-news-redesign-and-global-highlight-badge";
+const VAULT_BUILD = "v135-2026-05-09-sts2-v0_105_0-with-ironclad-banner";
 
 // Feature flag — set to `true` only on local dev when iterating on the
 // Run Companion Overlay. Production stays false until the feature is
@@ -533,7 +533,7 @@ let assetManifest = { cards: new Set(), relics: new Set(), characters: new Set()
 // The manifest tells us *what art exists*; the labels tell us *how to
 // spell things in the UI*. Without labels we'd show "Bloodwall" instead
 // of "Blood Wall" because the asset slug is concatenated.
-let assetLabels = { cards: {}, relics: {} };
+let assetLabels = { cards: {}, relics: {}, bosses: {} };
 let assetManifestLoaded = false;
 
 async function loadAssetManifest() {
@@ -547,7 +547,12 @@ async function loadAssetManifest() {
     // entry was the bug that made the boss render as a fallback
     // glyph for an entire deploy cycle). Bump MANIFEST_VERSION
     // whenever the contents of manifest.json change.
-    const MANIFEST_VERSION = 2;
+    //
+    // v3 (2026-05-09): added STS2 v0.105.0 content — three new Neow
+    // relics (Kaleidoscope, Fishing Rod, Silken Tress) and the new
+    // Act 3 boss Aeonglass. Labels-only (no art shipped yet); the
+    // resolver falls back to the 2-letter glyph until we ship icons.
+    const MANIFEST_VERSION = 3;
     const [manRes, labRes] = await Promise.all([
       fetch(`${ASSET_BASE}/manifest.json?v=${MANIFEST_VERSION}`, { cache: "force-cache" }),
       fetch(`${ASSET_BASE}/labels.json?v=${MANIFEST_VERSION}`,   { cache: "force-cache" }).catch(() => null),
@@ -563,7 +568,14 @@ async function loadAssetManifest() {
     };
     if (labRes && labRes.ok) {
       const lj = await labRes.json();
-      assetLabels = { cards: lj.cards || {}, relics: lj.relics || {} };
+      assetLabels = {
+        cards:  lj.cards  || {},
+        relics: lj.relics || {},
+        // Bosses landed in labels.json with the v0.105.0 patch —
+        // older snapshots predate the field, so default to {} and
+        // let lookups fall through to prettifyId(slug).
+        bosses: lj.bosses || {},
+      };
     }
     assetManifestLoaded = true;
     console.info(`[Vault] assets ready: ${assetManifest.cards.size} cards, ${assetManifest.relics.size} relics, ${assetManifest.characters.size} characters · ${Object.keys(assetLabels.cards).length} card labels, ${Object.keys(assetLabels.relics).length} relic labels`);
@@ -620,6 +632,20 @@ function relicLabel(id) {
   if (assetLabels.relics[raw]) return assetLabels.relics[raw];
   const concat = raw.replace(/_/g, "");
   if (assetLabels.relics[concat]) return assetLabels.relics[concat];
+  return prettifyId(id);
+}
+
+/** Resolve a boss/`killedBy` slug to a human display name. Same shape
+ *  as relicLabel — exact match wins, underscore-stripped form is the
+ *  fallback before prettifyId guesses from the slug. Used by the
+ *  Recent Runs hover preview and the run-detail modal so we render
+ *  "Aeonglass" instead of "aeonglass" or worse, "Aeon Glass". */
+function bossLabel(id) {
+  const raw = String(id || "").trim().toLowerCase();
+  if (!raw) return "";
+  if (assetLabels.bosses[raw]) return assetLabels.bosses[raw];
+  const concat = raw.replace(/_/g, "");
+  if (assetLabels.bosses[concat]) return assetLabels.bosses[concat];
   return prettifyId(id);
 }
 
@@ -2106,7 +2132,7 @@ function switchTab(tab) {
  * thing I read still the latest thing published?" — without forcing
  * a chronological compare that could go wrong on a typo.
  */
-const LATEST_NEWS_POST_ID = "post-002-2026-05-09-run-compare-and-auto-refresh-status";
+const LATEST_NEWS_POST_ID = "post-003-2026-05-09-sts2-v0_105_0-support";
 const STORAGE_NEWS_LAST_READ = "vault.web.news.lastRead";
 
 /** Show the "NEW" pill on the sidebar News button when the user
@@ -3056,7 +3082,7 @@ function renderRunRowPreview(r) {
   const result = won ? "Victory" : abandoned ? "Abandoned" : "Defeat";
   const resultClass = won ? "is-win" : abandoned ? "is-abandon" : "is-loss";
   const dur = formatPlayTimeStrict(r.playTimeSeconds);
-  const killedBy = !won && !abandoned && r.killedBy ? prettifyId(r.killedBy) : "";
+  const killedBy = !won && !abandoned && r.killedBy ? bossLabel(r.killedBy) : "";
   // Top 6 relic icons. We render the first six; if there are more,
   // show a `+N` chip on the right so the count is honest.
   const topRelics = relicArr.slice(0, 6).map((id) => {
@@ -3633,7 +3659,7 @@ function renderHighlightCard(h) {
       : `Fell on Floor ${run.floorReached ?? 0}`;
   const runTime = formatHighlightDuration(run.playTimeSeconds);
   const killedBy = !run.won && !run.wasAbandoned && run.killedBy
-    ? prettifyId(run.killedBy)
+    ? bossLabel(run.killedBy)
     : null;
   const totalReactions = Object.values(h.reactions || {})
     .reduce((s, n) => s + (Number(n) || 0), 0);
@@ -11517,7 +11543,7 @@ function renderCompare(runs) {
         }).join("")}</ul>`
       : `<p class="run-compare-empty">No unique cards — this deck overlaps fully with the others.</p>`;
 
-    const killedBy = !won && !abandoned && r.killedBy ? prettifyId(r.killedBy) : "";
+    const killedBy = !won && !abandoned && r.killedBy ? bossLabel(r.killedBy) : "";
 
     return `
       <article class="run-compare-col" style="--char-color:${theme.color}" data-result="${won ? "win" : abandoned ? "abandon" : "loss"}">

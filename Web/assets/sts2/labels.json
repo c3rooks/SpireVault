@@ -2,7 +2,8 @@
   "version": 1,
   "counts": {
     "cards": 1136,
-    "relics": 279
+    "relics": 282,
+    "bosses": 11
   },
   "cards": {
     "colorless_automation": "Automation",
@@ -1421,6 +1422,23 @@
     "thechosencheese": "The Chosen Cheese",
     "themerchantsrug": "The Merchant's Rug???",
     "wongocustomerappreciationbadge": "Wongo Customer Appreciation Badge",
-    "wongosmysteryticket": "Wongo's Mystery Ticket"
+    "wongosmysteryticket": "Wongo's Mystery Ticket",
+
+    "kaleidoscope": "Kaleidoscope",
+    "fishingrod": "Fishing Rod",
+    "silkentress": "Silken Tress"
+  },
+  "bosses": {
+    "aeonglass": "Aeonglass",
+    "architect": "The Architect",
+    "doormaker": "Doormaker",
+    "kaiser_crab": "Kaiser Crab",
+    "knowledge_demon": "Knowledge Demon",
+    "lagavulin_matriarch": "Lagavulin Matriarch",
+    "soul_fysh": "Soul Fysh",
+    "test_subject": "Test Subject",
+    "the_kin": "The Kin",
+    "vantom": "Vantom",
+    "waterfall_giant": "Waterfall Giant"
   }
 }

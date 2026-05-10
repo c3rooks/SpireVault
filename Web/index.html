@@ -789,6 +789,76 @@
             </aside>
             <section class="news-detail" id="news-detail">
 
+            <!-- ====== Post 003 — May 9 2026 — STS2 v0.105.0 content support ====== -->
+            <article class="news-post" id="news-003" data-news-id="003" data-news-eyebrow="Patch · May 9, 2026" data-news-tags="Patch,Game data" aria-labelledby="news-003-title">
+              <figure class="news-post-banner">
+                <picture>
+                  <source media="(max-width: 720px)" srcset="/assets/news/post-003-banner-1x.webp?v=2" />
+                  <img src="/assets/news/post-003-banner.webp?v=2" alt="Painted illustration of the Ironclad standing beside a glowing bestiary tome in a candlelit spire archive — both gauntleted hands rest on the pommel of his greatsword as he studies the monster portraits inside. A flickering pumpkin candle, a brass fishing rod, a kaleidoscope refracting a small rainbow, a coil of silken golden hair, and a half-open chest of glowing cards sit on the stone table beside him. The faint crystalline hourglass silhouette of Aeonglass hovers in the stained-glass window behind." loading="lazy" decoding="async" />
+                </picture>
+              </figure>
+              <header class="news-post-head">
+                <span class="news-post-eyebrow">Patch · May 9, 2026</span>
+                <h3 class="news-post-title" id="news-003-title">STS2 v0.105.0 (Bestiary, Aeonglass) is supported</h3>
+                <p class="news-post-byline">
+                  Corey
+                  <span class="news-post-byline-sep">·</span>
+                  <span class="news-post-byline-meta">~2 min read</span>
+                </p>
+              </header>
+
+              <div class="news-post-body">
+                <p class="news-lede">
+                  Mega Crit shipped a beta patch on May 8 that touched the Neow pool, reworked an Ancients reward, and replaced the Act 3 boss. Runs from the new build now show up correctly in Spire Vault — names, labels, and tooltips included.
+                </p>
+
+                <h4 class="news-post-section">What we added</h4>
+
+                <div class="news-feature-block">
+                  <h5>Three new Neow relics</h5>
+                  <p>
+                    <strong>Kaleidoscope</strong> (temporary name), <strong>Fishing Rod</strong>, and <strong>Silken Tress</strong> are now recognized in run history. Each gets a hand-curated tooltip with the exact in-game effect plus a quick "when to pick" note pulled from community write-ups. Art icons will slot in once Mega Crit publishes the assets — until then, the renderer shows the same 2-letter glyph fallback we use for any unfamiliar relic, so nothing renders broken.
+                  </p>
+                </div>
+
+                <div class="news-feature-block">
+                  <h5>Pumpkin Candle reworked, Infused Core buffed</h5>
+                  <p>
+                    The Tezcatara <strong>Pumpkin Candle</strong> reward swapped its "extinguishes at the start of Act 3" rider for "extinguishes after 5 combats, kindle at rest sites." Defect's <strong>Infused Core</strong> picked up a bonus "Lightning Orbs deal 1 additional damage" line. Both tooltips reflect the new copy, so when you hover them in Recent Runs or Top Relics you read what your actual game shows you.
+                  </p>
+                </div>
+
+                <div class="news-feature-block">
+                  <h5>Aeonglass replaces Doormaker</h5>
+                  <p>
+                    The new Act 3 boss is in the boss label table — when a run shows "Killed by" it'll read <strong>Aeonglass</strong> rather than a raw slug. Doormaker stays in the label table too so older runs in your history don't suddenly mis-render.
+                  </p>
+                </div>
+
+                <h4 class="news-post-section">What this means for unknown future relics</h4>
+
+                <p>
+                  The parser was already designed to forward unknown content as raw slugs — nothing about Spire Vault assumes a closed list of relics. So any post-v0.105.0 patch that ships brand-new relics will tally in the Top Relics tab, show up in deck lists, and roll up into win-rate buckets the moment your save file lands. We just won't have a hand-written tooltip for them until we patch this list. If you spot a relic showing as a 2-letter glyph and want copy added, drop a one-line GitHub issue and it'll go in the next deploy.
+                </p>
+
+                <p class="news-post-signoff">
+                  &mdash; Corey
+                </p>
+              </div>
+
+              <footer class="news-post-foot">
+                <div class="news-post-foot-meta">
+                  <span class="news-post-tag">Patch</span>
+                  <span class="news-post-tag">Game data</span>
+                  <span class="news-post-tag">v0.105.0</span>
+                </div>
+                <div class="news-post-foot-actions">
+                  <a class="action-link" href="https://store.steampowered.com/news/app/2868840/view/664987110632063988" target="_blank" rel="noopener">Mega Crit's patch notes &rarr;</a>
+                  <a class="action-link" href="https://github.com/c3rooks/SpireVault/issues/new" target="_blank" rel="noopener">Report a missing relic &rarr;</a>
+                </div>
+              </footer>
+            </article>
+
             <!-- ====== Post 002 — May 9 2026 — Run Compare + auto-refresh visibility ====== -->
             <article class="news-post" id="news-002" data-news-id="002" data-news-eyebrow="Update · May 9, 2026" data-news-tags="Update,New feature,Roadmap" aria-labelledby="news-002-title">
               <figure class="news-post-banner">
@@ -1285,6 +1355,6 @@
     </div>
   </footer>
 
-  <script src="/script.js?v=133" type="module"></script>
+  <script src="/script.js?v=135" type="module"></script>
 </body>
 </html>
