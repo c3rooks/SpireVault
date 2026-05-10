@@ -5,6 +5,64 @@ Dates in YYYY-MM-DD. The project follows [Semantic Versioning](https://semver.or
 loosely — patch bumps for fixes, minor for features, major if I ever
 break the wire format.
 
+## v0.9.4 — 2026-05-10
+
+UI polish on the Run Coach overlay (Beta) and a refreshed marketing
+site that finally shows what the panel actually looks like. Also a
+real fix for the "black box behind the rounded border" report — that
+was a transparent-NSPanel + opaque-NSHostingView interaction painting
+a sharp dark rectangle behind the rounded SwiftUI card.
+
+**Overlay UI/UX touch-up.**
+
+- `OverlayController.show()` now sets `panel.hasShadow = false` and
+  switches the `NSHostingView` layer to `isOpaque = false` with a
+  clear `backgroundColor` *after* SwiftUI has rendered into it once
+  (touching `host.layer` synchronously during init triggers an AppKit
+  layout cycle that can deadlock subsequent `setFrame()` calls). Net
+  effect: the overlay reads as a real rounded glass card sitting on
+  the desktop instead of a rounded card pasted onto a sharp-cornered
+  black backdrop.
+- `OverlayRootView` background gets a small redesign — cooler
+  midnight base, two ember accents (top-left bright, bottom-right
+  cooler purple counter-weight), and a hairline white top edge so the
+  bevel border doesn't sit on a flat fill. Two-stop strokeBorder + an
+  inner inset stroke for a luminous rim that survives over busy game
+  backgrounds.
+- The BETA pill in the chat header is brand-gradient now (matches the
+  Assist chip's energy) instead of the previous flat orange tint.
+- Single soft drop shadow at the SwiftUI level instead of a two-layer
+  contact + ambient stack — the second pass interacted badly with the
+  panel resize during mode transitions.
+- New convenience shortcuts under **Vault → Run Coach: Show Pill**
+  (⌘⇧⌥1) and **Vault → Run Coach: Open Chat** (⌘⇧⌥2). Useful for
+  power users who already know what mode they want, and as
+  deterministic anchors for screenshot / E2E automation.
+
+**Marketing site.**
+
+- New dedicated **Run Coach** section on
+  [spirevault.app](https://spirevault.app) with a real screenshot of
+  the polished pill + a pixel-matched HTML/CSS recreation of the
+  chat card (so it stays sharp at every Retina density). Section
+  copy is human-toned, walks through the two states, the streamer-
+  safe default, BYO-key flow, and explicitly notes the build is
+  **macOS .dmg only at the moment, Windows .exe coming next**.
+- Top nav gains a `Run Coach BETA` link so the section is reachable
+  in one click from the hero.
+- The existing Run Coach feature card and the FAQ entry both get
+  rewritten for the same "Mac DMG / .exe coming next" framing.
+- Hero install button + DMG link bumped to v0.9.4.
+
+**Versioning + persistence.**
+
+- `Info.plist` / `project.yml` → `CFBundleShortVersionString = 0.9.4`,
+  `CFBundleVersion = 13`.
+- `HistoryStore.current = "0.9.4"`.
+- DMG built as `The-Vault-0.9.4.dmg`, ad-hoc signed, attached to the
+  GitHub release. The in-app **Vault → Check for Updates…** flow
+  picks it up automatically on existing v0.9.x installs.
+
 ## v0.9.3 — 2026-05-10
 
 Hotfix for the two highest-pain bugs reported against v0.9.2: clicking

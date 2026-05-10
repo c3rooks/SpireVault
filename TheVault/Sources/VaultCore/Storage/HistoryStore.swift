@@ -92,7 +92,7 @@ public final class HistoryStore {
 }
 
 public enum VaultVersion {
-    public static let current = "0.9.3"
+    public static let current = "0.9.4"
 }
 
 public enum HistoryStoreError: LocalizedError {

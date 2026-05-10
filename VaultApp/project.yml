@@ -33,8 +33,8 @@ targets:
       path: Info.plist
       properties:
         CFBundleDisplayName: "The Vault"
-        CFBundleShortVersionString: "0.9.3"
-        CFBundleVersion: "12"
+        CFBundleShortVersionString: "0.9.4"
+        CFBundleVersion: "13"
         LSApplicationCategoryType: public.app-category.utilities
         NSHumanReadableCopyright: "© 2026 Corey Crooks"
         NSPrincipalClass: NSApplication

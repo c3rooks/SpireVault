@@ -72,6 +72,21 @@ struct VaultApp: App {
                         state.requestEmbeddedSignIn(currentTab: .coop)
                     }
                 }
+                Divider()
+                // Run Coach quick-launchers. Useful for power users who
+                // already know they want chat mode without first
+                // surfacing the pill — and as deterministic anchors
+                // for screenshot / E2E automation.
+                Button("Run Coach: Show Pill") {
+                    state.overlayController.enabled = true
+                    state.overlayController.collapse()
+                }
+                .keyboardShortcut("1", modifiers: [.command, .shift, .option])
+                Button("Run Coach: Open Chat") {
+                    state.overlayController.enabled = true
+                    state.overlayController.showChat()
+                }
+                .keyboardShortcut("2", modifiers: [.command, .shift, .option])
             }
 
             // Replace the stock Help menu (which would point at a

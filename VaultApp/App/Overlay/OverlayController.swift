@@ -137,7 +137,13 @@ final class OverlayController: ObservableObject {
         p.isFloatingPanel = true
         p.isOpaque = false
         p.backgroundColor = .clear
-        p.hasShadow = true
+        // AppKit window shadow OFF. The window itself is a rectangle,
+        // so the system shadow draws a sharp-cornered halo behind our
+        // rounded SwiftUI card — that's the dark "black box behind the
+        // border" the user reported. SwiftUI's `.shadow(...)` inside
+        // OverlayRootView renders a shape-correct shadow that follows
+        // the rounded corners; we use that one instead.
+        p.hasShadow = false
         p.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
         p.titleVisibility = .hidden
         p.titlebarAppearsTransparent = true
@@ -166,6 +172,20 @@ final class OverlayController: ObservableObject {
         observeOriginChanges(panel: p)
         applySize(animated: false)
         p.orderFrontRegardless()
+        // Late layer cleanup. We set the hosting view's layer to clear
+        // AFTER SwiftUI has rendered into it once — touching `host.layer`
+        // before NSHostingView has materialized its backing path can
+        // trigger an AppKit layout cycle that deadlocks subsequent
+        // setFrame() calls on the panel. Doing it on the next runloop
+        // tick gives SwiftUI time to settle. This is the actual fix for
+        // the "black box behind the rounded border" report — without
+        // this, the host's default dark layer paints through the
+        // rounded SwiftUI card.
+        DispatchQueue.main.async { [weak host] in
+            host?.wantsLayer = true
+            host?.layer?.isOpaque = false
+            host?.layer?.backgroundColor = NSColor.clear.cgColor
+        }
     }
 
     func hide() {

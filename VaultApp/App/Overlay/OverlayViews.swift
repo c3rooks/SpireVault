@@ -26,8 +26,11 @@ struct OverlayRootView: View {
     @EnvironmentObject var state: AppState
 
     var body: some View {
+        let radius = cornerRadius(for: controller.mode)
+        let cardShape = RoundedRectangle(cornerRadius: radius, style: .continuous)
+
         ZStack {
-            OverlayGlassBackground(cornerRadius: cornerRadius(for: controller.mode))
+            OverlayGlassBackground(cornerRadius: radius)
             Group {
                 switch controller.mode {
                 case .pill:
@@ -43,17 +46,35 @@ struct OverlayRootView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .clipShape(
-            RoundedRectangle(cornerRadius: cornerRadius(for: controller.mode), style: .continuous)
+        .clipShape(cardShape)
+        // Two-stop bevel border: a brighter top edge fades to a
+        // near-invisible bottom edge so the card reads as a real
+        // glass tile catching light from above. The inner highlight
+        // (drawn as a second strokeBorder one pixel inside) gives a
+        // hairline of luminescence that survives over busy game bgs.
+        .overlay(
+            cardShape
+                .strokeBorder(
+                    LinearGradient(colors: [
+                        Color.white.opacity(0.30),
+                        Color.white.opacity(0.10),
+                        Color.white.opacity(0.04),
+                    ], startPoint: .top, endPoint: .bottom),
+                    lineWidth: 1
+                )
         )
         .overlay(
-            RoundedRectangle(cornerRadius: cornerRadius(for: controller.mode), style: .continuous)
-                .strokeBorder(LinearGradient(colors: [
-                    Color.white.opacity(0.18),
-                    Color.white.opacity(0.04),
-                ], startPoint: .top, endPoint: .bottom), lineWidth: 1)
+            cardShape
+                .inset(by: 1)
+                .stroke(Color.white.opacity(0.06), lineWidth: 0.6)
         )
-        .shadow(color: .black.opacity(0.45), radius: 22, y: 8)
+        // Single soft drop shadow. We tried a two-layer contact +
+        // ambient stack here for richer depth, but the second shadow
+        // pass interacted badly with NSPanel resize during mode
+        // transitions — caused setFrame() to spin on the main thread
+        // until the SwiftUI renderer settled. One well-tuned shadow
+        // gives nearly the same Cluely-esque feel without the cost.
+        .shadow(color: .black.opacity(0.45), radius: 22, y: 10)
         .preferredColorScheme(.dark)
         .animation(.spring(response: 0.32, dampingFraction: 0.85), value: controller.mode)
         .onAppear {
@@ -65,9 +86,13 @@ struct OverlayRootView: View {
     }
 
     private func cornerRadius(for mode: OverlayController.Mode) -> CGFloat {
+        // Slightly more generous radii in v0.9.4 for a more refined,
+        // Cluely-esque feel. The pill stays tight (it's small enough
+        // that a too-large radius makes it look bulbous), but the
+        // chat / settings cards get a hair more curve.
         switch mode {
-        case .pill:                  return 22
-        case .chat, .settings:       return 18
+        case .pill:                  return 20
+        case .chat, .settings:       return 20
         }
     }
 }
@@ -85,28 +110,61 @@ struct OverlayGlassBackground: View {
 
     var body: some View {
         ZStack {
+            // System blur — what reads as "this panel is a real macOS
+            // surface" rather than a flat colored rectangle.
             VisualEffectBlur(material: .hudWindow, blendingMode: .behindWindow)
+
+            // Brand-tinted base. Slightly cooler in v0.9.4 (less green
+            // bias) so the ember accent at the top reads as warm by
+            // contrast rather than fighting a warm base color.
             LinearGradient(
                 colors: [
-                    Color(red: 0.07, green: 0.07, blue: 0.10).opacity(0.92),
-                    Color(red: 0.05, green: 0.04, blue: 0.07).opacity(0.96),
+                    Color(red: 0.06, green: 0.06, blue: 0.10).opacity(0.92),
+                    Color(red: 0.04, green: 0.03, blue: 0.06).opacity(0.96),
                 ],
                 startPoint: .topLeading, endPoint: .bottomTrailing
             )
-            // Subtle ember glow at the top-left so the brand color
-            // shows up without bleeding all over the panel.
+
+            // Two ember accents instead of one, giving the panel
+            // depth: a brighter top-left highlight (the brand mark
+            // sits there) and a softer counterweight at the bottom-
+            // right so the lighting feels intentional, not lopsided.
+            // The radial-style falloff is achieved with a ZStack of
+            // gradients clipped by the card shape.
             LinearGradient(
                 colors: [
-                    Color(red: 1.0, green: 0.55, blue: 0.10).opacity(0.18),
+                    Color(red: 1.0, green: 0.55, blue: 0.10).opacity(0.22),
                     Color.clear,
                 ],
-                startPoint: .topLeading, endPoint: .bottom
+                startPoint: .topLeading, endPoint: .center
             )
             .blendMode(.screen)
-            .frame(maxWidth: 220, maxHeight: 90, alignment: .topLeading)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .padding(.top, -10)
-            .padding(.leading, -10)
+            .allowsHitTesting(false)
+
+            LinearGradient(
+                colors: [
+                    Color.clear,
+                    Color(red: 0.55, green: 0.20, blue: 0.85).opacity(0.10),
+                ],
+                startPoint: .center, endPoint: .bottomTrailing
+            )
+            .blendMode(.screen)
+            .allowsHitTesting(false)
+
+            // Hairline of light on the very top edge so the bevel
+            // border doesn't sit on a flat fill — gives it that
+            // "polished glass" look at the seam.
+            LinearGradient(
+                colors: [
+                    Color.white.opacity(0.10),
+                    Color.clear,
+                ],
+                startPoint: .top, endPoint: .center
+            )
+            .frame(maxHeight: .infinity, alignment: .top)
+            .blendMode(.plusLighter)
+            .opacity(0.6)
+            .allowsHitTesting(false)
         }
         .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
     }
@@ -365,20 +423,29 @@ struct OverlayExpandedView: View {
     }
 
     private func keyHint(_ s: String) -> some View {
+        // Brand-accented pill with a real fill gradient + warm glow.
+        // The earlier flat tint version read as muddy on top of the
+        // darker glass background. This gives BETA the same energy
+        // as the orange Assist chip in the command palette so the
+        // viewer's eye recognizes them as the same brand vocabulary.
         Text(s)
             .font(.system(size: 9, weight: .heavy))
-            .tracking(1.2)
-            .foregroundStyle(.white.opacity(0.7))
-            .padding(.horizontal, 5)
-            .padding(.vertical, 1.5)
+            .tracking(1.4)
+            .foregroundStyle(.white)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 2.5)
             .background(
-                RoundedRectangle(cornerRadius: 4, style: .continuous)
-                    .fill(Color(red: 1, green: 0.45, blue: 0.1).opacity(0.20))
+                Capsule(style: .continuous)
+                    .fill(LinearGradient(colors: [
+                        Color(red: 1.00, green: 0.55, blue: 0.10),
+                        Color(red: 1.00, green: 0.32, blue: 0.06),
+                    ], startPoint: .topLeading, endPoint: .bottomTrailing))
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 4, style: .continuous)
-                    .stroke(Color(red: 1, green: 0.45, blue: 0.1).opacity(0.50), lineWidth: 1)
+                Capsule(style: .continuous)
+                    .stroke(Color.white.opacity(0.22), lineWidth: 0.8)
             )
+            .shadow(color: Color(red: 1, green: 0.4, blue: 0.1).opacity(0.40), radius: 5, y: 1)
     }
 
     private func iconButton(_ name: String, help: String, danger: Bool = false, action: @escaping () -> Void) -> some View {
