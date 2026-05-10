@@ -47,6 +47,7 @@ import {
 } from "./highlights";
 import { steamIDForRequest } from "./auth";
 import { checkAndConsume, clientIP, hashID } from "./ratelimit";
+import { handleNotifySignup } from "./notify";
 
 /**
  * Origins allowed to make credentialed cross-origin requests to the worker.
@@ -452,6 +453,13 @@ async function handle(
         const viewer = await steamIDForRequest(req, env);
         const items = await listHighlights(env, viewer);
         return json({ items });
+      }
+
+      // POST /notify  — public "email me when this ships" capture used
+      // by news posts that mention the upcoming weekly digest. Stored
+      // in KV; zero email is sent from this endpoint. See notify.ts.
+      if (method === "POST" && pathname === "/notify") {
+        return await handleNotifySignup(req, env);
       }
       if (method === "POST" && pathname === "/highlights") {
         const auth = await requireSession(req, env);

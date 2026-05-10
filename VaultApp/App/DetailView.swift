@@ -3,31 +3,34 @@ import VaultCore
 
 struct DetailView: View {
     @EnvironmentObject var state: AppState
-    let section: SidebarSection
+    /// Two-way binding so the embedded web companion can mirror its
+    /// current tab back to the native sidebar (e.g. user clicks an
+    /// in-page "Open Co-op" link from a news post).
+    @Binding var section: SidebarSection
 
     var body: some View {
         Group {
             switch section {
-            case .coop:
-                // Co-op renders its own scroll/layout chrome.
-                CoopView()
-            case .highlights:
-                ScrollView { HighlightsView()
-                    .padding(.horizontal, 28)
-                    .padding(.vertical, 24)
-                    .frame(maxWidth: .infinity, alignment: .leading) }
-            case .news:
-                NewsView()
-                    .padding(.horizontal, 28)
-                    .padding(.vertical, 24)
             case .beta:
+                // Beta stays native: the Run Coach overlay needs an NSPanel
+                // with sharingType=.none and a Keychain-backed API key, neither
+                // of which a WKWebView can replicate.
                 BetaView()
             case .settings:
+                // Settings stays native: save-folder picking goes through
+                // NSOpenPanel and the in-app updater is wired to native
+                // SettingsView controls.
                 ScrollView { SettingsView()
                     .padding(.horizontal, 4)
                     .padding(.vertical, 4) }
             default:
-                statsScroll
+                // Every other tab (Overview, Characters, Ascensions, Top
+                // Relics, Cards, Recent Runs, Co-op, Community Highlights,
+                // News) is rendered by the embedded web companion. One UI,
+                // one set of animations, no parallel SwiftUI port to drift.
+                WebHostView(tab: $section,
+                            serverURL: state.config.effectiveServerURL,
+                            runs: state.runs)
             }
         }
         .background(Theme.bgPrimary)

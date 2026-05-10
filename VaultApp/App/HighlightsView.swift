@@ -52,7 +52,13 @@ final class HighlightsAPI {
     }
 
     func fetchFeed(token: String?) async throws -> [CommunityHighlight] {
-        var req = URLRequest(url: baseURL.appendingPathComponent("api/highlights"))
+        // Bug history: this used to be "api/highlights" because the rest of
+        // the macOS app's API helpers prefix every path with "api/" — but
+        // the worker exposes the highlights routes at the root, not under
+        // /api. We were getting 404s on every desktop request, which is
+        // why the highlights tab looked permanently empty even when other
+        // users had posted. Keep this path in sync with Backend/src/index.ts.
+        var req = URLRequest(url: baseURL.appendingPathComponent("highlights"))
         if let token { req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
         req.setValue("Spire-Vault-macOS/\(VaultBundleInfo.shortVersion)", forHTTPHeaderField: "User-Agent")
         let (data, resp) = try await session.data(for: req)

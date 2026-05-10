@@ -137,17 +137,24 @@ export function parseSTS2Run(obj, sourceName = "unknown.run") {
   const won = obj.win === true || obj.win === 1;
   // In-progress detection. STS2 only writes the final `win` field
   // (true|false) when a run actually ends — either victory or defeat
-  // or the player explicitly abandons. While the player is still
-  // mid-run, the save state has the same run shape (players + map)
-  // but `win` is missing entirely. We treat that as the live "you're
-  // currently in a game" signal so the overview can surface it.
-  // Belt-and-suspenders: also require either no `killed_by_encounter`
-  // or no `run_time` so we don't false-positive a malformed completed
-  // run with an explicit `win: null`.
+  // or the player explicitly abandons. The completed `.run` files
+  // under `history/` always have `win: true|false` and a real
+  // `killed_by_encounter` slug (even wins use "NONE.NONE", not the
+  // missing field). The live `current_run.save` file under
+  // `profile1/saves/` has neither — that's the signal the player is
+  // still mid-run.
+  //
+  // Source-name fallback: if the file is literally named
+  // current_run.save we treat it as in-progress regardless of any
+  // partially-written field, because that file is structurally
+  // ephemeral by design (STS2 deletes/overwrites it on run end and
+  // moves the final state to `history/<ts>.run`).
   const winExplicit = obj.win === true || obj.win === false || obj.win === 1 || obj.win === 0;
   const killedByMissing = !obj.killed_by_encounter && !obj.killedByEncounter;
   const runTimeMissing = !Number.isFinite(obj.run_time) || obj.run_time === 0;
-  const inProgress = !winExplicit && !obj.was_abandoned && (killedByMissing || runTimeMissing);
+  const filenameSaysLive = typeof sourceName === "string" && sourceName.toLowerCase().includes("current_run");
+  const inProgress = filenameSaysLive
+    || (!winExplicit && !obj.was_abandoned && (killedByMissing || runTimeMissing));
   // STS2 `game_mode` literal — typical values "standard", "daily",
   // "custom", "trial". We pass through whatever the file reports
   // (lower-cased + clamped) so downstream UI can decide how to badge
@@ -156,12 +163,20 @@ export function parseSTS2Run(obj, sourceName = "unknown.run") {
   const rawMode = typeof obj.game_mode === "string" ? obj.game_mode.trim().toLowerCase() : "";
   const gameMode = rawMode ? rawMode.slice(0, 24) : null;
   const wasAbandoned = obj.was_abandoned === true || obj.was_abandoned === 1;
-  // Daily-run modifiers (from STS2 `modifiers: ["MODIFIER.DOUBLE_TIME", ...]`).
-  // Stripped of the prefix and lowercased so the UI can show pretty chips
-  // without leaking the raw STS2 namespace.
+  // Daily-run modifiers. STS2 has shipped two shapes for this field:
+  //   1. A flat string array — `["MODIFIER.DOUBLE_TIME", ...]`
+  //   2. An array of objects — `[{ id: "MODIFIER.FLIGHT" }, ...]`
+  // We accept both so a v0.105+ daily that uses the object shape
+  // doesn't silently drop modifier chips. Either way the user-facing
+  // value is the slug under the "MODIFIER." prefix, lower-cased.
   const modifiers = Array.isArray(obj.modifiers)
     ? obj.modifiers
-        .map((m) => (typeof m === "string" ? stripPrefix("MODIFIER.", m).toLowerCase() : null))
+        .map((m) => {
+          const raw = typeof m === "string" ? m
+            : (m && typeof m === "object" && typeof m.id === "string") ? m.id
+            : null;
+          return raw ? stripPrefix("MODIFIER.", raw).toLowerCase() : null;
+        })
         .filter(Boolean)
         .slice(0, 8)
     : [];
@@ -270,13 +285,33 @@ export function parseSTS2Run(obj, sourceName = "unknown.run") {
     });
   }
 
-  // Live "current state" snapshot — only meaningful when this is an
-  // in-progress run, but we always populate so the renderer can decide.
-  // Numbers default to null (not 0) so the UI can show a dash instead
-  // of misreporting "0 HP" when the field was simply absent.
-  const currentHp = Number.isFinite(latestStats?.current_hp) ? latestStats.current_hp | 0 : null;
-  const maxHp = Number.isFinite(latestStats?.max_hp) ? latestStats.max_hp | 0 : null;
-  const currentGold = Number.isFinite(latestStats?.current_gold) ? latestStats.current_gold | 0 : null;
+  // Live "current state" snapshot. Two valid sources:
+  //
+  //   1. `players[0].current_hp / .max_hp / .gold` — this is where
+  //      `current_run.save` stores the live values, because the player
+  //      object IS the live snapshot in that file. No `player_stats`
+  //      block to walk.
+  //
+  //   2. `player_stats[0].current_hp / .max_hp / .current_gold` on the
+  //      most-recently-visited map point — this is where completed
+  //      `.run` files leave a per-floor history. The latest entry is
+  //      "where the run ended."
+  //
+  // Player-level wins when present because current_run.save is the
+  // authoritative live signal; falling back to the map-history block
+  // means completed `.run` files still surface their final HP for the
+  // run-detail modal. Numbers default to null (not 0) so the UI shows
+  // a dash instead of misreporting "0 HP" when the field is absent.
+  const currentHp = Number.isFinite(player.current_hp) ? player.current_hp | 0
+    : Number.isFinite(latestStats?.current_hp) ? latestStats.current_hp | 0
+    : null;
+  const maxHp = Number.isFinite(player.max_hp) ? player.max_hp | 0
+    : Number.isFinite(latestStats?.max_hp) ? latestStats.max_hp | 0
+    : null;
+  const currentGold = Number.isFinite(player.gold) ? player.gold | 0
+    : Number.isFinite(player.current_gold) ? player.current_gold | 0
+    : Number.isFinite(latestStats?.current_gold) ? latestStats.current_gold | 0
+    : null;
   const currentRoomType = typeof latestRoomType === "string" ? latestRoomType : null;
 
   // Record the schema version we saw on this run. Used by the stats

@@ -35,13 +35,19 @@ private struct HSplit: View {
                 .frame(width: 1)
 
             VStack(spacing: 0) {
-                // Co-op, Highlights, News, and Settings each render
-                // their own header — suppress the generic title bar
-                // for them so we don't get a duplicated title row.
-                if ![SidebarSection.coop, .highlights, .news, .settings, .beta].contains(section) {
+                // Beta and Settings render with the legacy native title
+                // bar (their own panels are SwiftUI). Every other tab is
+                // hosted by the WebView, which already paints its own
+                // matching panel header — so we render only a thin
+                // native toolbar above it to keep Rescan / Export /
+                // Open-Saves-Folder reachable without duplicating a
+                // title row.
+                if [SidebarSection.beta, .settings].contains(section) {
                     AppHeaderBar(section: section)
+                } else {
+                    WebHostToolbar()
                 }
-                DetailView(section: section)
+                DetailView(section: $section)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Theme.bgPrimary)
@@ -678,6 +684,84 @@ struct AppHeaderBar: View {
                 HeaderButton(systemImage: "folder", label: "Saves") {
                     state.revealSaveFolder()
                 }
+            }
+        }
+    }
+}
+
+/// Slim toolbar that floats above the embedded WebView. Keeps the native
+/// data-ops buttons reachable (Rescan kicks off VaultCore parsing, Export
+/// drops a CSV via NSSavePanel, Saves reveals the save folder in Finder)
+/// without painting a redundant title bar — the embedded page already
+/// shows its own panel head, matching the cloud version pixel-for-pixel.
+struct WebHostToolbar: View {
+    @EnvironmentObject var state: AppState
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 10) {
+            statusPill
+            Spacer(minLength: 0)
+            HStack(spacing: 8) {
+                HeaderButton(systemImage: "arrow.clockwise", label: "Rescan") {
+                    Task {
+                        await state.scan()
+                        state.attachStatsToProfile()
+                    }
+                }
+                HeaderButton(systemImage: "square.and.arrow.up", label: "Export") {
+                    state.exportCSV()
+                }
+                HeaderButton(systemImage: "folder", label: "Saves") {
+                    state.revealSaveFolder()
+                }
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .background(
+            Theme.bgPrimary
+                .overlay(
+                    Rectangle()
+                        .fill(Theme.cardBorder.opacity(0.5))
+                        .frame(height: 1),
+                    alignment: .bottom
+                )
+        )
+    }
+
+    @ViewBuilder
+    private var statusPill: some View {
+        switch state.status {
+        case .scanning(let progress, let label):
+            HStack(spacing: 8) {
+                ProgressView(value: progress)
+                    .progressViewStyle(.linear)
+                    .tint(Theme.accent)
+                    .frame(width: 100)
+                Text("Scanning… \(label)")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(Theme.textSecondary)
+                    .lineLimit(1)
+            }
+        case .error(let m):
+            Label(m, systemImage: "exclamationmark.triangle.fill")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(Theme.loss)
+                .lineLimit(1)
+        case .idle:
+            if let last = state.lastScanAt {
+                Label("Updated \(last.formatted(.relative(presentation: .numeric)))",
+                      systemImage: "checkmark.circle.fill")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(Theme.textSecondary)
+                    .labelStyle(.titleAndIcon)
+            } else if state.runs.isEmpty && state.saveFolder == nil {
+                Label("No save folder linked",
+                      systemImage: "questionmark.folder.fill")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Theme.gold)
+            } else {
+                EmptyView()
             }
         }
     }

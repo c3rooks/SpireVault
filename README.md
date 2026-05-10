@@ -51,6 +51,7 @@ flowchart LR
     Mac -- reads --> Disk
     Web -- file picker --> IDB
     Web -- cached --> IDB
+    Mac -- "embeds · WKWebView" --> Web
     Mac -- "presence · invites · runs sync" --> Worker
     Web -- "presence · invites · runs sync" --> Worker
     Mob -- "presence · invites · runs sync" --> Worker
@@ -68,6 +69,15 @@ flowchart LR
     class Steam,AI ext
     class Disk,IDB store
 ```
+
+**Single-UI rendering (v0.9.2).** The macOS app no longer maintains a
+parallel SwiftUI copy of every cloud panel. Stats, Co-op, Community
+Highlights, and News are rendered by `WKWebView` pointed at
+`app.spirevault.app`. The native sidebar drives the embedded tab via a
+`window.SpireVault` bridge; locally-parsed runs from VaultCore are
+pushed into the embedded page over the same bridge so the user sees
+their real history without any cloud round-trip. Beta and Settings stay
+native because they need `NSPanel` / Keychain / `NSOpenPanel`.
 
 **Cross-device run sync (v0.5).** When you sign in with Steam, the web
 companion uploads your parsed run history to a Steam-ID-keyed cloud

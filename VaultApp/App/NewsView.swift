@@ -260,9 +260,58 @@ enum NewsCatalog {
     /// The most recently *published* post lives at index 0. Bumping
     /// this constant when adding a new post lights the sidebar's
     /// "NEW" pill for every existing user until they open News.
-    static let latestPostID = "005-2026-05-10-cloud-overlay-and-persona-menu"
+    static let latestPostID = "006-2026-05-10-desktop-cloud-parity"
 
     static let posts: [NewsPost] = [
+        NewsPost(
+            id: "006-2026-05-10-desktop-cloud-parity",
+            eyebrow: "Update · May 10, 2026",
+            title: "The desktop app is now the cloud — backgrounds, characters, animations, all of it",
+            readMinutes: 3,
+            tags: ["Update", "Desktop", "Parity"],
+            body: [
+                .lede("v0.9.2 stops maintaining two parallel UIs. The macOS app now embeds the live web companion (app.spirevault.app) for every data tab — Overview, Characters, Ascensions, Top Relics, Cards, Recent Runs, Co-op, Community Highlights, News. Same backgrounds, same character art, same animations, same hover states, same modals, same share-cards. One UI, one source of truth, no drift."),
+
+                .heading("What changed"),
+                .feature(
+                    title: "Stats tabs are the cloud, rendered inside the app",
+                    body: "We replaced the macOS native versions of every data panel with a WKWebView that loads the same page you'd open in Chrome. The native sidebar (Overview, Characters, Ascensions, Top Relics, Cards, Recent Runs, Co-op, Community Highlights, News) drives the embedded view via a small `window.SpireVault` bridge. Click a tab, the web flips. Click an in-page link inside the embedded panel, the native sidebar follows along."
+                ),
+                .feature(
+                    title: "Your runs stay local — and show up instantly",
+                    body: "VaultCore still parses your STS2 saves natively. The desktop pipes the parsed runs into the embedded page via the bridge so the web sees your real history (414 runs, your actual winrate, your actual best floor) instead of the demo set — without uploading anything you didn't already opt into uploading."
+                ),
+                .feature(
+                    title: "Native pieces stayed native",
+                    body: "Beta and Settings stayed in SwiftUI: Run Coach needs an NSPanel with sharingType=.none and a Keychain-backed API key (a browser can't replicate either), and Settings needs NSOpenPanel for save folder linking. The menu bar (About, Check for Updates, Help) is still native. The slim toolbar above each panel still has Rescan / Export / Open Saves Folder."
+                ),
+                .feature(
+                    title: "Community Highlights now actually loads",
+                    body: "An old typo had the desktop hitting `/api/highlights` while the worker exposes `/highlights` — every desktop user was getting a 404, which is why the highlights tab looked permanently empty. Fixed in v0.9.2. If you posted a highlight, it shows up now."
+                ),
+                .feature(
+                    title: "The newsletter is real",
+                    body: "Every news post that promised \"weekly digest email\" now has a real signup form pinned to the worker's new POST /notify route. Plain-text, off by default, one-click unsubscribe when it ships. We're capturing intent in KV until the mailer is wired — no third party touches your address."
+                ),
+
+                .heading("Why webview for the data tabs"),
+                .paragraph("The cloud version was getting all the love — character art, the architect, click-to-expand cards, the share-card canvas, the live recent-form chart, the run-detail modal. Reproducing all of that in SwiftUI was an entire parallel codebase that drifted further behind every web deploy. Embedding the canonical UI is what every serious cross-platform app does (Notion, Slack, Linear, Discord, Spotify) — one UI, one set of bugs, one rendering surface to QA. The desktop now ships every cloud feature the moment we deploy the web."),
+
+                .heading("Streamers, no behaviour change"),
+                .paragraph("Run Coach is still streamer-safe. The macOS overlay is still NSPanel + sharingType=.none and stays invisible to OBS / Zoom / QuickTime. Nothing about the embedded WebView changes that — the WebView is for stats, not the overlay."),
+
+                .heading("What's next"),
+                .roadmap(items: [
+                    "Bridging Steam OpenID into the embedded page so a single sign-in covers both halves.",
+                    "Offline-aware fallback: if the cloud is unreachable, the desktop falls back to a slim native overview rendered from VaultCore.",
+                    "Native context menu inside the embedded page (Copy run link / Open in browser / Inspect).",
+                    "Wire the digest mailer once we have ~50+ confirmed signups.",
+                ], isInflight: false),
+
+                .paragraph("If anything in the embedded view feels off — slow, jittery, missing — file an issue and screenshot it. The webview path is new and the corner cases haven't all been swept. — Corey"),
+            ]
+        ),
+
         NewsPost(
             id: "005-2026-05-10-cloud-overlay-and-persona-menu",
             eyebrow: "Update · May 10, 2026",

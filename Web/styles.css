@@ -5477,6 +5477,17 @@ select#me-note option { background: var(--bg-deep); color: var(--text); }
   color: var(--text-2);
   border: 1px solid color-mix(in oklab, var(--cr-accent) 22%, transparent);
 }
+.cr-title .cr-modifier-chip {
+  margin-left: 4px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 600;
+  background: rgba(255, 198, 92, 0.10);
+  color: var(--gold, #ffc65c);
+  border: 1px solid rgba(255, 198, 92, 0.28);
+  letter-spacing: 0.02em;
+}
 .cr-stats {
   display: flex;
   align-items: center;
@@ -11041,4 +11052,129 @@ body.compare-mode .run-row {
 @media (prefers-reduced-motion: reduce) {
   .compare-bar-inner { animation: none; }
   .run-compare-check { transition: none; }
+}
+
+/* =====================================================================
+   Desktop-host embedding mode
+   ---------------------------------------------------------------------
+   When this page is loaded inside the macOS app's WKWebView (?desktop=1
+   or window.__VAULT_DESKTOP__ injected by WKUserScript), the native
+   sidebar is already showing brand, navigation, and the persona pill.
+   We hide the duplicate web sidebar entirely and let the panels go
+   edge-to-edge so the embed feels native.
+   ===================================================================== */
+html.is-desktop-host body { background: transparent; }
+html.is-desktop-host .sidebar,
+html.is-desktop-host .app-topbar,
+html.is-desktop-host .install-promo,
+html.is-desktop-host .mac-promo,
+html.is-desktop-host .app-footer,
+html.is-desktop-host .footer-cta-mac,
+html.is-desktop-host .desktop-only-cta {
+  display: none !important;
+}
+/* The grid normally has a sidebar column; collapse it so the panel
+   takes the full width of the WKWebView. */
+html.is-desktop-host .app-shell,
+html.is-desktop-host .app-grid {
+  grid-template-columns: 1fr !important;
+  display: block !important;
+}
+html.is-desktop-host main.app-main,
+html.is-desktop-host .app-main {
+  padding-top: 12px;
+}
+/* Hide any "open the macOS app" pitches inside news posts and
+   marketing rails. The user is already in the macOS app. */
+html.is-desktop-host .install-row,
+html.is-desktop-host .download-mac-cta,
+html.is-desktop-host [data-hide-in-desktop="1"] {
+  display: none !important;
+}
+
+/* =====================================================================
+   Notify-me form (news posts → /notify backend)
+   ===================================================================== */
+.news-notify {
+  margin: 18px 0 8px;
+  padding: 16px 18px;
+  background: linear-gradient(135deg, rgba(245, 165, 90, 0.08), rgba(143, 90, 245, 0.06));
+  border: 1px solid rgba(245, 165, 90, 0.32);
+  border-radius: 12px;
+}
+.news-notify-label {
+  display: block;
+  font-size: 12px;
+  color: var(--text-2, #c8c0d8);
+  margin-bottom: 10px;
+  line-height: 1.5;
+}
+.news-notify-label strong {
+  display: block;
+  color: var(--text-1, #f0e8ff);
+  font-size: 13px;
+  margin-bottom: 2px;
+  font-weight: 700;
+}
+.news-notify-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.news-notify-input {
+  flex: 1 1 220px;
+  min-width: 0;
+  padding: 9px 12px;
+  font: inherit;
+  font-size: 13px;
+  background: rgba(0, 0, 0, 0.32);
+  color: var(--text-1, #f0e8ff);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+}
+.news-notify-input:focus {
+  outline: none;
+  border-color: rgba(245, 165, 90, 0.55);
+  background: rgba(0, 0, 0, 0.45);
+}
+.news-notify-btn {
+  flex: 0 0 auto;
+  padding: 9px 16px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  background: linear-gradient(135deg, #f5a55a, #d28b3f);
+  color: #1a1020;
+  border: 0;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.news-notify-btn:hover { filter: brightness(1.08); }
+.news-notify-btn[disabled] { opacity: 0.55; cursor: progress; }
+.news-notify-status {
+  margin: 10px 0 0;
+  font-size: 12px;
+  color: var(--text-2, #c8c0d8);
+  line-height: 1.5;
+}
+.news-notify-status.is-error { color: #ff8c98; }
+.news-notify-status.is-success { color: #6ce6a3; }
+
+/* The amber "Showing sample data — link your STS2 saves" pill is
+   meaningless inside the desktop app: the macOS host has its own save
+   folder linker and pushes parsed runs in via window.SpireVault.
+   ingestDesktopRuns. Hide the pill outright so we don't get a flash
+   between page boot and the host's first ingest call. */
+html.is-desktop-host [data-toolbar-empty] {
+  display: none !important;
+}
+/* Same logic for the "Pick STS2 save files" / "Import" CTA on empty
+   panels: the desktop owns save linking; offering the user a browser-
+   side file picker would just cause confusion (and split data between
+   web localStorage and the native app's parsed history). */
+html.is-desktop-host [data-action="upload"],
+html.is-desktop-host .upload-cta,
+html.is-desktop-host .empty-state-cta-upload {
+  display: none !important;
 }

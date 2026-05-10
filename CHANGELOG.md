@@ -5,6 +5,95 @@ Dates in YYYY-MM-DD. The project follows [Semantic Versioning](https://semver.or
 loosely — patch bumps for fixes, minor for features, major if I ever
 break the wire format.
 
+## v0.9.2 — 2026-05-10
+
+The desktop app stops maintaining a parallel SwiftUI copy of every cloud
+panel. From this build forward, the macOS app embeds the live web
+companion (`app.spirevault.app`) for every data tab — Overview,
+Characters, Ascensions, Top Relics, Cards, Recent Runs, Co-op,
+Community Highlights, News. One UI, one set of animations, one source
+of truth. Native code keeps responsibility for the things only native
+code can do.
+
+**WebHostView (desktop ↔ cloud bridge).**
+
+- New `WebHostView` (SwiftUI wrapper around `WKWebView`) replaces every
+  data tab's native panel. Loads `https://app.spirevault.app/?desktop=1&tab=<id>`,
+  injects `window.__VAULT_DESKTOP__ = true` at document-start so the
+  page boots into desktop-host mode (sidebar / install pitch / "Pick
+  STS2 saves" CTA hidden), and hands off external links (Steam, GitHub,
+  mailto, http) to `NSWorkspace.open` so they open in the user's actual
+  browser instead of swallowing them inside the WebView.
+- The native sidebar drives the embedded tab via a tiny
+  `window.SpireVault.switchTab(...)` bridge. In-page tab changes
+  (clicking "Open Co-op" inside a news post) propagate back to the
+  native sidebar via a `spirevault:tab` custom event so the highlight
+  stays in sync. Beta and Settings stay 100% native because they need
+  `NSPanel` / Keychain / `NSOpenPanel`.
+- A slim native toolbar above each embedded panel still surfaces
+  Rescan, Export, and Open Saves Folder so VaultCore data ops are
+  always one click away — even though the panel chrome itself is now
+  rendered by the cloud.
+
+**Runs injection — local data, cloud rendering.**
+
+- The desktop's `[RunRecord]` snapshot is JSON-encoded and pushed into
+  the embedded page via `window.SpireVault.ingestDesktopRuns(...)`,
+  which calls `commitParsedRuns` internally. Result: the embedded view
+  sees the user's actual run history (their real win-rate, real best
+  floor, real recent-form chart) instead of the demo set, with no
+  dependency on cloud sync.
+- The push is hashed and runs only when the snapshot changes, so
+  SwiftUI's habit of re-running `updateNSView` on every parent
+  re-render doesn't keep re-uploading the same 400-run JSON.
+- Pending runs are queued and replayed once the bridge handshake
+  completes, so the very first paint after launch already shows real
+  data instead of a flash of demo numbers.
+
+**Bug fixes.**
+
+- **Community Highlights 404** — the desktop was hitting
+  `/api/highlights` while the worker exposes `/highlights`. Every
+  desktop user was seeing "Highlights endpoint returned 404" no matter
+  what was on the cloud, including their own freshly-posted highlights.
+  Path corrected; the highlights tab now reflects the cloud.
+- **Web update banner inside the desktop** — the "A newer version of
+  Spire Vault is available" banner was firing inside the WebView on
+  every web deploy, scaring users into thinking the macOS app itself
+  was out of date. Suppressed when running embedded — the desktop has
+  its own native `UpdateService` for DMG-level updates.
+- **Sample-data flash** — the amber "Showing sample data — link your
+  STS2 saves" pill no longer flashes while the host is preparing to
+  push runs. Hidden outright in desktop-host mode; the pill was
+  meaningless inside the desktop because the native side already owns
+  save folder linking.
+
+**Real newsletter capture.**
+
+- New worker route `POST /notify` (KV-backed) captures email +
+  topic + source for the long-promised weekly digest. Plain-text,
+  zero email is sent from the endpoint — the list is just stored
+  until the digest mailer is wired. IP-rate-limited (6/hour/IP).
+  No third party in the loop.
+- News posts that mention the digest now have a real signup form
+  underneath, wired to `/notify` with proper success / error / rate-
+  limit / invalid-email states. The "newsletter is broken" complaint
+  is closed.
+
+**News sync.**
+
+- New post #006 ("The desktop app is now the cloud") published on both
+  web and the desktop's news catalog. The latest macOS post id was
+  drifting ahead of the web's news feed (#005 only existed in
+  `NewsCatalog.swift`); from this build the web is the canonical news
+  surface and the macOS app reads it through the embedded WebView.
+
+**Versioning.**
+
+- `Info.plist` / `project.yml`: 0.9.2 (build 11).
+- `VaultVersion.current`: 0.9.2.
+- Web: `script.js?v=149`, `styles.css?v=115`.
+
 ## v0.9.1 — 2026-05-10
 
 Settings collapse into the persona pill, and Run Coach lands in the

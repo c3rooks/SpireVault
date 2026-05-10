@@ -120,6 +120,13 @@ let updateCheckInflight = false;
 let updateBannerShown   = false;
 async function checkForUpdate() {
   if (updateCheckInflight || updateBannerShown) return;
+  // Inside the macOS app's WKWebView the update banner is misleading
+  // — what's stale is just the embedded web bundle, not "Spire Vault"
+  // itself. The desktop has its own native updater (UpdateService) that
+  // delivers DMG-level updates. Suppress the web-side nag entirely so
+  // users on the desktop don't see a phantom "Spire Vault is out of
+  // date" alert that has nothing to do with the app they installed.
+  if (typeof IS_DESKTOP_HOST !== "undefined" && IS_DESKTOP_HOST) return;
   updateCheckInflight = true;
   try {
     const r = await fetch("/", {
@@ -884,6 +891,23 @@ let lastInbox  = [];          // last inbox snapshot
 let lastOutbox = [];          // last outbox snapshot (invites we've sent)
 let lastHighlights = [];      // last community highlights snapshot
 let activeTab  = "overview";  // which tab panel is showing
+// Detect whether we're embedded inside the macOS desktop app.
+// The native WKWebView appends `?desktop=1` and (optionally) injects a
+// `window.__VAULT_DESKTOP__ = true` flag via WKUserScript. Either signal
+// flips us into "desktop host" mode where we hide marketing chrome
+// (download CTAs, mobile-only rows, "open in app" pitches, footer links
+// that would navigate the WebView away) and mark <html> with the
+// `is-desktop-host` class so styles can adapt without runtime JS.
+const IS_DESKTOP_HOST = (() => {
+  try {
+    if (typeof window !== "undefined" && window.__VAULT_DESKTOP__) return true;
+    const qs = new URLSearchParams(window.location.search);
+    return qs.get("desktop") === "1";
+  } catch { return false; }
+})();
+if (IS_DESKTOP_HOST) {
+  try { document.documentElement.classList.add("is-desktop-host"); } catch {}
+}
 let pendingInviteToID = null; // who the modal is targeting
 let pollFeedTimer       = null;
 let pollInboxTimer      = null;
@@ -1399,6 +1423,12 @@ async function boot() {
   // Returning signed-in users go back to whichever tab they last used.
   // Query-param wins over both — that's the path explicit deep-links take.
   switchTab(initialTab || lastTab || (session ? "coop" : "overview"));
+
+  // Wire the "notify me when this ships" forms inside news posts —
+  // the markup is static and ships in index.html, but the click
+  // handler needs the runtime serverURL + IS_DESKTOP_HOST flag, so
+  // it lives here. Idempotent and cheap to call.
+  try { wireNotifyForms(); } catch (e) { console.warn("notify wire failed", e); }
   // If the deep-link also carries a hash (e.g. `?tab=news#news-001`),
   // scroll to that anchor after the panel paints. Tiny rAF delay so the
   // tab-panel is actually visible when scrollIntoView fires.
@@ -2094,6 +2124,12 @@ function switchTab(tab) {
   activeTab = tab;
   localStorage.setItem(STORAGE_LAST_TAB, tab);
   syncTabUrl(tab);
+  // Notify any embedding host (the macOS WKWebView listens for this
+  // via window.SpireVault.onTabChange) so its native sidebar can keep
+  // its highlight in sync when the user clicks an in-page link.
+  try {
+    window.dispatchEvent(new CustomEvent("spirevault:tab", { detail: { tab } }));
+  } catch {}
   // GA4 tab-aware page_view. We suppressed the auto-pageview in
   // index.html so the tab name lands as the page title in real-time.
   // page_location is set explicitly because gtag would otherwise
@@ -2174,7 +2210,7 @@ function switchTab(tab) {
  * thing I read still the latest thing published?" — without forcing
  * a chronological compare that could go wrong on a typo.
  */
-const LATEST_NEWS_POST_ID = "post-003-2026-05-09-sts2-v0_105_0-support";
+const LATEST_NEWS_POST_ID = "post-006-2026-05-10-desktop-cloud-parity";
 const STORAGE_NEWS_LAST_READ = "vault.web.news.lastRead";
 
 /** Show the "NEW" pill on the sidebar News button when the user
@@ -7569,6 +7605,19 @@ function renderCurrentRunCard(run) {
   const ageMin = run.startedAt ? Math.max(0, Math.round((Date.now() - run.startedAt.getTime()) / 60000)) : null;
   const ageLabel = ageMin == null ? "" : ageMin < 1 ? "just started" : ageMin < 60 ? `${ageMin} min in` : `${(ageMin / 60).toFixed(1)} hr in`;
   const room = run.currentRoomType ? capitalize(run.currentRoomType) : null;
+  // Game mode badge: surface anything other than the default
+  // "standard" so a Daily / Trial / Custom run gets called out next
+  // to the live status. STS2 currently ships "standard", "daily",
+  // "custom", "trial".
+  const modeKey = String(run.gameMode || "").toLowerCase();
+  const modeLabel = modeKey && modeKey !== "standard" ? `${capitalize(modeKey)} run` : "Run";
+  // Daily-modifier chips. Each modifier id was already stripped of
+  // the "MODIFIER." prefix and lowercased by the parser; we
+  // prettify here for display ("DOUBLE_TIME" → "Double Time").
+  const modifierChips = (run.modifiers || []).slice(0, 6).map((m) => {
+    const pretty = String(m).split("_").map((w) => w ? w[0].toUpperCase() + w.slice(1) : "").join(" ");
+    return `<span class="cr-modifier-chip">${esc(pretty)}</span>`;
+  }).join("");
 
   // Relic icons — show up to 8 in the collapsed pill row, render the
   // full list inside the expanded panel. Use the same image lookup
@@ -7623,13 +7672,14 @@ function renderCurrentRunCard(run) {
         <span class="cr-pulse" aria-hidden="true"><span class="cr-pulse-dot"></span></span>
         <span class="cr-portrait">${portrait}</span>
         <span class="cr-headline">
-          <span class="cr-eyebrow">In a run · ${esc(ageLabel || "live")}</span>
+          <span class="cr-eyebrow">${esc(modeLabel)} in progress · ${esc(ageLabel || "live")}</span>
           <span class="cr-title">
             <strong>${esc(charLabel)}</strong>
             <span class="cr-asc">${esc(asc)}</span>
             <span class="cr-sep">·</span>
             <span class="cr-floor">Floor ${floor || "—"}</span>
             ${room ? `<span class="cr-room">${esc(room)}</span>` : ""}
+            ${modifierChips}
           </span>
         </span>
         <span class="cr-stats">
@@ -12980,3 +13030,138 @@ function hexA(hex, alpha) {
   const b = parseInt(hex.slice(5, 7), 16);
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
+
+// =========================================================================
+// Notify-me capture (news posts → POST /notify)
+// =========================================================================
+// Wires every <form class="news-notify"> on the page to our /notify route
+// once at DOM ready. Each form carries its own `data-notify-topic` and
+// `data-notify-source` attributes so the backend can later filter "who
+// signed up from which surface" without us needing per-form JS.
+// Idempotent — safe to call after re-renders, since we mark wired forms
+// with a `data-notify-wired` attribute.
+function wireNotifyForms() {
+  const forms = document.querySelectorAll("form.news-notify:not([data-notify-wired])");
+  if (forms.length === 0) return;
+  // The /notify endpoint lives on the worker, not on the same-origin
+  // /api proxy (the Pages Functions proxy explicitly whitelists routes
+  // and we'd rather not have to update it for every tiny capture form).
+  // Going direct is fine — /notify handles its own CORS via the
+  // global ALLOWED_ORIGINS list in Backend/src/index.ts.
+  const serverURL = SERVER_URL;
+  forms.forEach((form) => {
+    form.setAttribute("data-notify-wired", "1");
+    form.addEventListener("submit", async (ev) => {
+      ev.preventDefault();
+      const $email  = form.querySelector('input[name="email"]');
+      const $btn    = form.querySelector('button[type="submit"]');
+      const $status = form.querySelector('[data-notify-status]');
+      const email   = ($email?.value || "").trim();
+      const topic   = form.getAttribute("data-notify-topic") || "general";
+      const source  = (form.getAttribute("data-notify-source") || "web") +
+                      (IS_DESKTOP_HOST ? "+desktop" : "");
+      if (!email) return;
+      if ($status) {
+        $status.hidden = false;
+        $status.textContent = "Sending…";
+        $status.classList.remove("is-error", "is-success");
+      }
+      if ($btn) $btn.disabled = true;
+      try {
+        const url = serverURL.replace(/\/$/, "") + "/notify";
+        const r = await fetch(url, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ email, topic, source }),
+        });
+        const data = await r.json().catch(() => ({}));
+        if (r.ok) {
+          if ($status) {
+            $status.classList.add("is-success");
+            $status.textContent = data.alreadySubscribed
+              ? "You're already on the list — refreshed your timestamp."
+              : "Got it. We'll email you the moment the digest is ready.";
+          }
+          if ($email) $email.value = "";
+        } else if (r.status === 429) {
+          if ($status) {
+            $status.classList.add("is-error");
+            $status.textContent = "Too many signups from your network. Try again in an hour.";
+          }
+        } else if (data?.error === "invalid_email") {
+          if ($status) {
+            $status.classList.add("is-error");
+            $status.textContent = "That doesn't look like a valid email — give it another go.";
+          }
+        } else {
+          if ($status) {
+            $status.classList.add("is-error");
+            $status.textContent = "Couldn't reach the server. Try again in a minute.";
+          }
+        }
+      } catch (e) {
+        if ($status) {
+          $status.classList.add("is-error");
+          $status.textContent = "Network error — check your connection and try again.";
+        }
+      } finally {
+        if ($btn) $btn.disabled = false;
+      }
+    });
+  });
+}
+
+// =========================================================================
+// Native host bridge (window.SpireVault)
+// =========================================================================
+// The macOS desktop app embeds this page in a WKWebView and drives tab
+// navigation from its native sidebar. We expose a tiny, stable API on
+// `window.SpireVault` so the host can call `switchTab(...)` without
+// reaching into module internals. Any future host (the Windows electron
+// build, an iOS WKWebView, etc.) consumes the same surface.
+try {
+  if (typeof window !== "undefined") {
+    const KNOWN = new Set(KNOWN_TABS);
+    window.SpireVault = Object.freeze({
+      version: 2,
+      isDesktopHost: () => IS_DESKTOP_HOST,
+      knownTabs: () => Array.from(KNOWN),
+      activeTab: () => activeTab,
+      switchTab: (tab) => {
+        if (!KNOWN.has(String(tab || "").toLowerCase())) return false;
+        try { switchTab(String(tab).toLowerCase()); return true; }
+        catch (e) { console.warn("[SpireVault] switchTab failed", e); return false; }
+      },
+      // Hook a callback to be notified whenever the active tab changes.
+      // Returns an unsubscribe function. The host uses this to keep
+      // its native sidebar selection in sync when the user clicks a
+      // link inside the embedded page (e.g. "Open Co-op" from a news
+      // post anchor).
+      onTabChange: (cb) => {
+        if (typeof cb !== "function") return () => {};
+        const handler = (ev) => { try { cb(ev?.detail?.tab); } catch {} };
+        window.addEventListener("spirevault:tab", handler);
+        return () => window.removeEventListener("spirevault:tab", handler);
+      },
+      // Push the desktop's locally-parsed runs into the embedded web app
+      // so it renders the user's actual data instead of the demo set.
+      // Accepts an array of run objects in the same shape that
+      // `reviveRun()` already understands (Vault canonical schema).
+      // The desktop's parser and the web's parser use the same
+      // VaultCore-derived shape, so this is effectively a passthrough.
+      ingestDesktopRuns: (rawRuns) => {
+        try {
+          if (!Array.isArray(rawRuns)) return false;
+          const revived = rawRuns.map(reviveRun);
+          // Fire-and-forget: commitParsedRuns is async but we don't
+          // need to block the host on its completion.
+          commitParsedRuns(revived, "desktop", { silent: true, fileCount: revived.length });
+          return true;
+        } catch (e) {
+          console.warn("[SpireVault] ingestDesktopRuns failed", e);
+          return false;
+        }
+      },
+    });
+  }
+} catch (e) { /* ignore — non-browser env */ }
