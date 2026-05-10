@@ -159,9 +159,24 @@ final class OverlayController: ObservableObject {
         if #available(macOS 13.0, *) {
             p.sharingType = (appState?.config.overlayInvisibleToCapture ?? true) ? .none : .readOnly
         }
-        // Restore last-used origin if persisted; otherwise use top-right.
-        if let origin = persistedOrigin() {
+        // Restore last-used origin if persisted *and* still on a connected
+        // display. The classic "I disabled it and re-enabled it but it
+        // didn't come back" report is usually one of: (a) an external
+        // monitor was disconnected since the last position save, so the
+        // saved coords land off-screen; (b) the saved origin is in a
+        // negative half-plane on a since-rearranged multi-monitor
+        // setup. Either way, falling back to `defaultOrigin()` puts the
+        // pill back where the user can find it instead of leaving a
+        // pixel of pill bleeding off the edge of nowhere.
+        if let origin = persistedOrigin(), originIsOnAnyScreen(origin, size: collapsedSize) {
             p.setFrameTopLeftPoint(origin)
+        } else if persistedOrigin() != nil {
+            // Saved but unreachable — wipe it so we don't keep tripping
+            // the same fallback every show(). Next user-initiated drag
+            // will save a fresh origin.
+            appState?.config.overlayOriginX = nil
+            appState?.config.overlayOriginY = nil
+            appState?.config.save()
         }
 
         let host = NSHostingView(rootView: AnyView(makeRootView()))
@@ -344,6 +359,33 @@ final class OverlayController: ObservableObject {
             return nil
         }
         return NSPoint(x: x, y: y)
+    }
+
+    /// Whether `origin` (a top-left point) places a panel of `size` such
+    /// that at least the leftmost ~80pt of it lands inside *some*
+    /// connected display's `visibleFrame`. We use the leading edge as
+    /// the witness because the pill is wide enough that even a
+    /// 200pt-trimmed pill is still grabbable; what we're guarding
+    /// against is the whole panel landing entirely off-screen after a
+    /// monitor swap.
+    private func originIsOnAnyScreen(_ origin: NSPoint, size: CGSize) -> Bool {
+        // setFrameTopLeftPoint takes a top-left, but NSScreen uses
+        // bottom-left coordinates for visibleFrame. Convert: the
+        // bottom-left of a panel positioned at top-left = origin and
+        // height = size.height is (origin.x, origin.y - size.height).
+        let panelRect = NSRect(
+            x: origin.x,
+            y: origin.y - size.height,
+            width: size.width,
+            height: size.height
+        )
+        let witness = NSRect(
+            x: panelRect.minX,
+            y: panelRect.minY,
+            width: min(80, panelRect.width),
+            height: panelRect.height
+        )
+        return NSScreen.screens.contains { $0.visibleFrame.intersects(witness) }
     }
 
     private func defaultOrigin() -> NSPoint {

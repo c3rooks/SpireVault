@@ -5,6 +5,184 @@ Dates in YYYY-MM-DD. The project follows [Semantic Versioning](https://semver.or
 loosely — patch bumps for fixes, minor for features, major if I ever
 break the wire format.
 
+## v0.9.7 — 2026-05-10
+
+Focused polish on the Run Coach enable/disable cycle, on top of the
+v0.9.6 fixes. Verified end-to-end via cold-start tests against three
+configurations: `overlayEnabled = false` (no panel), `overlayEnabled
+= true` (pill at default top-center), and `overlayEnabled = true`
+with a deliberately off-screen persisted origin (panel falls back
+and re-stamps a reachable coordinate).
+
+**Off-screen origin recovery.**
+
+- New bounds check in `OverlayController.show()`. The persisted
+  top-left is only honoured if at least the leading ~80pt of the
+  panel still lands inside *some* connected display's `visibleFrame`.
+  Otherwise we fall through to `defaultOrigin()` (top-center of the
+  main screen, 30pt below the menu bar) and *wipe* the saved
+  coordinates so the next user-initiated drag stamps a fresh,
+  reachable origin instead of silently re-tripping the same fallback
+  every show().
+- The classic "I re-enabled the overlay but it never came back"
+  report was almost always this — external monitor disconnected,
+  multi-display rearranged, scaled-display switch — leaving the
+  saved origin in negative-half-plane territory. Now it self-heals.
+
+**BetaView toggle UX.**
+
+- "Reset position to top center" now goes through the
+  `enabled = false; enabled = true` cycle instead of a raw
+  `hide(); show()` pair. That gets the v0.9.6 `mode = .pill` reset
+  for free *and* re-runs the new bounds-check above. Cleaner than
+  reasoning about each side effect separately.
+- "Show now" renamed to **"Bring overlay to front"** and scoped to
+  doing exactly that. The old version force-expanded chat as a
+  debugging affordance, which surprised users who'd just enabled
+  the overlay and were expecting the pill at the top of their
+  screen.
+- New explanatory hint text under the toggle when the overlay is
+  off: "Disabled. Toggle on to bring the pill back at the top of
+  your main display." So the empty space below the switch has a
+  real purpose instead of looking like the toggle did nothing.
+
+**Versioning.**
+
+- `Info.plist` / `project.yml` → `CFBundleShortVersionString = 0.9.7`,
+  `CFBundleVersion = 16`.
+- `HistoryStore.current = "0.9.7"`.
+- DMG built as `The-Vault-0.9.7.dmg`, ad-hoc signed, attached to the
+  GitHub release. **Vault → Check for Updates…** in any v0.9.x
+  install will offer the upgrade automatically.
+
+## v0.9.6 — 2026-05-10
+
+Three user-reported bugs in v0.9.5 — overlay enable/disable not behaving
+the way the on/off switch implies, the embedded sidebar tabs going
+silent on cold launch, and the Steam persona pill in the sidebar
+reading as static text instead of an interactive menu — plus the rest
+of the Run Coach polish pass that came out of "make sure that
+everything works, if I disable in the app it disappears, if I enable it
+comes back."
+
+**Run Coach overlay — enable/disable that does what the toggle says.**
+
+- `OverlayController.hide()` now resets `mode = .pill` so re-enabling
+  always brings the canonical small pill back instead of restoring
+  whatever larger panel size (chat / settings) the user happened to
+  have open at the moment of disable. This is the one fix that cleanly
+  matches the "the pill comes back" mental model that the toggle
+  implies.
+- New defensive bounds check on the persisted top-left in `show()`. If
+  the saved origin lands off-screen (external monitor disconnected,
+  multi-display rearranged, scaled-display switch), we fall back to
+  the default top-center position *and* wipe the saved origin so the
+  next user-initiated drag stamps a fresh, reachable coordinate. The
+  classic "I re-enabled the overlay but nothing came back" report
+  was mostly this.
+- BetaView **Reset position to top center** now goes through the
+  enabled-toggle off→on cycle. That gets the `mode = .pill` reset for
+  free and re-runs the bounds-check above. Cleaner behavior than the
+  previous `hide(); show()` pair.
+- BetaView **Show now** renamed to **Bring overlay to front** and
+  scoped to actually doing exactly that — the old version
+  force-expanded chat as a debugging affordance and confused users
+  who'd just enabled the overlay and wanted the pill at the top.
+- BetaView shows an explicit "Disabled. Toggle on to bring the pill
+  back at the top of your main display." hint when the overlay is
+  off, so the empty space below the toggle has a real purpose.
+
+**Run Coach key-store wording — last of the v0.9.5 cleanup.**
+
+The v0.9.5 release moved the BYO API key off the macOS keychain into a
+file-backed store at
+`~/Library/Application Support/AscensionCompanion/vault/overlay-keys.json`,
+but a few user-visible strings still said "Keychain":
+
+- BetaView "On file in Keychain" badge → "On file".
+- BetaView "Saved to Keychain." / "Couldn't save to Keychain." →
+  neutral "Saved." / a real diagnostic message that names the actual
+  filesystem failure mode.
+- BetaView footer prose names the on-disk path + perms (0600).
+- Overlay settings sheet copy + "Removed." labels match.
+- Helper renamed from `refreshKeychainState()` to `refreshKeyState()`
+  / `refreshFromStore()` to match the actual backing.
+
+**Embedded sidebar tabs going silent on cold launch.**
+
+Reported on macOS v0.9.5: "none of the tabs are working, when you
+select them nothing changes — only the page is overview working."
+Traced to the JS bridge between SwiftUI sidebar and the embedded
+`WKWebView`:
+
+- `WebHostView` was gating every `requestTabSwitch` on a
+  `bridgeReady` flag that only flipped true after the page sent a
+  `kind:"ready"` message via a 4-second polling user-script. If
+  `window.SpireVault` wasn't defined within that 4s window — slow
+  CPU, deferred ES module parse, or any throw before the SpireVault
+  setup at line ~13363 of `script.js` — the gate stayed permanently
+  closed, silently buffering one `pendingTab` and dropping every
+  click after.
+
+Fix:
+
+- `Web/script.js`: hoist `window.SpireVault` to the very top of the
+  module (line ~1085) with a queueing stub. `switchTab` buffers the
+  latest tab into `__VAULT_HOST_QUEUE.tab`; `startSignIn` flips
+  `__VAULT_HOST_QUEUE.signIn`; `onTabChange` wires its real listener
+  via `window.addEventListener` so it survives the stub-to-impl swap.
+- The full `SpireVault` impl at the bottom of the module replaces the
+  stub, drains any queued sign-in click, posts a deterministic
+  `kind:"ready"` straight to native (no more polling-window race),
+  and posts a `kind:"auth"` payload if the page already has a real
+  bearer session (catches the cross-launch case where the WebView
+  remembers the user but native didn't).
+- `Web/script.js` `boot()` reads `__VAULT_HOST_QUEUE.tab` *before*
+  deciding the initial panel, so a sidebar click during cold-launch
+  wins over the URL's `?tab=overview` and over localStorage's
+  last-tab.
+- `WebHostView`: drop the `bridgeReady` gate from
+  `requestTabSwitch`. Always evaluate the JS, with a `Timer`-driven
+  retry loop (200ms × 30 attempts ≈ 6s) that uses the JS return value
+  to detect "stub didn't queue" and retries until success or budget
+  exhaust. Same treatment for `requestSignInIfNeeded` — fire
+  immediately, the page-side stub queues if SpireVault isn't ready
+  and the existing ready-handler reissue still runs as backup.
+
+**Steam persona pill — visible chevron, hover, "I am a button" affordance.**
+
+Reported: "steam profile isnt showing on desktop — i cant even click
+into it like i can on web." Two compounding causes:
+
+- Cross-launch auth never synced. The macOS WKWebView shares its data
+  store across launches (cookies + localStorage live in
+  `WKWebsiteDataStore.default()`), so a user already signed in on the
+  page side came back authenticated visually but native
+  `SteamAuth.profile` stayed nil. The native sidebar rendered the
+  guest pill instead of the persona menu. Fixed by the new
+  `kind:"auth"` payload above — `script.js` now re-issues it on every
+  page load if a bearer session exists.
+- Even when signed in, the SwiftUI Menu used
+  `.menuIndicator(.hidden)` + `.menuStyle(.borderlessButton)` +
+  `.buttonStyle(.plain)`. Result: looked like static text, no hover
+  state, no chevron — users didn't realise it was a control.
+
+Fix: `RootView` ships a new `PersonaPillLabel` with a visible chevron
+disclosure indicator, hover state with a gold-tinted border + raised
+background, and a larger avatar circle. Reads as a control at every
+glance. The Menu chrome (`.menuStyle(.borderlessButton)` etc.) is
+unchanged so dark-sidebar styling integration stays intact.
+
+**Versioning.**
+
+- `Info.plist` / `project.yml` → `CFBundleShortVersionString = 0.9.6`,
+  `CFBundleVersion = 15`.
+- `HistoryStore.current = "0.9.6"`.
+- Web companion build pinned to `v153`.
+- DMG built as `The-Vault-0.9.6.dmg`, ad-hoc signed, attached to the
+  GitHub release. **Vault → Check for Updates…** in any v0.9.x
+  install will offer the upgrade automatically.
+
 ## v0.9.5 — 2026-05-10
 
 Hotfix for the recurring login-keychain prompt that was hitting every

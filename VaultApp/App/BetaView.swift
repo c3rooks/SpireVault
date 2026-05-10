@@ -136,20 +136,34 @@ struct BetaView: View {
                 }
                 if state.overlayController.enabled {
                     HStack(spacing: 8) {
+                        // Wipes the persisted top-left and rebuilds the
+                        // panel at the default top-center origin. Toggling
+                        // `enabled` off → on is the cleanest way to do this:
+                        // `hide()` resets mode to .pill (so a chat-mode
+                        // session won't reopen at chat size), and the next
+                        // `show()` reads the now-nil origin.
                         Button("Reset position to top center") {
                             state.config.overlayOriginX = nil
                             state.config.overlayOriginY = nil
                             state.config.save()
-                            state.overlayController.hide()
-                            state.overlayController.show()
+                            state.overlayController.enabled = false
+                            state.overlayController.enabled = true
                         }
                         .controlSize(.small)
-                        Button("Show now") {
+                        // "Show now" used to force-expand chat as a
+                        // debugging affordance. With the controller now
+                        // resetting to .pill on every hide(), the more
+                        // honest behavior is "bring the pill forward and
+                        // let the user click into chat themselves."
+                        Button("Bring overlay to front") {
                             state.overlayController.show()
-                            state.overlayController.toggleExpanded()
                         }
                         .controlSize(.small)
                     }
+                } else {
+                    Text("Disabled. Toggle on to bring the pill back at the top of your main display.")
+                        .font(.system(size: 10))
+                        .foregroundStyle(Theme.textTertiary)
                 }
             }
             .premiumPanel(padding: 14, cornerRadius: 10)
