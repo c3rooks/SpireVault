@@ -28,7 +28,7 @@ assets:
 # but the browser explodes the moment that template renders. Once
 # bitten, twice shy.
 preflight:
-	@for f in script.js lib/*.js; do \
+	@for f in script.js run-coach.js lib/*.js; do \
 	  node --check $$f || { echo "✘ parse error in $$f — aborting deploy"; exit 1; }; \
 	done
 	@node scripts/preflight-runtime.mjs || { echo "✘ runtime preflight failed — aborting deploy"; exit 1; }
