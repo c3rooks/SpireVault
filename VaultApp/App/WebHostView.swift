@@ -197,21 +197,31 @@ struct WebHostView: NSViewRepresentable {
     }
 
     /// JavaScript that runs once the embedded page reaches DOMContentLoaded.
-    /// It waits for `window.SpireVault` (exposed by Web/script.js) and then
-    /// subscribes to tab-change events so the native sidebar can mirror
-    /// in-page navigations.
+    /// Subscribes to the page's tab-change events so the native sidebar
+    /// can mirror in-page navigations (e.g. an "Open Co-op" link inside
+    /// a news post should also update the native selection).
+    ///
+    /// As of v0.9.6 the bridge no longer relies on this script firing
+    /// `kind: "ready"` — script.js itself posts a deterministic ready
+    /// message once the full SpireVault impl is wired (see the top
+    /// of `Web/script.js` for the early stub and the bottom for the
+    /// full impl that drains the host queue and notifies us). This
+    /// boot script is now belt-and-suspenders: it still attaches an
+    /// `onTabChange` listener via the early stub (which exists from
+    /// document-end onwards) so even hosts that see the page first
+    /// pick up in-page tab clicks.
     private var bridgeBootSource: String {
         return """
         (function () {
-          function onReady(cb) {
+          function withSpireVault(cb) {
             if (window.SpireVault) { cb(window.SpireVault); return; }
             let tries = 0;
             const t = setInterval(() => {
               if (window.SpireVault) { clearInterval(t); cb(window.SpireVault); }
-              else if (++tries > 80) { clearInterval(t); }
+              else if (++tries > 200) { clearInterval(t); } // 10s
             }, 50);
           }
-          onReady((api) => {
+          withSpireVault((api) => {
             try {
               api.onTabChange((tab) => {
                 try {
@@ -220,6 +230,12 @@ struct WebHostView: NSViewRepresentable {
                   });
                 } catch (e) {}
               });
+              // Belt-and-suspenders ready notify. The page itself posts
+              // a deterministic `kind: "ready"` at the end of script.js
+              // boot, but if module parse threw between the early stub
+              // and the full impl, that post never fires — and we still
+              // want the bridge marked live so native stops blind-
+              // retrying tab switches at full bandwidth.
               window.webkit?.messageHandlers?.vaultHost?.postMessage({
                 kind: "ready", tab: api.activeTab(),
               });
@@ -261,13 +277,23 @@ extension WebHostView {
         /// Import, Export → CSV/JSON) to native AppState methods.
         var onAction: ((WebHostAction) -> Void)?
 
-        /// Marks whether the page has reported back via window.SpireVault.
-        /// Until then we don't try to call switchTab — the function isn't
-        /// in scope yet, and we'd just bin the call.
+        /// Marks whether the page has reported back via `kind: "ready"`.
+        /// Used now only as a hint — `requestTabSwitch` no longer gates
+        /// on it. Kept so debug logging and the auth-payload draining
+        /// in `case "ready"` still know whether the bridge handshake
+        /// has actually fired or whether we're retrying blind.
         private var bridgeReady = false
-        /// Pending tab switch we couldn't fulfil because the bridge wasn't
-        /// ready yet. Replayed when the page reports `kind: "ready"`.
+        /// Tab the user wants on screen. Held across retry attempts so a
+        /// fast click on a cold-launched page still lands the right
+        /// panel once `window.SpireVault.switchTab` becomes callable.
         private var pendingTab: SidebarSection?
+        /// Backoff timer + counter for tab-switch retries. The page-side
+        /// stub queues calls internally, so most clicks resolve on the
+        /// first eval; the timer is the safety net for the case where
+        /// even the early stub hasn't been parsed yet (very cold first
+        /// load on a slow Mac).
+        private var tabRetryTimer: Timer?
+        private var tabRetryAttempts: Int = 0
 
         /// Last runs payload we successfully ingested into the embedded
         /// page, hashed so we can early-out on no-op SwiftUI updates.
@@ -301,18 +327,94 @@ extension WebHostView {
 
         // MARK: Driving the embedded page
 
+        /// Push the desired tab into the embedded page. We never gate on a
+        /// "bridge ready" handshake here — that gate produced the v0.9.x
+        /// bug where every sidebar click after the first one quietly
+        /// no-op'd because the polling-based handshake had missed its
+        /// 4-second window (slow CPU, deferred module parse, or any
+        /// early throw in script.js prevented `window.SpireVault` from
+        /// existing in time). Instead we just call the page-side stub
+        /// — which exists from the very top of `script.js` and queues
+        /// switch requests until the full implementation registers —
+        /// and verify success via the JS return value. If the stub
+        /// itself isn't there yet (the WKWebView hasn't reached
+        /// document-end), we retry with backoff for up to ~6 seconds.
+        ///
+        /// The result: a click anywhere in the native sidebar always
+        /// switches the embedded panel, even on a cold launch where
+        /// the user clicks Characters before the page has fully booted.
         func requestTabSwitch(to section: SidebarSection, on webView: WKWebView) {
             // The embedded page only knows about web tabs. Our native
             // .beta and .settings tabs aren't there — for those we render
             // native SwiftUI elsewhere, so this view shouldn't even be
             // visible. Still, guard against a stray update.
             guard section.isWebHosted else { return }
-            guard bridgeReady else {
-                pendingTab = section
+            // Replace any previously queued retry: only the latest tab
+            // request matters, and a stale retry would clobber a fresh
+            // user click with the wrong destination.
+            pendingTab = section
+            tabRetryAttempts = 0
+            tabRetryTimer?.invalidate()
+            evaluateTabSwitch(on: webView)
+        }
+
+        /// Try to push `pendingTab` into the WebView. The page-side
+        /// `window.SpireVault.switchTab(tab)` returns `true` on success
+        /// (the panel was actually shown) or `false` if the bridge stub
+        /// hasn't been replaced by the real implementation yet, OR if
+        /// `window.SpireVault` doesn't exist yet at all. On failure we
+        /// retry on a short timer until success or the retry budget
+        /// runs out. The stub queues calls internally even before the
+        /// first retry fires, so a successful eval reliably terminates
+        /// the loop.
+        private func evaluateTabSwitch(on webView: WKWebView) {
+            guard let section = pendingTab, section.isWebHosted else { return }
+            let js = """
+            (function () {
+              try {
+                if (window.SpireVault && typeof window.SpireVault.switchTab === 'function') {
+                  return window.SpireVault.switchTab(\(JSStringLiteral.encode(section.webTabID))) !== false;
+                }
+              } catch (e) {}
+              return false;
+            })()
+            """
+            webView.evaluateJavaScript(js) { [weak self] result, _ in
+                guard let self else { return }
+                let ok = (result as? Bool) ?? false
+                if ok {
+                    // The page acknowledged the switch (either by running
+                    // the real switchTab, or by enqueueing it in the early
+                    // stub which will replay on boot completion). We're done.
+                    self.pendingTab = nil
+                    self.tabRetryAttempts = 0
+                    self.tabRetryTimer?.invalidate()
+                    self.tabRetryTimer = nil
+                    return
+                }
+                // Bridge isn't reachable yet (window.SpireVault undefined).
+                // Retry on a short timer. Cap retries so a permanently
+                // broken page (script.js failed to load) doesn't burn CPU.
+                self.scheduleTabRetry(on: webView)
+            }
+        }
+
+        private func scheduleTabRetry(on webView: WKWebView) {
+            tabRetryAttempts += 1
+            // 30 attempts × ~200ms ≈ 6s. Plenty of headroom for a slow
+            // module parse on a cold launch, and gives up gracefully if
+            // the page never recovers (so we don't spin forever).
+            guard tabRetryAttempts <= 30 else {
+                NSLog("[WebHost] giving up on tab switch after \(tabRetryAttempts) tries")
                 return
             }
-            let js = "window.SpireVault && window.SpireVault.switchTab(\(JSStringLiteral.encode(section.webTabID)))"
-            webView.evaluateJavaScript(js, completionHandler: nil)
+            tabRetryTimer?.invalidate()
+            let timer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: false) { [weak self, weak webView] _ in
+                guard let self, let webView else { return }
+                self.evaluateTabSwitch(on: webView)
+            }
+            RunLoop.main.add(timer, forMode: .common)
+            tabRetryTimer = timer
         }
 
         /// Encode and ingest the desktop's runs into the embedded page.
@@ -387,12 +489,14 @@ extension WebHostView {
             guard ticket > 0 else { return } // 0 is the boot value; ignore
             guard !signInInFlight else { return }
             signInInFlight = true
-            // If the bridge isn't up yet (very fast click on a fresh
-            // launch), defer until the page reports ready. Otherwise
-            // call straight in.
-            if bridgeReady {
-                fireStartSignIn(on: webView)
-            }
+            // The page-side `window.SpireVault.startSignIn` is exposed
+            // in the early-boot stub (so it queues if the rest of
+            // script.js hasn't finished parsing yet). We can fire
+            // immediately whether or not the ready handshake has
+            // arrived — the JS no-ops gracefully if SpireVault isn't
+            // loaded yet, and the `case "ready"` handler reissues the
+            // call if `signInInFlight` is still true on first ready.
+            fireStartSignIn(on: webView)
         }
 
         private func fireStartSignIn(on webView: WKWebView) {
@@ -429,9 +533,13 @@ extension WebHostView {
             switch kind {
             case "ready":
                 bridgeReady = true
-                if let pending = pendingTab, let view = webView {
-                    pendingTab = nil
-                    requestTabSwitch(to: pending, on: view)
+                // If a tab switch is still in retry-flight, give it one
+                // immediate eval now that the page has confirmed the
+                // bridge is live — we'd usually catch this on the next
+                // 200ms tick anyway, but firing here removes the
+                // perceptible delay between page-ready and panel swap.
+                if pendingTab != nil, let view = webView {
+                    evaluateTabSwitch(on: view)
                 }
                 // Drain any runs the host queued before the page was ready.
                 // This is the common path on first load — the user lands

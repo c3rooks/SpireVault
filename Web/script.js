@@ -68,7 +68,7 @@ const STS2_APP_ID = "2868840";
  * on an old client — instruct hard refresh. If it DOES match, the
  * bug is real and we can stop chasing cache ghosts.
  */
-const VAULT_BUILD = "v152-2026-05-10-desktop-sidebar-and-toolbar-parity";
+const VAULT_BUILD = "v153-2026-05-10-desktop-bridge-deterministic-ready";
 
 // Feature flag — set to `true` only on local dev when iterating on the
 // Run Companion Overlay. Production stays false until the feature is
@@ -1045,6 +1045,75 @@ const IS_DESKTOP_HOST = (() => {
 if (IS_DESKTOP_HOST) {
   try { document.documentElement.classList.add("is-desktop-host"); } catch {}
 }
+
+// =========================================================================
+// Native host bridge — early stub
+// -------------------------------------------------------------------------
+// Define `window.SpireVault` *immediately* so the macOS desktop app can
+// call `switchTab(...)` even while the rest of this 13k-line module is
+// still parsing. Before this hoist, every sidebar click on a cold
+// launch would race against a 4-second polling user-script in the
+// WebView coordinator: if module parse took longer than the polling
+// window — or if any line below threw before the SpireVault setup
+// near the bottom of this file — the bridge stayed permanently
+// unreachable and the user saw "only Overview works, every other tab
+// does nothing." (See VaultApp/App/WebHostView.swift's retry loop.)
+//
+// The contract the desktop side relies on:
+//   • `switchTab(tab)` returns truthy iff the call was either executed
+//     immediately (full impl already loaded) OR queued for replay
+//     (early stub).
+//   • `startSignIn()` returns truthy iff the OpenID flow either started
+//     or was queued.
+//   • `onTabChange(cb)` registers a listener (via the existing
+//     `spirevault:tab` CustomEvent) and returns an unsubscribe.
+//   • `activeTab()` returns the currently-rendered tab string.
+//
+// The full implementation near the end of this file replaces these
+// stubs and drains the buffered work. From the host's POV the call
+// "always works"; the queueing is invisible.
+// =========================================================================
+const __VAULT_HOST_QUEUE = {
+  tab: null,        // most recent host-requested tab; null if none
+  signIn: false,    // a host-requested sign-in is queued
+};
+try {
+  if (typeof window !== "undefined") {
+    window.SpireVault = {
+      version: 2,
+      isDesktopHost: () => IS_DESKTOP_HOST,
+      knownTabs: () => [],
+      activeTab: () => "overview", // best-effort until full impl loads
+      switchTab: (tab) => {
+        const want = String(tab || "").toLowerCase();
+        if (!want) return false;
+        // Buffer the latest request; the full impl drains this on boot.
+        __VAULT_HOST_QUEUE.tab = want;
+        return true;
+      },
+      onTabChange: (cb) => {
+        // Wire the real listener immediately — `spirevault:tab` events
+        // can only fire after switchTab runs (which itself only happens
+        // post-boot), so deferring this would be pointless complexity.
+        if (typeof cb !== "function") return () => {};
+        const handler = (ev) => { try { cb(ev?.detail?.tab); } catch {} };
+        window.addEventListener("spirevault:tab", handler);
+        return () => window.removeEventListener("spirevault:tab", handler);
+      },
+      ingestDesktopRuns: () => {
+        // The desktop's `pendingRunsJSON` cache holds the host-side
+        // payload until ready, so we don't need to buffer here.
+        return false;
+      },
+      startSignIn: () => {
+        __VAULT_HOST_QUEUE.signIn = true;
+        return true;
+      },
+      seedSession: () => false,
+      __isStub: true,
+    };
+  }
+} catch { /* non-browser env (test runner, SSR snapshot) */ }
 let pendingInviteToID = null; // who the modal is targeting
 let pollFeedTimer       = null;
 let pollInboxTimer      = null;
@@ -1645,10 +1714,29 @@ async function boot() {
     else if (qsTab && known.has(qsTab)) initialTab = qsTab;
   } catch {}
   const lastTab = localStorage.getItem(STORAGE_LAST_TAB);
+  // The macOS desktop app drives this page's tab via the SpireVault
+  // bridge. If the user clicked a sidebar row *before* the page fully
+  // booted (a real cold-launch scenario — module parse can take a beat
+  // on slower Macs), the early SpireVault stub buffered that intent in
+  // `__VAULT_HOST_QUEUE.tab`. Replay it here so their last click wins
+  // over the host-supplied URL `?tab=` and localStorage's last-tab.
+  // Without this read, the user clicks Characters during boot and the
+  // page deterministically lands on Overview anyway.
+  let hostQueuedTab = null;
+  try {
+    if (typeof __VAULT_HOST_QUEUE !== "undefined" &&
+        __VAULT_HOST_QUEUE.tab &&
+        new Set(KNOWN_TABS).has(__VAULT_HOST_QUEUE.tab)) {
+      hostQueuedTab = __VAULT_HOST_QUEUE.tab;
+      __VAULT_HOST_QUEUE.tab = null;
+    }
+  } catch {}
   // First-time visitors with no real session land on overview by default.
   // Returning signed-in users go back to whichever tab they last used.
-  // Query-param wins over both — that's the path explicit deep-links take.
-  switchTab(initialTab || lastTab || (session ? "coop" : "overview"));
+  // Host queue > query-param > last-tab > default. The host queue
+  // ranks highest because a fresh native sidebar click is more recent
+  // intent than the URL the host opened the WebView with.
+  switchTab(hostQueuedTab || initialTab || lastTab || (session ? "coop" : "overview"));
 
   // Wire the "notify me when this ships" forms inside news posts —
   // the markup is static and ships in index.html, but the click
@@ -13350,13 +13438,19 @@ function wireNotifyForms() {
 }
 
 // =========================================================================
-// Native host bridge (window.SpireVault)
+// Native host bridge (window.SpireVault) — full implementation
 // =========================================================================
-// The macOS desktop app embeds this page in a WKWebView and drives tab
-// navigation from its native sidebar. We expose a tiny, stable API on
-// `window.SpireVault` so the host can call `switchTab(...)` without
-// reaching into module internals. Any future host (the Windows electron
-// build, an iOS WKWebView, etc.) consumes the same surface.
+// Replaces the early stub at the top of the file with the real impl
+// once boot has populated the rest of the module (switchTab, KNOWN_TABS,
+// startSteamSignIn, commitParsedRuns, etc.). Drains anything the host
+// queued while we were still parsing, then posts a deterministic
+// `kind: "ready"` to the native shell so it knows the bridge is live
+// without resorting to a polling user-script (the v0.9.x pattern that
+// caused "tabs don't work on desktop" — if the polling missed its
+// window the bridge stayed permanently unreachable).
+//
+// Any future host (Windows electron build, iOS WKWebView, …) consumes
+// this same surface.
 try {
   if (typeof window !== "undefined") {
     const KNOWN = new Set(KNOWN_TABS);
@@ -13450,5 +13544,73 @@ try {
         }
       },
     });
+
+    // ---- Drain host-side queue ---------------------------------------
+    //
+    // Cold-launch tab selections are honored by `boot()` itself (it
+    // reads `__VAULT_HOST_QUEUE.tab` before deciding the initial
+    // panel), so we don't replay tabs here — doing both would cause a
+    // visible flicker when boot's switch lands first and the drain
+    // runs second. Sign-in is different: the page-side handler runs
+    // independently of boot, so any queued click on the native
+    // sidebar's "Sign in with Steam" button needs to fire here.
+    try {
+      if (__VAULT_HOST_QUEUE.signIn) {
+        __VAULT_HOST_QUEUE.signIn = false;
+        if (typeof startSteamSignIn === "function") {
+          try { startSteamSignIn(); } catch (e) {
+            console.warn("[SpireVault] queued startSignIn failed", e);
+          }
+        }
+      }
+    } catch (e) {
+      console.warn("[SpireVault] queue drain failed", e);
+    }
+
+    // ---- Notify the native shell -------------------------------------
+    //
+    // Post `kind: "ready"` directly from the page once the full bridge
+    // is live, so the desktop coordinator stops blind-retrying and
+    // (more importantly) so an existing web session is mirrored into
+    // native `SteamAuth` without forcing the user to re-do the OpenID
+    // dance just because they're on a fresh app launch.
+    try {
+      if (IS_DESKTOP_HOST &&
+          window.webkit?.messageHandlers?.vaultHost) {
+        window.webkit.messageHandlers.vaultHost.postMessage({
+          kind: "ready",
+          tab: activeTab,
+        });
+        // Cross-launch auth sync. The WKWebView shares its data store
+        // across native launches (cookies + localStorage live in
+        // `WKWebsiteDataStore.default()`), so a user who signed in
+        // earlier comes back already authenticated on the page side
+        // — but the native sidebar would still show the guest pill
+        // because no fresh OpenID round-trip ever fired `kind:"auth"`.
+        // Posting it here surfaces "the page knows who you are" to
+        // the native shell on every load. The bearer must be a real
+        // session token (not the `__cookie__` placeholder) because
+        // native API calls bypass the WebView's cookie jar.
+        if (session &&
+            /^\d{17}$/.test(session.steamID || "") &&
+            typeof session.sessionToken === "string" &&
+            session.sessionToken &&
+            session.sessionToken !== "__cookie__" &&
+            session.sessionToken.length >= 16) {
+          window.webkit.messageHandlers.vaultHost.postMessage({
+            kind: "auth",
+            steamid: session.steamID,
+            persona: session.personaName || "Steam User",
+            avatar: session.avatarURL || "",
+            session: session.sessionToken,
+          });
+        }
+      }
+    } catch (e) {
+      // Non-fatal: native side will retry tab switches on a timer
+      // anyway, and a missing auth notify just means the user's
+      // sidebar stays in guest mode until they sign in via the pill.
+      console.warn("[SpireVault] host ready notify failed", e);
+    }
   }
 } catch (e) { /* ignore — non-browser env */ }

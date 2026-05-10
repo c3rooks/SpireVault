@@ -321,6 +321,16 @@ struct Sidebar: View {
 
     @ViewBuilder
     private func signedInPillMenu(me: PlayerProfile) -> some View {
+        // The persona pill is the only entry point for Settings, Beta,
+        // and Sign out on the desktop sidebar — the standalone rows
+        // were retired in v0.9 to mirror the cloud. That hand-off
+        // worked great visually but produced a real bug: with
+        // `.menuIndicator(.hidden)` + `.menuStyle(.borderlessButton)` +
+        // `.buttonStyle(.plain)` the result looks like static text. A
+        // user on a fresh install reads it as "this is just my name
+        // displayed" and never clicks. We address that here with a
+        // visible disclosure chevron, a hover-state background pill,
+        // and a tooltip explaining what the menu does.
         Menu {
             Button {
                 selection = .settings
@@ -352,7 +362,7 @@ struct Sidebar: View {
                 Label("Sign out of Steam", systemImage: "rectangle.portrait.and.arrow.right")
             }
         } label: {
-            signedInBlock(me: me)
+            PersonaPillLabel(me: me)
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
@@ -447,6 +457,9 @@ struct Sidebar: View {
         }
     }
 
+    /// Legacy helper kept for the (currently unused) signed-out
+    /// preview path. The live render uses `PersonaPillLabel` below
+    /// so we can carry hover state into the chrome.
     private func signedInBlock(me: PlayerProfile) -> some View {
         HStack(spacing: 10) {
             Circle()
@@ -475,6 +488,73 @@ struct Sidebar: View {
             }
             Spacer()
         }
+    }
+}
+
+/// Sidebar persona pill — the desktop counterpart to the web's `me-pill`.
+/// Renders avatar + persona + status, with a hover-state background and a
+/// permanent disclosure chevron so it reads as a control, not a label.
+/// Wrapped by a SwiftUI `Menu` in the parent view; on tap macOS expands
+/// the popover with Settings / Beta / Sign out / "Open Co-op" / update
+/// status. Without the affordance baked in here the parent's plain-style
+/// menu looks visually inert and users don't realise it's clickable —
+/// the exact bug a v0.9.5 user reported as "steam profile isnt showing
+/// on desktop, i cant even click into it like i can on web."
+private struct PersonaPillLabel: View {
+    let me: PlayerProfile
+    @State private var hover = false
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Circle()
+                .fill(Theme.gold.opacity(0.20))
+                .overlay(
+                    Text(String(me.personaName.prefix(1)).uppercased())
+                        .font(.system(size: 12, weight: .black, design: .rounded))
+                        .foregroundStyle(Theme.gold)
+                )
+                .frame(width: 28, height: 28)
+                .overlay(Circle().stroke(Theme.gold.opacity(0.6), lineWidth: 1))
+            VStack(alignment: .leading, spacing: 1) {
+                Text(me.personaName)
+                    .font(.system(size: 12, weight: .heavy))
+                    .foregroundStyle(Theme.text)
+                    .lineLimit(1)
+                if let s = me.stats {
+                    Text("\(s.skillTier.label) · \(s.skillTier.ascensionRange)")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(Theme.textTertiary)
+                        .lineLimit(1)
+                } else {
+                    Text("Account · settings")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(Theme.textTertiary)
+                        .lineLimit(1)
+                }
+            }
+            Spacer(minLength: 4)
+            // Permanent disclosure indicator. The native `.menuIndicator`
+            // doesn't render reliably with `.menuStyle(.borderlessButton)`
+            // + `.buttonStyle(.plain)` (the combo we need to integrate
+            // with the dark sidebar styling), so we draw one ourselves.
+            Image(systemName: "chevron.up.chevron.down")
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundStyle(Theme.textTertiary)
+                .opacity(hover ? 1.0 : 0.7)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(hover ? Theme.cardBGRaised : Theme.cardBG.opacity(0.5))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(hover ? Theme.gold.opacity(0.45) : Theme.cardBorder.opacity(0.6), lineWidth: 1)
+        )
+        .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .onHover { hover = $0 }
+        .animation(.easeOut(duration: 0.12), value: hover)
     }
 }
 
