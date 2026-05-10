@@ -68,7 +68,7 @@ const STS2_APP_ID = "2868840";
  * on an old client — instruct hard refresh. If it DOES match, the
  * bug is real and we can stop chasing cache ghosts.
  */
-const VAULT_BUILD = "v140-2026-05-10-news-banner-padding-top-fix";
+const VAULT_BUILD = "v141-2026-05-10-news-detail-natural-page-scroll";
 
 // Feature flag — set to `true` only on local dev when iterating on the
 // Run Companion Overlay. Production stays false until the feature is
@@ -4403,9 +4403,22 @@ function selectNewsPost(id, { updateHash } = { updateHash: true }) {
   if (updateHash) {
     try { history.replaceState(null, "", `${window.location.pathname}${window.location.search}#news-${id}`); } catch {}
   }
-  // Scroll the detail to top so a click on an older article doesn't
-  // leave the new content half-scrolled at the previous position.
-  try { $detail.scrollTo({ top: 0, behavior: "smooth" }); } catch { $detail.scrollTop = 0; }
+  // Scroll the page so the article header is at the top of the
+  // viewport. The right pane no longer has its own inner scroll —
+  // the document scrolls naturally — so we scroll the document
+  // instead. Use scrollIntoView with block:"start" which lines up
+  // the top of the article with the top of the viewport, then nudge
+  // up a few pixels so the header isn't pinned flush against the
+  // browser chrome.
+  try {
+    target.scrollIntoView({ block: "start", behavior: "smooth" });
+    // small breathing room so the eyebrow/title don't sit at y=0
+    setTimeout(() => {
+      try { window.scrollBy({ top: -16, behavior: "instant" }); } catch { window.scrollBy(0, -16); }
+    }, 0);
+  } catch {
+    try { target.scrollIntoView(); } catch {}
+  }
   // Belt-and-braces banner load. Safari sometimes skips fetching <img>
   // children of an element that was display:none on first paint and
   // only gets shown later, even with loading="eager". Force the fetch

@@ -8608,10 +8608,13 @@ html.prefer-compact-density .h-stat-num { font-size: 18px; }
   flex-direction: column;
   gap: 28px;
   min-width: 0; /* otherwise wide images blow out the grid */
-  max-height: calc(100vh - 80px);
-  overflow-y: auto;
+  /* Intentionally NO max-height / overflow-y here. The page itself
+   * scrolls naturally — the article body can be any length and the
+   * user scrolls the document like every other web page they've ever
+   * used. The previous capped-and-inner-scrolled layout was clipping
+   * articles below the fold and not surfacing a visible scrollbar on
+   * macOS, so people couldn't read past the first ~screen of content. */
   scroll-behavior: smooth;
-  padding-right: 4px;
 }
 @media (max-width: 880px) {
   .news-master-detail {
