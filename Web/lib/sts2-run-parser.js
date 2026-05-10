@@ -135,6 +135,19 @@ export function parseSTS2Run(obj, sourceName = "unknown.run") {
   const ascension = Number.isFinite(obj.ascension) ? Math.max(0, Math.min(20, obj.ascension | 0)) : null;
   const seed = typeof obj.seed === "string" ? obj.seed : null;
   const won = obj.win === true || obj.win === 1;
+  // In-progress detection. STS2 only writes the final `win` field
+  // (true|false) when a run actually ends — either victory or defeat
+  // or the player explicitly abandons. While the player is still
+  // mid-run, the save state has the same run shape (players + map)
+  // but `win` is missing entirely. We treat that as the live "you're
+  // currently in a game" signal so the overview can surface it.
+  // Belt-and-suspenders: also require either no `killed_by_encounter`
+  // or no `run_time` so we don't false-positive a malformed completed
+  // run with an explicit `win: null`.
+  const winExplicit = obj.win === true || obj.win === false || obj.win === 1 || obj.win === 0;
+  const killedByMissing = !obj.killed_by_encounter && !obj.killedByEncounter;
+  const runTimeMissing = !Number.isFinite(obj.run_time) || obj.run_time === 0;
+  const inProgress = !winExplicit && !obj.was_abandoned && (killedByMissing || runTimeMissing);
   // STS2 `game_mode` literal — typical values "standard", "daily",
   // "custom", "trial". We pass through whatever the file reports
   // (lower-cased + clamped) so downstream UI can decide how to badge
@@ -213,6 +226,12 @@ export function parseSTS2Run(obj, sourceName = "unknown.run") {
   const cardPicks = [];
   const pathByAct = [];
   let floor = 0;
+  // Track the latest `player_stats` we see across the whole walk so an
+  // in-progress run can surface live HP / gold without us re-walking
+  // the map. STS2 writes a stats block on every map point the player
+  // visits, so the last one in chronological order is "right now".
+  let latestStats = null;
+  let latestRoomType = null;
   if (Array.isArray(obj.map_point_history)) {
     obj.map_point_history.forEach((act, actIdx) => {
       if (!Array.isArray(act)) return;
@@ -224,6 +243,10 @@ export function parseSTS2Run(obj, sourceName = "unknown.run") {
 
         if (!point || typeof point !== "object") continue;
         const stats = Array.isArray(point.player_stats) ? point.player_stats[0] : null;
+        if (stats) {
+          latestStats = stats;
+          latestRoomType = type;
+        }
         if (!stats) continue;
         const choices = Array.isArray(stats.card_choices) ? stats.card_choices : null;
         if (!choices || choices.length === 0) continue;
@@ -246,6 +269,15 @@ export function parseSTS2Run(obj, sourceName = "unknown.run") {
       pathByAct.push({ act: actIdx + 1, nodes: actNodes });
     });
   }
+
+  // Live "current state" snapshot — only meaningful when this is an
+  // in-progress run, but we always populate so the renderer can decide.
+  // Numbers default to null (not 0) so the UI can show a dash instead
+  // of misreporting "0 HP" when the field was simply absent.
+  const currentHp = Number.isFinite(latestStats?.current_hp) ? latestStats.current_hp | 0 : null;
+  const maxHp = Number.isFinite(latestStats?.max_hp) ? latestStats.max_hp | 0 : null;
+  const currentGold = Number.isFinite(latestStats?.current_gold) ? latestStats.current_gold | 0 : null;
+  const currentRoomType = typeof latestRoomType === "string" ? latestRoomType : null;
 
   // Record the schema version we saw on this run. Used by the stats
   // panel to surface a non-blocking "newer build" banner when any run
@@ -274,6 +306,11 @@ export function parseSTS2Run(obj, sourceName = "unknown.run") {
     gameMode,
     wasAbandoned,
     modifiers,
+    inProgress,
+    currentHp,
+    maxHp,
+    currentGold,
+    currentRoomType,
   };
 }
 

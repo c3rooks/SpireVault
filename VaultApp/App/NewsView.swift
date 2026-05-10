@@ -260,9 +260,109 @@ enum NewsCatalog {
     /// The most recently *published* post lives at index 0. Bumping
     /// this constant when adding a new post lights the sidebar's
     /// "NEW" pill for every existing user until they open News.
-    static let latestPostID = "003-2026-05-09-sts2-v0_105_0-support"
+    static let latestPostID = "005-2026-05-10-cloud-overlay-and-persona-menu"
 
     static let posts: [NewsPost] = [
+        NewsPost(
+            id: "005-2026-05-10-cloud-overlay-and-persona-menu",
+            eyebrow: "Update · May 10, 2026",
+            title: "Run Coach reaches the web — and Settings now lives in your persona pill",
+            readMinutes: 3,
+            tags: ["Beta", "Web", "Overlay", "UX"],
+            body: [
+                .lede("Two changes in v0.9.1: the standalone Settings sidebar item is gone in both apps (clicking your Steam name opens it now), and Run Coach is no longer Mac-only — there's a real always-on-top floating overlay in the web app, built on Document Picture-in-Picture."),
+
+                .heading("Settings folded into the persona pill"),
+                .feature(
+                    title: "One canonical \"about you\" surface",
+                    body: "The footer pill at the bottom of the sidebar (the one that shows your Steam name + \"Saves connected\") is now a clickable menu. Settings, Beta features, Open Co-op, and Sign out live inside it. The standalone Settings row in the sidebar is retired — every \"about you\" control is in one place now, instead of split between a footer pill and a sidebar tab."
+                ),
+                .feature(
+                    title: "Guest path stays clean",
+                    body: "First-time visitors who haven't signed in still need Settings (link a save folder, import a history.json, toggle prefs). The macOS guest pill grows a Settings + Beta shortcut row, and the web's guest pill exposes a tiny inline Settings link beneath the sign-in CTA. No save-data plumbing is hidden behind auth."
+                ),
+
+                .heading("Run Coach in the web app (Beta)"),
+                .feature(
+                    title: "A real native always-on-top window — from a browser tab",
+                    body: "Open the new Beta tab in the web sidebar, paste your OpenAI or Anthropic key, click Launch, and a 360×540 floating window pops out — sitting on top of every other window, including fullscreen STS2. It's the same Cluely-style chat as the macOS overlay (header pill, action chips, screenshot toggle, send), and uses Document Picture-in-Picture under the hood. No Vault server is in the loop."
+                ),
+                .feature(
+                    title: "Bring your own key, end-to-end",
+                    body: "The browser POSTs straight to api.openai.com or api.anthropic.com with your key. Vault never sees the prompt, the key, or the screenshot. Keys live in localStorage on this device — the page tells you that explicitly, because the browser doesn't have a Keychain."
+                ),
+                .feature(
+                    title: "Honest fallback for Safari + Firefox",
+                    body: "Document Picture-in-Picture only ships on Chromium browsers right now (Chrome, Edge, Brave, Opera, Arc, Vivaldi). On Safari and Firefox, the Beta tab detects the gap and shows a graceful \"open in Chromium or install the macOS app\" message — no broken Launch button, no half-working overlay."
+                ),
+
+                .heading("Streamers should still use the desktop build"),
+                .paragraph("The browser overlay is a real OS window, which means OBS, Zoom, and QuickTime can see it. The macOS app uses NSWindow.sharingType=.none to hide the Run Coach from screen recordings entirely. If you stream STS2, grab the .dmg from the marketing site — that build is the streamer-safe version."),
+
+                .heading("What's next"),
+                .roadmap(items: [
+                    "Persisting Run Coach chat history per session (currently resets on overlay close).",
+                    "Web hotkey for \"What should I do?\" matching the desktop's ⌘↵.",
+                    "Per-provider model dropdown so you can switch from gpt-4o-mini to gpt-4o without typing.",
+                    "Stream-aware mode for the desktop overlay: auto-collapse when OBS goes live.",
+                ], isInflight: false),
+
+                .paragraph("Try the web overlay on a real card reward and tell me what felt wrong — bugs and screenshots are the loop. — Corey"),
+            ]
+        ),
+
+        NewsPost(
+            id: "004-2026-05-10-run-coach-beta",
+            eyebrow: "Beta · May 10, 2026",
+            title: "Run Coach (Beta) — an in-game AI panel for STS2",
+            readMinutes: 4,
+            tags: ["Beta", "New feature", "Overlay", "AI"],
+            body: [
+                .lede("v0.9 ships a new Beta tab with the first real version of Run Coach: a Cluely-style floating panel that sits over Slay the Spire 2, looks at your screen on demand, and gives you one ranked decision — using your own OpenAI or Anthropic API key. It's gated behind a Beta toggle, never on by default, and stays off the marketing site until it's proven."),
+
+                .heading("What Run Coach is"),
+                .feature(
+                    title: "A small floating bar at the top of your screen",
+                    body: "By default it's a slim 210×38 pill: the Vault emblem, a \"Coach\" trigger, and an X to close. The pill rides over fullscreen STS2 thanks to NSPanel + .canJoinAllSpaces + .fullScreenAuxiliary, and sets sharingType=.none so OBS, Zoom, QuickTime, and macOS screen recordings can't see it. Streamers don't get random AI panels in their captures."
+                ),
+                .feature(
+                    title: "Hit ⌘↵ and the Coach looks at your screen",
+                    body: "Cmd+Enter from inside the panel triggers \"What should I do?\" — the active display is captured (CGDisplayCreateImage, downscaled to ~1280px), packaged with your typed question and a tiny chunk of context from your local run history, and sent to your chosen provider. The reply renders in the chat with a confidence-aware tone and short \"why\" bullets you can verify by looking at the screen."
+                ),
+                .feature(
+                    title: "Bring your own key",
+                    body: "OpenAI (default model `gpt-4o-mini`) or Anthropic (default model `claude-3-5-sonnet-20241022`). Your key is stored in the macOS Keychain under com.coreycrooks.thevault.overlay and only ever leaves your Mac as an Authorization / x-api-key header on the call to the provider you picked. The Vault servers never touch it, never see your screenshots, never see the prompt or reply."
+                ),
+
+                .heading("How to enable it"),
+                .bullets([
+                    "Open the new Beta tab in the sidebar (look for the flask icon under SYSTEM).",
+                    "Pick a provider — OpenAI or Anthropic.",
+                    "Paste your API key into the secure field. The Keychain handles storage; you can hide / show / remove the key at any time.",
+                    "Flip the \"Enable the Run Coach overlay\" switch. The pill appears at the top center of your active display.",
+                    "macOS will prompt for Screen Recording permission the first time the Coach captures the screen. It's a one-time grant under System Settings → Privacy & Security → Screen Recording.",
+                ]),
+
+                .heading("What we deliberately did not do"),
+                .bullets([
+                    "No game memory reads. Run Coach never injects, hooks, or scans the STS2 process. It only sees what you explicitly hand it via the Cmd+Enter screenshot.",
+                    "No subscriptions. There's no Vault-hosted LLM. The Vault is still free + open source — Run Coach is just a thin client over the provider you already pay for or want to try.",
+                    "No silent telemetry. Failing to capture a screen, a 401 from your provider, a model that doesn't exist — all of that lands in the Beta tab's live test panel, never in a remote logging service.",
+                    "No marketing-site mention. Run Coach is shipping in front of real players in Beta first. If it earns its place, it gets a feature card on the landing page.",
+                ]),
+
+                .heading("Roadmap from here"),
+                .roadmap(items: [
+                    "Local-only mode using Apple Foundation Models on macOS 26+ — keys-free, fully offline run advice.",
+                    "Region picker for partial-screen capture so the Coach only sees the card-reward modal, not your whole desktop.",
+                    "Voice trigger: \"Coach, what's the move?\" → screen capture + ask, no keyboard required.",
+                    "Conversation memory that survives a restart, scoped per-character so Coach context resets on a new run.",
+                ], isInflight: false),
+
+                .paragraph("Try it on a real card reward, hit Cmd+Enter, and tell me what felt wrong. Bug reports + screenshots make the next build measurably better. — Corey"),
+            ]
+        ),
+
         NewsPost(
             id: "003-2026-05-09-sts2-v0_105_0-support",
             eyebrow: "Patch · May 9, 2026",

@@ -25,7 +25,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Playfair+Display:wght@700;900&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/styles.css?v=11" />
+  <link rel="stylesheet" href="/styles.css?v=12" />
 </head>
 <body>
   <!-- Background ornament -->
@@ -39,7 +39,6 @@
     </a>
     <nav class="nav-links">
       <a href="#features">Features</a>
-      <a href="#overlay">Overlay</a>
       <a href="#coop">Co-op</a>
       <a href="#install">Install</a>
       <a href="https://app.spirevault.app/?tab=news#news-001" class="nav-link-news">
@@ -76,7 +75,7 @@
           <a class="btn-ghost" href="#install" id="download-cta">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M17.5 12.5c0-2.6 2.1-3.9 2.2-3.9-1.2-1.7-3-2-3.7-2-1.6-.2-3 .9-3.8.9-.8 0-2-.9-3.3-.9-1.7 0-3.2 1-4.1 2.5-1.7 3-.4 7.5 1.3 10 .8 1.2 1.8 2.6 3.1 2.5 1.2-.1 1.7-.8 3.2-.8s2 .8 3.3.8c1.4 0 2.3-1.2 3.1-2.4.7-1.1 1-1.7 1.6-3-.1 0-3-1.2-3-4.7zm-2.6-8.5c.7-.8 1.1-1.9 1-3-.9 0-2.1.6-2.7 1.4-.7.8-1.1 1.9-1 3 1 .1 2-.5 2.7-1.4z"/></svg>
             Native macOS app
-            <span class="version" id="hero-version">v0.5</span>
+            <span class="version" id="hero-version">v0.9.1</span>
           </a>
         </div>
         <p class="trust-line" id="presence-line">
@@ -184,37 +183,16 @@
         <h3>Open source</h3>
         <p>MIT licensed. The macOS app, the CLI, the matchmaking server — all in one repo on GitHub. Audit it, fork it, run your own.</p>
       </article>
-    </div>
-  </section>
-
-  <section id="overlay" class="overlay-feature">
-    <div class="section-head">
-      <span class="eyebrow">New feature</span>
-      <h2>Run Companion Overlay</h2>
-      <p class="section-sub">Decision support while you play - local-first, optional, and built around trust.</p>
-    </div>
-    <div class="overlay-feature-card">
-      <p>
-        Use a compact companion panel for pathing notes, deck direction, relic reminders,
-        co-op planning, and run decisions without modifying the game or uploading private run data.
-      </p>
-      <div class="overlay-badges">
-        <span>Optional</span>
-        <span>Local-first</span>
-        <span>No game modification</span>
-        <span>No run upload</span>
-        <span>macOS companion</span>
-        <span>Web preview</span>
-      </div>
-      <div class="cta-row">
-        <a class="btn-primary" href="https://app.spirevault.app">Try the Web Companion</a>
-        <a class="btn-ghost" href="https://app.spirevault.app/overlay">Open Overlay Preview</a>
-        <a class="btn-ghost" href="#trust">Read Privacy Model</a>
-      </div>
-      <p class="overlay-trust-copy">
-        SpireVault does not inject code, read memory, automate gameplay, or replace player decision-making.
-        The overlay is a companion panel controlled by the player.
-      </p>
+      <!-- Run Coach feature card. Frame as Beta and bring-your-own-key
+           up-front so nobody clicks Install expecting a free hosted AI.
+           Lives at the bottom of the grid because it's the newest +
+           most experimental thing in the app. -->
+      <article class="feature-card feature-card--beta">
+        <div class="feature-icon" data-color="ember">🪄</div>
+        <span class="feature-beta-pill">BETA · BRING YOUR OWN KEY</span>
+        <h3>Run Coach — ask what to play next</h3>
+        <p>A small floating window that sits over Slay the Spire 2, glances at your screen when you ask, and tells you the best card to take, relic to swap, or path to push. Ships with the macOS app (streamer-safe — hidden from screen recordings) and works in Chrome / Edge / Brave on the web. Bring your own OpenAI or Anthropic key; nothing goes through our servers.</p>
+      </article>
     </div>
   </section>
 
@@ -339,14 +317,15 @@
           <li>Reads your STS2 save folder; computes Vault stats locally</li>
           <li>Live co-op feed with Steam + Discord reach-outs</li>
           <li>One-click PNG and Markdown share cards for any run</li>
-          <li>macOS 13+, Apple Silicon and Intel</li>
+          <li>Run Coach (Beta) — opt-in, BYO API key</li>
+          <li>In-app updates · macOS 13+, Apple Silicon and Intel</li>
         </ul>
         <a class="btn-primary inline full-width" id="dmg-link" href="#">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
           <span>Download .dmg</span>
-          <span class="version" id="install-version">v0.1</span>
+          <span class="version" id="install-version">v0.9.1</span>
         </a>
-        <p class="install-meta">Ad-hoc signed (no $99/yr Apple fee). First launch: right-click → Open.</p>
+        <p class="install-meta">Ad-hoc signed (no $99/yr Apple fee). First launch: right-click → Open. Auto-updates from <code>Vault → Check for Updates…</code> after that.</p>
       </article>
       <article class="install-card" id="install-web">
         <div class="install-os">
@@ -426,6 +405,24 @@
         <p>No. Spire Vault is an unofficial, fan-made companion. Mega Crit owns
         Slay the Spire. We don't host games, route invites, or replace anything
         they built — we just help players find each other before Steam takes over.</p>
+      </details>
+      <details>
+        <summary>What's the "Run Coach (Beta)" thing?</summary>
+        <p>Run Coach is an opt-in floating panel inside the app — a small
+        window that sits on top of Slay the Spire 2. When you ask it
+        something, it grabs the current frame of your screen and sends
+        the question + the screenshot to your chosen AI (OpenAI or
+        Anthropic) using <em>your own API key</em>. Whatever the model
+        replies with shows up in the chat. That's it.</p>
+        <p>It's marked Beta on purpose. <strong>What it doesn't do:</strong>
+        modify the game, read game memory, hook the process, talk to a
+        Vault-hosted AI, or spend any money on your behalf. Nothing
+        about Run Coach changes how runs are tracked. The macOS build is
+        streamer-safe (the overlay is hidden from screen recordings via
+        <code>NSWindow.sharingType=.none</code>); the browser version
+        uses Chrome's Document Picture-in-Picture API and works on
+        Chrome / Edge / Brave / Opera / Arc. Toggle it on under
+        <em>Beta features</em>.</p>
       </details>
       <details>
         <summary>Is this a mod? Could it get me banned?</summary>
@@ -551,6 +548,6 @@
     </div>
   </footer>
 
-  <script src="/script.js?v=7"></script>
+  <script src="/script.js?v=8"></script>
 </body>
 </html>

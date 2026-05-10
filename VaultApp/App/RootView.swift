@@ -38,7 +38,7 @@ private struct HSplit: View {
                 // Co-op, Highlights, News, and Settings each render
                 // their own header — suppress the generic title bar
                 // for them so we don't get a duplicated title row.
-                if ![SidebarSection.coop, .highlights, .news, .settings].contains(section) {
+                if ![SidebarSection.coop, .highlights, .news, .settings, .beta].contains(section) {
                     AppHeaderBar(section: section)
                 }
                 DetailView(section: section)
@@ -55,6 +55,7 @@ private struct HSplit: View {
 enum SidebarSection: Hashable, CaseIterable, Identifiable {
     case overview, characters, ascensions, relics, cards, runs
     case coop, highlights, news
+    case beta
     case settings
 
     var id: Self { self }
@@ -69,6 +70,7 @@ enum SidebarSection: Hashable, CaseIterable, Identifiable {
         case .coop:       return "Co-op"
         case .highlights: return "Community Highlights"
         case .news:       return "News"
+        case .beta:       return "Beta"
         case .settings:   return "Settings"
         }
     }
@@ -83,6 +85,7 @@ enum SidebarSection: Hashable, CaseIterable, Identifiable {
         case .coop:       return "person.2.wave.2.fill"
         case .highlights: return "star.bubble.fill"
         case .news:       return "newspaper.fill"
+        case .beta:       return "flask.fill"
         case .settings:   return "gearshape.fill"
         }
     }
@@ -91,7 +94,20 @@ enum SidebarSection: Hashable, CaseIterable, Identifiable {
         switch self {
         case .overview, .characters, .ascensions, .relics, .cards, .runs: return .stats
         case .coop, .highlights, .news: return .community
-        case .settings: return .system
+        case .beta, .settings: return .system
+        }
+    }
+    /// Whether this section is rendered as a sidebar row.
+    /// `.settings` is intentionally hidden from the sidebar in v0.9 —
+    /// it's now reached via the menu that drops out of the persona
+    /// pill in the sidebar footer (matching the web app). The enum
+    /// case stays because tens of `selection = .settings` call sites
+    /// (update banner, onboarding, deep-links) still need to navigate
+    /// to the Settings panel programmatically.
+    var isSidebarVisible: Bool {
+        switch self {
+        case .settings: return false
+        default: return true
         }
     }
 }
@@ -173,7 +189,7 @@ struct Sidebar: View {
     private var sectionGroup: some View {
         VStack(alignment: .leading, spacing: 18) {
             ForEach(SidebarGroup.allCases) { group in
-                let items = SidebarSection.allCases.filter { $0.group == group }
+                let items = SidebarSection.allCases.filter { $0.group == group && $0.isSidebarVisible }
                 if !items.isEmpty {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(group.label)
@@ -197,6 +213,8 @@ struct Sidebar: View {
 
     private func badge(for s: SidebarSection) -> String? {
         switch s {
+        case .beta:
+            return "NEW"
         case .coop:
             guard let svc = state.presenceService else { return nil }
             // Show "people online" count, excluding ourselves.
@@ -239,8 +257,18 @@ struct Sidebar: View {
         VStack(spacing: 8) {
             Divider().background(Theme.cardBorder.opacity(0.6))
 
+            // The persona pill became the canonical entry point for
+            // settings + beta + sign-out in v0.9 (the standalone
+            // "Settings" sidebar row was retired). Signed-in users
+            // get the full menu; guests get a "Open Settings" button
+            // and a "Sign in with Steam" CTA so save-data plumbing
+            // is never gated on an account.
             if let me = state.steamAuth.profile {
-                signedInBlock(me: me)
+                signedInPillMenu(me: me)
+                    .padding(.horizontal, 14)
+                    .padding(.top, 4)
+            } else {
+                guestPill
                     .padding(.horizontal, 14)
                     .padding(.top, 4)
             }
@@ -257,6 +285,105 @@ struct Sidebar: View {
             }
             .padding(.horizontal, 14)
             .padding(.bottom, 14)
+        }
+    }
+
+    @ViewBuilder
+    private func signedInPillMenu(me: PlayerProfile) -> some View {
+        Menu {
+            Button {
+                selection = .settings
+            } label: {
+                Label("Settings", systemImage: "gearshape.fill")
+            }
+            Button {
+                selection = .beta
+            } label: {
+                Label("Beta features", systemImage: "flask.fill")
+            }
+            Divider()
+            if let updateMenuLabel {
+                Button {
+                    selection = .settings
+                } label: {
+                    Label(updateMenuLabel, systemImage: "arrow.down.circle.fill")
+                }
+            }
+            Button {
+                selection = .coop
+            } label: {
+                Label("Open Co-op", systemImage: "person.2.wave.2.fill")
+            }
+            Divider()
+            Button(role: .destructive) {
+                state.steamAuth.signOut()
+            } label: {
+                Label("Sign out of Steam", systemImage: "rectangle.portrait.and.arrow.right")
+            }
+        } label: {
+            signedInBlock(me: me)
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .buttonStyle(.plain)
+        .help("Account, settings, and beta features")
+    }
+
+    private var updateMenuLabel: String? {
+        switch state.updateService.status {
+        case .updateAvailable: return "Update available"
+        case .readyToInstall:  return "Update ready to install"
+        default:               return nil
+        }
+    }
+
+    @ViewBuilder
+    private var guestPill: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Button {
+                state.steamAuth.signIn(via: state.config.effectiveServerURL)
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "person.crop.square")
+                        .imageScale(.small)
+                    Text("Sign in with Steam")
+                        .font(.system(size: 12, weight: .bold))
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 8)
+                .padding(.horizontal, 12)
+                .background(
+                    LinearGradient(
+                        colors: [Theme.gold.opacity(0.30), Theme.accent.opacity(0.18)],
+                        startPoint: .topLeading, endPoint: .bottomTrailing
+                    ),
+                    in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .stroke(Theme.gold.opacity(0.45), lineWidth: 1)
+                )
+                .foregroundStyle(Theme.text)
+            }
+            .buttonStyle(.plain)
+
+            HStack(spacing: 8) {
+                Button {
+                    selection = .settings
+                } label: {
+                    Label("Settings", systemImage: "gearshape.fill")
+                        .font(.system(size: 11, weight: .semibold))
+                }
+                Spacer()
+                Button {
+                    selection = .beta
+                } label: {
+                    Label("Beta", systemImage: "flask.fill")
+                        .font(.system(size: 11, weight: .semibold))
+                }
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(Theme.textTertiary)
         }
     }
 

@@ -613,40 +613,6 @@ section {
   gap: 18px;
 }
 
-.overlay-feature-card {
-  border: 1px solid rgba(212, 175, 55, 0.35);
-  border-radius: 16px;
-  padding: 22px;
-  background:
-    linear-gradient(145deg, rgba(25, 20, 33, 0.96), rgba(14, 11, 22, 0.96)),
-    radial-gradient(circle at top right, rgba(255, 107, 26, 0.22), transparent 60%);
-  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.34);
-  max-width: 920px;
-  margin: 0 auto;
-  display: grid;
-  gap: 14px;
-}
-.overlay-feature-card p {
-  margin: 0;
-  color: var(--text-2);
-}
-.overlay-badges {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-.overlay-badges span {
-  font-size: 12px;
-  border-radius: 999px;
-  border: 1px solid rgba(255,255,255,0.2);
-  background: rgba(255,255,255,0.07);
-  color: var(--text);
-  padding: 4px 9px;
-}
-.overlay-trust-copy {
-  font-size: 13px;
-  color: #d8ccad;
-}
 @media (max-width: 880px) { .feature-grid { grid-template-columns: repeat(2, 1fr); } }
 @media (max-width: 600px) { .feature-grid { grid-template-columns: 1fr; } }
 
@@ -692,6 +658,37 @@ section {
   font-size: 14px;
   color: var(--text-2);
   line-height: 1.6;
+}
+
+/* Beta variant of .feature-card. Same shape + spacing as the rest of
+   the grid so it doesn't look like a different product, but with a
+   warmer ember-tinted border + a small "BETA · BRING YOUR OWN KEY"
+   pill at the top so visitors don't click expecting a free hosted AI.
+   Lives on the Run Coach card (and any future bring-your-own-AI features). */
+.feature-card--beta {
+  position: relative;
+  background:
+    linear-gradient(180deg, rgba(255, 158, 56, 0.08), rgba(255, 107, 26, 0.03) 70%, var(--card)),
+    linear-gradient(180deg, var(--card-raised), var(--card));
+  border-color: rgba(245, 158, 11, 0.35);
+  box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.04) inset;
+}
+.feature-card--beta:hover {
+  border-color: rgba(245, 158, 11, 0.6);
+  box-shadow: 0 18px 40px -20px rgba(245, 158, 11, 0.55);
+}
+.feature-beta-pill {
+  display: inline-block;
+  margin-bottom: 10px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 1.6px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(245, 158, 11, 0.14);
+  color: #f5b56a;
+  border: 1px solid rgba(245, 158, 11, 0.45);
+  text-transform: uppercase;
 }
 
 /* ──────────────────────────────────────────────────────────────────────

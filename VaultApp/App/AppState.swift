@@ -33,12 +33,37 @@ final class AppState: ObservableObject {
     /// never enable the overlay don't pay the NSPanel + view cost. The
     /// overlay piggybacks on `presenceService` for live data, never on
     /// its own URL session.
+    ///
+    /// We forward the controller's `objectWillChange` into `AppState`'s
+    /// own publisher on first access so any view bound to AppState
+    /// (the Beta toggle, the sidebar badges) re-renders when the
+    /// controller's `enabled` / `expanded` flips — including when the
+    /// flip comes from the overlay pill's own close button.
     private var _overlayController: OverlayController?
     var overlayController: OverlayController {
         if let c = _overlayController { return c }
         let c = OverlayController(appState: self)
         _overlayController = c
+        c.objectWillChange
+            .sink { [weak self] _ in self?.objectWillChange.send() }
+            .store(in: &cancellables)
         return c
+    }
+
+    /// AI service that powers the Beta overlay coach. Held as a
+    /// concrete `@StateObject`-like instance on AppState so its
+    /// `@Published messages` array drives both the overlay panel and
+    /// the Beta-tab settings preview without parallel state stores.
+    /// Lazily wired up because tests + screenshots don't need it.
+    private var _aiService: OverlayAIService?
+    var aiService: OverlayAIService {
+        if let s = _aiService { return s }
+        let s = OverlayAIService(appState: self)
+        _aiService = s
+        s.objectWillChange
+            .sink { [weak self] _ in self?.objectWillChange.send() }
+            .store(in: &cancellables)
+        return s
     }
 
     /// Self-update service. Polls GitHub Releases on bootstrap to look

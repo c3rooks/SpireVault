@@ -46,6 +46,7 @@ flowchart LR
     Steam[("Steam OpenID 2.0<br/>Valve hosted")]
     Disk[("Local save folder<br/>.run files")]
     IDB[("IndexedDB<br/>cached runs")]
+    AI[("OpenAI / Anthropic<br/>(Run Coach · BYO key)")]
 
     Mac -- reads --> Disk
     Web -- file picker --> IDB
@@ -59,10 +60,12 @@ flowchart LR
     Mac -. sign in once .-> Steam
     Web -. sign in once .-> Steam
     Mob -. sign in once .-> Steam
+    Mac -. "Run Coach Beta · direct, BYO key" .-> AI
+    Web -. "Run Coach Beta · direct, BYO key" .-> AI
 
     classDef ext fill:#1a1525,stroke:#5b4080,color:#d8c8ff;
     classDef store fill:#161220,stroke:#3d3458,color:#c8c0d8;
-    class Steam ext
+    class Steam,AI ext
     class Disk,IDB store
 ```
 
@@ -210,6 +213,101 @@ Total infrastructure cost: **$0**. The whole thing runs on Cloudflare's
 free tier. The only fixed cost in this entire project is the $14/year
 domain, which I'm paying out of pocket because I think solving this
 problem is worth fourteen bucks.
+
+## Run Coach (Beta)
+
+Run Coach is a small, opt-in floating window that sits over Slay the
+Spire 2 and answers "what should I play next?" using your own AI key.
+Lives behind the **Beta** tab in both the macOS app and the web
+companion. Off by default, free to never touch.
+
+```mermaid
+flowchart LR
+    User["You<br/>asks the coach"]
+    Pill["Run Coach overlay<br/>(NSPanel · macOS / Document PiP · web)"]
+    Capture["Screen capture<br/>CGDisplayCreateImage / getDisplayMedia"]
+    Provider[("OpenAI / Anthropic<br/>your account")]
+
+    User -->|Ask · ⌘↵| Pill
+    Pill -->|active display, downscaled to ~1280px JPEG| Capture
+    Capture -->|prompt + image + your API key| Provider
+    Provider -->|"reply text"| Pill
+    Pill --> User
+
+    classDef ext fill:#1a1525,stroke:#5b4080,color:#d8c8ff;
+    class Provider ext
+```
+
+**What it does**
+
+- macOS app: a slim 210×38 pill at the top of your active display that
+  rides over fullscreen STS2 (`NSPanel` with `.canJoinAllSpaces` +
+  `.fullScreenAuxiliary`) and is **invisible to screen recordings**
+  (`NSWindow.SharingType.none`). OBS, Zoom, and QuickTime can't see it.
+  Streamer-safe by default.
+- Web companion: a real native always-on-top OS window via the
+  Document Picture-in-Picture API (`documentPictureInPicture.requestWindow()`).
+  Sits over fullscreen STS2 on Chromium browsers. Safari/Firefox don't
+  ship the API yet — the Beta tab detects the gap and points users at
+  the macOS app.
+- Both surfaces share the same Cluely-style chat UI: header pill with
+  Vault emblem, action chips (What should I do? · Recap · Next encounter),
+  text input, screenshot toggle, send button.
+
+**How it works**
+
+1. You add an OpenAI or Anthropic key under **Beta features**. Stored
+   in the macOS Keychain on the desktop, in `localStorage` on the web.
+   The Vault servers never see the key.
+2. You ask a question. The active display is captured locally
+   (`CGDisplayCreateImage` on macOS, `getDisplayMedia()` on the web),
+   downscaled to ~1280px wide as a JPEG.
+3. The browser/app POSTs the prompt + image **directly** to
+   `api.openai.com` or `api.anthropic.com`. No proxy, no Vault Worker
+   in the loop.
+4. The reply renders inline. Frames live in memory just long enough to
+   upload — nothing is recorded, nothing is replayed.
+
+**What it doesn't do**
+
+- **No game memory reads.** Run Coach never injects, hooks, or scans
+  the STS2 process. It only sees what you explicitly hand it via a
+  screenshot.
+- **No Vault-hosted AI.** There's no subscription, no tier, no Vault
+  proxy. You bring the key, you pay the provider, you control the
+  spend.
+- **No silent telemetry.** A 401 from your provider, a model that
+  doesn't exist, a screen-recording-permission denial — all of that
+  surfaces in the Beta tab's live test panel, never in a remote logger.
+
+The web overlay is a real OS window, which means OBS/QuickTime
+**can** see it on the web — it's only the macOS build that's
+streamer-safe. The Beta tab tells you this up front; if you stream,
+use the .dmg.
+
+## Updates
+
+The macOS app ships its own in-app updater. From the menu bar:
+
+- **Vault → About The Vault** — version, build number, credits, GitHub link.
+- **Vault → Check for Updates…** (⇧⌘U) — fetches the latest GitHub
+  Release, compares against your build, opens Settings if something
+  newer is available.
+- **Help → What's New** — opens the [`CHANGELOG.md`](CHANGELOG.md).
+- **Help → Run Coach (Beta) — How it works** — jumps to the Run Coach
+  section above.
+
+Internally that's `UpdateService` ([`VaultApp/App/UpdateService.swift`](VaultApp/App/UpdateService.swift)) —
+it polls `api.github.com/repos/c3rooks/SpireVault/releases/latest`,
+downloads the DMG to `~/Library/Caches/com.coreycrooks.thevault.app/updates/`,
+verifies size + optional SHA-256 from the release notes, mounts the
+DMG with `hdiutil`, swaps the running `.app` in place, and relaunches.
+
+We deliberately don't use Sparkle: it expects an EdDSA-signed appcast
++ a Developer ID-signed bundle, neither of which fits an ad-hoc-signed
+free project. The trade-off (relying on HTTPS-to-GitHub + an optional
+SHA-256 line in the release notes) is documented inline in the
+service.
 
 ## Privacy, in plain English
 

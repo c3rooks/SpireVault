@@ -864,6 +864,21 @@ function bossImageSrcset(slug) {
 // truth for "is there a logged-in user right now."
 let session = readSession();
 let parsedRuns = [];          // current normalized history runs (in memory)
+// Live "you're currently in an STS2 game" snapshot. Populated by
+// commitParsedRuns when an ingest discovers a save file with run shape
+// but no explicit `win` field — that's how STS2 represents the
+// in-progress save state on disk. Held as a single record (the
+// chronologically newest in-progress one if multiple ever arrive)
+// rather than a list because there is logically only one active run
+// per save profile. Reset to null when entering demo mode, when the
+// user signs out, or when the next ingest finds no in-progress run
+// (because the player just finished or abandoned). Never persisted to
+// IDB or the cloud — it represents *right now*, not history.
+let currentRun = null;
+let currentRunCollapsed = false;
+try {
+  currentRunCollapsed = localStorage.getItem("vault.web.currentRunCollapsed") === "1";
+} catch { /* private mode */ }
 let lastFeed   = [];          // last feed snapshot
 let lastInbox  = [];          // last inbox snapshot
 let lastOutbox = [];          // last outbox snapshot (invites we've sent)
@@ -1719,6 +1734,10 @@ async function boot() {
       isDemoMode = false;
     }
   }
+  // Demo data and boot-from-cache never carry a live in-progress
+  // record; only a fresh disk read can produce one. Make sure no
+  // stale ghost from a prior session leaks through.
+  currentRun = null;
 
   renderActiveTab();
   // Initial paint of the "new run" sidebar dot — silent if no runs
@@ -6485,7 +6504,30 @@ async function commitParsedRuns(runs, sourceName, { silent, fileCount = 1 }) {
     return tb - ta;
   });
 
-  parsedRuns = runs;
+  // Split the in-progress save state out of the persisted run list so
+  // it never pollutes lifetime stats (winrate, totals, character
+  // breakdowns) while still being available as the live "current
+  // run" overview card. The newest in-progress record wins if STS2
+  // ever writes more than one (e.g. a stale partial in addition to
+  // the live one). Completed runs flow on through unchanged.
+  const completedRuns = [];
+  let liveRun = null;
+  for (const r of runs) {
+    if (r?.inProgress) {
+      const rTime = r.startedAt?.getTime?.() ?? 0;
+      const liveTime = liveRun?.startedAt?.getTime?.() ?? -1;
+      if (!liveRun || rTime > liveTime) liveRun = r;
+    } else {
+      completedRuns.push(r);
+    }
+  }
+  currentRun = liveRun;
+  parsedRuns = completedRuns;
+  // Recompute the new-run delta against the completed set only — an
+  // in-progress save isn't a "new run" in the user-facing sense, and
+  // surfacing it in the "N new runs from disk" toast would feel wrong
+  // (the count wouldn't match what showed up in the stats).
+  const newCompletedCount = completedRuns.filter((r) => !previousIds.has(r.id)).length;
   // Real data has arrived — flip out of demo mode so the banner disappears.
   isDemoMode = false;
 
@@ -6501,14 +6543,15 @@ async function commitParsedRuns(runs, sourceName, { silent, fileCount = 1 }) {
   const schemaList = [...schemaSet].sort().join(",");
   sendBeacon(
     "ingest-runs-committed",
-    `runs=${runs.length} files=${fileCount} schemas=${schemaList || "none"} silent=${silent ? 1 : 0}`
+    `runs=${completedRuns.length} files=${fileCount} schemas=${schemaList || "none"} live=${liveRun ? 1 : 0} silent=${silent ? 1 : 0}`
   );
 
   // Independent unknown-schema beacon. Fires once per commit if any run
-  // is on a schema we haven't tested. The schema-warning banner in the
-  // UI uses the same signal; this beacon makes the same condition
-  // visible in the admin dashboard so we know when a new STS2 build is
-  // landing in users' saves.
+  // is on a schema we haven't tested. We dropped the user-facing
+  // "newer build" warning (the parser is forgiving enough that the
+  // user shouldn't have to think about schema versions) but keep the
+  // beacon so we still get an admin-side signal when a new STS2 build
+  // is landing in users' saves and prioritize a parser update.
   loadKnownSchemas().then((known) => {
     const unknown = [...schemaSet].filter((v) => !known.has(v));
     if (unknown.length > 0) {
@@ -6518,11 +6561,15 @@ async function commitParsedRuns(runs, sourceName, { silent, fileCount = 1 }) {
 
   // Persist. We swallow IDB errors so a flaky storage layer never blocks
   // the in-memory render — the user still sees their stats this session.
+  // We persist completed runs only so an in-progress save (which is
+  // ephemeral by definition) never resurrects from cache on a later
+  // boot as a phantom "current run" the player has long since
+  // finished.
   try {
     await HistoryStore.saveHistory({
       savedAt: new Date().toISOString(),
       sourceFilename: sourceName,
-      runs: runs.map(serializeRun),
+      runs: completedRuns.map(serializeRun),
     });
   } catch (e) {
     console.error("[Vault] saveHistory to IndexedDB failed (continuing in-memory)", e);
@@ -6533,22 +6580,24 @@ async function commitParsedRuns(runs, sourceName, { silent, fileCount = 1 }) {
   // cloud copy so this user's other devices (mobile app, second browser)
   // pick up the new runs on next boot. No-op for guests. Internal
   // memoization prevents identical bodies from being re-uploaded on
-  // an auto-refresh that turned up no new runs.
-  CloudRuns.upload(runs);
+  // an auto-refresh that turned up no new runs. In-progress runs are
+  // local-only — they describe a *live* state, not history, so no
+  // cross-device value in syncing them.
+  CloudRuns.upload(completedRuns);
 
   if (silent) {
     // Suppress the "N new runs" toast when transitioning from demo to
     // real data — the diff would always say "everything is new" and
     // that's noise, not signal.
-    if (newCount > 0 && !wasDemo) {
-      toast(`${newCount} new run${newCount === 1 ? "" : "s"} from disk.`);
+    if (newCompletedCount > 0 && !wasDemo) {
+      toast(`${newCompletedCount} new run${newCompletedCount === 1 ? "" : "s"} from disk.`);
     }
   } else if (wasDemo) {
-    toast(`Loaded ${runs.length} run${runs.length === 1 ? "" : "s"} from your save.`);
+    toast(`Loaded ${completedRuns.length} run${completedRuns.length === 1 ? "" : "s"} from your save.`);
   } else if (fileCount > 1) {
-    toast(`Loaded ${runs.length} run${runs.length === 1 ? "" : "s"} from ${fileCount} files.`);
+    toast(`Loaded ${completedRuns.length} run${completedRuns.length === 1 ? "" : "s"} from ${fileCount} files.`);
   } else {
-    toast(`Loaded ${runs.length} run${runs.length === 1 ? "" : "s"}.`);
+    toast(`Loaded ${completedRuns.length} run${completedRuns.length === 1 ? "" : "s"}.`);
   }
 
   // Force-render so the empty state vanishes and stats appear, no matter
@@ -6591,10 +6640,11 @@ async function commitParsedRuns(runs, sourceName, { silent, fileCount = 1 }) {
   // pressed Refresh" engagement.
   if (!wasDemo) {
     vaultGtagEvent("ingest_complete", {
-      run_count: runs.length,
-      new_count: newCount,
+      run_count: completedRuns.length,
+      new_count: newCompletedCount,
       file_count: fileCount,
       source: silent ? "auto_refresh" : "interactive",
+      live_run: liveRun ? 1 : 0,
     });
   }
   return true;
@@ -7111,12 +7161,15 @@ function renderStatsTab(tab) {
   let demoBannerDismissed = false;
   try { demoBannerDismissed = localStorage.getItem("vault.web.demoBannerDismissed") === "1"; } catch {}
   const banner = isDemoMode && tab === "overview" && !demoBannerDismissed ? renderDemoBanner() : "";
-  // Schema warning — surfaces above stats when any real run uses an STS2
-  // schema_version we haven't explicitly tested. Lets the user know the
-  // game just shipped a build we're still catching up to, instead of
-  // silently rendering possibly-wrong numbers. Suppressed in demo mode.
-  const schemaWarning = isDemoMode ? "" : renderSchemaWarning(parsedRuns);
-  const prefix = banner + schemaWarning;
+  // Current-run card — only on the Overview tab, only when an
+  // in-progress save was discovered on the latest disk read. The
+  // panel sits where the old "schema version" notice used to live so
+  // that fold of the page still reads as "anything happening live
+  // right now?", but it's now an always-actionable status block
+  // instead of a passive warning the user couldn't do anything with.
+  // Suppressed in demo mode (no real save folder, so no live game).
+  const liveCard = (!isDemoMode && tab === "overview" && currentRun) ? renderCurrentRunCard(currentRun) : "";
+  const prefix = banner + liveCard;
   switch (tab) {
     case "overview":   $body.innerHTML = prefix + renderOverview(report);     break;
     case "characters": $body.innerHTML = prefix + renderCharactersTab(report); break;
@@ -7187,6 +7240,23 @@ function renderStatsTab(tab) {
       });
     });
   }
+  // Current-run card collapse toggle. The card is a <details> at heart
+  // but rendered as bespoke markup so the chevron and pill styling
+  // match the rest of the overview hero. We persist the open/closed
+  // bit per-browser so a user who collapsed it once doesn't have to
+  // collapse again on every auto-refresh repaint.
+  $body.querySelectorAll('[data-action="toggle-current-run"]').forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const card = btn.closest(".current-run-card");
+      if (!card) return;
+      const open = card.classList.toggle("is-open");
+      btn.setAttribute("aria-expanded", open ? "true" : "false");
+      currentRunCollapsed = !open;
+      try {
+        localStorage.setItem("vault.web.currentRunCollapsed", currentRunCollapsed ? "1" : "0");
+      } catch { /* private mode */ }
+    });
+  });
   // Delegated handler for any element marked with data-action="goto-tab".
   // Lets character cards, side stat tiles, and any future "click here to
   // see more" affordance route to a sibling tab without per-card wiring.
@@ -7440,16 +7510,15 @@ function renderDemoBanner() {
     </div>`;
 }
 
-/**
- * Schema-version warning banner. Returns an empty string most of the
- * time. When parsedRuns contains any run on a schema_version we haven't
- * explicitly tested (KNOWN_SCHEMA_VERSIONS), we render a yellow callout
- * above the stats so the user knows their freshly-patched game might
- * have introduced fields we haven't caught up to yet. The alternative
- * — silent wrong numbers — is what hid the path bug for weeks.
- *
- * Lazy-loaded to avoid pulling sts2-run-parser.js on the demo path.
- */
+// Lazy-load the canonical KNOWN_SCHEMA_VERSIONS set from the parser.
+// Used by the analytics beacon in commitParsedRuns to count runs on
+// schema versions we haven't explicitly tested yet — that signal is
+// still useful internally (lets us notice when a new STS2 build is
+// landing in users' saves so we can prioritize a parser update),
+// even though the matching user-facing "newer build" warning has
+// been removed in favor of the live current-run card. Parser loads
+// itself on-demand the first time .run files are ingested, so the
+// import is essentially free here.
 let cachedKnownSchemas = null;
 async function loadKnownSchemas() {
   if (cachedKnownSchemas) return cachedKnownSchemas;
@@ -7457,38 +7526,161 @@ async function loadKnownSchemas() {
   cachedKnownSchemas = mod.KNOWN_SCHEMA_VERSIONS || new Set();
   return cachedKnownSchemas;
 }
-// Synchronous-friendly hook: the parser file is already loaded by the
-// time we render stats (extractRuns dynamically imports it before
-// parsedRuns gets populated), so it lives in the module cache. We use a
-// best-effort sync read; if the cache hasn't warmed yet we silently
-// suppress the banner and rely on the next render pass.
-function knownSchemasSync() {
-  return cachedKnownSchemas;
-}
-// Warm the cache on module load so the first render after ingest has it.
 loadKnownSchemas().catch(() => { /* non-fatal */ });
 
-function renderSchemaWarning(runs) {
-  const known = knownSchemasSync();
-  if (!known) return "";
-  const unknown = new Set();
-  let unknownRunCount = 0;
-  for (const r of runs) {
-    if (r?.schemaVersion != null && !known.has(r.schemaVersion)) {
-      unknown.add(r.schemaVersion);
-      unknownRunCount += 1;
+/**
+ * Live "you're currently in a game" card. Rendered above the overview
+ * stats whenever the latest disk read surfaced a save file with run
+ * shape but no completion (`win` field absent). Sits where the old
+ * schema-version warning used to live, so the user's eye lands in
+ * the same place — but instead of an apology about untested
+ * versions, that fold of the page is now an actionable status block:
+ * what character, what ascension, what floor, current HP and gold,
+ * deck and relic counts, and a one-click expand to see the full
+ * deck and relic list while still in-game.
+ *
+ * Renders as a single self-contained DOM block so the toggle handler
+ * (`data-action="toggle-current-run"`) can flip a class on the root
+ * element without touching anything else. Persistence of the
+ * collapsed state lives in `currentRunCollapsed` (localStorage), so
+ * a user who collapsed the card stays collapsed across auto-refresh
+ * repaints.
+ */
+function renderCurrentRunCard(run) {
+  if (!run) return "";
+  const charKey = String(run.character || "").toLowerCase();
+  const theme = charTheme(charKey);
+  const charLabel = run.character ? capitalize(run.character) : "Unknown character";
+  const portrait = charPortraitOrIcon(charKey, theme);
+  const asc = run.ascension != null ? `A${run.ascension}` : "—";
+  const floor = run.floorReached || 0;
+  const hpStr = (run.currentHp != null && run.maxHp != null)
+    ? `${run.currentHp}/${run.maxHp}`
+    : (run.currentHp != null ? String(run.currentHp) : "—");
+  const hpPct = (run.currentHp != null && run.maxHp > 0)
+    ? Math.max(0, Math.min(100, (run.currentHp / run.maxHp) * 100))
+    : null;
+  const hpTone = hpPct == null ? "" : (hpPct >= 60 ? "tone-win" : hpPct >= 30 ? "tone-warn" : "tone-loss");
+  const gold = run.currentGold != null ? String(run.currentGold) : "—";
+  const deckCount = Array.isArray(run.deckAtEnd) ? run.deckAtEnd.length : 0;
+  const relicCount = Array.isArray(run.relics) ? run.relics.length : 0;
+  // Time-since-start, computed from the run's start_time. Helpful for
+  // "is this actually live or am I looking at yesterday's stuck save?"
+  const ageMin = run.startedAt ? Math.max(0, Math.round((Date.now() - run.startedAt.getTime()) / 60000)) : null;
+  const ageLabel = ageMin == null ? "" : ageMin < 1 ? "just started" : ageMin < 60 ? `${ageMin} min in` : `${(ageMin / 60).toFixed(1)} hr in`;
+  const room = run.currentRoomType ? capitalize(run.currentRoomType) : null;
+
+  // Relic icons — show up to 8 in the collapsed pill row, render the
+  // full list inside the expanded panel. Use the same image lookup
+  // that the run-detail modal uses so we get the actual game art
+  // when an asset exists and a clean glyph fallback when it doesn't.
+  const relicChips = (run.relics || []).slice(0, 8).map((r) => {
+    const src = relicImageSrc(r);
+    const label = esc(relicLabel(r));
+    if (src) {
+      return `<span class="cr-relic-chip" title="${label}"><img src="${src}" alt="${label}" loading="lazy" decoding="async" /></span>`;
     }
+    const initials = esc(label.split(/\s+/).map((w) => w[0] || "").join("").slice(0, 2).toUpperCase() || "?");
+    return `<span class="cr-relic-chip cr-relic-chip-glyph" title="${label}">${initials}</span>`;
+  }).join("");
+  const relicMore = (run.relics?.length || 0) > 8 ? `<span class="cr-relic-more">+${run.relics.length - 8}</span>` : "";
+
+  // Expanded body: full relic + deck breakdown. Deck is grouped by
+  // card id with a count badge so a 4× Strike doesn't fill the whole
+  // panel. Sorted by count desc so the most-impactful cards (the
+  // ones the player has collected multiples of intentionally) sit at
+  // the top.
+  const relicListExpanded = (run.relics || []).map((r) => {
+    const src = relicImageSrc(r);
+    const label = esc(relicLabel(r));
+    return `
+      <li class="cr-relic-row">
+        ${src ? `<img class="cr-relic-row-art" src="${src}" alt="" loading="lazy" decoding="async" />` : `<span class="cr-relic-row-art cr-relic-row-art-glyph" aria-hidden="true">${esc((relicLabel(r)[0] || "?").toUpperCase())}</span>`}
+        <span class="cr-relic-row-name">${label}</span>
+      </li>`;
+  }).join("");
+
+  const deckTally = new Map();
+  for (const c of (run.deckAtEnd || [])) {
+    deckTally.set(c, (deckTally.get(c) || 0) + 1);
   }
-  if (unknown.size === 0) return "";
-  const versions = [...unknown].sort((a, b) => a - b).join(", ");
+  const deckGrouped = [...deckTally.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  const deckListExpanded = deckGrouped.map(([id, n]) => {
+    const src = cardImageSrc(id);
+    const label = esc(cardLabel(id));
+    return `
+      <li class="cr-card-row">
+        ${src ? `<img class="cr-card-row-art" src="${src}" alt="" loading="lazy" decoding="async" />` : `<span class="cr-card-row-art cr-card-row-art-glyph" aria-hidden="true"></span>`}
+        <span class="cr-card-row-name">${label}</span>
+        ${n > 1 ? `<span class="cr-card-row-count">×${n}</span>` : ""}
+      </li>`;
+  }).join("");
+
+  const isOpen = !currentRunCollapsed;
   return `
-    <div class="schema-warning" role="region" aria-label="New game version notice">
-      <div class="schema-warning-icon">⚡</div>
-      <div class="schema-warning-text">
-        <strong>${unknownRunCount} run${unknownRunCount === 1 ? "" : "s"} from a newer STS2 build</strong>
-        <span>STS2 just shipped schema version ${esc(versions)}, which we haven't tested yet. Most stats should still work; some details might be off until I push a parser update. <a href="https://github.com/c3rooks/SpireVault/issues/new?title=STS2+schema+${esc(versions)}+support" target="_blank" rel="noopener">Open an issue</a> if you spot anything wrong.</span>
+    <section class="current-run-card${isOpen ? " is-open" : ""}" role="region" aria-label="Current run in progress" style="--cr-accent:${theme.color};">
+      <button class="current-run-head" type="button" data-action="toggle-current-run" aria-expanded="${isOpen ? "true" : "false"}">
+        <span class="cr-pulse" aria-hidden="true"><span class="cr-pulse-dot"></span></span>
+        <span class="cr-portrait">${portrait}</span>
+        <span class="cr-headline">
+          <span class="cr-eyebrow">In a run · ${esc(ageLabel || "live")}</span>
+          <span class="cr-title">
+            <strong>${esc(charLabel)}</strong>
+            <span class="cr-asc">${esc(asc)}</span>
+            <span class="cr-sep">·</span>
+            <span class="cr-floor">Floor ${floor || "—"}</span>
+            ${room ? `<span class="cr-room">${esc(room)}</span>` : ""}
+          </span>
+        </span>
+        <span class="cr-stats">
+          <span class="cr-stat ${hpTone}">
+            <span class="cr-stat-label">HP</span>
+            <span class="cr-stat-value">${esc(hpStr)}</span>
+          </span>
+          <span class="cr-stat">
+            <span class="cr-stat-label">Gold</span>
+            <span class="cr-stat-value">${esc(gold)}</span>
+          </span>
+          <span class="cr-stat">
+            <span class="cr-stat-label">Deck</span>
+            <span class="cr-stat-value">${deckCount}</span>
+          </span>
+          <span class="cr-stat">
+            <span class="cr-stat-label">Relics</span>
+            <span class="cr-stat-value">${relicCount}</span>
+          </span>
+        </span>
+        <span class="cr-caret" aria-hidden="true">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+        </span>
+      </button>
+      <div class="current-run-body">
+        ${hpPct != null ? `
+          <div class="cr-hp-bar" aria-hidden="true">
+            <span class="cr-hp-fill ${hpTone}" style="width:${hpPct.toFixed(1)}%"></span>
+          </div>
+        ` : ""}
+        ${relicChips ? `
+          <div class="cr-relic-row-wrap">
+            <span class="cr-section-label">Relics</span>
+            <span class="cr-relic-chip-row">${relicChips}${relicMore}</span>
+          </div>
+        ` : ""}
+        <div class="cr-expanded-grid">
+          <div class="cr-expanded-col">
+            <h4 class="cr-section-heading">Relics (${relicCount})</h4>
+            ${relicListExpanded ? `<ul class="cr-relic-list">${relicListExpanded}</ul>` : `<p class="cr-empty muted small">No relics yet.</p>`}
+          </div>
+          <div class="cr-expanded-col">
+            <h4 class="cr-section-heading">Current deck (${deckCount})</h4>
+            ${deckListExpanded ? `<ul class="cr-card-list">${deckListExpanded}</ul>` : `<p class="cr-empty muted small">No cards in deck yet.</p>`}
+          </div>
+        </div>
+        <p class="cr-foot muted small">
+          Live snapshot from your STS2 save. Refreshes whenever the auto-refresh loop re-reads the folder, or you press Refresh above.
+        </p>
       </div>
-    </div>`;
+    </section>`;
 }
 
 function renderEmptyState() {
@@ -8758,6 +8950,7 @@ async function clearLocalCacheConfirmed() {
   try { await HistoryStore.clearHandle(); } catch {}
   try { localStorage.removeItem("vault.web.linkedFolderName"); } catch {}
   parsedRuns = [];
+  currentRun = null;
   lastDirectoryFingerprint = "";
   lastIngestedMTime = 0;
   toast("Local cache cleared.");

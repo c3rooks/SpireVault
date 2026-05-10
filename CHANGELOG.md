@@ -5,6 +5,117 @@ Dates in YYYY-MM-DD. The project follows [Semantic Versioning](https://semver.or
 loosely — patch bumps for fixes, minor for features, major if I ever
 break the wire format.
 
+## v0.9.1 — 2026-05-10
+
+Settings collapse into the persona pill, and Run Coach lands in the
+**web app** — same Cluely-style floating chat as the desktop, now
+rendered inside a real native always-on-top window via the
+Document Picture-in-Picture API.
+
+**Settings → persona menu (web + macOS).**
+
+- The standalone "Settings" sidebar row is gone in both apps. Clicking
+  your Steam name / persona pill at the bottom of the sidebar now
+  opens a menu with Settings, Beta features, Open Co-op, and Sign out.
+  Two persistent footer surfaces (the pill + the Settings tab) collapse
+  into one place where everything "about you" lives.
+- Guests still need Settings (folder linking, import, prefs) without
+  Steam — the web app exposes a tiny inline "Settings" link inside the
+  guest sign-in pill, and the macOS guest pill grows a Settings + Beta
+  shortcut row.
+
+**New: Run Coach in the web app (Beta · Chromium browsers).**
+
+- New `Beta` tab in the web sidebar. Hosts the Run Coach config:
+  provider (OpenAI / Anthropic), model, BYO API key, "include a
+  screenshot with each question" toggle, optional custom system
+  prompt, and a one-button **Launch Run Coach**.
+- Launching opens a real native always-on-top OS window via
+  `documentPictureInPicture.requestWindow()` — sits on top of every
+  window including fullscreen STS2 on Chromium.
+- Same Cluely-style chat as the desktop: header pill with Vault
+  emblem, quick-action chips (What should I do? · Next encounter ·
+  Recap), text input, screenshot toggle, send button. Submitting a
+  message captures the screen via `getDisplayMedia()` (downscaled to
+  1280px JPEG) and sends it with the prompt directly to the chosen
+  provider — Vault never proxies the request and never sees the key.
+- Streamer privacy disclosure is unmissable: the browser overlay is
+  visible to OBS / QuickTime (no `NSWindow.sharingType` equivalent in
+  the browser). The Beta tab tells the user this, and CTAs the macOS
+  build for streamers.
+
+**Browser support.**
+
+- Document PiP works on Chrome, Edge, Brave, Opera, Arc, Vivaldi
+  (~75% of users). Safari and Firefox don't ship the API yet — the
+  Beta tab detects the gap and shows a graceful "open in Chromium or
+  install the macOS app" message instead of a broken Launch button.
+- Same fallback if `getDisplayMedia()` is missing (sandboxed iframes,
+  some in-app browsers).
+
+**Plumbing.**
+
+- `Web/run-coach.js` is a self-contained module that owns the Beta
+  tab + the Document PiP overlay window. State lives in
+  `localStorage` under `vault.runcoach.*` (key, provider, model,
+  prefs); the page warns that the browser doesn't have a Keychain.
+- Cache-bust bumps: `script.js?v=143`, `run-coach.js?v=1`.
+
+## v0.9.0 — 2026-05-10
+
+The "Run Coach" release. The macOS overlay grew into a Cluely-style
+in-game AI panel that can look at your screen and coach a card pick,
+boss relic, or path choice — using your own OpenAI / Anthropic key.
+Lives behind a new **Beta** sidebar tab; deliberately not on the
+marketing site until it's proven in real runs.
+
+**New: Run Coach overlay (Beta).**
+
+- Cluely-inspired floating panel: a slim pill at the top of the screen
+  with the Vault emblem + "Coach" trigger, expanding into a 360×460
+  chat surface with action chips (Assist · What should I do? · Recap),
+  text input, and a screenshot toggle.
+- ⌘↵ from anywhere inside the panel triggers "What should I do?" —
+  captures the active display (CGDisplayCreateImage, downscaled to
+  ~1280px), sends it with your typed question + tagged run context to
+  the configured provider.
+- Bring-your-own-key. OpenAI (`gpt-4o-mini` default) or Anthropic
+  (`claude-3-5-sonnet-20241022` default). The user's key is stored in
+  the macOS Keychain (`com.coreycrooks.thevault.overlay`); The Vault
+  servers never see it.
+- Streaming-safe defaults: hidden from screen recording / OBS / Zoom
+  via `NSWindow.SharingType.none`. Always-on-top toggle for fullscreen
+  STS2. All three flags exposed in Beta → Privacy & visibility.
+- Optional custom system-prompt addendum so power users can bias the
+  Coach toward their character / ascension / build.
+- Local run history (last 3 runs + Steam stats when available) is
+  passed as compact context so the Coach isn't completely cold.
+- Live test panel inside Beta verifies key + provider without
+  launching the overlay.
+
+**New: Beta sidebar section.**
+
+- Dedicated home for early features. The first inhabitant is Run
+  Coach. Old Settings → "In-game overlay" toggle moved to Beta;
+  Settings now focuses on stats + matchmaking only.
+- "NEW" pill on the sidebar row until the user opens it.
+
+**Marketing site.**
+
+- Pulled the "Run Companion Overlay" feature card off the landing
+  page. Run Coach is shipped through Beta-tab opt-in, not as a
+  homepage promise.
+- Hero "Download .dmg" button continues to auto-resolve to the latest
+  GitHub Releases asset, so the site picks up v0.9.0 the moment the
+  release is cut.
+
+**Bumps.**
+
+- `CFBundleShortVersionString` → 0.9.0; `CFBundleVersion` → 9.
+- Forward-compatible `AppConfig` decode: new overlay-AI fields use
+  `decodeIfPresent` defaults, so an upgrade from v0.8.x doesn't wipe
+  the user's matchmaking-server override or saved overlay position.
+
 ## v0.6.0 — 2026-05-09
 
 The "polish weekend" release. Profile popover got a second pass,

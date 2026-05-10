@@ -20,6 +20,8 @@ struct DetailView: View {
                 NewsView()
                     .padding(.horizontal, 28)
                     .padding(.vertical, 24)
+            case .beta:
+                BetaView()
             case .settings:
                 ScrollView { SettingsView()
                     .padding(.horizontal, 4)

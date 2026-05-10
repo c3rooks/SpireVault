@@ -5348,42 +5348,330 @@ select#me-note option { background: var(--bg-deep); color: var(--text); }
   line-height: 1.5;
 }
 
-/* Schema-version warning — appears when the user's runs are from an
- * STS2 build we haven't tested. Visually distinct from the demo banner
- * (yellow + lightning) and the in-app browser overlay (red + full
- * screen) so it reads as "informational, not blocking". */
-.schema-warning {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
+/* Live "current run" card — appears on the Overview tab whenever the
+ * latest disk read picked up an STS2 save in progress. Sits in the
+ * same fold as the (now-removed) schema-version warning, but reads
+ * as "here's what's happening in your live game" instead of an
+ * apology. Collapsible so a player who wants the stats overview
+ * uncluttered can fold it down to a one-line strip. The accent color
+ * is driven by --cr-accent (set inline per character) so the chrome
+ * picks up the same color the rest of the app uses for that class. */
+.current-run-card {
+  --cr-accent: #5dc1ff;
   margin: 0 0 18px;
-  padding: 12px 14px;
-  background: linear-gradient(135deg, rgba(255, 198, 92, 0.06), rgba(255, 167, 38, 0.04));
-  border: 1px solid rgba(255, 198, 92, 0.28);
-  border-left: 3px solid rgba(255, 198, 92, 0.6);
-  border-radius: 10px;
-  font-size: 13px;
-  line-height: 1.5;
+  padding: 0;
+  background: linear-gradient(135deg, rgba(93, 193, 255, 0.04), rgba(255, 198, 92, 0.02));
+  border: 1px solid color-mix(in oklab, var(--cr-accent) 28%, transparent);
+  border-left: 3px solid color-mix(in oklab, var(--cr-accent) 70%, transparent);
+  border-radius: 12px;
+  overflow: hidden;
 }
-.schema-warning-icon {
-  font-size: 18px;
-  line-height: 1;
-  padding-top: 1px;
+.current-run-head {
+  display: grid;
+  grid-template-columns: auto auto 1fr auto auto;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 14px;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+}
+.current-run-head:hover { background: rgba(255, 255, 255, 0.02); }
+.current-run-head:focus-visible {
+  outline: 2px solid color-mix(in oklab, var(--cr-accent) 60%, transparent);
+  outline-offset: -2px;
+}
+.cr-pulse {
+  position: relative;
+  width: 10px;
+  height: 10px;
   flex: 0 0 auto;
 }
-.schema-warning-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.schema-warning-text strong {
-  color: var(--gold, #ffc65c);
-  font-size: 12px;
+.cr-pulse-dot {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: var(--cr-accent);
+  box-shadow: 0 0 8px color-mix(in oklab, var(--cr-accent) 70%, transparent);
+}
+.cr-pulse-dot::after {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  border: 2px solid var(--cr-accent);
+  opacity: 0;
+  animation: cr-pulse-ring 2s ease-out infinite;
+}
+@keyframes cr-pulse-ring {
+  0%   { transform: scale(0.6); opacity: 0.7; }
+  80%  { transform: scale(1.6); opacity: 0; }
+  100% { transform: scale(1.8); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cr-pulse-dot::after { animation: none; }
+}
+.cr-portrait {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  overflow: hidden;
+  background: color-mix(in oklab, var(--cr-accent) 12%, transparent);
+  border: 1px solid color-mix(in oklab, var(--cr-accent) 25%, transparent);
+  color: var(--cr-accent);
+  flex: 0 0 auto;
+}
+.cr-portrait .char-portrait {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.cr-portrait .char-icon {
+  width: 22px;
+  height: 22px;
+}
+.cr-headline {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.cr-eyebrow {
+  font-size: 11px;
   font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--cr-accent);
 }
-.schema-warning-text span { color: var(--text-2); }
-.schema-warning-text a {
+.cr-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 14px;
+  color: var(--text-1);
+  line-height: 1.3;
+}
+.cr-title strong { font-weight: 700; }
+.cr-title .cr-asc {
+  font-weight: 700;
   color: var(--gold, #ffc65c);
-  text-decoration: underline;
-  text-decoration-color: rgba(255, 198, 92, 0.4);
 }
-.schema-warning-text a:hover { text-decoration-color: rgba(255, 198, 92, 0.8); }
+.cr-title .cr-sep { color: var(--text-3); }
+.cr-title .cr-floor { color: var(--text-2); }
+.cr-title .cr-room {
+  margin-left: 4px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  background: color-mix(in oklab, var(--cr-accent) 14%, transparent);
+  color: var(--text-2);
+  border: 1px solid color-mix(in oklab, var(--cr-accent) 22%, transparent);
+}
+.cr-stats {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.cr-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  line-height: 1.1;
+}
+.cr-stat-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.cr-stat-value {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-1);
+  font-variant-numeric: tabular-nums;
+}
+.cr-stat.tone-win  .cr-stat-value { color: var(--win, #6ddc8b); }
+.cr-stat.tone-warn .cr-stat-value { color: var(--gold, #ffc65c); }
+.cr-stat.tone-loss .cr-stat-value { color: var(--loss, #ff6c7a); }
+.cr-caret {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  color: var(--text-3);
+  transition: transform 0.18s ease;
+}
+.current-run-card.is-open .cr-caret { transform: rotate(180deg); }
+.current-run-body {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.25s ease;
+  border-top: 1px solid color-mix(in oklab, var(--cr-accent) 14%, transparent);
+}
+.current-run-card.is-open .current-run-body {
+  max-height: 1200px;
+}
+.current-run-body > * { padding-inline: 14px; }
+.current-run-body > *:first-child { padding-top: 12px; }
+.current-run-body > *:last-child { padding-bottom: 14px; }
+.cr-hp-bar {
+  height: 4px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 999px;
+  overflow: hidden;
+  margin: 12px 14px 0;
+  padding: 0;
+}
+.cr-hp-fill {
+  display: block;
+  height: 100%;
+  background: var(--win, #6ddc8b);
+  transition: width 0.3s ease;
+}
+.cr-hp-fill.tone-warn { background: var(--gold, #ffc65c); }
+.cr-hp-fill.tone-loss { background: var(--loss, #ff6c7a); }
+.cr-relic-row-wrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+.cr-section-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.cr-relic-chip-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.cr-relic-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  overflow: hidden;
+}
+.cr-relic-chip img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+.cr-relic-chip-glyph {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--text-2);
+}
+.cr-relic-more {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-3);
+  margin-left: 2px;
+}
+.cr-expanded-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+  margin-top: 14px;
+}
+.cr-section-heading {
+  margin: 0 0 8px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.cr-relic-list, .cr-card-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+  max-height: 240px;
+  overflow-y: auto;
+}
+.cr-relic-row, .cr-card-row {
+  display: grid;
+  grid-template-columns: 22px 1fr auto;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  border-radius: 6px;
+  font-size: 13px;
+  color: var(--text-1);
+}
+.cr-relic-row:hover, .cr-card-row:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+.cr-relic-row-art, .cr-card-row-art {
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  object-fit: contain;
+  background: rgba(255, 255, 255, 0.04);
+}
+.cr-relic-row-art-glyph, .cr-card-row-art-glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-3);
+}
+.cr-relic-row-name, .cr-card-row-name {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cr-card-row-count {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  color: var(--text-2);
+}
+.cr-empty { margin: 0; }
+.cr-foot { margin: 12px 0 0; }
+
+@media (max-width: 720px) {
+  .current-run-head {
+    grid-template-columns: auto auto 1fr auto;
+    grid-auto-rows: auto;
+  }
+  .cr-stats {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+    gap: 18px;
+    padding-top: 4px;
+  }
+  .cr-stat { align-items: flex-start; }
+  .cr-expanded-grid { grid-template-columns: 1fr; }
+}
 
 /* Empty-state warning (the equivalent of the demo-banner-hints warning,
  * shown above the collapsible details so it's always visible). */

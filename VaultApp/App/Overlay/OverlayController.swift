@@ -11,18 +11,23 @@ import VaultCore
 // hierarchy hosted inside it. The overlay is a single window that re-sizes
 // between two states:
 //
-//   • Collapsed — a tiny pill (~140×40) with avatar + status dot + online
-//                 count. Always-on-top so it can sit over a fullscreen game.
-//   • Expanded  — a 320×360 panel with status quick-switch, "online now"
-//                 count, "looking now" count, and an Open-the-App shortcut.
+//   • Collapsed — a tiny pill (~210×38) with the Vault emblem, a "Coach"
+//                 trigger, and a quick close. Always-on-top so it sits
+//                 over fullscreen STS2.
+//   • Expanded  — a 360×460 chat panel in the Cluely style: header,
+//                 conversation log, action chips (Assist · What should
+//                 I do? · Recap), input field, footer hint.
 //
-// Privacy: the panel sets `sharingType = .none` so it doesn't appear in
-// screen recordings or screenshots. That's a polite default for a game-
-// overlay tool — streamers don't want random UI in their captures.
+// Privacy: when the user has `overlayInvisibleToCapture` on (default),
+// `sharingType = .none` so the panel doesn't appear in screen recordings
+// or shared screens. Streamers don't want random AI panels in their
+// captures.
 //
-// Data: we observe the existing PresenceService (already wired up in
-// AppState) so the overlay never opens a second network connection. If
-// the user signs out, PresenceService becomes nil and we close the window.
+// Data: the overlay observes the existing PresenceService (already wired
+// up on AppState) so it never opens its own network connections for the
+// co-op count. AI calls go through OverlayAIService which talks directly
+// to the user's chosen provider (OpenAI / Anthropic) — The Vault's
+// servers see zero overlay traffic.
 // =========================================================================
 
 @MainActor
@@ -30,13 +35,16 @@ final class OverlayController: ObservableObject {
 
     // MARK: - Public state
 
-    /// Bound to `AppConfig.overlayEnabled`. Settings toggle flips this.
+    /// Bound to `AppConfig.overlayEnabled`. Beta tab toggle flips this.
     @Published var enabled: Bool = false {
         didSet { applyEnabled() }
     }
 
     /// Whether the panel is currently in its expanded state.
     @Published private(set) var expanded: Bool = false
+
+    /// Two-way bound by the input row in the expanded view.
+    @Published var input: String = ""
 
     // MARK: - Plumbing
 
@@ -45,8 +53,8 @@ final class OverlayController: ObservableObject {
     private var hosting: NSHostingView<AnyView>?
     private var saveOriginDebounce: DispatchWorkItem?
 
-    private let collapsedSize = CGSize(width: 152, height: 38)
-    private let expandedSize  = CGSize(width: 320, height: 360)
+    private let collapsedSize = CGSize(width: 210, height: 38)
+    private let expandedSize  = CGSize(width: 360, height: 460)
 
     init(appState: AppState) {
         self.appState = appState
@@ -83,7 +91,8 @@ final class OverlayController: ObservableObject {
             backing: .buffered,
             defer: false
         )
-        p.level = .floating
+        let alwaysOnTop = appState?.config.overlayAlwaysOnTop ?? true
+        p.level = alwaysOnTop ? .floating : .normal
         p.isFloatingPanel = true
         p.isOpaque = false
         p.backgroundColor = .clear
@@ -97,9 +106,11 @@ final class OverlayController: ObservableObject {
         p.isMovableByWindowBackground = true
         p.hidesOnDeactivate = false
         // Don't show up in OBS / screen recordings — courteous default for
-        // a tool whose target use case is a fullscreen game capture.
+        // a tool whose target use case is a fullscreen game capture. The
+        // user can flip this off in Beta → Run Coach if they actually want
+        // their stream to display the coach.
         if #available(macOS 13.0, *) {
-            p.sharingType = .none
+            p.sharingType = (appState?.config.overlayInvisibleToCapture ?? true) ? .none : .readOnly
         }
         // Restore last-used origin if persisted; otherwise use top-right.
         if let origin = persistedOrigin() {
@@ -143,6 +154,18 @@ final class OverlayController: ObservableObject {
             }
         }
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    /// Re-apply window-level + sharingType after the user changes them
+    /// in Beta → Run Coach. Cheaper than tearing the panel down and
+    /// rebuilding it; the panel keeps its position and key state.
+    func reapplyWindowFlags() {
+        guard let panel else { return }
+        let alwaysOnTop = appState?.config.overlayAlwaysOnTop ?? true
+        panel.level = alwaysOnTop ? .floating : .normal
+        if #available(macOS 13.0, *) {
+            panel.sharingType = (appState?.config.overlayInvisibleToCapture ?? true) ? .none : .readOnly
+        }
     }
 
     // MARK: - Private
@@ -223,12 +246,14 @@ final class OverlayController: ObservableObject {
     }
 
     private func defaultOrigin() -> NSPoint {
-        // Default: top-right of the main screen, ~20pt inset.
+        // Default: top-center of the main screen, ~30pt down — Cluely-
+        // style "control bar at the top of the screen". Easy to find,
+        // out of the way of most game UI.
         let screen = NSScreen.main ?? NSScreen.screens.first
         let frame = screen?.visibleFrame ?? .zero
-        let x = frame.maxX - collapsedSize.width - 20
-        let y = frame.maxY - collapsedSize.height - 20
-        return NSPoint(x: x, y: y + collapsedSize.height) // top-left convention
+        let x = frame.midX - collapsedSize.width / 2
+        let y = frame.maxY - 30
+        return NSPoint(x: x, y: y)
     }
 
     private func persistEnabled(_ value: Bool) {
@@ -242,18 +267,14 @@ final class OverlayController: ObservableObject {
 // =========================================================================
 // OverlayPanel
 // -------------------------------------------------------------------------
-// `NSPanel` subclass with `canBecomeKey = true` (so text fields would work
+// `NSPanel` subclass with `canBecomeKey = true` (so text fields work
 // inside) but `canBecomeMain = false` (so it never steals main-window
-// status from the real app window). `acceptsFirstMouse` makes clicks land
-// even when the app isn't the active app — critical for an overlay.
+// status from the real app window). The `.nonactivatingPanel` style mask
+// plus `level: .floating` lets clicks land without stealing app
+// activation from the underlying game.
 // =========================================================================
 
 final class OverlayPanel: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
-    // NSWindow doesn't expose acceptsFirstMouse directly — that's on
-    // the contentView. The NSHostingView we install handles its own
-    // first-mouse semantics for SwiftUI buttons; the .nonactivatingPanel
-    // style mask plus level: .floating is enough for the overlay to
-    // receive clicks without stealing app activation from the game.
 }
