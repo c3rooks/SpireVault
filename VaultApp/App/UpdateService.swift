@@ -94,6 +94,10 @@ public final class UpdateService: ObservableObject {
 
     // MARK: - Public API
 
+    /// User-dismissed tags for the current launch. Re-checking still
+    /// finds the update; it just stays out of the banner.
+    @Published public private(set) var sessionDismissedTags: Set<String> = []
+
     /// Silent background check. Safe to call on every app launch — does
     /// nothing if we already checked within `autoCheckIntervalSeconds`.
     public func autoCheckIfDue() async {
@@ -107,6 +111,10 @@ public final class UpdateService: ObservableObject {
     public func checkForUpdates(userInitiated: Bool) async {
         if case .checking = status { return }
         if case .downloading = status { return }
+        // Don't blow away an in-flight `.readyToInstall` — the user has
+        // already paid the download cost; nudge them to actually install
+        // instead of recycling state on a re-check.
+        if case .readyToInstall = status { return }
         status = .checking
         do {
             let info = try await fetchLatestRelease()
@@ -114,6 +122,15 @@ public final class UpdateService: ObservableObject {
             self.lastCheckedAt = Date()
             if compareVersion(info.version, isNewerThan: currentVersion) {
                 status = .updateAvailable(latest: info)
+                // Eagerly stage the DMG in the background. Updates are
+                // 5–6 MB DMGs against GitHub Releases — negligible
+                // bandwidth, and it collapses the two-button "Download
+                // → Install" flow into a one-button "Install & relaunch"
+                // by the time the user actually sees the banner. Hidden
+                // failures (low disk, network blip) just bring the
+                // banner back to .updateAvailable; the manual
+                // "Download" path remains available.
+                await downloadUpdate()
             } else {
                 status = .upToDate(currentVersion: currentVersion, checkedAt: Date())
             }
@@ -125,6 +142,30 @@ public final class UpdateService: ObservableObject {
             } else {
                 status = .idle
             }
+        }
+    }
+
+    /// Dismiss the in-app banner for the rest of this launch. Re-check
+    /// (manual or scheduled) brings it back; the `.readyToInstall` state
+    /// is *not* dismissable — there's nothing to defer at that point,
+    /// the binary is already on disk waiting for the user's go-ahead.
+    public func dismissBannerForSession() {
+        guard let tag = latestRelease?.tag else { return }
+        sessionDismissedTags.insert(tag)
+    }
+
+    /// Whether the in-app banner should render right now.
+    public var bannerShouldShow: Bool {
+        switch status {
+        case .updateAvailable(let r), .downloading(_, let r):
+            return !sessionDismissedTags.contains(r.tag)
+        case .readyToInstall:
+            // Always show — the install is one click from done.
+            return true
+        case .failed:
+            return true
+        case .idle, .checking, .upToDate, .installing:
+            return false
         }
     }
 

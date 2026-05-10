@@ -12,7 +12,25 @@ struct RootView: View {
             if state.needsOnboarding {
                 OnboardingView()
             } else {
-                HSplit(section: $section)
+                VStack(spacing: 0) {
+                    // Persistent self-update banner. Lives above the
+                    // sidebar+detail split so it's visible no matter
+                    // which tab the user is on. We learned (from a
+                    // user stuck on v0.8.1 long after v0.9.x shipped)
+                    // that burying the update prompt inside Settings
+                    // is the same as not surfacing it at all — once
+                    // the standalone Settings sidebar row was retired
+                    // in v0.9, there was no in-window affordance to
+                    // even discover that auto-update had found
+                    // anything. The banner fixes that.
+                    if state.updateService.bannerShouldShow {
+                        UpdateBanner(service: state.updateService)
+                            .transition(.move(edge: .top).combined(with: .opacity))
+                    }
+                    HSplit(section: $section)
+                }
+                .animation(.spring(response: 0.32, dampingFraction: 0.86),
+                           value: state.updateService.bannerShouldShow)
             }
         }
         .frame(minWidth: 1080, minHeight: 700)
@@ -29,6 +47,193 @@ struct RootView: View {
             section = hop
             DispatchQueue.main.async { state.pendingSidebarHop = nil }
         }
+        // App-foreground re-check so users who left the app running
+        // overnight pick up a release that landed since their last
+        // auto-check (the launch-time check is throttled to once per
+        // 6h, but `didBecomeActive` re-evaluates the throttle each
+        // time the user comes back). Important for the "I haven't
+        // quit the app since the last release went out" case.
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            Task { await state.updateService.autoCheckIfDue() }
+        }
+    }
+}
+
+// =========================================================================
+// UpdateBanner
+// -------------------------------------------------------------------------
+// A slim, dismissable-per-session banner that surfaces the four UpdateService
+// states a user actually cares about: "newer build available", "downloading
+// in the background", "ready to install", and "the auto-updater hit a
+// snag." Anything else (idle / upToDate / installing) hides the bar.
+//
+// Why this exists: prior to v0.9.8, the update prompt only lived inside
+// Settings, and the standalone Settings sidebar row was retired in v0.9.
+// A user who never opened the persona pill menu had zero in-window signal
+// that v0.8.1 → v0.9.7 was waiting for one click. This bar makes the
+// happy path unmissable while keeping the "Later" escape hatch intact.
+// =========================================================================
+
+private struct UpdateBanner: View {
+    @ObservedObject var service: UpdateService
+
+    var body: some View {
+        HStack(spacing: 12) {
+            icon
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title)
+                    .font(.system(size: 12, weight: .heavy))
+                    .foregroundStyle(Theme.text)
+                Text(subtitle)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.textSecondary)
+                    .lineLimit(1)
+            }
+            if case let .downloading(progress, _) = service.status {
+                ProgressView(value: progress)
+                    .progressViewStyle(.linear)
+                    .tint(Theme.accentBright)
+                    .frame(width: 140)
+            }
+            Spacer(minLength: 12)
+            actions
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 9)
+        .background(background)
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(Theme.cardBorder.opacity(0.6))
+                .frame(height: 1)
+        }
+    }
+
+    private var icon: some View {
+        Image(systemName: iconName)
+            .font(.system(size: 14, weight: .bold))
+            .foregroundStyle(iconColor)
+            .frame(width: 24, height: 24)
+            .background(
+                Circle().fill(iconColor.opacity(0.14))
+            )
+            .overlay(
+                Circle().stroke(iconColor.opacity(0.30), lineWidth: 1)
+            )
+    }
+
+    private var iconName: String {
+        switch service.status {
+        case .updateAvailable: return "arrow.down.circle.fill"
+        case .downloading:     return "arrow.down.circle"
+        case .readyToInstall:  return "checkmark.circle.fill"
+        case .failed:          return "exclamationmark.triangle.fill"
+        default:               return "arrow.down.circle"
+        }
+    }
+
+    private var iconColor: Color {
+        switch service.status {
+        case .readyToInstall: return Theme.winBright
+        case .failed:         return Theme.lossBright
+        default:              return Theme.accentBright
+        }
+    }
+
+    private var title: String {
+        switch service.status {
+        case let .updateAvailable(info):
+            return "Update available — \(info.tag)"
+        case let .downloading(progress, info):
+            let pct = Int((progress * 100).rounded())
+            return "Downloading \(info.tag) · \(pct)%"
+        case let .readyToInstall(_, info):
+            return "Ready to install — \(info.tag)"
+        case let .failed(message):
+            return "Update couldn't finish — \(message)"
+        default:
+            return ""
+        }
+    }
+
+    private var subtitle: String {
+        switch service.status {
+        case let .updateAvailable(info):
+            return "\(info.name). Downloading in the background…"
+        case .downloading:
+            return "We'll prompt you to install when it finishes."
+        case .readyToInstall:
+            return "One click to restart into the new build. Your data stays put."
+        case let .failed(_):
+            return "Try \"Retry\" or grab the DMG from GitHub directly."
+        default:
+            return ""
+        }
+    }
+
+    @ViewBuilder
+    private var actions: some View {
+        switch service.status {
+        case .updateAvailable:
+            HStack(spacing: 8) {
+                Button("View on GitHub") { service.openReleasePage() }
+                    .controlSize(.small)
+                Button("Later") { service.dismissBannerForSession() }
+                    .controlSize(.small)
+            }
+        case .downloading:
+            // No-op — the progress bar above is the affordance, and
+            // cancelling mid-download isn't useful for a 5–6 MB DMG.
+            EmptyView()
+        case .readyToInstall:
+            HStack(spacing: 8) {
+                Button("Install & restart") {
+                    Task { await service.installAndRelaunch() }
+                }
+                .controlSize(.small)
+                .keyboardShortcut(.defaultAction)
+                Button("View notes") { service.openReleasePage() }
+                    .controlSize(.small)
+            }
+        case .failed:
+            HStack(spacing: 8) {
+                Button("Retry") {
+                    Task { await service.checkForUpdates(userInitiated: true) }
+                }
+                .controlSize(.small)
+                Button("Open GitHub") { service.openReleasePage() }
+                    .controlSize(.small)
+                Button("Dismiss") { service.dismissBannerForSession() }
+                    .controlSize(.small)
+            }
+        default:
+            EmptyView()
+        }
+    }
+
+    private var background: some View {
+        // Brand-tinted gradient with a sharper accent on .readyToInstall
+        // (it's the action-required state) and a calmer one for the
+        // discovery / progress states. Failed gets a red tint so the
+        // banner doesn't read as "everything's fine, you can ignore me".
+        let stops: [Color]
+        switch service.status {
+        case .readyToInstall:
+            stops = [
+                Theme.accent.opacity(0.25),
+                Theme.gold.opacity(0.18),
+            ]
+        case .failed:
+            stops = [
+                Theme.lossBright.opacity(0.22),
+                Color.black.opacity(0.20),
+            ]
+        default:
+            stops = [
+                Theme.accent.opacity(0.14),
+                Color.black.opacity(0.20),
+            ]
+        }
+        return LinearGradient(colors: stops, startPoint: .leading, endPoint: .trailing)
     }
 }
 

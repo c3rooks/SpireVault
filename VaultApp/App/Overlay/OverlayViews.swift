@@ -1527,12 +1527,31 @@ struct ChatBubble: View {
                 .padding(.vertical, 2)
                 .background(Capsule().fill(Color.black.opacity(0.18)))
             }
-            Text(message.text)
-                .font(.system(size: 12))
-                .foregroundStyle(textColor)
-                .multilineTextAlignment(alignment == .leading ? .leading : .trailing)
-                .fixedSize(horizontal: false, vertical: true)
-                .textSelection(.enabled)
+            // Render text + a subtle blinking caret while tokens are
+            // still arriving. The caret only renders for assistant
+            // bubbles in the streaming state — user bubbles never
+            // stream. Empty placeholder gets a "Thinking…" hint so
+            // the bubble doesn't appear blank during the ~300ms
+            // before the first token.
+            HStack(alignment: .lastTextBaseline, spacing: 2) {
+                if message.isStreaming && message.text.isEmpty {
+                    Text("Thinking…")
+                        .font(.system(size: 12, weight: .regular))
+                        .foregroundStyle(textColor.opacity(0.55))
+                        .italic()
+                } else {
+                    Text(message.text)
+                        .font(.system(size: 12))
+                        .foregroundStyle(textColor)
+                        .multilineTextAlignment(alignment == .leading ? .leading : .trailing)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .textSelection(.enabled)
+                }
+                if message.isStreaming {
+                    StreamingCaret()
+                        .foregroundStyle(textColor.opacity(0.7))
+                }
+            }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
@@ -1545,6 +1564,24 @@ struct ChatBubble: View {
                 .stroke(Color.white.opacity(0.08), lineWidth: 1)
         )
         .frame(maxWidth: 320, alignment: alignment == .leading ? .leading : .trailing)
+    }
+}
+
+/// Tiny blinking caret shown at the end of a streaming bubble. Pure
+/// SwiftUI — no Combine timer, no AnimatableModifier — uses
+/// `withAnimation(.easeInOut.repeatForever)` to oscillate opacity. The
+/// caret stops the moment its parent bubble is removed from the view
+/// tree (which happens when the message's `isStreaming` flips false
+/// and ChatBubble re-renders without it).
+private struct StreamingCaret: View {
+    @State private var on: Bool = true
+    var body: some View {
+        Text("▍")
+            .font(.system(size: 11, weight: .heavy))
+            .opacity(on ? 1 : 0.15)
+            .animation(.easeInOut(duration: 0.55).repeatForever(autoreverses: true),
+                       value: on)
+            .onAppear { on.toggle() }
     }
 }
 

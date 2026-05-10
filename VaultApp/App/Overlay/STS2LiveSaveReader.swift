@@ -321,6 +321,218 @@ final class STS2LiveSaveReader {
         default: return "unknown"
         }
     }
+
+    /// Public for `STS2LiveSaveWatcher` — callers shouldn't need to
+    /// know the location heuristic, but the watcher needs the URL to
+    /// open a file descriptor for kqueue.
+    func currentSaveURL(saveFolder: URL?) -> URL? {
+        guard let folder = saveFolder ?? SaveFolderLocator.resolve() else {
+            return nil
+        }
+        return locateCurrentRunSave(in: folder)
+    }
+}
+
+// =========================================================================
+// STS2LiveSaveWatcher
+// -------------------------------------------------------------------------
+// Real-time file watcher for `current_run.save` using `DispatchSource`'s
+// kqueue-backed file system object monitor. The 4-second poll loop in
+// OverlayController is fine for "is the deck still the same?" but it
+// pegs tracker latency at 0-4 seconds. With the watcher, the moment
+// STS2 fsync()s the save (which it does after every map node and
+// after every reward), our handler fires within ~50ms, the diff
+// computes, and the chip lands in the chat before the player even
+// closes the reward modal.
+//
+// Mechanics:
+//   1. open(path, O_EVTONLY) — non-blocking, no read access, just a
+//      handle for kqueue.
+//   2. DispatchSource for `[.write, .extend, .delete, .rename]`.
+//      .write fires when STS2 saves; .delete/.rename fires when STS2
+//      atomic-renames a temp file over current_run.save (which it
+//      occasionally does on shutdown). On those, we re-locate the
+//      file and re-attach.
+//   3. Debounce 250ms — STS2 sometimes triple-writes a save in a single
+//      tick (one for the autosave system, one for cloud sync, one for
+//      crash recovery). Coalesce so we don't compute the same diff
+//      three times.
+//   4. Stop/teardown is critical — leaking the DispatchSource leaves
+//      the fd open and the kqueue handler firing on a dead closure.
+//      `stop()` cancels the source AND closes the fd. Verified with
+//      `lsof -p $(pgrep TheVault)` after disable cycles.
+// =========================================================================
+
+@MainActor
+final class STS2LiveSaveWatcher {
+
+    private weak var reader: STS2LiveSaveReader?
+    /// Resolved on every attach attempt so the watcher follows the
+    /// active save folder if the user changes it in Settings while the
+    /// overlay is enabled. Without the closure we'd be locked to
+    /// whichever folder was active at start() time.
+    private var saveFolderProvider: (() -> URL?)?
+    private var onChange: (() -> Void)?
+
+    private var source: DispatchSourceFileSystemObject?
+    private var fd: Int32 = -1
+    private var watchedPath: String?
+
+    /// Fallback timer that fires every 5s to re-poll the file location
+    /// if we have NO active watcher (file missing, or open() failed).
+    /// Once the file appears we attach for real-time updates and the
+    /// timer goes quiet. This is the only path that handles "user
+    /// launched STS2 after enabling the overlay".
+    private var attachTimer: Timer?
+
+    /// Debounce: collapses a burst of writes within this window into
+    /// a single onChange callback. STS2 sometimes flushes 3 times in
+    /// a single autosave; we only want one diff.
+    private var debounceWork: DispatchWorkItem?
+    private let debounceInterval: TimeInterval = 0.25
+
+    init(reader: STS2LiveSaveReader) {
+        self.reader = reader
+    }
+
+    deinit {
+        // We can't call `stop()` from deinit (it's @MainActor) — but
+        // by the time deinit runs, the @MainActor instance is gone,
+        // so the DispatchSource holding `self` weakly would have
+        // already been canceled by an explicit stop() before release.
+        // The fd + source are MainActor-isolated; if anyone forgot to
+        // call stop(), the os may leak the fd until process exit.
+        // Acceptable trade-off: explicit lifecycle, no actor hop.
+    }
+
+    /// Begin watching. Idempotent — repeated calls re-bind the closures
+    /// without tearing down the active source if the path is unchanged.
+    /// `saveFolderProvider` is called on every attach attempt so the
+    /// watcher stays correct when the user changes the save folder
+    /// while the overlay is running.
+    func start(saveFolderProvider: @escaping () -> URL?,
+               onChange: @escaping () -> Void) {
+        self.saveFolderProvider = saveFolderProvider
+        self.onChange = onChange
+        attemptAttach()
+        // Start the fallback timer regardless — if attach succeeds it's
+        // a cheap 5s no-op; if attach fails (file not yet on disk) it
+        // gives us a slow poll to retry until it appears.
+        startAttachTimer()
+    }
+
+    /// Tear down completely. Closes the fd and cancels the source.
+    func stop() {
+        debounceWork?.cancel()
+        debounceWork = nil
+        source?.cancel()
+        source = nil
+        if fd >= 0 {
+            close(fd)
+            fd = -1
+        }
+        watchedPath = nil
+        attachTimer?.invalidate()
+        attachTimer = nil
+        onChange = nil
+    }
+
+    // MARK: - Attach
+
+    private func attemptAttach() {
+        let folder = saveFolderProvider?()
+        guard let reader,
+              let url = reader.currentSaveURL(saveFolder: folder) else {
+            return
+        }
+        // Already watching the right path — nothing to do.
+        if let existing = watchedPath, existing == url.path, source != nil {
+            return
+        }
+        // Different path (or first attach) — drop any old watcher first.
+        if source != nil { tearDownSourceOnly() }
+
+        let openedFD = open(url.path, O_EVTONLY)
+        guard openedFD >= 0 else {
+            return
+        }
+        let src = DispatchSource.makeFileSystemObjectSource(
+            fileDescriptor: openedFD,
+            eventMask: [.write, .extend, .delete, .rename],
+            queue: .main
+        )
+        src.setEventHandler { [weak self] in
+            // Hop to MainActor so we can call into the @MainActor
+            // members (debounce + onChange wrap @Published state).
+            Task { @MainActor [weak self] in
+                self?.handleEvent(eventMask: src.data)
+            }
+        }
+        src.setCancelHandler { [openedFD] in
+            close(openedFD)
+        }
+        src.resume()
+
+        self.source = src
+        self.fd = openedFD
+        self.watchedPath = url.path
+    }
+
+    private func tearDownSourceOnly() {
+        // Cancel triggers the cancel handler which closes the fd — so
+        // we don't close it ourselves here. Doing both leads to an
+        // EBADF when the cancel handler later tries to close a
+        // descriptor we already released to the OS.
+        source?.cancel()
+        source = nil
+        fd = -1
+        watchedPath = nil
+    }
+
+    private func handleEvent(eventMask: DispatchSource.FileSystemEvent) {
+        // .delete / .rename means STS2 atomic-renamed a temp file over
+        // current_run.save. Our fd points at the OLD (now-orphaned)
+        // inode — we'll never get another write event. Detach and
+        // re-attach to the new file.
+        if eventMask.contains(.delete) || eventMask.contains(.rename) {
+            tearDownSourceOnly()
+            // Try to re-attach immediately, and lean on the timer if
+            // the rename target hasn't appeared yet.
+            attemptAttach()
+        }
+        scheduleDebouncedFire()
+    }
+
+    private func scheduleDebouncedFire() {
+        debounceWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            self?.onChange?()
+        }
+        debounceWork = work
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + debounceInterval,
+            execute: work
+        )
+    }
+
+    // MARK: - Attach retry timer
+
+    private func startAttachTimer() {
+        attachTimer?.invalidate()
+        let timer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                // If we already have an active source, this is a
+                // no-op; if not, retry attach. Either way also issue
+                // a soft-refresh so the snapshot diff catches changes
+                // we'd have missed during a detached window.
+                self.attemptAttach()
+                self.onChange?()
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        attachTimer = timer
+    }
 }
 
 // =========================================================================

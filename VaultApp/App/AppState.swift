@@ -198,11 +198,16 @@ final class AppState: ObservableObject {
             overlayController.enabled = true
         }
 
-        // 8) Silent self-update check. Throttled to once every six
-        //    hours per launch — see UpdateService.autoCheckIfDue().
-        //    On a hit, the Settings tab and any toast banner render
-        //    the available update; we never auto-download or
-        //    auto-install without user consent.
+        // 8) Self-update check. Throttled to once every six hours per
+        //    launch — see UpdateService.autoCheckIfDue(). Since v0.9.8
+        //    we eagerly stage (download) the DMG in the background as
+        //    soon as a newer version is detected; the persistent
+        //    UpdateBanner in RootView surfaces the state, and the
+        //    install step still requires an explicit user click
+        //    ("Install & restart"). The previous behaviour — silent
+        //    check that only surfaced inside Settings — meant users on
+        //    builds with no Settings sidebar entry (i.e. v0.9+) never
+        //    discovered that an update was waiting, even after months.
         Task { await updateService.autoCheckIfDue() }
     }
 

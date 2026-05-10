@@ -65,6 +65,16 @@ final class OverlayController: ObservableObject {
     private var hosting: NSHostingView<AnyView>?
     private var saveOriginDebounce: DispatchWorkItem?
     private var snapshotPollTimer: Timer?
+    /// Real-time file watcher for `current_run.save`. Created lazily
+    /// on enable so tracker chips fire within ~50ms of STS2 saving
+    /// instead of waiting for the next 4-second poll. Falls back to
+    /// the timer when the watcher can't attach (file missing, perms).
+    private var saveWatcher: STS2LiveSaveWatcher?
+    /// Process-wide global hot-key (default ⌥Space). Lets the player
+    /// pop the overlay open from inside fullscreen STS2 without ever
+    /// alt-tabbing. Re-bound when the user changes the binding in
+    /// settings.
+    private var hotKey: OverlayHotKey?
 
     // Sizing. Pill is the always-on-top status bar. Chat is the main
     // coach panel. Settings is a touch wider so the API key field and
@@ -89,22 +99,67 @@ final class OverlayController: ObservableObject {
         if enabled {
             show()
             startSnapshotPolling()
+            startSaveWatcher()
+            applyHotKeyBinding()
             persistEnabled(true)
         } else {
             hide()
             stopSnapshotPolling()
+            stopSaveWatcher()
+            unbindHotKey()
             persistEnabled(false)
         }
     }
 
-    /// Tick every 4 seconds while the overlay is visible so the pill /
-    /// live-run header reflects the player's actual progress without
-    /// them having to tap the refresh button. The reader's own 2s
-    /// in-process cache means most of these ticks are no-ops; the
-    /// kernel page cache makes the few that aren't basically free.
+    /// Bind the global hot-key from the persisted config. Called from
+    /// `applyEnabled` on launch + every time the user changes the
+    /// binding in settings (BetaView calls this directly via
+    /// `applyHotKeyBinding`). Tolerant of malformed config entries:
+    /// if the user-saved modifier/key strings don't decode, we fall
+    /// back to ⌥Space rather than refuse to bind anything.
+    func applyHotKeyBinding() {
+        guard let cfg = appState?.config else { return }
+        unbindHotKey()
+        guard cfg.overlayHotKeyEnabled else { return }
+        let modifiers: [OverlayHotKey.Modifier] = cfg.overlayHotKeyModifiersRaw
+            .compactMap { OverlayHotKey.Modifier(rawValue: $0) }
+        let key = OverlayHotKey.Key(rawValue: cfg.overlayHotKeyKeyRaw) ?? .space
+        let resolvedModifiers = modifiers.isEmpty ? [.option] : modifiers
+        let hk = OverlayHotKey()
+        hk.register(modifiers: resolvedModifiers, key: key) { [weak self] in
+            // Default action: surface the chat and focus the input.
+            // If the panel was already showing the chat, the hot-key
+            // collapses it back to the pill — same "press to invoke,
+            // press again to dismiss" muscle memory as Spotlight.
+            guard let self else { return }
+            if self.mode == .chat {
+                self.collapse()
+            } else {
+                self.showChat()
+            }
+        }
+        hotKey = hk
+    }
+
+    private func unbindHotKey() {
+        hotKey?.unregister()
+        hotKey = nil
+    }
+
+    /// Tick every 8 seconds while the overlay is visible — backstop for
+    /// the kqueue watcher. With the watcher attached the loop is a
+    /// soft no-op (the reader's 2s in-process cache + the kernel page
+    /// cache make a redundant read essentially free). When the watcher
+    /// can't attach (file not yet on disk, perms), the timer is the
+    /// only path keeping the snapshot fresh — so we keep it on a slow
+    /// cadence rather than removing it.
+    ///
+    /// Cadence note: 8s instead of the previous 4s because the watcher
+    /// now handles the latency-sensitive path. Anything that gets here
+    /// is by definition non-urgent.
     private func startSnapshotPolling() {
         stopSnapshotPolling()
-        let timer = Timer.scheduledTimer(withTimeInterval: 4, repeats: true) { [weak self] _ in
+        let timer = Timer.scheduledTimer(withTimeInterval: 8, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
                 guard let self, let state = self.appState else { return }
                 _ = state.aiService.refreshLiveSnapshot()
@@ -117,6 +172,34 @@ final class OverlayController: ObservableObject {
     private func stopSnapshotPolling() {
         snapshotPollTimer?.invalidate()
         snapshotPollTimer = nil
+    }
+
+    /// Attach the real-time `current_run.save` watcher. The watcher
+    /// fires onChange within ~50ms of any save — we just call into
+    /// the AI service to recompute the snapshot + emit tracker chips.
+    /// This is the path that makes "I picked Streamline+ → 'Took
+    /// Streamline+' chip" feel instant.
+    private func startSaveWatcher() {
+        stopSaveWatcher()
+        guard let state = appState else { return }
+        let watcher = STS2LiveSaveWatcher(reader: state.aiService.liveReader)
+        watcher.start(
+            saveFolderProvider: { [weak state] in state?.saveFolder },
+            onChange: { [weak state] in
+                // refreshLiveSnapshot does the diff + tracker emit + UI
+                // update internally — we deliberately don't pass any
+                // payload through, so the watcher stays event-shaped
+                // ("something changed") and the AI service owns the
+                // "what changed?" reasoning.
+                state?.aiService.refreshLiveSnapshot()
+            }
+        )
+        saveWatcher = watcher
+    }
+
+    private func stopSaveWatcher() {
+        saveWatcher?.stop()
+        saveWatcher = nil
     }
 
     /// Show the overlay window. Builds it on first call and restores the

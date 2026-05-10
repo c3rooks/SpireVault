@@ -56,6 +56,33 @@ struct AppConfig: Codable, Equatable {
     /// keeps the default "be a Slay the Spire 2 run advisor" prompt.
     var overlayCustomSystemPrompt: String = ""
 
+    /// Global hot-key for the Run Coach overlay. Tapping the binding
+    /// from inside fullscreen STS2 expands the overlay and focuses the
+    /// chat input — the "press a key, get help instantly" flow.
+    /// Stored as raw strings so we round-trip cleanly even if we add
+    /// new modifiers / keys in a future build. Defaults are ⌥+Space:
+    /// the same muscle memory most players have from Cluely / Raycast,
+    /// and the one combination least likely to clash with an existing
+    /// system shortcut.
+    var overlayHotKeyEnabled: Bool = true
+    var overlayHotKeyModifiersRaw: [String] = ["option"]
+    var overlayHotKeyKeyRaw: String = "space"
+
+    /// Whether the Coach automatically posts a one-line follow-up when
+    /// a snapshot tracker fires with a verdict that disagrees with the
+    /// most recent advice (`.different` or `.skipped`). Off uses
+    /// roughly zero tokens; on adds one ~100-token call per disagreed
+    /// pick. Defaults on because the value of "I see you took Bash —
+    /// fine if you upgrade it" outweighs the per-pick cost.
+    var overlayCoachAutoFollowup: Bool = true
+
+    /// Whether the Coach streams long free-form responses back token-
+    /// by-token instead of waiting for the full reply. Defaults on
+    /// because chat feels noticeably alive with streaming. Structured
+    /// responses (path / reward / shop / event / combat) always wait
+    /// for a full parse — nothing to render incrementally.
+    var overlayStreamingEnabled: Bool = true
+
     static let `default` = AppConfig(
         customServerURL: nil,
         overlayEnabled: false,
@@ -66,7 +93,12 @@ struct AppConfig: Codable, Equatable {
         overlayAttachScreenshot: true,
         overlayInvisibleToCapture: true,
         overlayAlwaysOnTop: true,
-        overlayCustomSystemPrompt: ""
+        overlayCustomSystemPrompt: "",
+        overlayHotKeyEnabled: true,
+        overlayHotKeyModifiersRaw: ["option"],
+        overlayHotKeyKeyRaw: "space",
+        overlayCoachAutoFollowup: true,
+        overlayStreamingEnabled: true
     )
 
     // MARK: - Forward-compatible decode
@@ -89,6 +121,11 @@ struct AppConfig: Codable, Equatable {
         self.overlayInvisibleToCapture = try c.decodeIfPresent(Bool.self, forKey: .overlayInvisibleToCapture) ?? true
         self.overlayAlwaysOnTop = try c.decodeIfPresent(Bool.self, forKey: .overlayAlwaysOnTop) ?? true
         self.overlayCustomSystemPrompt = try c.decodeIfPresent(String.self, forKey: .overlayCustomSystemPrompt) ?? ""
+        self.overlayHotKeyEnabled = try c.decodeIfPresent(Bool.self, forKey: .overlayHotKeyEnabled) ?? true
+        self.overlayHotKeyModifiersRaw = try c.decodeIfPresent([String].self, forKey: .overlayHotKeyModifiersRaw) ?? ["option"]
+        self.overlayHotKeyKeyRaw = try c.decodeIfPresent(String.self, forKey: .overlayHotKeyKeyRaw) ?? "space"
+        self.overlayCoachAutoFollowup = try c.decodeIfPresent(Bool.self, forKey: .overlayCoachAutoFollowup) ?? true
+        self.overlayStreamingEnabled = try c.decodeIfPresent(Bool.self, forKey: .overlayStreamingEnabled) ?? true
     }
 
     init(
@@ -101,7 +138,12 @@ struct AppConfig: Codable, Equatable {
         overlayAttachScreenshot: Bool,
         overlayInvisibleToCapture: Bool,
         overlayAlwaysOnTop: Bool,
-        overlayCustomSystemPrompt: String
+        overlayCustomSystemPrompt: String,
+        overlayHotKeyEnabled: Bool,
+        overlayHotKeyModifiersRaw: [String],
+        overlayHotKeyKeyRaw: String,
+        overlayCoachAutoFollowup: Bool,
+        overlayStreamingEnabled: Bool
     ) {
         self.customServerURL = customServerURL
         self.overlayEnabled = overlayEnabled
@@ -113,6 +155,11 @@ struct AppConfig: Codable, Equatable {
         self.overlayInvisibleToCapture = overlayInvisibleToCapture
         self.overlayAlwaysOnTop = overlayAlwaysOnTop
         self.overlayCustomSystemPrompt = overlayCustomSystemPrompt
+        self.overlayHotKeyEnabled = overlayHotKeyEnabled
+        self.overlayHotKeyModifiersRaw = overlayHotKeyModifiersRaw
+        self.overlayHotKeyKeyRaw = overlayHotKeyKeyRaw
+        self.overlayCoachAutoFollowup = overlayCoachAutoFollowup
+        self.overlayStreamingEnabled = overlayStreamingEnabled
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -121,6 +168,8 @@ struct AppConfig: Codable, Equatable {
         case overlayAIProviderRaw, overlayAIModel
         case overlayAttachScreenshot, overlayInvisibleToCapture
         case overlayAlwaysOnTop, overlayCustomSystemPrompt
+        case overlayHotKeyEnabled, overlayHotKeyModifiersRaw, overlayHotKeyKeyRaw
+        case overlayCoachAutoFollowup, overlayStreamingEnabled
     }
 
     // MARK: - Build-time constants

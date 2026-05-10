@@ -94,9 +94,19 @@ final class OverlayAIService: ObservableObject {
         let id: UUID
         enum Role: Equatable { case user, assistant, system, tracker }
         let role: Role
-        let text: String
+        /// Mutable so the streaming path can append tokens in place
+        /// without invalidating the message ID (which would defeat
+        /// SwiftUI's diffing and cause the bubble to flash on every
+        /// chunk). Value-type semantics — mutating still re-publishes
+        /// the parent `messages` array.
+        var text: String
         let createdAt: Date
         let attachedScreenshot: Bool
+        /// `true` while the assistant is still streaming tokens into
+        /// `text`. ChatBubble renders a subtle caret + dimmed style
+        /// while this is on so the player knows tokens are still
+        /// arriving. Cleared the moment the stream completes.
+        var isStreaming: Bool
         /// Visual route card for the "Path" action.
         let pathPlan: PathPlan?
         /// Visual reward card for "Card pick" + "Boss relic" actions —
@@ -116,6 +126,7 @@ final class OverlayAIService: ObservableObject {
 
         init(role: Role, text: String,
              attachedScreenshot: Bool = false,
+             isStreaming: Bool = false,
              pathPlan: PathPlan? = nil,
              rewardPlan: RewardPlan? = nil,
              shopPlan: ShopPlan? = nil,
@@ -127,6 +138,7 @@ final class OverlayAIService: ObservableObject {
             self.text = text
             self.createdAt = Date()
             self.attachedScreenshot = attachedScreenshot
+            self.isStreaming = isStreaming
             self.pathPlan = pathPlan
             self.rewardPlan = rewardPlan
             self.shopPlan = shopPlan
@@ -539,30 +551,90 @@ final class OverlayAIService: ObservableObject {
         isThinking = true
         defer { isThinking = false }
 
+        let model = appState.config.overlayAIModel.isEmpty
+            ? provider.defaultModel
+            : appState.config.overlayAIModel
+        let runContext = buildRunContext()
+        let systemAddendum = appState.config.overlayCustomSystemPrompt
+        let streamingEnabled = appState.config.overlayStreamingEnabled
+
         do {
-            let answer = try await callProvider(
-                provider: provider,
-                model: appState.config.overlayAIModel.isEmpty
-                    ? provider.defaultModel
-                    : appState.config.overlayAIModel,
-                apiKey: key,
-                userQuestion: question,
-                screenshotPNG: screenshotPNG,
-                customSystemAddendum: appState.config.overlayCustomSystemPrompt,
-                runContext: buildRunContext()
-            )
-            messages.append(.init(role: .assistant, text: answer))
+            if streamingEnabled {
+                // Insert the placeholder bubble FIRST so the chat
+                // visibly opens with a "the assistant is starting…"
+                // beat — without this, the user sees nothing for the
+                // ~300ms before the first token lands.
+                let placeholder = Message(role: .assistant, text: "", isStreaming: true)
+                messages.append(placeholder)
+                let placeholderID = placeholder.id
+
+                var accumulated = ""
+                let stream = streamProvider(
+                    provider: provider,
+                    model: model,
+                    apiKey: key,
+                    userQuestion: question,
+                    screenshotPNG: screenshotPNG,
+                    customSystemAddendum: systemAddendum,
+                    runContext: runContext
+                )
+                for try await chunk in stream {
+                    accumulated += chunk
+                    if let idx = messages.firstIndex(where: { $0.id == placeholderID }) {
+                        messages[idx].text = accumulated
+                    }
+                }
+                if let idx = messages.firstIndex(where: { $0.id == placeholderID }) {
+                    messages[idx].isStreaming = false
+                    if accumulated.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        // Empty response — replace the placeholder with
+                        // a humane error so the user isn't left staring
+                        // at a blank bubble.
+                        messages[idx].text = "⚠︎ Provider returned no content."
+                    }
+                }
+                recordTokenSpend(prompt: question + runContext,
+                                 response: accumulated,
+                                 hadImage: screenshotPNG != nil)
+            } else {
+                let answer = try await callProvider(
+                    provider: provider,
+                    model: model,
+                    apiKey: key,
+                    userQuestion: question,
+                    screenshotPNG: screenshotPNG,
+                    customSystemAddendum: systemAddendum,
+                    runContext: runContext
+                )
+                messages.append(.init(role: .assistant, text: answer))
+                recordTokenSpend(prompt: question + runContext,
+                                 response: answer,
+                                 hadImage: screenshotPNG != nil)
+            }
             lastError = nil
             statusLine = nil
         } catch let err as OverlayAIError {
             lastError = err.message
             statusLine = nil
-            messages.append(.init(role: .assistant, text: "⚠︎ \(err.message)"))
+            // If we'd inserted a streaming placeholder, finalize it
+            // with the error text so the user has one clean bubble
+            // rather than an empty placeholder + a separate error.
+            if let last = messages.last, last.isStreaming {
+                messages[messages.count - 1].text = "⚠︎ \(err.message)"
+                messages[messages.count - 1].isStreaming = false
+            } else {
+                messages.append(.init(role: .assistant, text: "⚠︎ \(err.message)"))
+            }
         } catch {
             let msg = (error as NSError).localizedDescription
             lastError = msg
             statusLine = nil
-            messages.append(.init(role: .assistant, text: "⚠︎ \(msg)"))
+            if let last = messages.last, last.isStreaming {
+                messages[messages.count - 1].text = "⚠︎ \(msg)"
+                messages[messages.count - 1].isStreaming = false
+            } else {
+                messages.append(.init(role: .assistant, text: "⚠︎ \(msg)"))
+            }
         }
     }
 
@@ -1508,6 +1580,224 @@ final class OverlayAIService: ObservableObject {
             }
         }
         return "\(provider) returned HTTP \(status)"
+    }
+
+    // MARK: - Streaming
+    //
+    // Token-by-token responses for free-form chat. Both providers speak
+    // SSE — OpenAI uses the OpenAI-flavored "data: {json}\n\n" framing
+    // with a final "data: [DONE]" sentinel; Anthropic uses the messages
+    // API streaming format with named events (`content_block_delta`,
+    // `message_stop`).
+    //
+    // We expose a single `streamProvider(...)` AsyncThrowingStream<String>
+    // that yields incremental text chunks, then completes (or throws).
+    // The caller is responsible for accumulating the chunks into a UI
+    // bubble — the stream itself is stateless.
+    //
+    // Why structured calls don't go through here: a JSON object can't
+    // render until it's fully parsed, and a half-streamed JSON would
+    // either look like garbage or trigger a parse failure on every
+    // intermediate token. For structured paths the value of streaming
+    // is roughly zero; for free-form chat it's the difference between
+    // "the chat is alive" and "the chat is broken".
+
+    private func streamProvider(
+        provider: Provider,
+        model: String,
+        apiKey: String,
+        userQuestion: String,
+        screenshotPNG: Data?,
+        customSystemAddendum: String,
+        runContext: String
+    ) -> AsyncThrowingStream<String, Error> {
+        let system = baseSystemPrompt(addendum: customSystemAddendum, runContext: runContext)
+        switch provider {
+        case .openai:
+            return streamOpenAI(model: model, apiKey: apiKey, system: system,
+                                userQuestion: userQuestion, screenshotPNG: screenshotPNG,
+                                history: chatHistoryForPrompt())
+        case .anthropic:
+            return streamAnthropic(model: model, apiKey: apiKey, system: system,
+                                   userQuestion: userQuestion, screenshotPNG: screenshotPNG,
+                                   history: chatHistoryForPrompt())
+        }
+    }
+
+    private func streamOpenAI(
+        model: String,
+        apiKey: String,
+        system: String,
+        userQuestion: String,
+        screenshotPNG: Data?,
+        history: [(Message.Role, String)]
+    ) -> AsyncThrowingStream<String, Error> {
+        AsyncThrowingStream { continuation in
+            let task = Task {
+                do {
+                    var req = URLRequest(url: URL(string: "https://api.openai.com/v1/chat/completions")!)
+                    req.httpMethod = "POST"
+                    req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                    req.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+                    req.setValue("text/event-stream", forHTTPHeaderField: "Accept")
+
+                    var msgs: [[String: Any]] = []
+                    msgs.append(["role": "system", "content": system])
+                    for (role, text) in history.dropLast() {
+                        msgs.append([
+                            "role": role == .assistant ? "assistant" : "user",
+                            "content": text,
+                        ])
+                    }
+                    var lastUser: [Any] = [["type": "text", "text": userQuestion]]
+                    if let png = screenshotPNG {
+                        let b64 = png.base64EncodedString()
+                        lastUser.append([
+                            "type": "image_url",
+                            "image_url": [
+                                "url": "data:image/png;base64,\(b64)",
+                                "detail": "auto",
+                            ],
+                        ])
+                    }
+                    msgs.append(["role": "user", "content": lastUser])
+
+                    let body: [String: Any] = [
+                        "model": model,
+                        "messages": msgs,
+                        "max_tokens": 700,
+                        "temperature": 0.4,
+                        "stream": true,
+                    ]
+                    req.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+                    let (bytes, resp) = try await session.bytes(for: req)
+                    if let http = resp as? HTTPURLResponse, http.statusCode != 200 {
+                        // Drain the body so we can show a real error
+                        // message instead of just "HTTP 401".
+                        var bodyData = Data()
+                        for try await byte in bytes { bodyData.append(byte) }
+                        throw OverlayAIError.network(
+                            parseProviderError(data: bodyData,
+                                               status: http.statusCode,
+                                               provider: "OpenAI")
+                        )
+                    }
+
+                    for try await line in bytes.lines {
+                        if Task.isCancelled { break }
+                        // OpenAI prefixes every event with "data: ".
+                        // The terminal sentinel is literally "data: [DONE]".
+                        guard line.hasPrefix("data: ") else { continue }
+                        let payload = String(line.dropFirst(6))
+                        if payload == "[DONE]" { break }
+                        guard let data = payload.data(using: .utf8),
+                              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                              let choices = obj["choices"] as? [[String: Any]],
+                              let delta = choices.first?["delta"] as? [String: Any],
+                              let chunk = delta["content"] as? String,
+                              !chunk.isEmpty
+                        else { continue }
+                        continuation.yield(chunk)
+                    }
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+            continuation.onTermination = { _ in task.cancel() }
+        }
+    }
+
+    private func streamAnthropic(
+        model: String,
+        apiKey: String,
+        system: String,
+        userQuestion: String,
+        screenshotPNG: Data?,
+        history: [(Message.Role, String)]
+    ) -> AsyncThrowingStream<String, Error> {
+        AsyncThrowingStream { continuation in
+            let task = Task {
+                do {
+                    var req = URLRequest(url: URL(string: "https://api.anthropic.com/v1/messages")!)
+                    req.httpMethod = "POST"
+                    req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                    req.setValue(apiKey, forHTTPHeaderField: "x-api-key")
+                    req.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
+                    req.setValue("text/event-stream", forHTTPHeaderField: "Accept")
+
+                    var msgs: [[String: Any]] = []
+                    for (role, text) in history.dropLast() {
+                        msgs.append([
+                            "role": role == .assistant ? "assistant" : "user",
+                            "content": [["type": "text", "text": text]],
+                        ])
+                    }
+                    var lastUser: [[String: Any]] = []
+                    if let png = screenshotPNG {
+                        let b64 = png.base64EncodedString()
+                        lastUser.append([
+                            "type": "image",
+                            "source": [
+                                "type": "base64",
+                                "media_type": "image/png",
+                                "data": b64,
+                            ],
+                        ])
+                    }
+                    lastUser.append(["type": "text", "text": userQuestion])
+                    msgs.append(["role": "user", "content": lastUser])
+
+                    let body: [String: Any] = [
+                        "model": model,
+                        "system": system,
+                        "messages": msgs,
+                        "max_tokens": 700,
+                        "temperature": 0.4,
+                        "stream": true,
+                    ]
+                    req.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+                    let (bytes, resp) = try await session.bytes(for: req)
+                    if let http = resp as? HTTPURLResponse, http.statusCode != 200 {
+                        var bodyData = Data()
+                        for try await byte in bytes { bodyData.append(byte) }
+                        throw OverlayAIError.network(
+                            parseProviderError(data: bodyData,
+                                               status: http.statusCode,
+                                               provider: "Anthropic")
+                        )
+                    }
+
+                    // Anthropic sends pairs of `event: <name>` and
+                    // `data: <json>` lines per SSE message. We only care
+                    // about `content_block_delta` events with a text
+                    // delta — `ping`, `message_start`, etc. are
+                    // headers we can ignore for the streaming UI.
+                    for try await line in bytes.lines {
+                        if Task.isCancelled { break }
+                        guard line.hasPrefix("data: ") else { continue }
+                        let payload = String(line.dropFirst(6))
+                        guard let data = payload.data(using: .utf8),
+                              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                              let type = obj["type"] as? String
+                        else { continue }
+                        if type == "message_stop" { break }
+                        if type == "content_block_delta",
+                           let delta = obj["delta"] as? [String: Any],
+                           let chunk = delta["text"] as? String,
+                           !chunk.isEmpty {
+                            continuation.yield(chunk)
+                        }
+                    }
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+            continuation.onTermination = { _ in task.cancel() }
+        }
     }
 
     // MARK: - Screenshot capture

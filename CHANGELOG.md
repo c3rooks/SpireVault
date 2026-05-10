@@ -5,6 +5,80 @@ Dates in YYYY-MM-DD. The project follows [Semantic Versioning](https://semver.or
 loosely — patch bumps for fixes, minor for features, major if I ever
 break the wire format.
 
+## v0.9.8 — 2026-05-10
+
+Fixes the "where are all the changes?" report from a user stuck on
+v0.8.1 several months after v0.9.x shipped. Their auto-checker had
+been working all along — it just had nowhere to surface the result.
+
+**Why nobody saw the update prompt.**
+
+Pre-v0.9.8 flow:
+
+1. App launches → `UpdateService.autoCheckIfDue()` hits the GitHub
+   Releases API, finds a newer version, sets
+   `status = .updateAvailable`.
+2. That status was rendered *only* inside `SettingsView.updateBlock`.
+3. The standalone **Settings** sidebar row was retired in v0.9 in
+   favour of the persona-pill dropdown.
+4. A user who never opens the persona pill (most of them) had zero
+   in-window signal that an update was waiting.
+
+Compounding it, the existing flow required *two* clicks once the
+prompt was eventually found — "Download update" then "Install &
+relaunch" — which left another stall point in the middle.
+
+**Fix — persistent in-window banner + background staging.**
+
+- New `UpdateBanner` lives above the sidebar+detail split in
+  `RootView`, visible on every tab. Renders four states:
+  `.updateAvailable` (with "Later" / "View on GitHub"),
+  `.downloading` (with inline progress bar), `.readyToInstall`
+  (with the primary "Install & restart" affordance, default-action
+  keyboard shortcut), and `.failed` (with "Retry" / "Open GitHub").
+  Brand-tinted gradient for the discovery and progress states; gold/
+  orange for the ready state (action-required); red tint for failed.
+- `UpdateService.checkForUpdates(userInitiated:)` now eagerly
+  flows from `.updateAvailable` straight into `downloadUpdate()`.
+  Updates are 5–6 MB DMGs against GitHub Releases — bandwidth cost
+  is negligible, and it collapses the two-button "Download → Install"
+  flow into a single "Install & restart" by the time the user
+  actually sees the banner.
+- New `dismissBannerForSession()` lets the user defer the banner
+  until next launch *or* the next re-check (whichever comes first),
+  but the `.readyToInstall` state is intentionally non-dismissable
+  — the DMG is already staged, there's nothing to defer.
+- New `bannerShouldShow` getter centralises the visibility rules so
+  RootView doesn't have to do its own state inspection.
+- `RootView` re-fires `autoCheckIfDue()` on
+  `NSApplication.didBecomeActiveNotification`. Important for the "I
+  haven't quit the app since the last release went out" case —
+  previously the throttle would block the launch-time check from
+  re-evaluating until the next cold boot.
+- `.readyToInstall` is now a guard against `checkForUpdates`
+  re-entering — once we've paid the download cost, recycling the
+  state on a re-check would be wasted work and risks losing the
+  staged DMG.
+
+**Recovering manually.**
+
+If you're reading this from a build *older* than v0.9.8, you won't
+get the banner. Either:
+
+- **Open the Vault menu → Check for Updates…** in any v0.8+ build,
+  walk through Download → Install & relaunch in Settings, or
+- **Drag the latest DMG** from
+  [`releases/latest/download/The-Vault-0.9.8.dmg`](https://github.com/c3rooks/SpireVault/releases/latest/download/The-Vault-0.9.8.dmg)
+  into `/Applications`. Once you're on v0.9.8 the banner will
+  catch every future release automatically.
+
+**Versioning.**
+
+- `Info.plist` / `project.yml` → `CFBundleShortVersionString = 0.9.8`,
+  `CFBundleVersion = 17`.
+- `HistoryStore.current = "0.9.8"`.
+- Marketing site banners + FAQ → v0.9.8.
+
 ## v0.9.7 — 2026-05-10
 
 Focused polish on the Run Coach enable/disable cycle, on top of the

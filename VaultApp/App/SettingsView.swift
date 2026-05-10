@@ -39,8 +39,12 @@ struct SettingsView: View {
 
     /// "Updates" block. Shows the current version, when we last
     /// checked, and the relevant action button(s) for whatever state
-    /// the UpdateService is in. The whole flow is gated by user
-    /// gestures — we never silently download or install.
+    /// the UpdateService is in. Since v0.9.8 the *install* step is
+    /// the only mandatory user gesture — once auto-check finds a
+    /// newer build we stage the DMG in the background so the user
+    /// only has to click "Install & relaunch" to complete the
+    /// upgrade. This block + the persistent UpdateBanner in RootView
+    /// share the same state.
     private var updateBlock: some View {
         VStack(alignment: .leading, spacing: 8) {
             SectionTitle("Updates", systemImage: "arrow.down.circle")
