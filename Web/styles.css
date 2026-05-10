@@ -8901,6 +8901,35 @@ html.prefer-compact-density .h-stat-num { font-size: 18px; }
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
+/* Inline kbd shortcut hint inside the "hard refresh needed" variant.
+ * Same look as the in-page keyboard-shortcuts overlay so the visual
+ * vocabulary stays consistent: rounded slate slab, monospace, subtle
+ * lower edge to suggest a physical key. */
+.vault-update-banner-kbd {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 7px;
+  margin: 0 2px;
+  font-family: "SF Mono", Menlo, Consolas, monospace;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.10);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-bottom-color: rgba(255, 255, 255, 0.06);
+  border-radius: 5px;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+/* Stuck-variant tint. The normal banner is accent-orange (active CTA);
+ * the hard-refresh hint is muted amber (informational, no CTA the
+ * user can act on from JS) so it doesn't read as "click here to fix
+ * it" when the only fix is a keyboard shortcut. */
+.vault-update-banner--stuck {
+  grid-template-columns: auto 1fr auto;
+  border-color: rgba(255, 198, 92, 0.45);
+  background: linear-gradient(180deg, rgba(255, 198, 92, 0.10), rgba(20, 16, 28, 0.96));
+}
 @keyframes vault-update-slide-in {
   from { opacity: 0; transform: translateY(-6px); }
   to   { opacity: 1; transform: translateY(0); }
@@ -11169,11 +11198,17 @@ html.is-desktop-host [data-hide-in-desktop="1"] {
 html.is-desktop-host [data-toolbar-empty] {
   display: none !important;
 }
-/* Same logic for the "Pick STS2 save files" / "Import" CTA on empty
-   panels: the desktop owns save linking; offering the user a browser-
-   side file picker would just cause confusion (and split data between
-   web localStorage and the native app's parsed history). */
-html.is-desktop-host [data-action="upload"],
+/* The big "Pick STS2 save files" hero CTA in empty-state cards stays
+   hidden in desktop-host mode because the user already has a real
+   native save-folder picker. The smaller toolbar `[data-action="upload"]`
+   button used to be hidden too — but as of v0.9.3 it's repurposed
+   into "Link saves" (its click is intercepted by Web/script.js'
+   desktop-host bridge and posts `kind: "action", action: "pickSaves"`
+   to the native side, which opens NSOpenPanel). Keeping the toolbar
+   button visible means the desktop's panel header is the *same*
+   shape as the cloud's — Refresh + Import + Export — instead of a
+   reduced version that prompted users to look for a missing native
+   save-link affordance. */
 html.is-desktop-host .upload-cta,
 html.is-desktop-host .empty-state-cta-upload {
   display: none !important;

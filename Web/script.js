@@ -68,7 +68,7 @@ const STS2_APP_ID = "2868840";
  * on an old client — instruct hard refresh. If it DOES match, the
  * bug is real and we can stop chasing cache ghosts.
  */
-const VAULT_BUILD = "v143-2026-05-10-sidebar-dock-cleanup-and-header-align";
+const VAULT_BUILD = "v151-2026-05-10-update-banner-loop-break-and-cache-warm";
 
 // Feature flag — set to `true` only on local dev when iterating on the
 // Run Companion Overlay. Production stays false until the feature is
@@ -118,6 +118,21 @@ function vaultBuildNumber(s) {
 
 let updateCheckInflight = false;
 let updateBannerShown   = false;
+
+// SessionStorage keys for the update-banner state machine.
+//
+// vault.update.reloadedForVersion — set when the user clicks "Reload now".
+//   If a subsequent checkForUpdate() still sees liveVersion > myVersion
+//   for the SAME liveVersion that we just reloaded for, we know the
+//   browser/CDN cache is wedged on stale script.js bytes — clicking
+//   Reload again won't help. We surface a one-time "hard refresh
+//   needed" hint instead of looping the same banner forever.
+//
+// vault.update.dismissed — set when the user clicks the × on a banner.
+//   Suppresses re-show for that exact liveVersion in the same tab.
+const SS_RELOADED_FOR = "vault.update.reloadedForVersion";
+const SS_DISMISSED    = "vault.update.dismissed";
+
 async function checkForUpdate() {
   if (updateCheckInflight || updateBannerShown) return;
   // Inside the macOS app's WKWebView the update banner is misleading
@@ -140,12 +155,39 @@ async function checkForUpdate() {
     if (!match) return;
     const liveVersion = parseInt(match[1], 10);
     const myVersion   = vaultBuildNumber(VAULT_BUILD);
-    if (liveVersion > myVersion) {
-      console.info(
-        `[Vault] new build available (live v${liveVersion} > running v${myVersion}); banner shown`
-      );
-      showUpdateBanner(liveVersion);
+
+    // We're current — clear the loop-guard flag if it's set, so a
+    // future genuine deploy can show its banner normally.
+    if (liveVersion <= myVersion) {
+      try { sessionStorage.removeItem(SS_RELOADED_FOR); } catch {}
+      return;
     }
+
+    // Loop-break. If the user already clicked "Reload now" for this
+    // exact liveVersion and the post-reload page is STILL on the old
+    // myVersion, the browser/CDN is serving stale script.js bytes
+    // and a JS-driven reload can't fix it. Show the hard-refresh
+    // hint exactly once instead of nagging with the same banner
+    // every visibilitychange.
+    let reloadedFor = 0;
+    try {
+      reloadedFor = parseInt(
+        sessionStorage.getItem(SS_RELOADED_FOR) || "0",
+        10
+      );
+    } catch {}
+    if (reloadedFor === liveVersion) {
+      console.warn(
+        `[Vault] update banner suppressed — already reloaded for v${liveVersion}, browser cache still serving v${myVersion}. Showing hard-refresh hint.`
+      );
+      showHardRefreshHint(liveVersion, myVersion);
+      return;
+    }
+
+    console.info(
+      `[Vault] new build available (live v${liveVersion} > running v${myVersion}); banner shown`
+    );
+    showUpdateBanner(liveVersion);
   } catch { /* offline, network blip — try again next visibilitychange */ }
   finally { updateCheckInflight = false; }
 }
@@ -162,7 +204,7 @@ function showUpdateBanner(liveVersion) {
   // Honor a per-tab dismiss. If the user explicitly closed the
   // banner already, don't re-show it on every visibility-change.
   try {
-    if (sessionStorage.getItem("vault.update.dismissed") === String(liveVersion)) {
+    if (sessionStorage.getItem(SS_DISMISSED) === String(liveVersion)) {
       return;
     }
   } catch {}
@@ -188,15 +230,110 @@ function showUpdateBanner(liveVersion) {
     <button type="button" class="vault-update-banner-close" aria-label="Dismiss" data-action="vault-update-dismiss">&times;</button>`;
   host.insertBefore(bar, host.firstChild);
 
-  bar.querySelector('[data-action="vault-update-reload"]').addEventListener("click", () => {
+  const $reload = bar.querySelector('[data-action="vault-update-reload"]');
+  $reload.addEventListener("click", async () => {
     sendBeacon("update-banner-reload", `from=${VAULT_BUILD} to=v${liveVersion}`);
-    window.location.reload();
+    // Loop-guard: remember that we attempted a reload for this
+    // exact liveVersion. If the post-reload boot still sees the
+    // same liveVersion as newer than its myVersion, checkForUpdate
+    // will know the cache is wedged and surface a hard-refresh
+    // hint instead of looping the banner forever.
+    try { sessionStorage.setItem(SS_RELOADED_FOR, String(liveVersion)); } catch {}
+    // Disable the button so the user can't queue 5 reloads while
+    // we're warming the cache.
+    $reload.disabled = true;
+    $reload.textContent = "Reloading…";
+    // Best-effort: warm the browser HTTP cache for the new
+    // script.js + HTML before the navigation. cache:"reload"
+    // bypasses the HTTP cache and updates it. Without this, a
+    // simple location.reload() can re-use the same stale
+    // script.js bytes that triggered the banner in the first
+    // place, putting the user in an "I keep clicking reload but
+    // nothing changes" loop.
+    try {
+      await Promise.allSettled([
+        fetch(`/script.js?v=${liveVersion}`, { cache: "reload" }),
+        fetch("/", { cache: "reload" }),
+      ]);
+    } catch {}
+    // Cache-busted navigation. Adding a unique query string
+    // forces the browser to treat this as a fresh URL it has no
+    // cache entry for, so the HTML must be re-fetched. The fresh
+    // HTML references /script.js?v={liveVersion}, which we just
+    // warmed in cache.
+    try {
+      const u = new URL(window.location.href);
+      u.searchParams.set("__v", String(liveVersion));
+      window.location.replace(u.toString());
+    } catch {
+      window.location.reload();
+    }
   });
   bar.querySelector('[data-action="vault-update-dismiss"]').addEventListener("click", () => {
-    try { sessionStorage.setItem("vault.update.dismissed", String(liveVersion)); } catch {}
+    try { sessionStorage.setItem(SS_DISMISSED, String(liveVersion)); } catch {}
     bar.remove();
     sendBeacon("update-banner-dismissed", `from=${VAULT_BUILD} to=v${liveVersion}`);
   });
+}
+
+/** Render a one-time "your reload didn't pick up the new code, hard
+ *  refresh is needed" hint. Called from checkForUpdate() when we
+ *  detect that the user has already attempted to Reload-now for the
+ *  current liveVersion and the post-reload boot is STILL on the old
+ *  myVersion — meaning some cache layer (browser, CDN, service
+ *  worker) is wedged on stale bytes that JS can't dislodge. Shows
+ *  the platform-appropriate keyboard shortcut and clears the
+ *  loop-guard on dismiss so the next genuine deploy can show its
+ *  banner normally. */
+function showHardRefreshHint(liveVersion, myVersion) {
+  if (updateBannerShown) return;
+  updateBannerShown = true;
+  // Per-tab dismissal still applies — if they dismissed the hint
+  // already, don't re-show it on every visibility change.
+  try {
+    if (sessionStorage.getItem(SS_DISMISSED) === `hint:${liveVersion}`) {
+      return;
+    }
+  } catch {}
+
+  const host = document.getElementById("app-content");
+  if (!host) return;
+  const bar = document.createElement("div");
+  bar.id = "vault-update-banner";
+  bar.className = "vault-update-banner vault-update-banner--stuck";
+  bar.setAttribute("role", "status");
+  bar.setAttribute("aria-live", "polite");
+  const ua = (navigator.userAgent || "");
+  const platform = (navigator.platform || "");
+  const isMac = /Mac|iPhone|iPad|iPod/.test(platform) || /Mac OS X|iPhone|iPad/.test(ua);
+  const shortcut = isMac ? "Cmd + Shift + R" : "Ctrl + F5";
+  bar.innerHTML = `
+    <span class="vault-update-banner-icon" aria-hidden="true">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+    </span>
+    <span class="vault-update-banner-text">
+      <strong>Reload didn't pick up the latest version.</strong>
+      Press <kbd class="vault-update-banner-kbd">${shortcut}</kbd> to force a hard refresh — your sign-in and stats stay intact.
+    </span>
+    <button type="button" class="vault-update-banner-close" aria-label="Dismiss" data-action="vault-update-dismiss">&times;</button>`;
+  host.insertBefore(bar, host.firstChild);
+
+  bar.querySelector('[data-action="vault-update-dismiss"]').addEventListener("click", () => {
+    try {
+      sessionStorage.setItem(SS_DISMISSED, `hint:${liveVersion}`);
+      // Clear the reloadedFor flag so a future genuine deploy can
+      // show its normal "Reload now" banner without first having
+      // to clear this hint.
+      sessionStorage.removeItem(SS_RELOADED_FOR);
+    } catch {}
+    bar.remove();
+    sendBeacon("update-banner-hint-dismissed", `from=${VAULT_BUILD} stuckOn=v${liveVersion}`);
+  });
+
+  sendBeacon(
+    "update-banner-hint-shown",
+    `from=${VAULT_BUILD} myVersion=v${myVersion} liveVersion=v${liveVersion}`
+  );
 }
 
 // Check once at boot (after a small delay so we don't compete with
@@ -1506,6 +1643,18 @@ async function boot() {
   // on boot; the actual render happens when Overview becomes active.
   wireCompanion();
   renderCompanion();
+
+  // In desktop-host mode, intercept the per-panel toolbar buttons
+  // (Refresh / Import / Export → CSV/JSON) and route them through the
+  // `vaultHost` JS bridge to native AppState. Without this shim the
+  // web's "Import" button would open a browser file picker that
+  // can't recurse into the user's STS2 save folder, and "Export"
+  // would dump a file to ~/Downloads with no overwrite confirmation.
+  // With it, every visible toolbar button matches the cloud UI but
+  // runs the macOS surface (NSOpenPanel / NSSavePanel / VaultCore
+  // parser). The native top-toolbar that used to sit above this view
+  // is gone — there's no duplicate row anymore.
+  attachDesktopHostActionBridge();
 
   // Drag-drop history.json
   wireDropOverlay();

@@ -32,6 +32,26 @@ preflight:
 	  node --check $$f || { echo "✘ parse error in $$f — aborting deploy"; exit 1; }; \
 	done
 	@node scripts/preflight-runtime.mjs || { echo "✘ runtime preflight failed — aborting deploy"; exit 1; }
+	@# Version-pin sanity. The leading vN in script.js's VAULT_BUILD
+	@# constant must match the script.js?v=N pin in index.html. If
+	@# they drift (e.g. someone bumps the HTML pin during a deploy
+	@# but forgets the constant), every visitor running the new
+	@# script gets stuck in an infinite "newer version available"
+	@# banner loop because checkForUpdate() compares the two and
+	@# always sees liveVersion > myVersion. Caught one of those on
+	@# prod for v0.9.1–v0.9.3 — never again.
+	@HTML_PIN=$$(grep -oE 'script\.js\?v=[0-9]+' index.html | head -1 | sed 's/.*v=//'); \
+	JS_PIN=$$(grep -oE 'VAULT_BUILD = "v[0-9]+' script.js | head -1 | sed 's/.*"v//'); \
+	if [ -z "$$HTML_PIN" ] || [ -z "$$JS_PIN" ]; then \
+	  echo "✘ could not extract version pins (HTML='$$HTML_PIN', JS='$$JS_PIN') — aborting deploy"; exit 1; \
+	fi; \
+	if [ "$$HTML_PIN" != "$$JS_PIN" ]; then \
+	  echo "✘ version drift: index.html script.js?v=$$HTML_PIN but script.js VAULT_BUILD = v$$JS_PIN."; \
+	  echo "  These must match or the update banner loops forever."; \
+	  echo "  Fix: bump VAULT_BUILD to v$$HTML_PIN-... in script.js (or revert the HTML pin)."; \
+	  exit 1; \
+	fi; \
+	echo "✓ version pins match (v$$HTML_PIN)"
 	@echo "✓ all modules parse cleanly"
 
 deploy: preflight
