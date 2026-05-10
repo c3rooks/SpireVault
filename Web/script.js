@@ -68,7 +68,7 @@ const STS2_APP_ID = "2868840";
  * on an old client — instruct hard refresh. If it DOES match, the
  * bug is real and we can stop chasing cache ghosts.
  */
-const VAULT_BUILD = "v141-2026-05-10-news-detail-natural-page-scroll";
+const VAULT_BUILD = "v142-2026-05-10-news-scroll-to-top-on-select";
 
 // Feature flag — set to `true` only on local dev when iterating on the
 // Run Companion Overlay. Production stays false until the feature is
@@ -4403,21 +4403,22 @@ function selectNewsPost(id, { updateHash } = { updateHash: true }) {
   if (updateHash) {
     try { history.replaceState(null, "", `${window.location.pathname}${window.location.search}#news-${id}`); } catch {}
   }
-  // Scroll the page so the article header is at the top of the
-  // viewport. The right pane no longer has its own inner scroll —
-  // the document scrolls naturally — so we scroll the document
-  // instead. Use scrollIntoView with block:"start" which lines up
-  // the top of the article with the top of the viewport, then nudge
-  // up a few pixels so the header isn't pinned flush against the
-  // browser chrome.
+  // Scroll the WHOLE PAGE to the top, not just the article into view.
+  //
+  // Why: .panel-head ("News & updates") is position:sticky; top:0 and
+  // is roughly 77px tall. If we use scrollIntoView({block:"start"})
+  // on the article, the article's top lines up with viewport y=0 —
+  // but the sticky panel-head paints OVER it, so the banner and
+  // article header are hidden behind the title bar and the user
+  // sees the body content as if the article started mid-paragraph.
+  //
+  // Scrolling the document to absolute top instead means panel-head,
+  // sticky rail, and article header all sit in their natural
+  // positions and the user sees a clean "fresh article" view.
   try {
-    target.scrollIntoView({ block: "start", behavior: "smooth" });
-    // small breathing room so the eyebrow/title don't sit at y=0
-    setTimeout(() => {
-      try { window.scrollBy({ top: -16, behavior: "instant" }); } catch { window.scrollBy(0, -16); }
-    }, 0);
+    window.scrollTo({ top: 0, behavior: "smooth" });
   } catch {
-    try { target.scrollIntoView(); } catch {}
+    window.scrollTo(0, 0);
   }
   // Belt-and-braces banner load. Safari sometimes skips fetching <img>
   // children of an element that was display:none on first paint and
