@@ -1020,7 +1020,7 @@ struct OverlaySettingsView: View {
                 .padding(.horizontal, 14)
                 .padding(.vertical, 9)
         }
-        .onAppear { refreshKeychainState() }
+        .onAppear { refreshKeyState() }
     }
 
     private var divider: some View {
@@ -1078,7 +1078,7 @@ struct OverlaySettingsView: View {
                         state.config.overlayAIProviderRaw = p.rawValue
                         state.config.overlayAIModel = p.defaultModel
                         state.config.save()
-                        refreshKeychainState()
+                        refreshKeyState()
                     }
                 }
             }
@@ -1156,8 +1156,8 @@ struct OverlaySettingsView: View {
                     Button {
                         OverlayKeychain.delete(account: provider.keychainAccount)
                         typedKey = ""
-                        refreshKeychainState()
-                        saveMessage = "Removed from Keychain."
+                        refreshKeyState()
+                        saveMessage = "Removed."
                     } label: {
                         Text("Remove")
                             .font(.system(size: 11, weight: .semibold))
@@ -1196,7 +1196,7 @@ struct OverlaySettingsView: View {
                         .font(.system(size: 10, weight: .heavy))
                         .foregroundStyle(Color(red: 0.4, green: 0.85, blue: 0.45))
                 }
-                Text("Stored in your macOS Keychain. The Vault server never sees your key — it's sent in headers straight to \(provider.displayName).")
+                Text("Stored locally on your Mac (~/Library/Application Support/AscensionCompanion/vault, perms 0600). The Vault server never sees your key — it's sent in headers straight to \(provider.displayName).")
                     .font(.system(size: 10))
                     .foregroundStyle(.white.opacity(0.40))
                     .fixedSize(horizontal: false, vertical: true)
@@ -1374,10 +1374,10 @@ struct OverlaySettingsView: View {
         OverlayAIService.Provider(rawValue: state.config.overlayAIProviderRaw) ?? .openai
     }
 
-    private func refreshKeychainState() {
+    private func refreshKeyState() {
         keyOnFile = OverlayKeychain.hasKey(for: provider.keychainAccount)
         typedKey = ""
-        saveMessage = keyOnFile ? "API key already stored. Paste a new one to replace." : nil
+        saveMessage = keyOnFile ? "API key on file. Paste a new one to replace." : nil
     }
 
     private func saveKey() {
@@ -1386,9 +1386,9 @@ struct OverlaySettingsView: View {
         if OverlayKeychain.setAPIKey(trimmed, for: provider.keychainAccount) {
             keyOnFile = true
             typedKey = ""
-            saveMessage = "Saved to Keychain."
+            saveMessage = "Saved."
         } else {
-            saveMessage = "Couldn't save to Keychain. Open Keychain Access to investigate."
+            saveMessage = "Couldn't write the key file. Check Application Support permissions."
         }
     }
 }

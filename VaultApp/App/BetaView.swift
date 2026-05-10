@@ -18,7 +18,10 @@ import VaultCore
 //   1. Hero panel — what the Run Coach is, hotkeys, visual demo strip.
 //   2. Enable toggle + position reset.
 //   3. AI provider picker (OpenAI / Anthropic) and model.
-//   4. API key field (stored in macOS keychain).
+//   4. API key field (stored on disk in Application Support — see
+//      OverlayKeychain.swift for the v0.9.5 move off the macOS
+//      keychain to a file-backed store; the type name is preserved
+//      for call-site continuity).
 //   5. Privacy switches (screenshot, hide-from-capture, always-on-top).
 //   6. Custom system prompt addendum.
 //   7. Live test panel — an inline copy of the chat for verifying setup
@@ -416,7 +419,7 @@ struct BetaView: View {
             Text("How this works")
                 .font(.system(size: 11, weight: .heavy))
                 .foregroundStyle(Theme.textSecondary)
-            Text("• The Run Coach never modifies Slay the Spire 2. It doesn't read game memory, inject DLLs, automate gameplay, or replace your decisions.\n• Screenshots and questions go directly from your Mac to your chosen provider (OpenAI or Anthropic) using your API key. The Vault servers see none of it.\n• Your API key is stored in the macOS Keychain. It never leaves your Mac except in headers to the provider you picked.\n• This is Beta. The marketing site doesn't claim AI features — they ship here first, in front of real players, before they go on the front page.")
+            Text("• The Run Coach never modifies Slay the Spire 2. It doesn't read game memory, inject DLLs, automate gameplay, or replace your decisions.\n• Screenshots and questions go directly from your Mac to your chosen provider (OpenAI or Anthropic) using your API key. The Vault servers see none of it.\n• Your API key is stored on your local disk in ~/Library/Application Support/AscensionCompanion/vault/overlay-keys.json (perms 0600, scrambled at rest). It never leaves your Mac except in the request headers to the provider you picked.\n• This is Beta. The marketing site doesn't claim AI features — they ship here first, in front of real players, before they go on the front page.")
                 .font(.system(size: 11))
                 .foregroundStyle(Theme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -513,7 +516,7 @@ private struct APIKeyEditor: View {
                 }
                 Spacer()
                 if keyOnFile {
-                    Label("On file in Keychain", systemImage: "lock.fill")
+                    Label("On file", systemImage: "lock.fill")
                         .font(.system(size: 10, weight: .semibold))
                         .foregroundStyle(Theme.winBright)
                 }
@@ -565,23 +568,23 @@ private struct APIKeyEditor: View {
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(Theme.winBright)
             }
-            Text("Your key is stored in the macOS Keychain (com.coreycrooks.thevault.overlay). It is sent only in `Authorization` / `x-api-key` headers to the provider you select. The Vault server never sees it.")
+            Text("Your key is stored locally at ~/Library/Application Support/AscensionCompanion/vault/overlay-keys.json (file perms 0600, scrambled at rest). It's sent only in `Authorization` / `x-api-key` headers to the provider you select. The Vault server never sees it.")
                 .font(.system(size: 10))
                 .foregroundStyle(Theme.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .onAppear { refreshFromKeychain() }
-        .onChange(of: provider) { _ in refreshFromKeychain() }
+        .onAppear { refreshFromStore() }
+        .onChange(of: provider) { _ in refreshFromStore() }
     }
 
-    private func refreshFromKeychain() {
+    private func refreshFromStore() {
         keyOnFile = OverlayKeychain.hasKey(for: provider.keychainAccount)
         // Don't pre-fill the field with the stored secret — make the user
         // explicitly paste again to change it. That avoids a "show key"
         // surfacing the stored value and matches the way 1Password and
         // similar tools handle credential edits.
         typed = ""
-        status = keyOnFile ? "API key already saved. Paste a new key + Save to replace it." : nil
+        status = keyOnFile ? "API key on file. Paste a new key + Save to replace it." : nil
     }
 
     private func save() {
@@ -591,9 +594,9 @@ private struct APIKeyEditor: View {
         if ok {
             keyOnFile = true
             typed = ""
-            status = "Saved to Keychain."
+            status = "Saved."
         } else {
-            status = "Couldn't save to Keychain. Check Keychain Access."
+            status = "Couldn't write the key file. Check disk space and the Application Support folder permissions."
         }
     }
 }

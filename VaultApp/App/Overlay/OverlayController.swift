@@ -192,6 +192,15 @@ final class OverlayController: ObservableObject {
         panel?.orderOut(nil)
         panel = nil
         hosting = nil
+        // Reset to the pill so re-enabling later starts from the
+        // canonical small state. Without this, a user who opens chat
+        // (or settings), toggles "Enable" off in Beta → Run Coach,
+        // then toggles it back on would get the chat/settings panel
+        // back at its larger size — which violates the mental model
+        // "the pill comes back when I re-enable." Doing this on hide
+        // is safe: there's no panel to re-size, so it's a pure
+        // state reset that the next `show()` reads.
+        mode = .pill
     }
 
     func toggleExpanded() {

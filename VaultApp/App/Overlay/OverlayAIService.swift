@@ -15,10 +15,12 @@ import SwiftUI
 //   3. Sending the chat-completion request to the configured provider
 //      (OpenAI or Anthropic) and parsing the response.
 //
-// The user's API key is read from the keychain on each call — we never
-// hold it in memory longer than a single request. If no key is set we
-// short-circuit with a humane "Add an API key in Beta → Run Coach" reply
-// so the user knows exactly what to do.
+// The user's API key is read from the local-disk key store on each call
+// (`OverlayKeychain` — file-backed since v0.9.5; see that file for the
+// migration off the macOS keychain) — we never hold it in memory longer
+// than a single request. If no key is set we short-circuit with a humane
+// "Add an API key in Beta → Run Coach" reply so the user knows exactly
+// what to do.
 //
 // Privacy posture, copied from the web overlay engine:
 //   * Engine never claims to read game memory.
@@ -506,7 +508,7 @@ final class OverlayAIService: ObservableObject {
             messages.append(.init(role: .user, text: question))
             messages.append(.init(
                 role: .assistant,
-                text: "Add an API key under Beta → Run Coach to enable the overlay's AI advice. The Vault never sees your key — it's stored in the macOS keychain and used only to call \(provider.displayName) directly."
+                text: "Add an API key under Beta → Run Coach to enable the overlay's AI advice. The Vault never sees your key — it's stored on your local disk and used only to call \(provider.displayName) directly."
             ))
             return
         }
