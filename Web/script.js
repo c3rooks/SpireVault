@@ -68,7 +68,7 @@ const STS2_APP_ID = "2868840";
  * on an old client — instruct hard refresh. If it DOES match, the
  * bug is real and we can stop chasing cache ghosts.
  */
-const VAULT_BUILD = "v151-2026-05-10-update-banner-loop-break-and-cache-warm";
+const VAULT_BUILD = "v152-2026-05-10-desktop-sidebar-and-toolbar-parity";
 
 // Feature flag — set to `true` only on local dev when iterating on the
 // Run Companion Overlay. Production stays false until the feature is
@@ -1262,6 +1262,95 @@ function startSteamSignIn() {
   u.searchParams.set("return", RETURN_URL);
   u.searchParams.set("nonce", nonce);
   window.location.assign(u.toString());
+}
+
+// =========================================================================
+// Desktop-host action bridge.
+// -------------------------------------------------------------------------
+// When the page is embedded in the macOS desktop app's WKWebView, the
+// panel toolbar's data-ops buttons (Refresh / Import / Export menu) need
+// to reach native macOS surfaces — NSOpenPanel for the save folder,
+// NSSavePanel for exports, VaultCore for re-parsing. The browser
+// equivalents (showDirectoryPicker / blob downloads) work in a real
+// browser tab but can't reach STS2's privileged save folder from inside
+// a WKWebView.
+//
+// We add a capture-phase document listener so we run *before* the normal
+// bubble-phase handlers wired by `wireToolbar` etc. If the click landed
+// on a target action and we're in desktop-host mode, we close the export
+// menu (so the user gets the same visual feedback as the cloud), post
+// the action to the native `vaultHost` bridge, and stopImmediatePropagation
+// so the bubble handler doesn't also try to download a blob.
+//
+// This is what removes the duplicated native top-toolbar that v0.9.2
+// painted above the WebView: the embedded toolbar IS the toolbar now,
+// and every button it shows actually does the right thing on desktop.
+// =========================================================================
+function attachDesktopHostActionBridge() {
+  if (!IS_DESKTOP_HOST) return;
+
+  // Map data-action → native enum case (must match WebHostAction.rawValue
+  // in VaultApp/App/WebHostView.swift exactly).
+  const ACTION_MAP = {
+    "reload-saves": "rescan",
+    "upload":       "pickSaves",
+    "export-csv":   "exportCSV",
+    "export-json":  "exportJSON",
+  };
+
+  const postNativeAction = (action) => {
+    try {
+      window.webkit?.messageHandlers?.vaultHost?.postMessage({
+        kind: "action", action: action,
+      });
+    } catch (e) {
+      console.warn("[VaultHost] action bridge failed", action, e);
+    }
+  };
+
+  // Re-label the "Import" toolbar button to "Link saves" in desktop
+  // mode — its underlying behavior is now choosing the save folder
+  // via NSOpenPanel, not picking individual files. Tooltip is updated
+  // too so the affordance reads correctly to a hovering user. We also
+  // relabel any companion-slot CTA copy on next render via the regular
+  // template path; this just covers buttons already in the DOM at boot.
+  document.querySelectorAll('[data-action="upload"]').forEach((btn) => {
+    const labelEl = btn.querySelector("span:not(.btn-icon)") || btn;
+    if (labelEl && /^(Import|Pick(\s|$))/i.test(labelEl.textContent || "")) {
+      labelEl.textContent = "Link saves";
+    }
+    btn.setAttribute("title", "Choose your Slay the Spire 2 save folder");
+  });
+
+  document.addEventListener("click", (e) => {
+    const target = e.target instanceof Element ? e.target : null;
+    if (!target) return;
+
+    // Walk the data-action map and pick the first one that matches.
+    // closest() returns null for non-matches so this is cheap even
+    // for clicks far away from any action button.
+    for (const [attrVal, nativeName] of Object.entries(ACTION_MAP)) {
+      const hit = target.closest(`[data-action="${attrVal}"]`);
+      if (!hit) continue;
+
+      // Close the export dropdown if the click was inside one — same
+      // behavior the bubble-phase handler would produce, just done
+      // here so we don't leave an open menu after stopImmediate.
+      const wrap = hit.closest("[data-export-wrap]");
+      if (wrap) {
+        const menu = wrap.querySelector(".app-toolbar-export-menu");
+        const toggle = wrap.querySelector('[data-action="toggle-export"]');
+        if (menu) menu.hidden = true;
+        wrap.dataset.open = "false";
+        toggle?.setAttribute("aria-expanded", "false");
+      }
+
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      postNativeAction(nativeName);
+      return;
+    }
+  }, /* useCapture */ true);
 }
 
 /**

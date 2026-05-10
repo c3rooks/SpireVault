@@ -342,6 +342,28 @@ final class AppState: ObservableObject {
         }
     }
 
+    /// JSON twin of `exportCSV()`. Wired to the Export menu's
+    /// "Download JSON" entry inside the embedded web view, which is
+    /// posted to native code via the `vaultHost` bridge in
+    /// desktop-host mode. Re-uses the same Codable shape that the
+    /// macOS app and web companion both speak so a JSON export from
+    /// the desktop is byte-identical to one from the cloud.
+    func exportJSON() {
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = "vault-history.json"
+        panel.allowedContentTypes = [.json]
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        let enc = JSONEncoder()
+        enc.dateEncodingStrategy = .iso8601
+        enc.outputFormatting = [.prettyPrinted, .sortedKeys]
+        do {
+            let data = try enc.encode(filter.apply(runs))
+            try data.write(to: url, options: .atomic)
+        } catch {
+            NSLog("[AppState] exportJSON failed: %@", error.localizedDescription)
+        }
+    }
+
     // MARK: - Persistence
 
     private func persistConfig() {

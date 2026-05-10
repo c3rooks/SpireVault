@@ -61,6 +61,17 @@ struct WebHostView: NSViewRepresentable {
     /// every native API call all reflect login at once.
     var onAuthSuccess: ((WebAuthPayload) -> Void)? = nil
 
+    /// Called when the embedded page's per-panel toolbar fires a
+    /// data-ops button (Refresh / Import / Export → CSV/JSON). We
+    /// route to native code so the user gets the real macOS file
+    /// pickers and the canonical VaultCore parser, instead of the
+    /// browser's directory-picker fallback. This is what removes
+    /// the duplicated native chrome row above the WebView — every
+    /// data action the web exposes now actually works in desktop
+    /// mode without a parallel native toolbar painting the same
+    /// affordances.
+    var onAction: ((WebHostAction) -> Void)? = nil
+
     /// The full canonical web companion URL. This is the one place we
     /// hard-code "app.spirevault.app" so swapping deploy targets later
     /// only touches one symbol.
@@ -85,7 +96,8 @@ struct WebHostView: NSViewRepresentable {
         Coordinator(
             tab: $tab,
             workerHost: serverURL.host,
-            onAuthSuccess: onAuthSuccess
+            onAuthSuccess: onAuthSuccess,
+            onAction: onAction
         )
     }
 
@@ -159,9 +171,12 @@ struct WebHostView: NSViewRepresentable {
         // web's CTAs use, so the OpenID flow stays inside this
         // WKWebView and the cookie ends up in our data store.
         context.coordinator.requestSignInIfNeeded(ticket: signInTicket, on: webView)
-        // Latest auth callback closure — keep it fresh in case AppState
-        // was rebuilt (e.g., a config change rebuilt presenceService).
+        // Latest auth + action closures — keep them fresh in case
+        // AppState was rebuilt (e.g., a config change rebuilt
+        // presenceService) and the captured closure now points at a
+        // dead instance.
         context.coordinator.onAuthSuccess = onAuthSuccess
+        context.coordinator.onAction = onAction
     }
 
     private func loadInitial(into view: WKWebView, tab: SidebarSection, serverURL: URL) {
@@ -241,6 +256,11 @@ extension WebHostView {
         /// `updateNSView` so AppState rebuilds don't strand it.
         var onAuthSuccess: ((WebAuthPayload) -> Void)?
 
+        /// Closure for `kind: "action"` bridge messages. Maps the
+        /// embedded page's per-panel toolbar buttons (Refresh,
+        /// Import, Export → CSV/JSON) to native AppState methods.
+        var onAction: ((WebHostAction) -> Void)?
+
         /// Marks whether the page has reported back via window.SpireVault.
         /// Until then we don't try to call switchTab — the function isn't
         /// in scope yet, and we'd just bin the call.
@@ -270,11 +290,13 @@ extension WebHostView {
         init(
             tab: Binding<SidebarSection>,
             workerHost: String?,
-            onAuthSuccess: ((WebAuthPayload) -> Void)?
+            onAuthSuccess: ((WebAuthPayload) -> Void)?,
+            onAction: ((WebHostAction) -> Void)?
         ) {
             _tab = tab
             self.workerHost = workerHost
             self.onAuthSuccess = onAuthSuccess
+            self.onAction = onAction
         }
 
         // MARK: Driving the embedded page
@@ -458,6 +480,21 @@ extension WebHostView {
                 // the OpenID round-trip failed. Clear the in-flight
                 // flag so the next click re-fires the flow.
                 signInInFlight = false
+            case "action":
+                // The embedded page's per-panel toolbar fired a data
+                // op (Rescan / Import / Export → CSV or JSON). Hand
+                // off to native AppState so the user gets the real
+                // macOS file pickers and the canonical VaultCore
+                // parser. Without this bridge the web's "Import"
+                // button would silently no-op (its showDirectoryPicker
+                // fallback can't reach the user's STS2 saves) and
+                // "Export" would dump a file to ~/Downloads with no
+                // overwrite confirmation.
+                if let raw = body["action"] as? String,
+                   let action = WebHostAction(rawValue: raw) {
+                    let cb = onAction
+                    DispatchQueue.main.async { cb?(action) }
+                }
             case "error":
                 if let msg = body["message"] as? String {
                     NSLog("[WebHost] page error: %@", msg)
@@ -621,6 +658,26 @@ extension SidebarSection {
         default: return true
         }
     }
+}
+
+// MARK: - Web action bridge ---------------------------------------------------
+
+/// Each value corresponds to a button the embedded page's per-panel
+/// toolbar paints — what the *cloud* version of the app exposes to
+/// users. In desktop-host mode the click is intercepted by
+/// `Web/script.js`, posted to the native `vaultHost` bridge as
+/// `kind: "action", action: "<rawValue>"`, and dispatched to native
+/// AppState. The point: the visible UI is 1:1 with the cloud, but
+/// every action runs through native macOS surfaces (NSOpenPanel for
+/// folder picks, NSSavePanel for exports, the canonical VaultCore
+/// parser for rescans) instead of browser equivalents that can't
+/// reach STS2's real save folder.
+enum WebHostAction: String {
+    case rescan          // "Refresh" — re-read linked save folder
+    case pickSaves       // "Import" — set the linked save folder
+    case revealSaves     // (menu) — show in Finder
+    case exportCSV       // Export menu → Download CSV
+    case exportJSON      // Export menu → Download JSON
 }
 
 // MARK: - Web auth payload ----------------------------------------------------

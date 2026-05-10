@@ -46,6 +46,33 @@ struct DetailView: View {
                             avatar: payload.avatar,
                             session: payload.session
                         )
+                    },
+                    onAction: { action in
+                        // Per-panel toolbar buttons inside the
+                        // embedded WebView fire native flows here.
+                        // The web companion's Refresh / Import /
+                        // Export menu look identical to the cloud
+                        // for users who'd never know which "side"
+                        // they're on, but every action runs in
+                        // native macOS — NSOpenPanel for folders,
+                        // NSSavePanel for files, the VaultCore
+                        // parser for stats — so the desktop's
+                        // privileged file access is preserved.
+                        switch action {
+                        case .rescan:
+                            Task {
+                                await state.scan()
+                                state.attachStatsToProfile()
+                            }
+                        case .pickSaves:
+                            state.chooseSaveFolder()
+                        case .revealSaves:
+                            state.revealSaveFolder()
+                        case .exportCSV:
+                            state.exportCSV()
+                        case .exportJSON:
+                            state.exportJSON()
+                        }
                     }
                 )
             }

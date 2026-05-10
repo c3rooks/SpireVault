@@ -46,17 +46,23 @@ private struct HSplit: View {
                 .frame(width: 1)
 
             VStack(spacing: 0) {
-                // Beta and Settings render with the legacy native title
-                // bar (their own panels are SwiftUI). Every other tab is
-                // hosted by the WebView, which already paints its own
-                // matching panel header — so we render only a thin
-                // native toolbar above it to keep Rescan / Export /
-                // Open-Saves-Folder reachable without duplicating a
-                // title row.
+                // Beta and Settings render with the legacy native
+                // title bar because they're native SwiftUI panels.
+                // Every other tab is hosted by the WebView, which
+                // already paints its own matching panel header
+                // (matching the cloud version pixel-for-pixel) — so
+                // we render *no* native chrome above it. The web's
+                // per-panel toolbar (Refresh / Import / Export menu)
+                // is bridged to native AppState via WebHostAction in
+                // desktop-host mode, so every visible button still
+                // routes through real macOS surfaces (NSOpenPanel,
+                // NSSavePanel, VaultCore parser). The legacy
+                // `WebHostToolbar` row was removed in v0.9.3 because
+                // it was a parallel native copy of the same buttons,
+                // producing a duplicated toolbar that broke parity
+                // with the cloud.
                 if [SidebarSection.beta, .settings].contains(section) {
                     AppHeaderBar(section: section)
-                } else {
-                    WebHostToolbar()
                 }
                 DetailView(section: $section)
             }
@@ -85,7 +91,10 @@ enum SidebarSection: Hashable, CaseIterable, Identifiable {
         case .cards:      return "Cards"
         case .runs:       return "Recent Runs"
         case .coop:       return "Co-op"
-        case .highlights: return "Community Highlights"
+        // Renamed from "Community Highlights" → "Highlights" in v0.9.3
+        // to match the embedded web companion's sidebar label exactly.
+        // The desktop chrome is now a 1:1 mirror of cloud nav.
+        case .highlights: return "Highlights"
         case .news:       return "News"
         case .beta:       return "Beta"
         case .settings:   return "Settings"
@@ -106,12 +115,18 @@ enum SidebarSection: Hashable, CaseIterable, Identifiable {
         case .settings:   return "gearshape.fill"
         }
     }
-    /// Stats sections vs. tools — used to group the sidebar.
+    /// Stats sections vs. community — used to group the sidebar.
+    /// Mirrors the embedded web companion's layout exactly: STATS
+    /// (Overview … Recent Runs) above, COMMUNITY (Co-op, Highlights,
+    /// News, Beta) below. The previous "SYSTEM" group held just Beta
+    /// + the (already hidden) Settings row; in v0.9.3 we collapsed
+    /// it because Beta belongs next to News in the cloud, and Settings
+    /// is reachable from the persona pill.
     var group: SidebarGroup {
         switch self {
         case .overview, .characters, .ascensions, .relics, .cards, .runs: return .stats
-        case .coop, .highlights, .news: return .community
-        case .beta, .settings: return .system
+        case .coop, .highlights, .news, .beta: return .community
+        case .settings: return .community // hidden anyway; group is unused
         }
     }
     /// Whether this section is rendered as a sidebar row.
@@ -130,13 +145,17 @@ enum SidebarSection: Hashable, CaseIterable, Identifiable {
 }
 
 enum SidebarGroup: String, CaseIterable, Identifiable {
-    case stats, community, system
+    /// Two groups, matching the web companion's `nav-group` divisions
+    /// in `Web/index.html`: STATS up top, COMMUNITY (with Beta tucked
+    /// at the end) below. The legacy `system` case is gone — Beta
+    /// moved into COMMUNITY and Settings is reached via the persona
+    /// pill menu, so there's nothing left to render in a system row.
+    case stats, community
     var id: Self { self }
     var label: String {
         switch self {
         case .stats:     return "STATS"
         case .community: return "COMMUNITY"
-        case .system:    return "SYSTEM"
         }
     }
 }
@@ -158,7 +177,14 @@ struct Sidebar: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
                     sectionGroup
-                    filtersGroup
+                    // Native FILTERS (Character / Outcome / Window) was
+                    // removed in v0.9.3. The embedded web companion has
+                    // its own per-panel filter UI that drives the
+                    // canonical stats engine; a parallel native filter
+                    // bar would only show on the never-rendered legacy
+                    // SwiftUI panels and confuse users into thinking
+                    // they're filtering the embedded view. One filter
+                    // surface, one engine, one source of truth.
                 }
                 .padding(.horizontal, 14)
                 .padding(.vertical, 16)
@@ -255,18 +281,6 @@ struct Sidebar: View {
             if case .readyToInstall = state.updateService.status { return "Ready" }
             return nil
         default: return nil
-        }
-    }
-
-    private var filtersGroup: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("FILTERS")
-                .font(.system(size: 10, weight: .bold, design: .rounded))
-                .tracking(2)
-                .foregroundStyle(Theme.textTertiary)
-                .padding(.leading, 10)
-            FiltersForm()
-                .padding(.horizontal, 8)
         }
     }
 
@@ -516,115 +530,14 @@ private struct SidebarRow: View {
 }
 
 // MARK: - Filters
-
-struct FiltersForm: View {
-    @EnvironmentObject var state: AppState
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            FilterRow(label: "Character") {
-                Picker("", selection: Binding(
-                    get: { state.filter.character },
-                    set: { state.filter.character = $0; state.recomputeReport() }
-                )) {
-                    Text("All").tag(VaultCore.Character?.none)
-                    ForEach(allCharacters, id: \.self) { c in
-                        Text(c.rawValue.capitalized).tag(VaultCore.Character?.some(c))
-                    }
-                }
-                .labelsHidden()
-            }
-
-            FilterRow(label: "Outcome") {
-                Picker("", selection: Binding<Bool?>(
-                    get: { state.filter.won },
-                    set: { state.filter.won = $0; state.recomputeReport() }
-                )) {
-                    Text("All").tag(Bool?.none)
-                    Text("Wins").tag(Bool?.some(true))
-                    Text("Losses").tag(Bool?.some(false))
-                }
-                .labelsHidden()
-            }
-
-            FilterRow(label: "Window") {
-                Picker("", selection: Binding<TimeWindow>(
-                    get: { TimeWindow.from(state.filter.since) },
-                    set: { window in state.filter.since = window.dateValue; state.recomputeReport() }
-                )) {
-                    ForEach(TimeWindow.allCases) { w in Text(w.label).tag(w) }
-                }
-                .labelsHidden()
-            }
-
-            if filtersActive {
-                Button {
-                    state.filter = RunFilter()
-                    state.recomputeReport()
-                } label: {
-                    Label("Clear filters", systemImage: "xmark.circle")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(Theme.accent)
-                }
-                .buttonStyle(.plain)
-                .padding(.top, 4)
-            }
-        }
-    }
-
-    private var filtersActive: Bool {
-        state.filter.character != nil || state.filter.won != nil || state.filter.since != nil
-    }
-
-    private var allCharacters: [VaultCore.Character] {
-        [.ironclad, .silent, .regent, .necrobinder, .defect]
-    }
-}
-
-private struct FilterRow<Content: View>: View {
-    let label: String
-    @ViewBuilder var content: () -> Content
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(label.uppercased())
-                .font(.system(size: 9, weight: .heavy, design: .rounded))
-                .tracking(1.5)
-                .foregroundStyle(Theme.textTertiary)
-            content()
-                .controlSize(.small)
-        }
-    }
-}
-
-enum TimeWindow: String, CaseIterable, Identifiable, Hashable {
-    case all, last7d, last30d, last90d
-    var id: Self { self }
-    var label: String {
-        switch self {
-        case .all:     return "All time"
-        case .last7d:  return "Last 7 days"
-        case .last30d: return "Last 30 days"
-        case .last90d: return "Last 90 days"
-        }
-    }
-    var dateValue: Date? {
-        switch self {
-        case .all:     return nil
-        case .last7d:  return Date().addingTimeInterval(-7 * 86400)
-        case .last30d: return Date().addingTimeInterval(-30 * 86400)
-        case .last90d: return Date().addingTimeInterval(-90 * 86400)
-        }
-    }
-    static func from(_ d: Date?) -> TimeWindow {
-        guard let d else { return .all }
-        let delta = -d.timeIntervalSinceNow / 86400
-        if delta <= 8   { return .last7d }
-        if delta <= 31  { return .last30d }
-        if delta <= 91  { return .last90d }
-        return .all
-    }
-}
+//
+// The native FILTERS sidebar group (Character / Outcome / Window pickers)
+// was removed in v0.9.3. The embedded web companion drives every visible
+// data panel through its own filter UI and stats engine — keeping a
+// parallel SwiftUI filter form would just maintain dead code that
+// looks active. RunFilter, RunFilter.apply(), and AppState.filter are
+// retained because CSV export and a couple of native fallback paths
+// still reference them; they just no longer have a UI binding.
 
 // MARK: - Header bar
 
@@ -709,83 +622,16 @@ struct AppHeaderBar: View {
     }
 }
 
-/// Slim toolbar that floats above the embedded WebView. Keeps the native
-/// data-ops buttons reachable (Rescan kicks off VaultCore parsing, Export
-/// drops a CSV via NSSavePanel, Saves reveals the save folder in Finder)
-/// without painting a redundant title bar — the embedded page already
-/// shows its own panel head, matching the cloud version pixel-for-pixel.
-struct WebHostToolbar: View {
-    @EnvironmentObject var state: AppState
-
-    var body: some View {
-        HStack(alignment: .center, spacing: 10) {
-            statusPill
-            Spacer(minLength: 0)
-            HStack(spacing: 8) {
-                HeaderButton(systemImage: "arrow.clockwise", label: "Rescan") {
-                    Task {
-                        await state.scan()
-                        state.attachStatsToProfile()
-                    }
-                }
-                HeaderButton(systemImage: "square.and.arrow.up", label: "Export") {
-                    state.exportCSV()
-                }
-                HeaderButton(systemImage: "folder", label: "Saves") {
-                    state.revealSaveFolder()
-                }
-            }
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
-        .background(
-            Theme.bgPrimary
-                .overlay(
-                    Rectangle()
-                        .fill(Theme.cardBorder.opacity(0.5))
-                        .frame(height: 1),
-                    alignment: .bottom
-                )
-        )
-    }
-
-    @ViewBuilder
-    private var statusPill: some View {
-        switch state.status {
-        case .scanning(let progress, let label):
-            HStack(spacing: 8) {
-                ProgressView(value: progress)
-                    .progressViewStyle(.linear)
-                    .tint(Theme.accent)
-                    .frame(width: 100)
-                Text("Scanning… \(label)")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(Theme.textSecondary)
-                    .lineLimit(1)
-            }
-        case .error(let m):
-            Label(m, systemImage: "exclamationmark.triangle.fill")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(Theme.loss)
-                .lineLimit(1)
-        case .idle:
-            if let last = state.lastScanAt {
-                Label("Updated \(last.formatted(.relative(presentation: .numeric)))",
-                      systemImage: "checkmark.circle.fill")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(Theme.textSecondary)
-                    .labelStyle(.titleAndIcon)
-            } else if state.runs.isEmpty && state.saveFolder == nil {
-                Label("No save folder linked",
-                      systemImage: "questionmark.folder.fill")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(Theme.gold)
-            } else {
-                EmptyView()
-            }
-        }
-    }
-}
+// `WebHostToolbar` was removed in v0.9.3. It used to paint a thin
+// native row of Rescan / Export / Saves buttons above the embedded
+// WebView, but the WebView already paints its own per-panel toolbar
+// (Refresh / Import / Export menu) that matches the cloud's UI
+// pixel-for-pixel. The two stacked produced a visibly duplicated
+// chrome that broke parity. The web's buttons now bridge to native
+// AppState via `WebHostAction` (see `Web/script.js` desktop-host
+// branch + `WebHostView.swift`'s `kind: "action"` handler) so every
+// visible affordance still runs through real macOS surfaces — no
+// fidelity lost, no duplicate row gained.
 
 private struct HeaderButton: View {
     let systemImage: String
