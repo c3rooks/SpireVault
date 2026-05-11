@@ -2156,34 +2156,108 @@ final class OverlayAIService: ObservableObject {
 
     // MARK: - Screenshot capture
 
+    // MARK: - Screen capture permission
+
+    /// Current TCC screen-recording grant state. Published so the
+    /// BetaView and overlay pill can surface a clear "go grant this"
+    /// banner instead of silently failing mid-game.
+    @Published private(set) var screenCaptureGranted: Bool = CGPreflightScreenCaptureAccess()
+
+    /// Re-checks the TCC grant and updates `screenCaptureGranted`.
+    /// Call after a permission prompt resolves (from `applyEnabled` in
+    /// OverlayController) so the UI reflects the new state immediately.
+    func refreshScreenCaptureStatus() {
+        screenCaptureGranted = CGPreflightScreenCaptureAccess()
+    }
+
+    /// Triggers the TCC screen-recording dialog if not yet granted, then
+    /// refreshes `screenCaptureGranted`. Safe to call from BetaView buttons
+    /// so ScreenCaptureKit doesn't need to be imported there.
+    func prewarmAndRefresh() {
+        guard #available(macOS 14.0, *) else {
+            screenCaptureGranted = CGPreflightScreenCaptureAccess()
+            return
+        }
+        Task { @MainActor [weak self] in
+            _ = try? await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+            self?.screenCaptureGranted = CGPreflightScreenCaptureAccess()
+        }
+    }
+
+    // MARK: - Screenshot capture
+
     /// Primary capture path: ScreenCaptureKit (macOS 14+).
     ///
-    /// SCKit is the only API that reliably captures Metal-rendered game
-    /// content (STS2 is a Unity/Metal app). CGDisplayCreateImage reads
-    /// the legacy compositor layer and misses Metal windows entirely.
+    /// Strategy, in order of preference:
+    ///   1. Find STS2 by PID (NSWorkspace lookup). If found, capture the
+    ///      display it lives on — this works regardless of which monitor the
+    ///      game is on and eliminates all display-ID guessing.
+    ///   2. If STS2 isn't running (lobby / spectating / alt-tabbed), fall
+    ///      back to the user-pinned or leftmost display from `gameDisplayID`.
     ///
-    /// We also exclude The Vault's own process from the capture so the
-    /// overlay panel doesn't obscure the game in the AI's screenshot.
+    /// Either way, The Vault's own windows are excluded from the frame so
+    /// the AI only sees the game (not the overlay panel or the main app).
     @available(macOS 14.0, *)
     private func captureWithSCKit() async -> Data? {
+        guard CGPreflightScreenCaptureAccess() else {
+            screenCaptureGranted = false
+            return nil
+        }
+        screenCaptureGranted = true
         do {
             let content = try await SCShareableContent.excludingDesktopWindows(
                 false, onScreenWindowsOnly: true)
-            guard let display = content.displays.first(where: { $0.displayID == gameDisplayID })
-                               ?? content.displays.first else { return nil }
 
             let excluded = content.applications.filter {
                 $0.bundleIdentifier == "com.coreycrooks.thevault.app"
             }
+
+            // --- STS2 process detection ---
+            // Find STS2 in the running app list (no extra permissions needed).
+            let stsPID = NSWorkspace.shared.runningApplications.first(where: { app in
+                let name   = (app.localizedName      ?? "").lowercased()
+                let bundle = (app.bundleIdentifier   ?? "").lowercased()
+                return name.contains("slay the spire")
+                    || bundle.contains("megacrit")
+                    || bundle.contains("slayspire")
+                    || bundle.contains("slay_the_spire")
+            })?.processIdentifier
+
+            // If we found STS2, pick the display it's actually on by looking
+            // at the center of its largest window. This beats the stored
+            // gameDisplayID because it self-corrects if the user moved the
+            // game to a different monitor since last launch.
+            var targetDisplayID = gameDisplayID
+            if let pid = stsPID {
+                let stsWin = content.windows
+                    .filter { $0.owningApplication?.processID == pid }
+                    .max(by: { $0.frame.width * $0.frame.height
+                              < $1.frame.width * $1.frame.height })
+                if let win = stsWin {
+                    let cx = win.frame.midX
+                    let cy = win.frame.midY
+                    if let hit = content.displays.first(where: {
+                        CGRect(origin: CGPoint(x: $0.frame.minX, y: $0.frame.minY),
+                               size: CGSize(width: $0.frame.width, height: $0.frame.height))
+                        .contains(CGPoint(x: cx, y: cy))
+                    }) {
+                        targetDisplayID = hit.displayID
+                        // Keep gameDisplayID in sync so the picker reflects reality.
+                        gameDisplayID = targetDisplayID
+                    }
+                }
+            }
+
+            guard let display = content.displays.first(where: { $0.displayID == targetDisplayID })
+                               ?? content.displays.first else { return nil }
+
             let filter = SCContentFilter(
                 display: display,
                 excludingApplications: excluded,
                 exceptingWindows: []
             )
-
             let cfg = SCStreamConfiguration()
-            // Capture at full display resolution; scaledPNG downscales to 1280px.
-            cfg.width = display.width
+            cfg.width  = display.width
             cfg.height = display.height
 
             let cgImage = try await SCScreenshotManager.captureImage(
@@ -2192,6 +2266,10 @@ final class OverlayAIService: ObservableObject {
             )
             return scaledPNG(from: cgImage, maxDimension: 1280)
         } catch {
+            // SCKit throws when permission was revoked externally (e.g. the
+            // user went to System Settings and toggled it off while the app
+            // was running). Re-check so the UI can show the banner.
+            screenCaptureGranted = CGPreflightScreenCaptureAccess()
             return nil
         }
     }
@@ -2201,6 +2279,12 @@ final class OverlayAIService: ObservableObject {
     func captureGameScreenPNG() async -> Data? {
         if #available(macOS 14.0, *) {
             if let png = await captureWithSCKit() { return png }
+            // SCKit failed. If it was a permission issue, the status
+            // is already updated; surface a useful error via statusLine.
+            if !screenCaptureGranted {
+                statusLine = "⚠︎ Screen Recording permission needed — grant it in System Settings → Privacy → Screen Recording, then re-enable the overlay."
+                return nil
+            }
         }
         // macOS 13 fallback — doesn't capture Metal windows but is better
         // than nothing and works for non-Metal overlay content.

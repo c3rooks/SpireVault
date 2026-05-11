@@ -133,6 +133,10 @@ final class OverlayController: ObservableObject, OverlayObserverDelegate {
             startSaveWatcher()
             applyHotKeyBinding()
             persistEnabled(true)
+            // Pre-warm screen-recording TCC so the system dialog fires
+            // here (BetaView context, user clicked the toggle) rather
+            // than mid-game when the player hits their first chip.
+            appState?.aiService.prewarmAndRefresh()
         } else {
             hide()
             stopSnapshotPolling()

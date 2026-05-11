@@ -137,12 +137,6 @@ struct BetaView: View {
                 }
                 if state.overlayController.enabled {
                     HStack(spacing: 8) {
-                        // Wipes the persisted top-left and rebuilds the
-                        // panel at the default top-center origin. Toggling
-                        // `enabled` off → on is the cleanest way to do this:
-                        // `hide()` resets mode to .pill (so a chat-mode
-                        // session won't reopen at chat size), and the next
-                        // `show()` reads the now-nil origin.
                         Button("Reset position to top center") {
                             state.config.overlayOriginX = nil
                             state.config.overlayOriginY = nil
@@ -151,15 +145,16 @@ struct BetaView: View {
                             state.overlayController.enabled = true
                         }
                         .controlSize(.small)
-                        // "Show now" used to force-expand chat as a
-                        // debugging affordance. With the controller now
-                        // resetting to .pill on every hide(), the more
-                        // honest behavior is "bring the pill forward and
-                        // let the user click into chat themselves."
                         Button("Bring overlay to front") {
                             state.overlayController.show()
                         }
                         .controlSize(.small)
+                    }
+                    Divider().background(Theme.cardBorder.opacity(0.5))
+                    screenCaptureStatusRow
+                    if NSScreen.screens.count > 1 {
+                        Divider().background(Theme.cardBorder.opacity(0.5))
+                        betaMonitorPicker
                     }
                 } else {
                     Text("Disabled. Toggle on to bring the pill back at the top of your main display.")
@@ -169,6 +164,116 @@ struct BetaView: View {
             }
             .premiumPanel(padding: 14, cornerRadius: 10)
         }
+    }
+
+    // MARK: - Screen capture status
+
+    private var screenCaptureStatusRow: some View {
+        let granted = state.aiService.screenCaptureGranted
+        return HStack(alignment: .top, spacing: 10) {
+            Image(systemName: granted ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                .font(.system(size: 14))
+                .foregroundStyle(granted ? Theme.winBright : Color.orange)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Screen Recording")
+                    .font(.system(size: 12, weight: .heavy))
+                    .foregroundStyle(Theme.textPrimary)
+                Text(granted
+                     ? "Permission granted — screenshots will capture fine."
+                     : "Permission not granted. The Coach won't be able to see the game until you allow Screen Recording in System Settings.")
+                    .font(.system(size: 10))
+                    .foregroundStyle(Theme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 8)
+            VStack(alignment: .trailing, spacing: 4) {
+                if !granted {
+                    Button("System Settings") {
+                        NSWorkspace.shared.open(
+                            URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")!
+                        )
+                    }
+                    .controlSize(.small)
+                }
+                Button(granted ? "Refresh" : "Request") {
+                    state.aiService.prewarmAndRefresh()
+                }
+                .controlSize(.small)
+            }
+        }
+    }
+
+    // MARK: - Monitor picker (Beta tab)
+
+    private var betaMonitorPicker: some View {
+        let screens = NSScreen.screens.sorted { $0.frame.minX < $1.frame.minX }
+        let pinnedUUID = state.config.overlayGameMonitorUUID
+        return VStack(alignment: .leading, spacing: 6) {
+            Text("Game monitor")
+                .font(.system(size: 12, weight: .heavy))
+                .foregroundStyle(Theme.textPrimary)
+            Text("Which display is STS2 running on? Screenshots always capture this screen. Defaults to the leftmost monitor.")
+                .font(.system(size: 10))
+                .foregroundStyle(Theme.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    betaMonitorButton(
+                        label: "Auto",
+                        sublabel: "leftmost",
+                        selected: pinnedUUID == nil
+                    ) {
+                        state.config.overlayGameMonitorUUID = nil
+                        state.config.save()
+                        state.overlayController.syncGameDisplayPublic()
+                    }
+                    ForEach(Array(screens.enumerated()), id: \.offset) { idx, screen in
+                        let uuid = OverlayController.uuidString(for: screen)
+                        let isSelected = uuid != nil && uuid == pinnedUUID
+                        let pos: String = {
+                            if screens.count == 2 { return idx == 0 ? "left" : "right" }
+                            if idx == 0 { return "leftmost" }
+                            if idx == screens.count - 1 { return "rightmost" }
+                            return "center"
+                        }()
+                        betaMonitorButton(
+                            label: screen.localizedName,
+                            sublabel: pos,
+                            selected: isSelected
+                        ) {
+                            state.config.overlayGameMonitorUUID = uuid
+                            state.config.save()
+                            state.overlayController.syncGameDisplayPublic()
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func betaMonitorButton(label: String, sublabel: String, selected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(label)
+                    .font(.system(size: 11, weight: .heavy))
+                    .foregroundStyle(selected ? Color.black : Theme.textPrimary)
+                    .lineLimit(1)
+                Text(sublabel)
+                    .font(.system(size: 9))
+                    .foregroundStyle(selected ? Color.black.opacity(0.6) : Theme.textSecondary)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .background(
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(selected ? Theme.accentBright : Theme.cardBG)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .stroke(selected ? Theme.accentBright : Theme.cardBorder, lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: - Hotkey
