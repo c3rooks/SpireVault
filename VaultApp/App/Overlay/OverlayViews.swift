@@ -909,15 +909,37 @@ struct LiveRunStrip: View {
         ZStack {
             RoundedRectangle(cornerRadius: 7, style: .continuous)
                 .fill(LinearGradient(colors: characterTint, startPoint: .top, endPoint: .bottom))
-            Text(initials)
-                .font(.system(size: 11, weight: .black, design: .rounded))
-                .foregroundStyle(.white)
+            if let img = characterPortraitImage {
+                Image(nsImage: img)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: 26, height: 26)
+                    .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+            } else {
+                Text(initials)
+                    .font(.system(size: 11, weight: .black, design: .rounded))
+                    .foregroundStyle(.white)
+            }
         }
         .frame(width: 26, height: 26)
         .overlay(
             RoundedRectangle(cornerRadius: 7, style: .continuous)
                 .stroke(Color.white.opacity(0.18), lineWidth: 1)
         )
+    }
+
+    private var characterPortraitImage: NSImage? {
+        guard let name = snap.character else { return nil }
+        let assetName: String
+        switch name {
+        case "ironclad":    assetName = "CharIronclad"
+        case "silent":      assetName = "CharSilent"
+        case "defect":      assetName = "CharDefect"
+        case "regent":      assetName = "CharRegent"
+        case "necrobinder": assetName = "CharNecrobinder"
+        default: return nil
+        }
+        return NSImage(named: assetName)
     }
 
     private var initials: String {

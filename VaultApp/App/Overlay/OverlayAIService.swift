@@ -187,6 +187,15 @@ final class OverlayAIService: ObservableObject {
         let why: String?
         /// Optional callouts we render as small chips under the label.
         let synergies: [String]?
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            label    = try c.decode(String.self, forKey: .label)
+            verdict  = try c.decodeIfPresent(String.self, forKey: .verdict) ?? "SKIP"
+            rank     = try c.decodeIfPresent(String.self, forKey: .rank)
+            why      = try c.decodeIfPresent(String.self, forKey: .why)
+            synergies = try c.decodeIfPresent([String].self, forKey: .synergies)
+        }
     }
 
     /// Shop plan. Itemizes everything on screen and recommends a buy
@@ -208,6 +217,15 @@ final class OverlayAIService: ObservableObject {
         /// "BUY" | "MAYBE" | "SKIP"
         let verdict: String
         let why: String?
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            label   = try c.decode(String.self, forKey: .label)
+            kind    = try c.decodeIfPresent(String.self, forKey: .kind)
+            price   = try c.decodeIfPresent(Int.self, forKey: .price)
+            verdict = try c.decodeIfPresent(String.self, forKey: .verdict) ?? "SKIP"
+            why     = try c.decodeIfPresent(String.self, forKey: .why)
+        }
     }
 
     /// Event plan. STS2 `?` nodes have 1-N text choices; the model picks
@@ -224,6 +242,13 @@ final class OverlayAIService: ObservableObject {
         /// "TAKE" | "MAYBE" | "SKIP" | "AVOID"
         let verdict: String
         let why: String?
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            label   = try c.decode(String.self, forKey: .label)
+            verdict = try c.decodeIfPresent(String.self, forKey: .verdict) ?? "SKIP"
+            why     = try c.decodeIfPresent(String.self, forKey: .why)
+        }
     }
 
     /// Combat play-order plan for the "Fight" action. The model is told
@@ -926,7 +951,17 @@ final class OverlayAIService: ObservableObject {
                 return .init(role: .assistant, text: plan.summary, combatPlan: plan)
             }
         }
-        return .init(role: .assistant, text: raw.trimmingCharacters(in: .whitespacesAndNewlines))
+        // Structured parse failed. Try to salvage the summary field from the
+        // JSON before falling back to raw text so the user sees a sentence
+        // rather than a wall of JSON or code fences.
+        let cleaned = stripCodeFences(raw.trimmingCharacters(in: .whitespacesAndNewlines))
+        if let extracted = extractFirstJSONObject(from: cleaned),
+           let data = extracted.data(using: .utf8),
+           let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let summary = obj["summary"] as? String, !summary.isEmpty {
+            return .init(role: .assistant, text: summary)
+        }
+        return .init(role: .assistant, text: cleaned)
     }
 
     /// Generic JSON decoder used by every structured action. Tolerates
@@ -987,8 +1022,8 @@ final class OverlayAIService: ObservableObject {
 
     /// Schema for path planning. Returns 3-5 ordered nodes.
     private static let pathJSONInstructions: String = """
-    Respond with exactly one JSON object — no prose before or after — \
-    matching this schema:
+    OUTPUT ONLY a raw JSON object. No markdown, no code fences (```json), \
+    no prose. Your response MUST start with { and end with }. Schema:
 
     {
       "summary": "One sentence describing the recommended route.",
@@ -1019,8 +1054,8 @@ final class OverlayAIService: ObservableObject {
     /// ranked options with one TAKE recommendation.
     private static func rewardJSONInstructions(kind: String) -> String {
         """
-        Respond with exactly one JSON object — no prose before or after — \
-        matching this schema:
+        OUTPUT ONLY a raw JSON object. No markdown, no code fences (```json), \
+        no prose. Your response MUST start with { and end with }. Schema:
 
         {
           "summary": "One sentence stating which option to take and why.",
@@ -1049,8 +1084,8 @@ final class OverlayAIService: ObservableObject {
 
     /// Schema for shop visits.
     private static let shopJSONInstructions: String = """
-    Respond with exactly one JSON object — no prose before or after — \
-    matching this schema:
+    OUTPUT ONLY a raw JSON object. No markdown, no code fences (```json), \
+    no prose. Your response MUST start with { and end with }. Schema:
 
     {
       "summary": "Two-sentence buy order.",
@@ -1081,8 +1116,8 @@ final class OverlayAIService: ObservableObject {
     /// of plays with optional targets, plus a reserve list for cards
     /// the player should hold for next turn.
     private static let combatJSONInstructions: String = """
-    Respond with exactly one JSON object — no prose before or after — \
-    matching this schema:
+    OUTPUT ONLY a raw JSON object. No markdown, no code fences (```json), \
+    no prose. Your response MUST start with { and end with }. Schema:
 
     {
       "summary": "One-sentence rationale for this turn.",
@@ -1111,8 +1146,8 @@ final class OverlayAIService: ObservableObject {
 
     /// Schema for event (`?`) screens.
     private static let eventJSONInstructions: String = """
-    Respond with exactly one JSON object — no prose before or after — \
-    matching this schema:
+    OUTPUT ONLY a raw JSON object. No markdown, no code fences (```json), \
+    no prose. Your response MUST start with { and end with }. Schema:
 
     {
       "summary": "One sentence stating which choice to take.",
@@ -1460,11 +1495,14 @@ final class OverlayAIService: ObservableObject {
         await runStructured(
             kind: .shop,
             userQuestion: """
-            I'm in a shop. Itemize EVERY card / relic / potion / removal \
-            on screen with its price, then give me a buy order using \
-            the gold I have. Prefer card removal when my deck wants it. \
-            Always include the items I should skip — don't just list the \
-            buys.
+            I'm in a shop. Read EVERY item on screen — cards, relics, \
+            potions, card removal — with each price. Using my current \
+            gold and deck (in context), tell me what to buy in priority \
+            order and what to skip. Be explicit: name each item and say \
+            exactly why it fits or doesn't fit THIS deck. If the shop \
+            has card removal and my deck wants it, that usually wins. \
+            List every item, even the ones to skip, so I can see the \
+            full picture.
             """,
             schema: Self.shopJSONInstructions,
             statusVerb: "Reading shop"
@@ -1519,27 +1557,39 @@ final class OverlayAIService: ObservableObject {
     /// from rereading prose every turn.
     func askCombat() async {
         var question = """
-        I'm mid-combat. Read my hand, current energy, block, HP, and \
-        every enemy's intent. Output an ORDERED list of plays that \
-        respects my energy budget and minimizes net HP loss this turn. \
-        Cross-reference card costs against my actual cards (deck \
-        glossary in the context block). Mark cards I should HOLD for \
-        next turn under "reserve".
+        I'm mid-combat. Read EVERYTHING from the screenshot: my hand, \
+        costs of each card, current energy, block already on me, my HP, \
+        AND every enemy — their HP, buffs/debuffs, intent (attack, \
+        defend, buff), and intent damage values. \
+        \
+        When there are multiple enemies, decide target PRIORITY first: \
+        which enemy dies fastest, buffs the others, or hits hardest. \
+        Tell me the kill order. Then output an ORDERED play sequence that \
+        uses my energy budget optimally. Factor in: \
+        (1) status effects — poison/weak/vulnerable on the right target \
+        multiplies later hits; play debuffs BEFORE the attack that \
+        benefits from them. \
+        (2) Whether I need to block at all this turn — if enemies are \
+        attacking for less than my block already or all intending to buff, \
+        skip defense and go full offense. \
+        (3) Cards that hit ALL enemies vs single-target — use AOE when \
+        it clears chaff or applies status to the whole row. \
+        Mark cards I should HOLD for next turn under "reserve".
         """
-        
+
         if let lastCombat = messages.reversed().first(where: { $0.combatPlan != nil })?.combatPlan {
             let previousPlays = lastCombat.plays.map { play in
-                let targetStr = play.target.flatMap { " -> \($0)" } ?? ""
+                let targetStr = play.target.flatMap { " → \($0)" } ?? ""
                 return "\(play.order). \(play.card)\(targetStr)"
             }.joined(separator: ", ")
-            
-            question += "\n\nContext: Last turn you advised me to play: [\(previousPlays)]."
+
+            question += "\n\nLast turn's advice: [\(previousPlays)]."
             if let nextTurn = lastCombat.nextTurn {
-                question += " You also noted for this turn: \"\(nextTurn)\"."
+                question += " Your note for this turn: \"\(nextTurn)\"."
             }
-            question += " Consider this previous advice if it's still relevant to the current board state."
+            question += " Update the plan based on what's actually changed on the board."
         }
-        
+
         await runStructured(
             kind: .combat,
             userQuestion: question,

@@ -247,9 +247,9 @@ Lives behind the **Beta** tab in both the macOS app and the web
 companion. Off by default, free to never touch.
 
 <p align="center">
-  <img src="Site/assets/screenshots/overlay-pill.png" width="70%" alt="Run Coach overlay pill floating over Slay the Spire 2 — compact header with character icon and quick-ask chips" />
+  <img src="Site/assets/screenshots/overlay-combat.png" width="70%" alt="Run Coach overlay showing a turn plan mid-combat — energy budget, ordered card plays with targets, incoming damage, and next-turn note" />
   <br />
-  <sub><em>The overlay sits over fullscreen STS2. OBS and QuickTime can't see it.</em></sub>
+  <sub><em>Turn plan during a multi-enemy fight. Ordered plays, target priority, incoming damage, hold-for-next-turn list. The overlay is invisible to OBS and QuickTime.</em></sub>
 </p>
 
 ```mermaid
