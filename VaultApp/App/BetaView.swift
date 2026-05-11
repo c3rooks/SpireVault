@@ -93,10 +93,44 @@ struct BetaView: View {
                     badge("\(hotkeyDescription) to ask")
                 }
                 .padding(.top, 4)
+                // Pill preview — shows users what the collapsed overlay looks
+                // like before they enable it.
+                overlayPillPreview
             }
             Spacer(minLength: 0)
         }
         .premiumPanel(padding: 22, cornerRadius: 16)
+    }
+
+    private var overlayPillPreview: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("WHAT IT LOOKS LIKE")
+                .font(.system(size: 9, weight: .heavy))
+                .tracking(1.4)
+                .foregroundStyle(Theme.textTertiary)
+            ZStack {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(Color(red: 0.06, green: 0.04, blue: 0.08))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .stroke(Color.white.opacity(0.07), lineWidth: 1)
+                    )
+                if let img = NSImage(named: "OverlayPill") {
+                    Image(nsImage: img)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: 260, height: 40)
+                        .shadow(color: .black.opacity(0.5), radius: 8, y: 4)
+                        .padding(.vertical, 20)
+                }
+            }
+            .frame(maxWidth: .infinity)
+            Text("The collapsed pill. Expands into a 420×540 chat panel when you click it or hit \(hotkeyDescription).")
+                .font(.system(size: 10))
+                .foregroundStyle(Theme.textTertiary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.top, 10)
     }
 
     private func badge(_ s: String) -> some View {

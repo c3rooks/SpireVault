@@ -836,7 +836,7 @@ section {
   position: relative;
   width: 100%;
   height: 100%;
-  min-height: 620px;
+  min-height: 580px;
   border-radius: 18px;
   background:
     radial-gradient(800px 400px at 30% 0%, rgba(255, 107, 26, 0.16), transparent 60%),
@@ -870,23 +870,20 @@ section {
   opacity: 0.5;
 }
 
-.runcoach-pill-figure {
-  position: relative;
-  margin: 0 0 28px;
+.runcoach-pill-float {
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  z-index: 2;
+  justify-content: center;
+  margin-bottom: 20px;
 }
 
-.runcoach-pill-shot {
-  width: 280px;
-  height: auto;
-  border-radius: 22px;
-  filter: drop-shadow(0 18px 40px rgba(0, 0, 0, 0.55));
+.runcoach-pill-img {
+  width: 260px;
+  height: 40px;
+  border-radius: 20px;
+  filter: drop-shadow(0 6px 20px rgba(0, 0, 0, 0.6));
+  image-rendering: -webkit-optimize-contrast;
 }
 
-.runcoach-pill-figure figcaption,
 .runcoach-chat-figure figcaption {
   margin-top: 12px;
   font-size: 12px;
