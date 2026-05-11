@@ -17,6 +17,7 @@ import * as Stats from "/lib/stats-engine.js?v=4";
 import * as HistoryStore from "/lib/history-store.js?v=8";
 import * as InviteAPI from "/lib/invites.js?v=4";
 import * as HighlightsAPI from "/lib/highlights.js?v=1";
+import * as CoopLobbies from "/lib/coop-lobbies.js?v=1";
 import * as AscInfo from "/lib/ascension-info.js?v=1";
 import * as CharInfo from "/lib/character-info.js?v=1";
 import * as RelicInfo from "/lib/relic-info.js?v=1";
@@ -1762,6 +1763,34 @@ async function boot() {
   // guest path swaps in a sign-in prompt + read-only roster.
   if (session) {
     wireCoopForm();
+    // Mount the new run-lobby module. This is what drives the four-section
+    // co-op page (Status / Active Session / Open Lobbies / Recommended).
+    // The legacy roster `#feed` keeps rendering via `renderFeed()` below;
+    // the new module owns everything above it on the Co-op tab.
+    try {
+      CoopLobbies.mountCoopLobbies({
+        api: API_BASE,
+        session,
+        deps: {
+          toast: (msg) => { if (msg) toast(msg); },
+          openInviteModal: (sid, name) => openInviteModal(sid, name),
+          onAuthFailure: () => {
+            const giveUp = recordAuthFailureAndShouldGiveUp();
+            if (giveUp) clearSessionAndReload();
+          },
+          onStateRefresh: () => {
+            // After every successful state refresh, also pump the legacy
+            // feed + inbox so the bottom-of-page "Active players" section
+            // and the global invite banner stay current without the
+            // user having to wait for the slower 30s legacy poll.
+            void pullFeed();
+            void pullInbox();
+          },
+        },
+      });
+    } catch (err) {
+      console.warn("coop lobbies mount failed", err);
+    }
     // Refresh button. Debounced to once per ~5 s so a frustrated panic-clicker
     // can't blast our server quotas. The button visually "ticks" each press
     // even when the request is throttled, so it still feels responsive.
@@ -3122,6 +3151,19 @@ function wireCoopForm() {
 /** Pull the signed-in user's own presence row from the server and
  *  reflect it in the form. Skipped for guests. Non-blocking — if it
  *  fails, the local draft stays. */
+/**
+ * Reverse mapping for the legacy roster's status values. The new UI
+ * radios use the v2 enum (`looking`/`solo`/`paired`/`afk`), so we
+ * translate the legacy value before hitting `setRadio`.
+ */
+function mapStatusFromLegacy(s) {
+  switch (s) {
+    case "inRun":  return "solo";
+    case "inCoop": return "paired";
+    default:       return s || "looking";
+  }
+}
+
 async function hydrateMyStatusFromServer() {
   if (!session?.steamID) return;
   try {
@@ -3129,7 +3171,7 @@ async function hydrateMyStatusFromServer() {
     const me = (list || []).find((p) => p.steamID === session.steamID);
     if (!me) return;
     if (me.status && me.status !== "none") {
-      setRadio("status", me.status);
+      setRadio("status", mapStatusFromLegacy(me.status));
     }
     if (me.discordHandle) {
       const $d = document.getElementById("me-discord");
@@ -3148,8 +3190,29 @@ async function hydrateMyStatusFromServer() {
  * actually message anyone. Removed entirely. The real send path is the
  * Invite-to-play modal on each player row in the feed.
  */
+/**
+ * Map the new v2 status values back to the legacy `/presence` enum so
+ * the existing roster keeps showing the right pill while the new
+ * `/coop/presence` endpoint is the source of truth.
+ *
+ *   v2 "looking"   → legacy "looking"
+ *   v2 "solo"      → legacy "inRun"
+ *   v2 "paired"    → legacy "inCoop"
+ *   v2 "afk"       → legacy "afk"
+ *   v2 "offline"   → legacy "afk" (never explicitly chosen)
+ */
+function mapStatusToLegacy(s) {
+  switch (s) {
+    case "solo":    return "inRun";
+    case "paired":  return "inCoop";
+    case "offline": return "afk";
+    default:        return s || "looking";
+  }
+}
+
 function readMyForm() {
-  const status = (document.querySelector('input[name="status"]:checked') || {}).value || "looking";
+  const raw = (document.querySelector('input[name="status"]:checked') || {}).value || "looking";
+  const status = mapStatusToLegacy(raw);
   const discordHandle = (document.getElementById("me-discord").value || "").trim();
 
   return {

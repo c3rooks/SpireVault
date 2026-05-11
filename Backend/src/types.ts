@@ -118,4 +118,14 @@ export interface Env {
    * advertise that an admin surface exists at all.
    */
   ADMIN_TOKEN?: string;
+
+  /**
+   * Local-dev test-harness toggle. Set to "1" via the `[env.localdev]`
+   * block in `wrangler.toml` (or any non-production override). When
+   * present, the `/_debug/seed-session` and `/_debug/wipe` routes are
+   * exposed so `verify-coop-lobbies.mjs` can mint Steam sessions
+   * without a real OpenID round-trip. Unset in production — those
+   * routes 404 like any other unknown path.
+   */
+  LOCAL_DEBUG?: string;
 }

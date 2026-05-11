@@ -48,6 +48,7 @@ import {
 import { steamIDForRequest } from "./auth";
 import { checkAndConsume, clientIP, hashID } from "./ratelimit";
 import { handleNotifySignup } from "./notify";
+import { handleCoopRoute } from "./coop-routes";
 
 /**
  * Origins allowed to make credentialed cross-origin requests to the worker.
@@ -170,6 +171,94 @@ async function handle(
     }
 
     try {
+      // ----- New co-op run-lobby surface -----
+      //
+      // All `/coop/*` routes live in `coop-routes.ts`. The dispatcher
+      // returns `null` when a request isn't a co-op route, so we fall
+      // through to the legacy presence/invites/pair surfaces below.
+      // This means old clients that hit `/presence` and `/invites/...`
+      // keep working unchanged while new clients use the lobby model.
+      if (pathname.startsWith("/coop/")) {
+        const resp = await handleCoopRoute(req, env, pathname, method);
+        if (resp) return resp;
+      }
+
+      // ----- Local-only test harness -----
+      //
+      // The verify-coop-lobbies harness needs a way to mint fake
+      // sessions without actually completing a Steam OpenID round-trip.
+      // We gate the whole surface behind `env.LOCAL_DEBUG === "1"` which
+      // is set ONLY by `wrangler dev` (see `Backend/wrangler.toml`'s
+      // `[env.localdev.vars]` block). In production the env var is
+      // absent and these routes return 404 like any unknown path.
+      if (env.LOCAL_DEBUG === "1" && pathname.startsWith("/_debug/")) {
+        if (method === "POST" && pathname === "/_debug/seed-session") {
+          const body = await req.json().catch(() => null) as
+            | { steamID?: string; personaName?: string }
+            | null;
+          if (!body?.steamID || !/^\d{17}$/.test(body.steamID)) {
+            return badRequest("invalid steamID");
+          }
+          const token = Array.from(crypto.getRandomValues(new Uint8Array(24)))
+            .map((b) => b.toString(16).padStart(2, "0"))
+            .join("");
+          await env.LOBBIES.put(`session:${token}`, body.steamID, {
+            expirationTtl: 60 * 60,
+          });
+          await env.LOBBIES.put(
+            `session-profile:${body.steamID}`,
+            JSON.stringify({
+              personaName: body.personaName ?? "Local Tester",
+              avatarURL: "",
+            }),
+            { expirationTtl: 60 * 60 },
+          );
+          return json({ ok: true, token, steamID: body.steamID });
+        }
+        if (method === "POST" && pathname === "/_debug/wipe") {
+          // Best-effort wipe of known co-op keys for a clean slate.
+          // We can't list KV (free-tier quota), so we just delete the
+          // primary indexes plus any keys the caller hands us. When
+          // `wipeRateLimits` is set, we ALSO compute the rate-limit
+          // bucket keys for THIS request's IP (whatever local-dev
+          // wrangler hands us) so the test harness can blow away
+          // its own rate-limit state without guessing the right
+          // hash. Production never hits this branch because LOCAL_DEBUG
+          // is unset.
+          const body = await req.json().catch(() => null) as
+            | { keys?: string[]; wipeRateLimits?: boolean }
+            | null;
+          const keys = [
+            "coop:presence:index",
+            "coop:lobby:index",
+            ...(Array.isArray(body?.keys) ? body!.keys : []),
+          ];
+          if (body?.wipeRateLimits) {
+            const ip = clientIP(req);
+            const idCandidates = [
+              ip,
+              "127.0.0.1",
+              "::1",
+              "",
+            ].filter((s, i, arr) => arr.indexOf(s) === i);
+            const buckets = [
+              "coop-invite-window",
+              "coop-write",
+              "coop-presence-write",
+              "coop-heartbeat",
+            ];
+            for (const candidate of idCandidates) {
+              const id = candidate ? await hashID(candidate) : "";
+              for (const b of buckets) {
+                keys.push(`rl:${b}:${id}`);
+              }
+            }
+          }
+          await Promise.allSettled(keys.map((k) => env.LOBBIES.delete(k)));
+          return json({ ok: true, deleted: keys });
+        }
+      }
+
       // Health
       if (method === "GET" && pathname === "/") {
         return text("vault-coop online");

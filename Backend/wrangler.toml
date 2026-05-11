@@ -25,3 +25,20 @@ STS_APP_ID = "2868840"
 # code allowlist (see src/auth.ts). Anything listed here is appended to that.
 # Pages preview hosts stay listed so QA on preview URLs keeps working.
 ALLOWED_RETURN_HOSTS = "spirevault.app,vault-web-e90.pages.dev,vault-site-3ki.pages.dev"
+
+# Local-dev environment override. Activated by running
+#   `npx wrangler dev --env localdev`
+# which flips on the `_debug/*` test routes used by
+# `Backend/scripts/verify-coop-lobbies.mjs`. The production deploy
+# (`make deploy`) does NOT use this env, so production never exposes
+# the debug surface.
+[env.localdev.vars]
+PUBLIC_BASE_URL = "http://127.0.0.1:8787"
+STS_APP_ID = "2868840"
+ALLOWED_RETURN_HOSTS = "spirevault.app,localhost,127.0.0.1"
+LOCAL_DEBUG = "1"
+
+[[env.localdev.kv_namespaces]]
+binding = "LOBBIES"
+id = "050406109a854de7b516c057cdbf75f6"
+preview_id = "e015073f0d2147f5b8610116e094402d"

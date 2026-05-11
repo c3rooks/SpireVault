@@ -31,7 +31,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Playfair+Display:wght@700;900&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/styles.css?v=118" />
+  <link rel="stylesheet" href="/styles.css?v=119" />
 
   <!-- Google tag (gtag.js) — Spire Vault GA4 stream G-09LEQ247HN.
        Loaded async so it never blocks the critical rendering path; the
@@ -654,8 +654,11 @@
           </div>
           <div class="panel-head-coop-row">
             <div>
-              <h2 id="tab-coop-title">Who's around right now</h2>
-              <p class="panel-sub" id="online-summary">Loading…</p>
+              <h2 id="tab-coop-title">Find a co-op partner</h2>
+              <p class="panel-sub" id="online-summary">
+                Set what kind of run you want, join an open lobby, or invite someone who&rsquo;s
+                looking right now. Steam still handles the actual game invite.
+              </p>
             </div>
             <div class="panel-actions">
               <button class="btn-ghost" id="refresh-btn" title="Refresh">↻ Refresh</button>
@@ -663,14 +666,13 @@
           </div>
         </div>
         <div class="panel-body">
-          <!-- Inbox banner (invites I've received) -->
-          <section class="inbox" id="inbox" hidden>
-            <h3 class="inbox-title">Invites for you <span class="count-pill" id="inbox-count">0</span></h3>
-            <div class="inbox-list" id="inbox-list"></div>
-          </section>
-
-          <!-- Your status card -->
-          <article class="me-card">
+          <!-- ============================================================
+               Section 1 — Your Co-op Status
+               Pinned at the top. Holds the user's status pill, run
+               preferences, quick actions (Save / Create Run Lobby /
+               Quick Match), and a freshness helper note.
+          ============================================================ -->
+          <article class="me-card coop-status-card" id="coop-status-card">
             <div class="me-row">
               <img id="me-avatar" alt="" class="avatar lg" src="/assets/vault-mark.svg" />
               <div class="me-id">
@@ -682,37 +684,146 @@
             </div>
 
             <fieldset class="status-pills" id="status-pills" aria-label="Your status">
-              <label><input type="radio" name="status" value="looking"><span class="pill ok">Looking for co-op</span></label>
-              <label><input type="radio" name="status" value="inRun"><span class="pill gold">In a solo run</span></label>
-              <label><input type="radio" name="status" value="inCoop"><span class="pill ember">Already in co-op</span></label>
+              <label><input type="radio" name="status" value="looking"><span class="pill ok">Looking</span></label>
+              <label><input type="radio" name="status" value="solo"><span class="pill gold">In solo run</span></label>
+              <label><input type="radio" name="status" value="paired"><span class="pill ember">Already paired</span></label>
               <label><input type="radio" name="status" value="afk"><span class="pill mute">AFK</span></label>
             </fieldset>
 
-            <div class="me-grid">
-              <label>
+            <div class="coop-prefs-grid">
+              <label class="coop-pref-field">
+                <span class="field-label">Goal</span>
+                <select id="coop-goal" class="coop-select">
+                  <option value="">— pick a goal —</option>
+                  <option value="any">Any run</option>
+                  <option value="casual">Casual</option>
+                  <option value="climb">Climb</option>
+                  <option value="a20">A20</option>
+                  <option value="heart">Heart attempt</option>
+                  <option value="teaching">Teaching</option>
+                  <option value="learning">Learning</option>
+                  <option value="daily">Daily</option>
+                  <option value="experimental">Experimental</option>
+                </select>
+              </label>
+
+              <label class="coop-pref-field">
+                <span class="field-label">Ascension min</span>
+                <input type="number" id="coop-asc-min" min="0" max="20" step="1" placeholder="0" inputmode="numeric" />
+              </label>
+
+              <label class="coop-pref-field">
+                <span class="field-label">Ascension max</span>
+                <input type="number" id="coop-asc-max" min="0" max="20" step="1" placeholder="20" inputmode="numeric" />
+              </label>
+
+              <label class="coop-pref-field">
+                <span class="field-label">Voice</span>
+                <select id="coop-voice" class="coop-select">
+                  <option value="">— no preference —</option>
+                  <option value="yes">Yes — voice chat</option>
+                  <option value="optional">Optional</option>
+                  <option value="no">No voice</option>
+                </select>
+              </label>
+
+              <label class="coop-pref-field coop-pref-field--wide">
                 <span class="field-label">Discord handle (optional)</span>
                 <input type="text" id="me-discord" maxlength="40" placeholder="@yourname" />
               </label>
-              <div class="me-howto">
-                <span class="field-label">How co-op works</span>
-                <p class="me-howto-text">
-                  Click <strong>Invite to play</strong> on anyone in the list.
-                  They get a popup with a preset message and either accept or
-                  decline. Nothing fires off until they accept.
-                </p>
-              </div>
+
+              <label class="coop-pref-field coop-pref-field--wide">
+                <span class="field-label">Short note (optional, 160 chars)</span>
+                <input type="text" id="coop-note" maxlength="160" placeholder='"Want to climb to A12 — voice optional"' />
+              </label>
             </div>
+
+            <div class="coop-status-actions">
+              <button class="btn-primary" type="button" id="coop-save-btn">Save status</button>
+              <button class="btn-ghost" type="button" id="coop-create-lobby-btn">+ Create run lobby</button>
+              <button class="btn-ghost" type="button" id="coop-quick-match-btn">⚡ Quick match</button>
+            </div>
+
+            <p class="muted small coop-helper-copy">
+              Your row only appears while you&rsquo;re active. If you close the app or stop
+              heartbeating, SpireVault hides you automatically.
+            </p>
           </article>
 
-          <!-- Feed -->
-          <h2 class="feed-heading">
-            Players online
-            <span class="count-pill" id="online-count">0</span>
-          </h2>
-          <div id="feed" class="feed">
-            <div class="feed-empty"><p>Loading…</p></div>
-          </div>
-          <p class="muted small footnote" id="last-updated">…</p>
+          <!-- ============================================================
+               Section 2 — Active session / Your lobby / Invites
+               Context-sensitive: one of the inner cards renders based
+               on the current state from /coop/state.
+          ============================================================ -->
+          <section class="coop-context" id="coop-context" hidden aria-label="Your active co-op state">
+            <!-- Filled dynamically by coop-lobbies.js -->
+          </section>
+
+          <!-- Legacy inbox banner (for direct presence-tab invites).
+               Hidden by default and only used by the legacy /invites
+               flow when the new lobby module isn't initialized. -->
+          <section class="inbox" id="inbox" hidden>
+            <h3 class="inbox-title">Invites for you <span class="count-pill" id="inbox-count">0</span></h3>
+            <div class="inbox-list" id="inbox-list"></div>
+          </section>
+
+          <!-- ============================================================
+               Section 3 — Open Run Lobbies
+               The primary browsing experience. Sorted by best-match.
+          ============================================================ -->
+          <section class="coop-section coop-lobbies-section" id="coop-lobbies-section">
+            <header class="coop-section-head">
+              <div>
+                <h3 class="coop-section-title">Open run lobbies <span class="count-pill" id="coop-lobbies-count">0</span></h3>
+                <p class="coop-section-sub">
+                  Run lobbies are temporary. They help players coordinate before adding each other on Steam.
+                </p>
+              </div>
+            </header>
+            <div class="coop-lobbies-list" id="coop-lobbies-list">
+              <div class="coop-empty"><p>Loading lobbies…</p></div>
+            </div>
+          </section>
+
+          <!-- ============================================================
+               Section 4 — Recommended Players
+          ============================================================ -->
+          <section class="coop-section coop-recs-section" id="coop-recs-section">
+            <header class="coop-section-head">
+              <div>
+                <h3 class="coop-section-title">Recommended matches <span class="count-pill" id="coop-recs-count">0</span></h3>
+                <p class="coop-section-sub">
+                  Up to 8 players ranked by overlap with your goal, ascension, and voice preference.
+                </p>
+              </div>
+            </header>
+            <div class="coop-recs-list" id="coop-recs-list">
+              <div class="coop-empty"><p>Loading recommendations…</p></div>
+            </div>
+          </section>
+
+          <!-- ============================================================
+               Section 5 — Active player feed (long tail)
+               Secondary; preserves the legacy roster for users not in
+               a lobby. Still rendered by the original renderFeed() in
+               script.js, so legacy presence still works.
+          ============================================================ -->
+          <section class="coop-section coop-feed-section" id="coop-feed-section">
+            <header class="coop-section-head coop-section-head--toggleable">
+              <div>
+                <h2 class="feed-heading">
+                  Active players
+                  <span class="count-pill" id="online-count">0</span>
+                </h2>
+                <p class="coop-section-sub" id="coop-feed-sub">Everyone else who&rsquo;s active right now.</p>
+              </div>
+              <button class="btn-ghost btn-sm" type="button" id="coop-feed-toggle" aria-expanded="true" aria-controls="feed">Hide</button>
+            </header>
+            <div id="feed" class="feed">
+              <div class="feed-empty"><p>Loading…</p></div>
+            </div>
+            <p class="muted small footnote" id="last-updated">…</p>
+          </section>
         </div>
       </article>
 

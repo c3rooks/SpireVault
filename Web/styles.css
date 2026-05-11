@@ -11213,3 +11213,279 @@ html.is-desktop-host .upload-cta,
 html.is-desktop-host .empty-state-cta-upload {
   display: none !important;
 }
+
+/* =========================================================================
+   Co-op run-lobbies redesign (v119)
+   Adds the four-section co-op page layout. Status card stays at the top
+   with the new preferences grid, then context cards (sessions / lobbies /
+   invites), then the open-lobby browser, then recommendations, then the
+   legacy active player feed as a collapsible long-tail.
+   ========================================================================= */
+.coop-status-card .coop-prefs-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 16px;
+  margin-top: 12px;
+}
+.coop-pref-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.coop-pref-field--wide { grid-column: 1 / -1; }
+.coop-pref-field .field-label {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-2);
+}
+.coop-pref-field input[type="text"],
+.coop-pref-field input[type="number"],
+.coop-pref-field select.coop-select {
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border-strong, rgba(255,255,255,0.12));
+  background: var(--card-raised, rgba(255,255,255,0.04));
+  color: var(--text, #f7f4ec);
+  font: inherit;
+}
+.coop-pref-field input:focus,
+.coop-pref-field select:focus {
+  outline: 2px solid var(--accent, #ff6b1a);
+  outline-offset: 1px;
+}
+.coop-status-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+.coop-helper-copy {
+  margin-top: 10px;
+}
+
+.coop-section {
+  margin-top: 24px;
+}
+.coop-section-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.coop-section-head--toggleable .btn-ghost {
+  flex: 0 0 auto;
+}
+.coop-section-title {
+  font-size: 18px;
+  font-weight: 800;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.coop-section-sub {
+  margin: 4px 0 0 0;
+  color: var(--text-2, #b7b2a4);
+  font-size: 13px;
+}
+.coop-empty {
+  padding: 16px;
+  border: 1px dashed var(--border-strong, rgba(255,255,255,0.12));
+  border-radius: 12px;
+  text-align: center;
+  color: var(--text-2, #b7b2a4);
+}
+.coop-empty p { margin: 0; }
+
+/* Context cards */
+.coop-context {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 16px;
+}
+.coop-card {
+  padding: 14px;
+  border: 1px solid var(--border-strong, rgba(255,255,255,0.12));
+  border-radius: 12px;
+  background: var(--card, rgba(255,255,255,0.03));
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.coop-card--session { border-color: rgba(109,217,124,0.4); background: rgba(109,217,124,0.06); }
+.coop-card--lobby   { border-color: rgba(212,175,55,0.35); background: rgba(212,175,55,0.05); }
+.coop-card--invites { border-color: rgba(155,131,255,0.35); background: rgba(155,131,255,0.05); }
+.coop-card-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.coop-card-head h4 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 800;
+}
+.coop-card-head .avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 8px;
+  object-fit: cover;
+}
+.coop-card-head .avatar.sm {
+  width: 32px;
+  height: 32px;
+}
+.coop-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+}
+.coop-card-actions .btn-primary.sm,
+.coop-card-actions .btn-ghost.sm {
+  font-size: 13px;
+  padding: 6px 12px;
+}
+
+/* Lobby cards (host & browser) */
+.coop-lobby-title h4 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 800;
+}
+.coop-tag-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+.coop-tag {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong, rgba(255,255,255,0.12));
+  background: rgba(255,255,255,0.03);
+  color: var(--text-2, #b7b2a4);
+}
+.coop-tag--status {
+  border-color: rgba(212,175,55,0.5);
+  color: var(--gold, #d4af37);
+}
+.coop-tag--count {
+  border-color: rgba(109,217,124,0.4);
+  color: var(--win, #6dd97c);
+}
+.coop-lobby-note {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text, #f7f4ec);
+  font-style: italic;
+}
+.coop-join-reqs {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.coop-join-reqs h5 {
+  margin: 4px 0;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-2, #b7b2a4);
+}
+.coop-join-req-row,
+.coop-invite-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 10px;
+  align-items: center;
+  padding: 8px;
+  border-radius: 8px;
+  background: rgba(255,255,255,0.04);
+}
+.coop-join-req-meta,
+.coop-invite-meta {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.coop-join-req-meta strong,
+.coop-invite-meta strong {
+  font-size: 13px;
+}
+
+/* Open lobby browser */
+.coop-lobbies-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+}
+.coop-lobby-card {
+  padding: 14px;
+  border: 1px solid var(--border-strong, rgba(255,255,255,0.12));
+  border-radius: 12px;
+  background: var(--card, rgba(255,255,255,0.03));
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.coop-lobby-card:hover { border-color: rgba(212,175,55,0.35); }
+.coop-lobby-active {
+  margin-left: auto;
+}
+
+/* Recommendations */
+.coop-recs-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+}
+.coop-rec-card {
+  padding: 14px;
+  border: 1px solid var(--border-strong, rgba(255,255,255,0.12));
+  border-radius: 12px;
+  background: var(--card, rgba(255,255,255,0.03));
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.coop-rec-strong { border-color: rgba(109,217,124,0.45); }
+.coop-rec-good { border-color: rgba(155,131,255,0.4); }
+.coop-rec-different { border-color: rgba(212,175,55,0.3); }
+.coop-rec-recent { border-color: rgba(255,255,255,0.1); }
+
+/* Create-lobby inline form */
+.coop-create-lobby-form {
+  margin-top: 12px;
+  padding: 14px;
+  border: 1px solid var(--accent, #ff6b1a);
+  border-radius: 12px;
+  background: rgba(255,107,26,0.04);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.coop-create-lobby-form h4 {
+  margin: 0 0 4px 0;
+}
+
+/* Mobile tweaks */
+@media (max-width: 640px) {
+  .coop-status-card .coop-prefs-grid { grid-template-columns: 1fr; }
+  .coop-section-head { flex-direction: column; align-items: stretch; }
+  .coop-join-req-row, .coop-invite-row { grid-template-columns: auto 1fr; }
+  .coop-join-req-row .coop-card-actions, .coop-invite-row .coop-card-actions {
+    grid-column: 1 / -1;
+  }
+}
+
+.btn-sm { font-size: 12px; padding: 4px 10px; }
+
