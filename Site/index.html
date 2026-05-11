@@ -76,10 +76,15 @@
             <span>Open in your browser</span>
             <span class="version">free &middot; no install</span>
           </a>
-          <a class="btn-ghost" href="#install" id="download-cta">
+          <a class="btn-ghost" href="#install" id="download-cta-mac">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M17.5 12.5c0-2.6 2.1-3.9 2.2-3.9-1.2-1.7-3-2-3.7-2-1.6-.2-3 .9-3.8.9-.8 0-2-.9-3.3-.9-1.7 0-3.2 1-4.1 2.5-1.7 3-.4 7.5 1.3 10 .8 1.2 1.8 2.6 3.1 2.5 1.2-.1 1.7-.8 3.2-.8s2 .8 3.3.8c1.4 0 2.3-1.2 3.1-2.4.7-1.1 1-1.7 1.6-3-.1 0-3-1.2-3-4.7zm-2.6-8.5c.7-.8 1.1-1.9 1-3-.9 0-2.1.6-2.7 1.4-.7.8-1.1 1.9-1 3 1 .1 2-.5 2.7-1.4z"/></svg>
-            Native macOS app
-            <span class="version" id="hero-version">v0.9.8</span>
+            macOS
+            <span class="version" id="hero-version">v0.9.9</span>
+          </a>
+          <a class="btn-ghost" href="#install" id="download-cta-win">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M0 3.449L9.75 2.1v9.451H0m10.949-9.602L24 0v11.549H10.949M0 12.6h9.75v9.451L0 20.699M10.949 12.6H24V24l-12.9-1.801"/></svg>
+            Windows
+            <span class="version">v0.9.9</span>
           </a>
         </div>
         <p class="trust-line" id="presence-line">
@@ -193,9 +198,9 @@
            most experimental thing in the app. -->
       <article class="feature-card feature-card--beta">
         <div class="feature-icon" data-color="ember">🪄</div>
-        <span class="feature-beta-pill">BETA · MAC DMG ONLY · BYO KEY</span>
+        <span class="feature-beta-pill">BETA · macOS + Windows · BYO KEY</span>
         <h3>Run Coach — ask what to play next</h3>
-        <p>A small floating window that sits over Slay the Spire 2, glances at your screen when you ask, and tells you the best card to take, relic to swap, or path to push. Streamer-safe by default (hidden from OBS, Discord, QuickTime). Bring your own OpenAI or Anthropic key; nothing goes through our servers. Windows <code>.exe</code> next on the roadmap. <a href="#runcoach">See it in detail&nbsp;→</a></p>
+        <p>A small floating window that sits over Slay the Spire 2, glances at your screen when you ask, and tells you the best card to take, relic to swap, or path to push. Streamer-safe by default (invisible to OBS, Discord, Game Bar). Bring your own OpenAI or Anthropic key; nothing goes through our servers. <a href="#runcoach">See it in detail&nbsp;→</a></p>
       </article>
     </div>
   </section>
@@ -212,17 +217,18 @@
       <div class="runcoach-copy">
         <span class="eyebrow runcoach-eyebrow">
           <span class="beta-pill">BETA</span>
-          Run Coach · macOS only
+          Run Coach · macOS &amp; Windows
         </span>
         <h2>A second pair of eyes on your run, sitting right above the game.</h2>
         <p class="runcoach-lede">
           Run Coach is a small floating panel that lives over Slay the
           Spire 2 — the same kind of always-on-top assistant Cluely uses
           for code interviews, but pointed at deck-building decisions.
-          Tap a chip, ask a question, and it reads your live save and
-          the current frame of your screen, then tells you which card
-          to take, which boss relic to grab, or which path to push.
-          Brings your own OpenAI or Anthropic key. Nothing routes
+          Tap a chip, ask a question, and it reads your live save file
+          (character, HP, gold, deck, relics, floor) <em>and</em> captures
+          the current frame of your screen, then tells you exactly which card
+          to take, which boss relic to grab, or whether to go left or right
+          at the fork. Bring your own OpenAI or Anthropic key. Nothing routes
           through our servers.
         </p>
         <ul class="runcoach-bullets">
@@ -241,12 +247,15 @@
             if you actually want it on stream.
           </li>
           <li>
-            <strong>Vision when you want it.</strong>
-            Cmd+Enter ("Assist") attaches a single screenshot of the
-            current decision and asks the model "what should I do?". The
-            chips ("Card pick", "Boss relic", "Shop", "Path", "Event",
-            "Fight", "Plan") prompt the model with structured context so
-            you don't have to remember the prompt format.
+            <strong>Context-aware chips, not generic prompts.</strong>
+            <kbd>⌘⏎</kbd>&thinsp;Assist auto-detects your current situation
+            (combat, map, shop, event) and gives the right advice without you
+            picking a chip. The explicit chips
+            ("Card pick", "Boss relic", "Shop", "Path", "Event",
+            "Fight", "Plan") add structured context — <em>Path</em> in particular
+            reads the map screenshot and tells you the exact fork direction to
+            take (LEFT, RIGHT, or straight) with reasoning, not just a
+            generic "elites are next" observation.
           </li>
           <li>
             <strong>Bring your own key, no middleman.</strong>
@@ -263,25 +272,19 @@
             memory. Mega Crit-friendly by construction.
           </li>
         </ul>
-        <div class="runcoach-platform-note">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M17.5 12.5c0-2.6 2.1-3.9 2.2-3.9-1.2-1.7-3-2-3.7-2-1.6-.2-3 .9-3.8.9-.8 0-2-.9-3.3-.9-1.7 0-3.2 1-4.1 2.5-1.7 3-.4 7.5 1.3 10 .8 1.2 1.8 2.6 3.1 2.5 1.2-.1 1.7-.8 3.2-.8s2 .8 3.3.8c1.4 0 2.3-1.2 3.1-2.4.7-1.1 1-1.7 1.6-3-.1 0-3-1.2-3-4.7z"/></svg>
-          <span>
-            <strong>macOS .dmg only at the moment.</strong>
-            A Windows <code>.exe</code> build is next on the roadmap —
-            same panel, same shortcuts, same BYO-key flow. Until then,
-            the web companion at
-            <a href="https://app.spirevault.app">app.spirevault.app</a>
-            covers Windows users for the rest of the app.
-          </span>
-        </div>
         <div class="runcoach-cta-row">
-          <a class="btn-primary" href="#install">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
-            <span>Get the .dmg</span>
-            <span class="version">v0.9.8 · macOS</span>
+          <a class="btn-primary" href="#install-mac" id="rc-dmg-link">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M17.5 12.5c0-2.6 2.1-3.9 2.2-3.9-1.2-1.7-3-2-3.7-2-1.6-.2-3 .9-3.8.9-.8 0-2-.9-3.3-.9-1.7 0-3.2 1-4.1 2.5-1.7 3-.4 7.5 1.3 10 .8 1.2 1.8 2.6 3.1 2.5 1.2-.1 1.7-.8 3.2-.8s2 .8 3.3.8c1.4 0 2.3-1.2 3.1-2.4.7-1.1 1-1.7 1.6-3-.1 0-3-1.2-3-4.7z"/></svg>
+            <span>macOS .dmg</span>
+            <span class="version">v0.9.9</span>
+          </a>
+          <a class="btn-ghost" href="#install-win" id="rc-exe-link">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M0 3.449L9.75 2.1v9.451H0m10.949-9.602L24 0v11.549H10.949M0 12.6h9.75v9.451L0 20.699M10.949 12.6H24V24l-12.9-1.801"/></svg>
+            Windows .exe
+            <span class="version">v0.9.9</span>
           </a>
           <a class="btn-ghost" href="https://github.com/c3rooks/SpireVault#run-coach-beta" target="_blank" rel="noopener">
-            How it works (architecture)
+            How it works
           </a>
         </div>
       </div>
@@ -321,7 +324,7 @@
                 </div>
                 <div class="oc-title">
                   <strong>Run Coach</strong>
-                  <span>Anthropic · claude-3-5-sonnet</span>
+                  <span>Anthropic · claude-sonnet-4-6</span>
                 </div>
                 <span class="oc-beta">BETA</span>
                 <div class="oc-iconrow">
@@ -483,15 +486,14 @@
   <section id="install" class="install">
     <div class="section-head">
       <span class="eyebrow">Install</span>
-      <h2>Two paths in. Both free.</h2>
+      <h2>Three paths in. All free.</h2>
       <p class="section-sub">
-        Most Windows and Linux players start in the browser. Mac users get the
-        full native app with run tracking and Share-Run cards. Both share the
-        same presence feed — sign in with Steam on either and you appear in
-        the same live list.
+        Pick your platform. Mac and Windows get full native apps with run tracking,
+        Run Coach, and Share-Run cards. The web companion covers Linux, Chromebooks,
+        and anywhere else. All three share the same co-op feed.
       </p>
     </div>
-    <div class="install-grid two">
+    <div class="install-grid three">
       <article class="install-card primary" id="install-mac">
         <div class="install-os">
           <svg width="32" height="32" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M17.5 12.5c0-2.6 2.1-3.9 2.2-3.9-1.2-1.7-3-2-3.7-2-1.6-.2-3 .9-3.8.9-.8 0-2-.9-3.3-.9-1.7 0-3.2 1-4.1 2.5-1.7 3-.4 7.5 1.3 10 .8 1.2 1.8 2.6 3.1 2.5 1.2-.1 1.7-.8 3.2-.8s2 .8 3.3.8c1.4 0 2.3-1.2 3.1-2.4.7-1.1 1-1.7 1.6-3-.1 0-3-1.2-3-4.7zm-2.6-8.5c.7-.8 1.1-1.9 1-3-.9 0-2.1.6-2.7 1.4-.7.8-1.1 1.9-1 3 1 .1 2-.5 2.7-1.4z"/></svg>
@@ -510,36 +512,59 @@
         <a class="btn-primary inline full-width" id="dmg-link" href="#">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
           <span>Download .dmg</span>
-          <span class="version" id="install-version">v0.9.8</span>
+          <span class="version" id="install-version">v0.9.9</span>
         </a>
-        <p class="install-meta">Ad-hoc signed (no $99/yr Apple fee). First launch: right-click → Open. Auto-updates from <code>Vault → Check for Updates…</code> after that.</p>
+        <p class="install-meta">Ad-hoc signed. First launch: right-click → Open. Auto-updates from <code>Vault → Check for Updates…</code> after that.</p>
       </article>
+
+      <article class="install-card primary" id="install-win">
+        <div class="install-os">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M0 3.449L9.75 2.1v9.451H0m10.949-9.602L24 0v11.549H10.949M0 12.6h9.75v9.451L0 20.699M10.949 12.6H24V24l-12.9-1.801"/></svg>
+          <div class="install-os-text">
+            <h3>Native Windows app</h3>
+            <p class="install-sub">Run tracker · co-op feed · Run Coach</p>
+          </div>
+        </div>
+        <ul class="feature-list">
+          <li>Auto-detects STS2 saves in %APPDATA%\SlayTheSpire2</li>
+          <li>Same live co-op feed — Steam + Discord reach-outs</li>
+          <li>Run Coach (Beta) — same panel, BYO API key</li>
+          <li>OBS/Game Bar invisible by default (WDA_EXCLUDEFROMCAPTURE)</li>
+          <li>Auto-updates · Windows 10/11, x64</li>
+        </ul>
+        <a class="btn-primary inline full-width" id="exe-link" href="#">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+          <span>Download .exe</span>
+          <span class="version" id="install-version-win">v0.9.9</span>
+        </a>
+        <p class="install-meta">SmartScreen may prompt "More info → Run anyway" on first launch (no EV cert yet). Same experience as the macOS right-click requirement.</p>
+      </article>
+
       <article class="install-card" id="install-web">
         <div class="install-os">
           <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15 15 0 0 1 4 10 15 15 0 0 1-4 10 15 15 0 0 1-4-10 15 15 0 0 1 4-10z"/></svg>
           <div class="install-os-text">
             <h3>Web companion</h3>
-            <p class="install-sub">Co-op finder · Windows, Linux, macOS, anywhere</p>
+            <p class="install-sub">Linux, Chromebook, anywhere with a browser</p>
           </div>
         </div>
         <ul class="feature-list">
-          <li>Full run tracker — points at your STS2 save folder, parses every <code>.run</code></li>
+          <li>Full run tracker — points at your STS2 folder, parses every <code>.run</code></li>
           <li>KPI strip + winrate chart + image-rich Share-Run cards</li>
-          <li>Sign in with Steam — same OpenID flow, same identity, same live feed</li>
+          <li>Sign in with Steam — same identity, same live feed</li>
           <li>Zero install, zero download, works on Chromebooks</li>
         </ul>
         <a class="btn-primary inline full-width alt" href="https://app.spirevault.app">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 5l7 7-7 7"/></svg>
           <span>Open in browser</span>
         </a>
-        <p class="install-meta">Windows, Linux, ChromeOS — full co-op finder, no install, no .exe to download.</p>
+        <p class="install-meta">No download required. Chrome on Windows can read your STS2 save folder directly via the File System Access API.</p>
       </article>
     </div>
 
     <p class="install-foot">
       Power user? <a href="https://github.com/c3rooks/SpireVault#build-it-yourself">Build from source</a>
-      with <code>git clone</code> + <code>make run</code>. The Vault CLI works against any
-      macOS save folder and exposes the same data as the app.
+      with <code>git clone</code> + <code>make run</code> (macOS) or <code>cargo tauri build</code> (Windows).
     </p>
   </section>
 
@@ -602,9 +627,7 @@
         the question + the screenshot to your chosen AI (OpenAI or
         Anthropic) using <em>your own API key</em>. Whatever the model
         replies with shows up in the chat. That's it.</p>
-        <p>It's marked Beta on purpose, and it's
-        <strong>macOS&nbsp;.dmg-only at the moment</strong> — the
-        Windows <code>.exe</code> port is the next thing on the roadmap.
+        <p>It's marked Beta on purpose and ships on both macOS and Windows.
         <strong>What it doesn't do:</strong> modify the game, read game
         memory, hook the process, talk to a Vault-hosted AI, or spend
         any money on your behalf. Nothing about Run Coach changes how
@@ -629,21 +652,16 @@
         at all.</p>
       </details>
       <details>
-        <summary>Where's the Windows .exe?</summary>
-        <p>Honest answer: it's the next build target, not shipping yet.
-        The macOS <code>.dmg</code> is the only native install today —
-        v0.9.8 with the Run Coach overlay. Windows users get the full
-        web companion at
-        <a href="https://app.spirevault.app">app.spirevault.app</a>
-        right now: co-op finder, run tracker, stats, pair pills, share
-        cards. Modern Chrome on Windows can read your STS2 save folder
-        directly via the File System Access API, so the run tracker
-        isn't web-locked the way it used to be.</p>
-        <p>The Windows download will be a <code>SpireVault.exe</code>
-        (likely built with Tauri, ~5&nbsp;MB) with the same backend,
-        same UI, the same Run Coach overlay, and proper auto-updates.
-        Until then, the web version is the same product with one fewer
-        icon on your taskbar.</p>
+        <summary>Is the Windows .exe the same as the Mac app?</summary>
+        <p>Yes — same backend (Cloudflare Worker), same UI (<code>app.spirevault.app</code>
+        embedded in a WebView2), same Run Coach overlay, same BYO-key flow, same co-op feed.
+        The native layer is rewritten in Rust (Tauri 2) instead of Swift, but everything
+        the player sees and every API call it makes is identical. Auto-updates ship
+        through GitHub Releases on the same tag cadence as the macOS DMG.</p>
+        <p>The one current difference: the Windows build is ad-hoc signed, so Windows Defender
+        SmartScreen will show "More info → Run anyway" on first launch — exactly like the macOS
+        "right-click → Open" step. Once the installer builds reputation (~50 installs),
+        SmartScreen clears automatically.</p>
       </details>
       <details>
         <summary>Do I need an account?</summary>

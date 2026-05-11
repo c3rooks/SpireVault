@@ -176,19 +176,8 @@ private final class OverlayKeyStore {
             let envelope = Envelope(version: 1, entries: encoded)
             let data = try JSONEncoder().encode(envelope)
 
-            // Atomic write via temp-file rename so a crash mid-write
-            // can't leave a half-empty key file in place.
-            let tmp = fileURL.appendingPathExtension("tmp")
-            try data.write(to: tmp, options: .atomic)
-            try? FileManager.default.setAttributes(
-                [.posixPermissions: NSNumber(value: Int16(0o600))],
-                ofItemAtPath: tmp.path
-            )
-            if FileManager.default.fileExists(atPath: fileURL.path) {
-                _ = try FileManager.default.replaceItemAt(fileURL, withItemAt: tmp)
-            } else {
-                try FileManager.default.moveItem(at: tmp, to: fileURL)
-            }
+            // Atomic write
+            try data.write(to: fileURL, options: .atomic)
             try? FileManager.default.setAttributes(
                 [.posixPermissions: NSNumber(value: Int16(0o600))],
                 ofItemAtPath: fileURL.path

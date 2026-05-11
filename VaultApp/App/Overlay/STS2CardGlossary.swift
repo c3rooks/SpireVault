@@ -317,11 +317,37 @@ enum STS2CardGlossary {
     /// `card.bash`, etc. Normalization mirrors what STS2LiveSaveReader
     /// produces (lowercased, no `card.` prefix).
     static func entryForCard(rawID: String) -> Entry? {
-        cards[normalize(rawID)]
+        cardEntry(forNormalized: normalize(rawID))
     }
 
     static func entryForRelic(rawID: String) -> Entry? {
-        relics[normalize(rawID)]
+        relicEntry(forNormalized: normalize(rawID))
+    }
+
+    /// IDs (deck cards + relics) the player has in the live save
+    /// that the glossary doesn't recognize. Used by the AI service to
+    /// log telemetry to disk so we can expand the glossary in future
+    /// builds without bothering the player. The set is unique;
+    /// upgrade markers are stripped before lookup so "streamline+1"
+    /// and "streamline+2" both resolve to "streamline".
+    static func unmatchedIdentifiers(deckCards: [String],
+                                     relicIDs: [String],
+                                     characterHint: String? = nil) -> Set<String> {
+        var unmatched: Set<String> = []
+        for raw in deckCards {
+            let key = normalize(raw)
+            let resolved = resolveStrikeDefend(key, character: characterHint)
+            if cardEntry(forNormalized: resolved) == nil && cardEntry(forNormalized: key) == nil {
+                unmatched.insert(key)
+            }
+        }
+        for raw in relicIDs {
+            let key = normalize(raw)
+            if relicEntry(forNormalized: key) == nil {
+                unmatched.insert(key)
+            }
+        }
+        return unmatched
     }
 
     /// Build a compact glossary block for a given list of card and
@@ -343,7 +369,7 @@ enum STS2CardGlossary {
             // "Strike — Ironclad" if it ever matters; today they're
             // identical but we lay the groundwork).
             let resolvedKey = resolveStrikeDefend(key, character: characterHint)
-            if let entry = cards[resolvedKey] ?? cards[key] {
+            if let entry = cardEntry(forNormalized: resolvedKey) ?? cardEntry(forNormalized: key) {
                 lines.append("- \(entry.name) [\(entry.cost) · \(entry.type)] — \(entry.effect)")
             }
         }
@@ -357,7 +383,7 @@ enum STS2CardGlossary {
             let key = normalize(raw)
             guard !relicSeen.contains(key) else { continue }
             relicSeen.insert(key)
-            if let entry = relics[key] {
+            if let entry = relicEntry(forNormalized: key) {
                 relicLines.append("- \(entry.name) — \(entry.effect)")
             }
         }
@@ -391,6 +417,60 @@ enum STS2CardGlossary {
             s = String(s[..<plus])
         }
         return s.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Stripped-key form for fuzzy dictionary lookups. STS2 saves
+    /// store relic / card identifiers in several conventions —
+    /// "BurningBlood" (CamelCase), "burning_blood" (snake), "Burning
+    /// Blood" (spaced), or even "burning-blood" (kebab). All three
+    /// should resolve to the same glossary entry. Stripping non-
+    /// alphanumerics gives every variant the same canonical shape:
+    /// "burningblood".
+    private static func stripped(_ s: String) -> String {
+        var out = ""
+        out.reserveCapacity(s.count)
+        for ch in s where ch.isLetter || ch.isNumber {
+            out.append(ch)
+        }
+        return out
+    }
+
+    /// Cached stripped → canonical-key maps so we do the strip work
+    /// once per process instead of on every lookup. Populated lazily
+    /// the first time we need it. Tied to the cards / relics statics
+    /// above — if those change at runtime (they don't, they're
+    /// `static let`), the cache would lie.
+    private static let cardStrippedKeys: [String: String] = {
+        var m: [String: String] = [:]
+        for k in cards.keys { m[stripped(k)] = k }
+        return m
+    }()
+    private static let relicStrippedKeys: [String: String] = {
+        var m: [String: String] = [:]
+        for k in relics.keys { m[stripped(k)] = k }
+        return m
+    }()
+
+    /// Look up a card glossary entry, trying both the normalized key
+    /// and its stripped form. Returns nil if neither matches.
+    private static func cardEntry(forNormalized key: String) -> Entry? {
+        if let entry = cards[key] { return entry }
+        let stripKey = stripped(key)
+        if let canonical = cardStrippedKeys[stripKey] {
+            return cards[canonical]
+        }
+        return nil
+    }
+
+    /// Look up a relic glossary entry, trying both the normalized key
+    /// and its stripped form. Returns nil if neither matches.
+    private static func relicEntry(forNormalized key: String) -> Entry? {
+        if let entry = relics[key] { return entry }
+        let stripKey = stripped(key)
+        if let canonical = relicStrippedKeys[stripKey] {
+            return relics[canonical]
+        }
+        return nil
     }
 
     /// Map a generic "strike" / "defend" key to the character-specific

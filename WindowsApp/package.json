@@ -1,0 +1,16 @@
+{
+  "name": "the-vault-windows",
+  "version": "0.9.9",
+  "description": "Slay the Spire 2 companion — Windows build",
+  "private": true,
+  "scripts": {
+    "dev":   "cargo tauri dev",
+    "build": "cargo tauri build",
+    "build:debug": "cargo tauri build --debug",
+    "lint":  "cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@tauri-apps/cli": "^2"
+  }
+}

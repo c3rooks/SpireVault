@@ -17,7 +17,7 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>0.9.8</string>
+	<string>0.9.9</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
@@ -41,20 +41,6 @@
 	</array>
 	<key>LSMinimumSystemVersion</key>
 	<string>13.0</string>
-	<!--
-		Force single-instance launch. Without this, macOS Launch Services
-		can spawn a second copy of The Vault when a `thevault://` deep
-		link is delivered to a different installed copy of the app
-		(e.g. /Applications/The Vault.app vs ~/Desktop/The Vault.app).
-		The user's most recent bug report was exactly this: clicking
-		"Sign in with Steam" caused the OS to deliver the OpenID return
-		URL to a *second* copy of the app, leaving them with two
-		desktop windows side by side.
-
-		`LSMultipleInstancesProhibited = true` means: if a relaunch is
-		requested, bring the running instance forward instead of
-		spawning a new one.
-	-->
 	<key>LSMultipleInstancesProhibited</key>
 	<true/>
 	<key>NSAppTransportSecurity</key>
@@ -66,5 +52,7 @@
 	<string>© 2026 Corey Crooks</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<key>NSScreenCaptureUsageDescription</key>
+	<string>The Run Coach captures your game screen to give you AI advice on your current turn. Nothing is stored or uploaded beyond what you explicitly ask.</string>
 </dict>
 </plist>

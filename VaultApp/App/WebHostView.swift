@@ -300,8 +300,11 @@ extension WebHostView {
         /// Without this every minor `@Published` flip in AppState would
         /// re-encode and re-ingest the full run set.
         private var lastRunsHash: Int = 0
-        /// Cached encoded runs we'll replay once the bridge reports ready.
         private var pendingRunsJSON: String?
+
+        /// The last tab we successfully pushed to the WebView. We use this
+        /// to avoid spamming `switchTab` every time `updateNSView` is called.
+        private var lastPushedTab: SidebarSection?
 
         /// Last sign-in ticket we acted on. The parent flips this on
         /// every "Sign in with Steam" tap; we only fire when it
@@ -349,6 +352,8 @@ extension WebHostView {
             // native SwiftUI elsewhere, so this view shouldn't even be
             // visible. Still, guard against a stray update.
             guard section.isWebHosted else { return }
+            guard section != lastPushedTab else { return }
+            lastPushedTab = section
             // Replace any previously queued retry: only the latest tab
             // request matters, and a stale retry would clobber a fresh
             // user click with the wrong destination.
@@ -664,6 +669,12 @@ extension WebHostView {
                 decisionHandler(.allow); return
             }
 
+            // Subframes (like Steam's Captcha or login iframes) should load freely.
+            // Only top-level user navigations should be kicked to the default browser.
+            if navigationAction.targetFrame?.isMainFrame == false {
+                decisionHandler(.allow); return
+            }
+
             // Everything else: kick to NSWorkspace and cancel here.
             // This catches Steam profile links, mailto, external https,
             // GitHub README links from in-page footers, the `steam://`
@@ -679,6 +690,7 @@ extension WebHostView {
             // Without this, a user-triggered ⌘R would land on whatever the
             // page persisted in localStorage — which may differ from what
             // the native sidebar shows.
+            lastPushedTab = nil
             requestTabSwitch(to: tab, on: webView)
             // Clear the runs hash so the next pushRunsIfChanged call from
             // updateNSView re-ingests the current snapshot. The page's

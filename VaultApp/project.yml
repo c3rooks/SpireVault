@@ -33,7 +33,7 @@ targets:
       path: Info.plist
       properties:
         CFBundleDisplayName: "The Vault"
-        CFBundleShortVersionString: "0.9.8"
+        CFBundleShortVersionString: "0.9.9"
         CFBundleVersion: "17"
         LSApplicationCategoryType: public.app-category.utilities
         NSHumanReadableCopyright: "© 2026 Corey Crooks"
@@ -60,6 +60,9 @@ targets:
         # silences the "untrusted scheme" prompt on macOS 14+.
         LSApplicationQueriesSchemes:
           - steam
+        # ScreenCaptureKit requires this key so macOS shows the
+        # "allow screen recording" prompt with a meaningful reason.
+        NSScreenCaptureUsageDescription: "The Run Coach captures your game screen to give you AI advice on your current turn. Nothing is stored or uploaded beyond what you explicitly ask."
     settings:
       base:
         PRODUCT_NAME: "The Vault"

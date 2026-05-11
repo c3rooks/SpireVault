@@ -246,16 +246,24 @@ Spire 2 and answers "what should I play next?" using your own AI key.
 Lives behind the **Beta** tab in both the macOS app and the web
 companion. Off by default, free to never touch.
 
+<p align="center">
+  <img src="Site/assets/screenshots/overlay-pill.png" width="70%" alt="Run Coach overlay pill floating over Slay the Spire 2 — compact header with character icon and quick-ask chips" />
+  <br />
+  <sub><em>The overlay sits over fullscreen STS2. OBS and QuickTime can't see it.</em></sub>
+</p>
+
 ```mermaid
 flowchart LR
     User["You<br/>asks the coach"]
     Pill["Run Coach overlay<br/>(NSPanel · macOS / Document PiP · web)"]
-    Capture["Screen capture<br/>CGDisplayCreateImage / getDisplayMedia"]
+    Save["Live save reader<br/>current_run.save"]
+    Capture["Screen capture<br/>ScreenCaptureKit (macOS 14+) / getDisplayMedia"]
     Provider[("OpenAI / Anthropic<br/>your account")]
 
-    User -->|Ask · ⌘↵| Pill
+    User -->|chip tap or ⌥Space| Pill
+    Save -->|character · HP · gold · deck · relics| Pill
     Pill -->|active display, downscaled to ~1280px JPEG| Capture
-    Capture -->|prompt + image + your API key| Provider
+    Capture -->|prompt + context + image + your API key| Provider
     Provider -->|"reply text"| Pill
     Pill --> User
 
@@ -265,7 +273,7 @@ flowchart LR
 
 **What it does**
 
-- macOS app: a slim 210×38 pill at the top of your active display that
+- macOS app: a 260×40 pill at the top of your active display that
   rides over fullscreen STS2 (`NSPanel` with `.canJoinAllSpaces` +
   `.fullScreenAuxiliary`) and is **invisible to screen recordings**
   (`NSWindow.SharingType.none`). OBS, Zoom, and QuickTime can't see it.
@@ -275,29 +283,38 @@ flowchart LR
   Sits over fullscreen STS2 on Chromium browsers. Safari/Firefox don't
   ship the API yet — the Beta tab detects the gap and points users at
   the macOS app.
-- Both surfaces share the same Cluely-style chat UI: header pill with
-  Vault emblem, action chips (What should I do? · Recap · Next encounter),
-  text input, screenshot toggle, send button.
+- Both surfaces share the same chat UI: a header pill with the Vault
+  emblem, quick-ask chips (Assist · Card pick · Boss relic · Shop · Path ·
+  Event · Fight · Plan), text input, screenshot toggle, and send.
+- The macOS overlay reads your live `current_run.save` file continuously
+  and passes your character, HP, gold, deck, and relics to the model
+  automatically. The **Path** chip, for example, reads the actual map and
+  tells you whether to go left, right, or straight — not a generic "elites
+  are worth taking" non-answer.
+- On multi-monitor setups, pin which display STS2 runs on via
+  **Settings → Game monitor** so the overlay always captures the right screen.
 
 **How it works**
 
 1. You add an OpenAI or Anthropic key under **Beta features**. Stored
    in the macOS Keychain on the desktop, in `localStorage` on the web.
    The Vault servers never see the key.
-2. You ask a question. The active display is captured locally
-   (`CGDisplayCreateImage` on macOS, `getDisplayMedia()` on the web),
-   downscaled to ~1280px wide as a JPEG.
-3. The browser/app POSTs the prompt + image **directly** to
+2. You tap a chip or press the hotkey (⌥Space by default). The overlay
+   reads your current run state from `current_run.save`, captures the
+   active display via ScreenCaptureKit (macOS) or `getDisplayMedia()` (web),
+   and downscales it to ~1280px wide as a JPEG.
+3. The app POSTs the prompt + run context + image **directly** to
    `api.openai.com` or `api.anthropic.com`. No proxy, no Vault Worker
    in the loop.
-4. The reply renders inline. Frames live in memory just long enough to
+4. The reply streams inline. Frames live in memory just long enough to
    upload — nothing is recorded, nothing is replayed.
 
 **What it doesn't do**
 
-- **No game memory reads.** Run Coach never injects, hooks, or scans
-  the STS2 process. It only sees what you explicitly hand it via a
-  screenshot.
+- **No process injection.** Run Coach never injects, hooks, or scans
+  the STS2 process. It reads your `current_run.save` file (the same
+  plaintext JSON STS2 writes itself) and takes a screenshot when you
+  ask — nothing else.
 - **No Vault-hosted AI.** There's no subscription, no tier, no Vault
   proxy. You bring the key, you pay the provider, you control the
   spend.

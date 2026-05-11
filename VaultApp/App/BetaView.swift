@@ -38,6 +38,7 @@ struct BetaView: View {
                 VStack(alignment: .leading, spacing: 22) {
                     heroBlock
                     enableBlock
+                    hotkeyBlock
                     aiProviderBlock
                     apiKeyBlock
                     privacyBlock
@@ -89,7 +90,7 @@ struct BetaView: View {
                     badge("Optional")
                     badge("Bring your own key")
                     badge("Hidden from screen capture")
-                    badge("Cmd+Enter to ask")
+                    badge("\(hotkeyDescription) to ask")
                 }
                 .padding(.top, 4)
             }
@@ -120,7 +121,7 @@ struct BetaView: View {
                         Text("Enable the Run Coach overlay")
                             .font(.system(size: 13, weight: .heavy))
                             .foregroundStyle(Theme.textPrimary)
-                        Text("A small pill appears at the top of your screen. Click it (or hit \(Image(systemName: "command")) ↵) to ask the Coach about whatever STS2 decision you're staring at.")
+                        Text("A small pill appears at the top of your screen. Click it (or hit \(hotkeyDescription)) to ask the Coach about whatever STS2 decision you're staring at.")
                             .font(.system(size: 11))
                             .foregroundStyle(Theme.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
@@ -168,6 +169,101 @@ struct BetaView: View {
             }
             .premiumPanel(padding: 14, cornerRadius: 10)
         }
+    }
+
+    // MARK: - Hotkey
+
+    private var hotkeyDescription: String {
+        guard state.config.overlayHotKeyEnabled else { return "the hotkey" }
+        let mods = state.config.overlayHotKeyModifiersRaw
+            .compactMap { OverlayHotKey.Modifier(rawValue: $0)?.label.components(separatedBy: " ").first }
+            .joined()
+        let key = OverlayHotKey.Key(rawValue: state.config.overlayHotKeyKeyRaw)?.label ?? ""
+        return "\(mods)\(key)"
+    }
+
+    private var hotkeyBlock: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            SectionTitle("Activation Hotkey", systemImage: "keyboard")
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(alignment: .top, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Global shortcut")
+                            .font(.system(size: 13, weight: .heavy))
+                            .foregroundStyle(Theme.textPrimary)
+                        Text("Press to instantly toggle the overlay. Works while in-game.")
+                            .font(.system(size: 11))
+                            .foregroundStyle(Theme.textSecondary)
+                    }
+                    Spacer()
+                    Toggle("", isOn: Binding(
+                        get: { state.config.overlayHotKeyEnabled },
+                        set: {
+                            state.config.overlayHotKeyEnabled = $0
+                            state.config.save()
+                            state.overlayController.applyHotKeyBinding()
+                        }
+                    ))
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .controlSize(.small)
+                }
+
+                if state.config.overlayHotKeyEnabled {
+                    Divider().background(Theme.cardBorder.opacity(0.5))
+                    HStack(spacing: 12) {
+                        // Modifiers
+                        HStack(spacing: 8) {
+                            modifierToggle(for: .command)
+                            modifierToggle(for: .option)
+                            modifierToggle(for: .control)
+                            modifierToggle(for: .shift)
+                        }
+                        
+                        Text("+")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundStyle(Theme.textSecondary)
+                        
+                        // Key
+                        Picker("", selection: Binding(
+                            get: { state.config.overlayHotKeyKeyRaw },
+                            set: {
+                                state.config.overlayHotKeyKeyRaw = $0
+                                state.config.save()
+                                state.overlayController.applyHotKeyBinding()
+                            }
+                        )) {
+                            ForEach(OverlayHotKey.Key.allCases) { k in
+                                Text(k.label).tag(k.rawValue)
+                            }
+                        }
+                        .labelsHidden()
+                        .frame(width: 100)
+                    }
+                }
+            }
+            .premiumPanel(padding: 14, cornerRadius: 10)
+        }
+    }
+    
+    private func modifierToggle(for mod: OverlayHotKey.Modifier) -> some View {
+        let isOn = Binding<Bool>(
+            get: { state.config.overlayHotKeyModifiersRaw.contains(mod.rawValue) },
+            set: { enabled in
+                var current = state.config.overlayHotKeyModifiersRaw
+                if enabled {
+                    if !current.contains(mod.rawValue) { current.append(mod.rawValue) }
+                } else {
+                    current.removeAll { $0 == mod.rawValue }
+                }
+                state.config.overlayHotKeyModifiersRaw = current
+                state.config.save()
+                state.overlayController.applyHotKeyBinding()
+            }
+        )
+        return Toggle(mod.label, isOn: isOn)
+            .toggleStyle(.button)
+            .controlSize(.small)
     }
 
     // MARK: - AI provider

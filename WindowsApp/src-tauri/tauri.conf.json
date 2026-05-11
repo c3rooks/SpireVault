@@ -1,0 +1,89 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "The Vault",
+  "version": "0.9.9",
+  "identifier": "com.coreycrooks.thevault",
+  "build": {
+    "frontendDist": "../ui",
+    "devUrl": "https://app.spirevault.app/?desktop=1&dev=1"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "label": "main",
+        "title": "The Vault",
+        "url": "https://app.spirevault.app/?desktop=1",
+        "width": 1200,
+        "height": 780,
+        "minWidth": 1080,
+        "minHeight": 700,
+        "center": true,
+        "decorations": true,
+        "titleBarStyle": "Overlay",
+        "visible": true,
+        "focus": true,
+        "initialization_script": "window.__VAULT_DESKTOP__=true;window.__VAULT_DESKTOP_PLATFORM__='windows';window.__VAULT_DESKTOP_VERSION__='0.9.9';"
+      },
+      {
+        "label": "overlay",
+        "title": "",
+        "url": "https://app.spirevault.app/?desktop=1&overlay=1",
+        "width": 360,
+        "height": 48,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "visible": false,
+        "resizable": false,
+        "focus": false,
+        "x": 20,
+        "y": 20,
+        "initialization_script": "window.__VAULT_DESKTOP__=true;window.__VAULT_DESKTOP_PLATFORM__='windows';window.__VAULT_OVERLAY__=true;"
+      }
+    ],
+    "security": {
+      "csp": null,
+      "dangerousDisableAssetCspModification": true
+    },
+    "trayIcon": {
+      "iconPath": "icons/32x32.png",
+      "iconAsTemplate": false,
+      "menuOnLeftClick": false,
+      "title": "The Vault"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/icon.ico",
+      "icons/icon.icns"
+    ],
+    "resources": [],
+    "externalBin": [],
+    "copyright": "© 2025 Corey Crooks",
+    "category": "Game",
+    "shortDescription": "STS2 companion — run tracker, co-op finder, AI coach",
+    "longDescription": "Spire Vault is a free companion app for Slay the Spire 2. Track every run locally, find co-op partners, and get live AI coaching during your runs.",
+    "windows": {
+      "digestAlgorithm": "sha256",
+      "timestampUrl": "http://timestamp.digicert.com",
+      "wix": {
+        "language": "en-US"
+      },
+      "nsis": {
+        "installMode": "perMachine",
+        "languages": ["English"],
+        "displayLanguageSelector": false
+      }
+    },
+    "linux": {},
+    "macOS": {
+      "minimumSystemVersion": "13.0"
+    }
+  }
+}

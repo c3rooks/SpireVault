@@ -83,6 +83,15 @@ struct AppConfig: Codable, Equatable {
     /// for a full parse — nothing to render incrementally.
     var overlayStreamingEnabled: Bool = true
 
+    /// UUID string of the display the user pinned as the "game monitor".
+    /// nil = auto-resolve: leftmost connected display on multi-monitor
+    /// setups (the most common "game left, chat right" layout), or the
+    /// overlay's own screen on single-monitor. The UUID is stable across
+    /// reboots (backed by CGDisplayCreateUUIDFromDisplayID) so the
+    /// preference survives display-list changes better than a bare
+    /// CGDirectDisplayID, which can get reassigned by the OS.
+    var overlayGameMonitorUUID: String? = nil
+
     static let `default` = AppConfig(
         customServerURL: nil,
         overlayEnabled: false,
@@ -98,7 +107,8 @@ struct AppConfig: Codable, Equatable {
         overlayHotKeyModifiersRaw: ["option"],
         overlayHotKeyKeyRaw: "space",
         overlayCoachAutoFollowup: true,
-        overlayStreamingEnabled: true
+        overlayStreamingEnabled: true,
+        overlayGameMonitorUUID: nil
     )
 
     // MARK: - Forward-compatible decode
@@ -116,7 +126,10 @@ struct AppConfig: Codable, Equatable {
         self.overlayOriginX = try c.decodeIfPresent(Double.self, forKey: .overlayOriginX)
         self.overlayOriginY = try c.decodeIfPresent(Double.self, forKey: .overlayOriginY)
         self.overlayAIProviderRaw = try c.decodeIfPresent(String.self, forKey: .overlayAIProviderRaw) ?? "openai"
-        self.overlayAIModel = try c.decodeIfPresent(String.self, forKey: .overlayAIModel) ?? "gpt-4o-mini"
+        let savedModel = try c.decodeIfPresent(String.self, forKey: .overlayAIModel) ?? "gpt-4o-mini"
+        let savedProvider = try c.decodeIfPresent(String.self, forKey: .overlayAIProviderRaw) ?? "openai"
+        let isStaleAnthropicModel = savedModel.hasPrefix("claude-3") && savedProvider == "anthropic"
+        self.overlayAIModel = isStaleAnthropicModel ? "claude-sonnet-4-6" : savedModel
         self.overlayAttachScreenshot = try c.decodeIfPresent(Bool.self, forKey: .overlayAttachScreenshot) ?? true
         self.overlayInvisibleToCapture = try c.decodeIfPresent(Bool.self, forKey: .overlayInvisibleToCapture) ?? true
         self.overlayAlwaysOnTop = try c.decodeIfPresent(Bool.self, forKey: .overlayAlwaysOnTop) ?? true
@@ -126,6 +139,7 @@ struct AppConfig: Codable, Equatable {
         self.overlayHotKeyKeyRaw = try c.decodeIfPresent(String.self, forKey: .overlayHotKeyKeyRaw) ?? "space"
         self.overlayCoachAutoFollowup = try c.decodeIfPresent(Bool.self, forKey: .overlayCoachAutoFollowup) ?? true
         self.overlayStreamingEnabled = try c.decodeIfPresent(Bool.self, forKey: .overlayStreamingEnabled) ?? true
+        self.overlayGameMonitorUUID = try c.decodeIfPresent(String.self, forKey: .overlayGameMonitorUUID)
     }
 
     init(
@@ -143,7 +157,8 @@ struct AppConfig: Codable, Equatable {
         overlayHotKeyModifiersRaw: [String],
         overlayHotKeyKeyRaw: String,
         overlayCoachAutoFollowup: Bool,
-        overlayStreamingEnabled: Bool
+        overlayStreamingEnabled: Bool,
+        overlayGameMonitorUUID: String? = nil
     ) {
         self.customServerURL = customServerURL
         self.overlayEnabled = overlayEnabled
@@ -160,6 +175,7 @@ struct AppConfig: Codable, Equatable {
         self.overlayHotKeyKeyRaw = overlayHotKeyKeyRaw
         self.overlayCoachAutoFollowup = overlayCoachAutoFollowup
         self.overlayStreamingEnabled = overlayStreamingEnabled
+        self.overlayGameMonitorUUID = overlayGameMonitorUUID
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -170,6 +186,7 @@ struct AppConfig: Codable, Equatable {
         case overlayAlwaysOnTop, overlayCustomSystemPrompt
         case overlayHotKeyEnabled, overlayHotKeyModifiersRaw, overlayHotKeyKeyRaw
         case overlayCoachAutoFollowup, overlayStreamingEnabled
+        case overlayGameMonitorUUID
     }
 
     // MARK: - Build-time constants

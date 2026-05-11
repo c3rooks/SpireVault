@@ -2,6 +2,7 @@ import Foundation
 import AppKit
 import CoreGraphics
 import SwiftUI
+import ScreenCaptureKit
 
 // =========================================================================
 // OverlayAIService
@@ -49,25 +50,16 @@ final class OverlayAIService: ObservableObject {
         var defaultModel: String {
             switch self {
             case .openai:    return "gpt-4o-mini"
-            case .anthropic: return "claude-3-5-sonnet-20241022"
+            case .anthropic: return "claude-sonnet-4-6"
             }
         }
-        /// Models we surface in the Beta picker. The user can also type
-        /// a custom model identifier — the underlying client just passes
-        /// the string through to the provider's API.
-        ///
-        /// `gpt-4o-mini` is the default because it (a) supports vision,
-        /// (b) is roughly 1/15 the cost of `gpt-4o`, and (c) handles the
-        /// "look at this card reward" prompt indistinguishably from full
-        /// `gpt-4o` in playtesting. Power users can swap to the bigger
-        /// model from the picker if they want the extra reasoning.
         var suggestedModels: [String] {
             switch self {
-            case .openai:    return ["gpt-4o-mini", "gpt-4o", "gpt-4-turbo", "gpt-4.1-mini"]
+            case .openai:    return ["gpt-4o-mini", "gpt-4o", "gpt-4.1-mini", "gpt-4.1"]
             case .anthropic: return [
-                "claude-3-5-sonnet-20241022",
-                "claude-3-5-haiku-20241022",
-                "claude-3-opus-20240229",
+                "claude-sonnet-4-6",
+                "claude-haiku-4-5-20251001",
+                "claude-opus-4-7",
             ]
             }
         }
@@ -90,9 +82,9 @@ final class OverlayAIService: ObservableObject {
     /// combat). The `tracker` payload is special — it's posted by the
     /// snapshot diff watcher (no model call, no cost) and renders as a
     /// thin inline chip rather than a chat bubble.
-    struct Message: Identifiable, Equatable {
+    struct Message: Identifiable, Equatable, Codable {
         let id: UUID
-        enum Role: Equatable { case user, assistant, system, tracker }
+        enum Role: String, Equatable, Codable { case user, assistant, system, tracker }
         let role: Role
         /// Mutable so the streaming path can append tokens in place
         /// without invalidating the message ID (which would defeat
@@ -124,7 +116,8 @@ final class OverlayAIService: ObservableObject {
         /// posted by the snapshot watcher when the live save changes.
         let tracker: TrackerNote?
 
-        init(role: Role, text: String,
+        init(id: UUID = UUID(),
+             role: Role, text: String,
              attachedScreenshot: Bool = false,
              isStreaming: Bool = false,
              pathPlan: PathPlan? = nil,
@@ -133,7 +126,7 @@ final class OverlayAIService: ObservableObject {
              eventPlan: EventPlan? = nil,
              combatPlan: CombatPlan? = nil,
              tracker: TrackerNote? = nil) {
-            self.id = UUID()
+            self.id = id
             self.role = role
             self.text = text
             self.createdAt = Date()
@@ -168,6 +161,9 @@ final class OverlayAIService: ObservableObject {
         let label: String
         /// One of `combat | elite | shop | rest | event | chest | boss | unknown`.
         let type: String
+        /// Navigation direction at the fork for this step, e.g. "LEFT", "RIGHT", "CENTER".
+        /// Only meaningful when there is a visible choice on the map.
+        let direction: String?
         let why: String?
     }
 
@@ -266,8 +262,8 @@ final class OverlayAIService: ObservableObject {
     /// chat. Carries an optional verdict against the most recent advice
     /// so we can show "matches my pick" / "different from my pick" /
     /// "you skipped" without needing a model call.
-    struct TrackerNote: Equatable {
-        enum Kind: String, Equatable {
+    struct TrackerNote: Equatable, Codable {
+        enum Kind: String, Equatable, Codable {
             case cardAdded, cardRemoved, cardUpgraded
             case relicAdded, relicLost
             case potionAdded, potionUsed
@@ -275,7 +271,7 @@ final class OverlayAIService: ObservableObject {
             case hpHealed, hpLost
             case floorAdvanced
         }
-        enum MatchVerdict: String, Equatable {
+        enum MatchVerdict: String, Equatable, Codable {
             case matched   // player took what we recommended
             case different // player took something we ranked but not TAKE
             case skipped   // player took nothing / skipped a reward
@@ -292,7 +288,9 @@ final class OverlayAIService: ObservableObject {
 
     // MARK: - Published state
 
-    @Published private(set) var messages: [Message] = []
+    @Published private(set) var messages: [Message] = [] {
+        didSet { scheduleSaveCurrentChat() }
+    }
     @Published private(set) var isThinking = false
     @Published private(set) var lastError: String?
     /// Brief one-liner the overlay shows under the input row. Distinct
@@ -309,6 +307,18 @@ final class OverlayAIService: ObservableObject {
     /// "refresh save", we wipe the cache and the next prompt is built
     /// from a fresh disk read.
     let liveReader = STS2LiveSaveReader()
+    /// Set by `OverlayController` so the service can notify the
+    /// controller when a tracker chip or follow-up message lands —
+    /// the controller needs this to bump the "unseen observations"
+    /// dot on the collapsed pill. Weak to avoid a retain cycle (the
+    /// controller owns AppState, which owns this service).
+    weak var observerDelegate: OverlayObserverDelegate?
+
+    /// Display to capture for screenshot context. Updated by
+    /// `OverlayController` to match whichever monitor the overlay
+    /// panel is currently sitting on, so the capture always grabs
+    /// the game screen rather than the main display.
+    var gameDisplayID: CGDirectDisplayID = CGMainDisplayID()
 
     init(appState: AppState) {
         self.appState = appState
@@ -340,6 +350,25 @@ final class OverlayAIService: ObservableObject {
             }
             lastDiffedSnapshot = snap
         }
+        
+        if let newSeed = snap?.seed, newSeed != currentSeed {
+            if let oldSeed = currentSeed, !messages.isEmpty {
+                OverlayChatStore.save(messages: messages, for: oldSeed)
+            }
+            currentSeed = newSeed
+            let loaded = OverlayChatStore.load(for: newSeed)
+            if !loaded.isEmpty {
+                messages = loaded
+            } else {
+                // Keep existing behavior (e.g. if we clear conversation, we might
+                // end up here, but if clearConversation wiped messages and kept seed,
+                // this won't trigger).
+                if !messages.isEmpty {
+                    messages.removeAll()
+                }
+            }
+        }
+        
         liveSnapshot = snap
         return snap
     }
@@ -354,6 +383,30 @@ final class OverlayAIService: ObservableObject {
     /// rendering whereas this one only advances when we've actually
     /// processed (and posted tracker chips for) the deltas.
     private var lastDiffedSnapshot: STS2LiveSaveReader.LiveRunSnapshot?
+    
+    private var currentSeed: String?
+    private var saveChatDebounceWork: DispatchWorkItem?
+    
+    /// Save the current chat to disk for the active seed, debounced to avoid thrashing during streaming.
+    private func scheduleSaveCurrentChat() {
+        saveChatDebounceWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            if let seed = self.currentSeed, !self.messages.isEmpty {
+                OverlayChatStore.save(messages: self.messages, for: seed)
+            }
+        }
+        saveChatDebounceWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: work)
+    }
+    
+    /// Save immediately (used for forced overwrite/clear).
+    private func saveCurrentChatImmediate() {
+        saveChatDebounceWork?.cancel()
+        if let seed = currentSeed, !messages.isEmpty {
+            OverlayChatStore.save(messages: messages, for: seed)
+        }
+    }
 
     // MARK: - Public actions
 
@@ -371,6 +424,10 @@ final class OverlayAIService: ObservableObject {
         // stale read. Setting to current snap ensures the very next
         // diff is empty (no spurious "removed everything" beat).
         lastDiffedSnapshot = liveSnapshot
+        
+        if let seed = currentSeed {
+            OverlayChatStore.save(messages: [], for: seed) // Overwrite with empty
+        }
     }
 
     /// Convert a snapshot delta into a tracker chip and post it into
@@ -389,6 +446,118 @@ final class OverlayAIService: ObservableObject {
             matchComment: comment
         )
         messages.append(.init(role: .tracker, text: delta.label, tracker: note))
+        observerDelegate?.notePotentiallyUnseenMessage()
+        // Optional auto-follow-up: if the player took something
+        // different from our TAKE pick (or skipped), the Coach posts
+        // a one-line "OK noted, here's the pivot" assistant message.
+        // Off uses zero tokens; on adds one ~100-token call per
+        // disagreed-pick — the value of "OK Bash works if you upgrade
+        // it" outweighs the cost.
+        if (verdict == .different || verdict == .skipped),
+           appState?.config.overlayCoachAutoFollowup == true {
+            scheduleCoachFollowup(for: note)
+        }
+    }
+
+    /// Fire a small streaming call asking the model to acknowledge the
+    /// player's deviation and offer one-line pivot advice. We deliberately
+    /// don't include the screenshot — this is a fast text-only beat
+    /// meant to feel conversational, not analytical.
+    ///
+    /// Coalescing: only one in-flight follow-up at a time. If a second
+    /// tracker fires while one is still streaming, we skip — we'd rather
+    /// drop the second nudge than emit two stacked Coach replies.
+    private var followupTask: Task<Void, Never>?
+
+    private func scheduleCoachFollowup(for note: TrackerNote) {
+        if followupTask != nil { return }
+        guard let appState else { return }
+        let provider = currentProvider()
+        guard let key = OverlayKeychain.apiKey(for: provider.keychainAccount),
+              !key.isEmpty else { return }
+        let model = appState.config.overlayAIModel.isEmpty
+            ? provider.defaultModel
+            : appState.config.overlayAIModel
+        let runContext = buildRunContext()
+        let comment = note.matchComment ?? ""
+        let userQuestion = """
+        The player just \(verbForFollowup(note.kind)) "\(note.label)" on floor \(note.floor). \
+        That's different from what I recommended last (\(comment)). In ONE short \
+        sentence (≤ 22 words), acknowledge the pick and give one concrete pivot \
+        — what to look for at the NEXT decision. Lead with "OK" or "Got it". \
+        Don't restate the pick. Don't lecture. Don't apologize. No bullet \
+        points; one sentence only.
+        """
+        let placeholder = Message(role: .assistant, text: "", isStreaming: true)
+        messages.append(placeholder)
+        observerDelegate?.notePotentiallyUnseenMessage()
+        let placeholderID = placeholder.id
+
+        followupTask = Task { [weak self] in
+            guard let self else { return }
+            defer { Task { @MainActor [weak self] in self?.followupTask = nil } }
+            var accumulated = ""
+            do {
+                let stream = self.streamProvider(
+                    provider: provider,
+                    model: model,
+                    apiKey: key,
+                    userQuestion: userQuestion,
+                    screenshotPNG: nil,
+                    customSystemAddendum: appState.config.overlayCustomSystemPrompt,
+                    runContext: runContext
+                )
+                for try await chunk in stream {
+                    if Task.isCancelled { break }
+                    accumulated += chunk
+                    await MainActor.run {
+                        if let idx = self.messages.firstIndex(where: { $0.id == placeholderID }) {
+                            self.messages[idx].text = accumulated
+                        }
+                    }
+                }
+                await MainActor.run {
+                    if let idx = self.messages.firstIndex(where: { $0.id == placeholderID }) {
+                        self.messages[idx].isStreaming = false
+                        if accumulated.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                            // Drop the empty placeholder rather than leave
+                            // a blank bubble — the tracker chip already
+                            // told the player what we knew.
+                            self.messages.remove(at: idx)
+                        }
+                    }
+                    self.recordTokenSpend(prompt: userQuestion + runContext,
+                                          response: accumulated,
+                                          hadImage: false)
+                }
+            } catch {
+                // Silent on follow-up errors — the tracker chip already
+                // landed and that's the load-bearing UI. We just drop
+                // the empty placeholder so it doesn't dangle.
+                await MainActor.run {
+                    if let idx = self.messages.firstIndex(where: { $0.id == placeholderID }) {
+                        self.messages.remove(at: idx)
+                    }
+                }
+            }
+        }
+    }
+
+    private func verbForFollowup(_ kind: TrackerNote.Kind) -> String {
+        switch kind {
+        case .cardAdded:    return "took"
+        case .cardRemoved:  return "removed"
+        case .cardUpgraded: return "upgraded"
+        case .relicAdded:   return "picked up the relic"
+        case .relicLost:    return "lost the relic"
+        case .potionAdded:  return "picked up the potion"
+        case .potionUsed:   return "used the potion"
+        case .goldSpent:    return "spent"
+        case .goldGained:   return "gained"
+        case .hpHealed:     return "healed"
+        case .hpLost:       return "lost HP from"
+        case .floorAdvanced: return "advanced to"
+        }
     }
 
     /// Walk back through the recent assistant messages looking for a
@@ -535,7 +704,7 @@ final class OverlayAIService: ObservableObject {
         var screenshotPNG: Data?
         if attach {
             statusLine = "Capturing screen…"
-            screenshotPNG = captureActiveDisplayPNG(maxDimension: 1280)
+            screenshotPNG = await captureGameScreenPNG()
             if screenshotPNG != nil {
                 statusLine = "Sending to \(provider.displayName)…"
             } else {
@@ -687,7 +856,7 @@ final class OverlayAIService: ObservableObject {
         liveSnapshot = liveReader.snapshot(saveFolder: appState.saveFolder)
 
         statusLine = "Capturing screen…"
-        let png = captureActiveDisplayPNG(maxDimension: 1280)
+        let png = await captureGameScreenPNG()
         statusLine = png == nil
             ? "Couldn't capture screen — using deck context only."
             : "\(statusVerb) with \(provider.displayName)…"
@@ -822,16 +991,26 @@ final class OverlayAIService: ObservableObject {
     matching this schema:
 
     {
-      "summary": "Two-sentence rationale for the whole route.",
+      "summary": "One sentence describing the recommended route.",
       "nodes": [
-        { "label": "Shop", "type": "shop", "why": "Eight-word reason." }
+        {
+          "label": "Elite",
+          "type": "elite",
+          "direction": "LEFT",
+          "why": "Eight-word reason."
+        }
       ]
     }
 
     Constraints:
     - 3 ≤ nodes.length ≤ 5
     - "type" ∈ "combat" | "elite" | "shop" | "rest" | "event" | "chest" | "boss" | "unknown"
-    - The first node is the IMMEDIATE next step
+    - "direction": the EXACT fork to take at that step — "LEFT", "RIGHT", \
+      "CENTER", or null if there is no fork (only one path forward). \
+      Determine this from the MAP screenshot: look at where the current \
+      position marker is and identify which branch to take next.
+    - The first node MUST have a direction if there are multiple paths from \
+      the current position.
     - "why" ≤ 14 words
     - Only include nodes reachable from the player's current map position
     """
@@ -978,7 +1157,7 @@ final class OverlayAIService: ObservableObject {
         }
         liveSnapshot = liveReader.snapshot(saveFolder: appState.saveFolder)
         statusLine = "Capturing screen…"
-        let png = captureActiveDisplayPNG(maxDimension: 1280)
+        let png = await captureGameScreenPNG()
         statusLine = png == nil
             ? "Couldn't capture screen — using deck context only."
             : "Reading the screen with \(provider.displayName)…"
@@ -1065,9 +1244,11 @@ final class OverlayAIService: ObservableObject {
     /// + `summary` is optional — the model only fills in the payload
     /// matching the detected phase.
     private static let assistJSONInstructions: String = """
-    Respond with exactly one JSON object — no prose before or after — \
-    matching this wrapper schema. Fill in ONLY the payload field that \
-    matches the detected phase:
+    OUTPUT ONLY A SINGLE JSON OBJECT. No markdown, no code fences, no \
+    prose before or after. Your response must start with { and end with }.
+
+    Detect the current game phase from the screenshot, then fill in the \
+    matching payload field:
 
     {
       "phase": "card_reward" | "boss_relic" | "shop" | "event" | "map" | "combat" | "rest" | "other",
@@ -1080,18 +1261,21 @@ final class OverlayAIService: ObservableObject {
     }
 
     Sub-schemas:
-    PathPlan   = { "summary": "...", "nodes":   [{ "label": "Combat", "type": "combat", "why": "..." }] }    // 3-5 nodes
+    PathPlan   = { "summary": "...", "nodes":   [{ "label": "Elite", "type": "elite", "direction": "LEFT", "why": "..." }] }
     RewardPlan = { "summary": "...", "kind": "card_reward" | "boss_relic", "options": [{ "label": "Bash", "verdict": "TAKE" | "MAYBE" | "SKIP", "rank": "S" | "A" | "B" | "C" | "D", "why": "...", "synergies": ["..."] }] }
     ShopPlan   = { "summary": "...", "goldStart": 145, "goldAfter": 20, "items":   [{ "label": "Pen Nib", "kind": "relic" | "card" | "potion" | "removal", "price": 150, "verdict": "BUY" | "MAYBE" | "SKIP", "why": "..." }] }
     EventPlan  = { "summary": "...", "eventName": "Big Fish", "options": [{ "label": "...", "verdict": "TAKE" | "MAYBE" | "SKIP" | "AVOID", "why": "..." }] }
     CombatPlan = { "summary": "...", "energy": 3, "incomingDamage": 11, "plays": [{ "order": 1, "card": "Defend", "target": null, "why": "..." }], "reserve": ["Bash"], "nextTurn": "..." }
 
     Rules:
-    - Pick exactly ONE phase based on what's on screen.
+    - If cards are visible in hand at the bottom, phase is ALWAYS "combat" — fill the combat payload.
+    - If a card reward screen is visible, phase is "card_reward".
+    - If a shop/merchant is visible, phase is "shop".
+    - If an event choice screen is visible, phase is "event".
+    - If the map/path selection is visible, phase is "map".
     - For rest / other, just set "phase" + "summary" — no payload needed.
-    - For combat, ALWAYS fill the "combat" payload with an ordered play list — don't fall back to prose.
-    - All "why" / "summary" strings are short: ≤ 20 words.
-    - Exactly one "TAKE" or "BUY" verdict where the schema says "exactly one".
+    - All "why" / "summary" strings: ≤ 20 words.
+    - NEVER output plain text. If uncertain, use phase "other" with a summary.
     """
 
     // MARK: - Token + spend tracking
@@ -1131,6 +1315,68 @@ final class OverlayAIService: ObservableObject {
     func resetSpend() {
         sessionTokensSpent = 0
         sessionCostUSD = 0
+    }
+
+    // MARK: - Glossary miss logging
+    //
+    // STS2 ships new cards in every Early Access build. The bundled
+    // glossary covers the high-frequency tail; everything outside it
+    // means the model is reasoning from training data alone. We can't
+    // ship a bigger glossary on every build, but we CAN log what we
+    // missed so a future content turn knows exactly which IDs to
+    // prioritize. Privacy: stays local, never uploaded.
+
+    /// IDs we've already written to the log this process. Bounds the
+    /// log to one entry per (id) per app launch — without this, a
+    /// player with 25 unknowns in their deck would write 100+ log
+    /// lines per minute as the snapshot poller runs.
+    private var loggedGlossaryMisses: Set<String> = []
+
+    private func logGlossaryMisses(_ ids: Set<String>, character: String?) {
+        let fresh = ids.subtracting(loggedGlossaryMisses)
+        guard !fresh.isEmpty else { return }
+        loggedGlossaryMisses.formUnion(fresh)
+        guard let url = glossaryMissLogURL() else { return }
+        let stamp = ISO8601DateFormatter().string(from: Date())
+        let chr = character ?? "?"
+        let lines = fresh.sorted().map { "\(stamp)\t\(chr)\t\($0)\n" }.joined()
+        do {
+            try ensureParentDir(for: url)
+            if FileManager.default.fileExists(atPath: url.path) {
+                if let h = try? FileHandle(forWritingTo: url) {
+                    _ = try? h.seekToEnd()
+                    try? h.write(contentsOf: Data(lines.utf8))
+                    try? h.close()
+                }
+            } else {
+                let header = "# Slay the Spire 2 glossary misses — IDs in live decks not in STS2CardGlossary.\n# Format: <iso-stamp>\\t<character>\\t<id>\n"
+                try (header + lines).data(using: .utf8)?.write(to: url, options: .atomic)
+            }
+        } catch {
+            // Log writes are best-effort — silent failure is fine, the
+            // user's gameplay is unaffected.
+        }
+    }
+
+    private func glossaryMissLogURL() -> URL? {
+        guard let support = try? FileManager.default.url(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask,
+            appropriateFor: nil,
+            create: true
+        ) else { return nil }
+        return support
+            .appendingPathComponent("SpireVault", isDirectory: true)
+            .appendingPathComponent("missing-cards.log", isDirectory: false)
+    }
+
+    private func ensureParentDir(for url: URL) throws {
+        let dir = url.deletingLastPathComponent()
+        if !FileManager.default.fileExists(atPath: dir.path) {
+            try FileManager.default.createDirectory(
+                at: dir, withIntermediateDirectories: true
+            )
+        }
     }
 
     /// Quick "Recap" — summarize what we've discussed so far. Useful
@@ -1254,14 +1500,16 @@ final class OverlayAIService: ObservableObject {
         await runStructured(
             kind: .path,
             userQuestion: """
-            I'm on the map view. Pick the best 3-5 nodes I should walk \
-            through next. Use my live deck, relics, HP, and gold. Prefer \
-            elites/shops when my build wants them, rests when low. End \
-            the sequence at the next checkpoint (boss, treasure, or \
-            end-of-act).
+            Look at the map screenshot. I need to know exactly which \
+            branch to take RIGHT NOW — LEFT, RIGHT, or CENTER fork. \
+            Then plan the best 3–5 node route. For each node with a \
+            visible fork choice, state the direction explicitly. Use \
+            my live deck, relics, HP, and gold. Prefer elites/shops \
+            when my build wants them, rests when low. End the sequence \
+            at the next act checkpoint.
             """,
             schema: Self.pathJSONInstructions,
-            statusVerb: "Planning route"
+            statusVerb: "Reading map"
         )
     }
 
@@ -1270,16 +1518,31 @@ final class OverlayAIService: ObservableObject {
     /// targets and a "save for next turn" reserve. Saves the player
     /// from rereading prose every turn.
     func askCombat() async {
+        var question = """
+        I'm mid-combat. Read my hand, current energy, block, HP, and \
+        every enemy's intent. Output an ORDERED list of plays that \
+        respects my energy budget and minimizes net HP loss this turn. \
+        Cross-reference card costs against my actual cards (deck \
+        glossary in the context block). Mark cards I should HOLD for \
+        next turn under "reserve".
+        """
+        
+        if let lastCombat = messages.reversed().first(where: { $0.combatPlan != nil })?.combatPlan {
+            let previousPlays = lastCombat.plays.map { play in
+                let targetStr = play.target.flatMap { " -> \($0)" } ?? ""
+                return "\(play.order). \(play.card)\(targetStr)"
+            }.joined(separator: ", ")
+            
+            question += "\n\nContext: Last turn you advised me to play: [\(previousPlays)]."
+            if let nextTurn = lastCombat.nextTurn {
+                question += " You also noted for this turn: \"\(nextTurn)\"."
+            }
+            question += " Consider this previous advice if it's still relevant to the current board state."
+        }
+        
         await runStructured(
             kind: .combat,
-            userQuestion: """
-            I'm mid-combat. Read my hand, current energy, block, HP, and \
-            every enemy's intent. Output an ORDERED list of plays that \
-            respects my energy budget and minimizes net HP loss this turn. \
-            Cross-reference card costs against my actual cards (deck \
-            glossary in the context block). Mark cards I should HOLD for \
-            next turn under "reserve".
-            """,
+            userQuestion: question,
             schema: Self.combatJSONInstructions,
             statusVerb: "Planning turn"
         )
@@ -1319,19 +1582,45 @@ final class OverlayAIService: ObservableObject {
         runContext: String
     ) async throws -> String {
         let system = baseSystemPrompt(addendum: customSystemAddendum, runContext: runContext)
-        switch provider {
-        case .openai:
-            return try await callOpenAI(model: model, apiKey: apiKey,
-                                        system: system,
-                                        userQuestion: userQuestion,
-                                        screenshotPNG: screenshotPNG,
-                                        history: chatHistoryForPrompt())
-        case .anthropic:
-            return try await callAnthropic(model: model, apiKey: apiKey,
-                                           system: system,
-                                           userQuestion: userQuestion,
-                                           screenshotPNG: screenshotPNG,
-                                           history: chatHistoryForPrompt())
+        let history = chatHistoryForPrompt()
+        do {
+            switch provider {
+            case .openai:
+                return try await callOpenAI(model: model, apiKey: apiKey,
+                                            system: system,
+                                            userQuestion: userQuestion,
+                                            screenshotPNG: screenshotPNG,
+                                            history: history)
+            case .anthropic:
+                return try await callAnthropic(model: model, apiKey: apiKey,
+                                               system: system,
+                                               userQuestion: userQuestion,
+                                               screenshotPNG: screenshotPNG,
+                                               history: history)
+            }
+        } catch {
+            let nsErr = error as NSError
+            let isTLSOrNetwork = nsErr.domain == NSURLErrorDomain &&
+                [NSURLErrorSecureConnectionFailed,
+                 NSURLErrorNetworkConnectionLost,
+                 NSURLErrorTimedOut,
+                 NSURLErrorCannotConnectToHost].contains(nsErr.code)
+            guard isTLSOrNetwork else { throw error }
+            try await Task.sleep(nanoseconds: 600_000_000)
+            switch provider {
+            case .openai:
+                return try await callOpenAI(model: model, apiKey: apiKey,
+                                            system: system,
+                                            userQuestion: userQuestion,
+                                            screenshotPNG: screenshotPNG,
+                                            history: history)
+            case .anthropic:
+                return try await callAnthropic(model: model, apiKey: apiKey,
+                                               system: system,
+                                               userQuestion: userQuestion,
+                                               screenshotPNG: screenshotPNG,
+                                               history: history)
+            }
         }
     }
 
@@ -1355,6 +1644,7 @@ final class OverlayAIService: ObservableObject {
             "Speak like an experienced friend coaching the player live: short, concrete, decision-first.",
             "When a [live-run-snapshot] block is provided below, TRUST IT as the source of truth for the player's deck, relics, HP, gold, character, ascension, and game mode. The screenshot is just the current decision UI — combine the snapshot with the screenshot to give specific advice.",
             "When a [deck-glossary] block is provided, TRUST ITS card and relic effects over your training data. STS2 has reworked many cards from STS1 and added new ones (e.g. Necrobinder cards) — the glossary is canonical.",
+            "When a [glossary-misses] block lists IDs, those are cards/relics not yet in our bundled glossary. For those specifically, hedge: name the card/relic, but say something like \"I'm not 100% sure of its current STS2 effect — verify the card text on screen.\" Don't fabricate confident effects for them.",
             "When recommending a card from a reward, NAME IT (e.g. \"Take Streamline+ — your deck has Cold Snap and 3 channel triggers.\"). Don't say \"the rare card on the right\".",
             "If the snapshot says deck has Strike ×4 and Defend ×4, you can confidently call this an early-floor decision and weight removal/upgrade picks accordingly.",
             "If you can't read the screen confidently, say so and ask the player for the specific decision (\"What three cards are offered?\").",
@@ -1406,6 +1696,20 @@ final class OverlayAIService: ObservableObject {
             )
             if !glossary.isEmpty {
                 bits.append("[deck-glossary] // canonical effects for cards / relics in your live deck — TRUST THESE over your training data\n" + glossary)
+            }
+            // Log any unknown card / relic IDs once per process so we
+            // can expand the glossary in future builds. Silent on the
+            // happy path (nothing missing). Also tells the model to
+            // hedge on the unknowns.
+            let unmatched = STS2CardGlossary.unmatchedIdentifiers(
+                deckCards: snap.deck,
+                relicIDs: snap.relics,
+                characterHint: snap.character
+            )
+            if !unmatched.isEmpty {
+                logGlossaryMisses(unmatched, character: snap.character)
+                let listed = unmatched.sorted().joined(separator: ", ")
+                bits.append("[glossary-misses] // these IDs aren't in the bundled glossary — be cautious quoting their effects: \(listed)")
             }
         }
         if let p = appState.steamAuth.profile {
@@ -1802,33 +2106,66 @@ final class OverlayAIService: ObservableObject {
 
     // MARK: - Screenshot capture
 
-    /// Synchronous full-display capture using CoreGraphics. We use the
-    /// legacy `CGDisplayCreateImage` API because:
-    ///   * It works on macOS 13 (our deployment target). ScreenCaptureKit
-    ///     requires an authorization prompt + async setup that doesn't
-    ///     fit a single Cmd+Enter beat.
-    ///   * The user-installed STS2 window is fullscreen; capturing the
-    ///     active display is exactly what we want.
+    /// Primary capture path: ScreenCaptureKit (macOS 14+).
     ///
-    /// The first time the user invokes capture, macOS itself shows a
-    /// privacy prompt for Screen Recording. We don't need to wire any
-    /// extra UI — letting the system handle it is the right pattern.
-    nonisolated func captureActiveDisplayPNG(maxDimension: CGFloat = 1280) -> Data? {
-        let displayID = CGMainDisplayID()
-        guard let cgImage = CGDisplayCreateImage(displayID) else { return nil }
-        // Downscale to a reasonable max dimension. A 5K capture is ~30 MB
-        // base64-encoded — way more than we need for a vision prompt and
-        // it tanks latency on slow uplinks.
+    /// SCKit is the only API that reliably captures Metal-rendered game
+    /// content (STS2 is a Unity/Metal app). CGDisplayCreateImage reads
+    /// the legacy compositor layer and misses Metal windows entirely.
+    ///
+    /// We also exclude The Vault's own process from the capture so the
+    /// overlay panel doesn't obscure the game in the AI's screenshot.
+    @available(macOS 14.0, *)
+    private func captureWithSCKit() async -> Data? {
+        do {
+            let content = try await SCShareableContent.excludingDesktopWindows(
+                false, onScreenWindowsOnly: true)
+            guard let display = content.displays.first(where: { $0.displayID == gameDisplayID })
+                               ?? content.displays.first else { return nil }
+
+            let excluded = content.applications.filter {
+                $0.bundleIdentifier == "com.coreycrooks.thevault.app"
+            }
+            let filter = SCContentFilter(
+                display: display,
+                excludingApplications: excluded,
+                exceptingWindows: []
+            )
+
+            let cfg = SCStreamConfiguration()
+            // Capture at full display resolution; scaledPNG downscales to 1280px.
+            cfg.width = display.width
+            cfg.height = display.height
+
+            let cgImage = try await SCScreenshotManager.captureImage(
+                contentFilter: filter,
+                configuration: cfg
+            )
+            return scaledPNG(from: cgImage, maxDimension: 1280)
+        } catch {
+            return nil
+        }
+    }
+
+    /// Async wrapper: tries ScreenCaptureKit first, falls back to the
+    /// legacy CGDisplayCreateImage path for macOS 13.
+    func captureGameScreenPNG() async -> Data? {
+        if #available(macOS 14.0, *) {
+            if let png = await captureWithSCKit() { return png }
+        }
+        // macOS 13 fallback — doesn't capture Metal windows but is better
+        // than nothing and works for non-Metal overlay content.
+        return captureActiveDisplayPNG(maxDimension: 1280, displayID: gameDisplayID)
+    }
+
+    /// Shared PNG encoder: downscales a CGImage to fit within `maxDimension`
+    /// and encodes it as PNG. Used by both the SCKit and legacy paths.
+    nonisolated func scaledPNG(from cgImage: CGImage, maxDimension: CGFloat = 1280) -> Data? {
         let w = CGFloat(cgImage.width)
         let h = CGFloat(cgImage.height)
         let scale = min(1, maxDimension / max(w, h))
         let targetW = Int((w * scale).rounded())
         let targetH = Int((h * scale).rounded())
-
-        let nsImage = NSImage(cgImage: cgImage,
-                              size: NSSize(width: targetW, height: targetH))
-        // Re-render into a properly-sized bitmap context so PNG export
-        // honors the downscale.
+        let nsImage = NSImage(cgImage: cgImage, size: NSSize(width: targetW, height: targetH))
         guard let rep = NSBitmapImageRep(
             bitmapDataPlanes: nil,
             pixelsWide: targetW,
@@ -1848,6 +2185,14 @@ final class OverlayAIService: ObservableObject {
         NSGraphicsContext.restoreGraphicsState()
         return rep.representation(using: .png, properties: [:])
     }
+
+    /// Legacy synchronous capture via CoreGraphics. Kept for macOS 13
+    /// fallback; does NOT capture Metal-rendered game windows on macOS 14+.
+    nonisolated func captureActiveDisplayPNG(maxDimension: CGFloat = 1280,
+                                              displayID: CGDirectDisplayID = CGMainDisplayID()) -> Data? {
+        guard let cgImage = CGDisplayCreateImage(displayID) else { return nil }
+        return scaledPNG(from: cgImage, maxDimension: maxDimension)
+    }
 }
 
 // =========================================================================
@@ -1864,5 +2209,45 @@ enum OverlayAIError: Error {
         case .malformed(let s): return s
         case .noKey:            return "No API key configured."
         }
+    }
+}
+import Foundation
+
+@MainActor
+final class OverlayChatStore {
+    
+    private static func chatFileURL(for seed: String) -> URL {
+        let support = FileManager.default.urls(for: .applicationSupportDirectory,
+                                               in: .userDomainMask).first!
+        let chatsDir = support
+            .appendingPathComponent("AscensionCompanion", isDirectory: true)
+            .appendingPathComponent("vault", isDirectory: true)
+            .appendingPathComponent("chats", isDirectory: true)
+        
+        try? FileManager.default.createDirectory(at: chatsDir, withIntermediateDirectories: true)
+        
+        // Strip out any weird characters from seed just in case
+        let safeSeed = seed.components(separatedBy: .alphanumerics.inverted).joined()
+        return chatsDir.appendingPathComponent("\(safeSeed).json")
+    }
+    
+    static func save(messages: [OverlayAIService.Message], for seed: String) {
+        guard !messages.isEmpty else { return }
+        let url = chatFileURL(for: seed)
+        do {
+            let data = try JSONEncoder().encode(messages)
+            try data.write(to: url, options: .atomic)
+        } catch {
+            print("Failed to save chat for seed \(seed): \(error)")
+        }
+    }
+    
+    static func load(for seed: String) -> [OverlayAIService.Message] {
+        let url = chatFileURL(for: seed)
+        guard let data = try? Data(contentsOf: url),
+              let messages = try? JSONDecoder().decode([OverlayAIService.Message].self, from: data) else {
+            return []
+        }
+        return messages
     }
 }

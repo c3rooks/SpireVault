@@ -76,7 +76,32 @@ dmg: release
 	@rm -rf "$(DMG_DIR)" "$(DMG_OUT)"
 	@mkdir -p "$(DMG_DIR)"
 	cp -R "$(RELEASE_APP_PATH)" "$(DMG_DIR)/"
+	# Strip quarantine so dragging from this DMG to /Applications
+	# doesn't trigger macOS App Translocation (which would silently
+	# run the OLD cached copy instead of the freshly installed one).
+	xattr -dr com.apple.quarantine "$(DMG_DIR)/The Vault.app" 2>/dev/null || true
 	ln -sf /Applications "$(DMG_DIR)/Applications"
 	hdiutil create -volname "The Vault $(VERSION)" \
 	  -srcfolder "$(DMG_DIR)" -ov -format UDZO "$(DMG_OUT)"
 	@echo "→ DMG: $(DMG_OUT)"
+	@# Sync to the local marketing site so `make dmg` + refresh browser
+	@# always serves the current build — no manual copy needed.
+	@SITE_ASSET="$(shell dirname $(CURDIR))/Site/assets/The.Vault.dmg"; \
+	 if [ -d "$$(dirname $$SITE_ASSET)" ]; then \
+	   cp "$(DMG_OUT)" "$$SITE_ASSET" && echo "→ Site asset updated: $$SITE_ASSET"; \
+	 fi
+
+# -----------------------------------------------------------------------------
+# Notarization
+# -----------------------------------------------------------------------------
+# You must set APPLE_ID, APPLE_TEAM_ID, and APPLE_PASSWORD (app-specific password)
+# in your environment to run this.
+notarize: dmg
+	@echo "→ Notarizing $(DMG_OUT)..."
+	xcrun notarytool submit "$(DMG_OUT)" \
+	  --apple-id "$$APPLE_ID" \
+	  --team-id "$$APPLE_TEAM_ID" \
+	  --password "$$APPLE_PASSWORD" \
+	  --wait
+	@echo "→ Stapling ticket to DMG..."
+	xcrun stapler staple "$(DMG_OUT)"

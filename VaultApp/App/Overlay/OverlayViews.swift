@@ -111,8 +111,9 @@ struct OverlayGlassBackground: View {
     var body: some View {
         ZStack {
             // System blur — what reads as "this panel is a real macOS
-            // surface" rather than a flat colored rectangle.
-            VisualEffectBlur(material: .hudWindow, blendingMode: .behindWindow)
+            // surface" rather than a flat colored rectangle. Using popover
+            // gives a beautiful ultra-thin glassmorphism effect.
+            VisualEffectBlur(material: .popover, blendingMode: .behindWindow)
 
             // Brand-tinted base. Slightly cooler in v0.9.4 (less green
             // bias) so the ember accent at the top reads as warm by
@@ -290,13 +291,30 @@ struct OverlayPillView: View {
                 Capsule().stroke(Color.white.opacity(0.20), lineWidth: 1)
             )
             .shadow(color: Color(red: 1, green: 0.4, blue: 0.1).opacity(0.45), radius: 6, y: 1)
+            // Unseen-observations indicator. The dot only renders when
+            // tracker chips / Coach follow-ups have arrived since the
+            // chat was last opened — gives the player at-a-glance
+            // confidence the Coach noticed something without forcing
+            // them to expand to find out.
+            .overlay(alignment: .topTrailing) {
+                if controller.unseenObservations > 0 {
+                    UnseenDot(count: controller.unseenObservations)
+                        .offset(x: 4, y: -4)
+                        .transition(.scale.combined(with: .opacity))
+                }
+            }
+            .animation(.spring(response: 0.32, dampingFraction: 0.72),
+                       value: controller.unseenObservations)
         }
         .buttonStyle(.plain)
-        .help("Open the Run Coach (⌘⏎ to ask Assist)")
+        .help("Open the Run Coach (⌥Space)")
     }
 
     private var closeButton: some View {
         Button {
+            // X on the pill: bring the main Vault window to the front
+            // so the user lands on the app rather than an empty desktop.
+            controller.openMainWindow()
             controller.enabled = false
         } label: {
             Image(systemName: "xmark")
@@ -311,7 +329,7 @@ struct OverlayPillView: View {
                 )
         }
         .buttonStyle(.plain)
-        .help("Close overlay (re-enable in Beta tab)")
+        .help("Hide overlay · Return to The Vault")
     }
 
     private var brandMark: some View {
@@ -325,6 +343,31 @@ struct OverlayPillView: View {
                     .stroke(Color.white.opacity(0.18), lineWidth: 1)
             )
             .shadow(color: Color(red: 1, green: 0.5, blue: 0.1).opacity(0.4), radius: 6)
+    }
+}
+
+/// Tiny attention dot rendered on the collapsed pill when tracker
+/// chips / Coach follow-ups have arrived since the chat was last
+/// opened. Shows the count up to 9; "9+" beyond that. The dot is
+/// intentionally small so it reads as "something happened" without
+/// shouting like a notification badge.
+private struct UnseenDot: View {
+    let count: Int
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(Color(red: 1.00, green: 0.30, blue: 0.30))
+                .frame(width: 14, height: 14)
+                .shadow(color: Color(red: 1.00, green: 0.30, blue: 0.30).opacity(0.55),
+                        radius: 4, y: 1)
+            Text(count >= 9 ? "9+" : "\(count)")
+                .font(.system(size: 9, weight: .heavy, design: .rounded))
+                .foregroundStyle(.white)
+        }
+        .overlay(
+            Circle().stroke(Color.black.opacity(0.35), lineWidth: 1)
+        )
     }
 }
 
@@ -411,7 +454,8 @@ struct OverlayExpandedView: View {
             iconButton("rectangle.on.rectangle", help: "Open The Vault main window") {
                 controller.openMainWindow()
             }
-            iconButton("xmark", help: "End — disable overlay", danger: true) {
+            iconButton("xmark", help: "Return to The Vault", danger: false) {
+                controller.openMainWindow()
                 controller.enabled = false
             }
         }
@@ -721,6 +765,7 @@ struct OverlayExpandedView: View {
 
     private var footer: some View {
         HStack(spacing: 8) {
+            steamProfilePill
             if let s = state.aiService.statusLine {
                 Image(systemName: "ellipsis.circle")
                     .font(.system(size: 10))
@@ -744,6 +789,23 @@ struct OverlayExpandedView: View {
             }
             Spacer()
             spendMeter
+        }
+    }
+
+    @ViewBuilder
+    private var steamProfilePill: some View {
+        if let profile = state.steamAuth.profile {
+            HStack(spacing: 5) {
+                AvatarImage(urlString: profile.avatarURL, size: 16)
+                Text(profile.personaName)
+                    .font(.system(size: 9.5, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.60))
+                    .lineLimit(1)
+                    .frame(maxWidth: 80, alignment: .leading)
+            }
+            Rectangle()
+                .fill(Color.white.opacity(0.10))
+                .frame(width: 1, height: 10)
         }
     }
 
@@ -1009,6 +1071,8 @@ struct OverlaySettingsView: View {
                     providerBlock
                     apiKeyBlock
                     modelBlock
+                    behaviorBlock
+                    monitorBlock
                     toggleBlock
                     fullSettingsLink
                 }
@@ -1039,7 +1103,8 @@ struct OverlaySettingsView: View {
             iconButton("arrow.uturn.backward", help: "Back to chat") {
                 controller.showChat()
             }
-            iconButton("xmark", help: "End — disable overlay", danger: true) {
+            iconButton("xmark", help: "Return to The Vault", danger: false) {
+                controller.openMainWindow()
                 controller.enabled = false
             }
         }
@@ -1247,6 +1312,178 @@ struct OverlaySettingsView: View {
                     .stroke(Color.white.opacity(0.06), lineWidth: 1)
             )
         }
+    }
+
+    // MARK: - Coach behaviour
+
+    /// Streaming + auto-followup + hotkey controls. These are all
+    /// "how the Coach acts" — distinct from the privacy block below
+    /// which is "what the Coach is allowed to see / send".
+    private var behaviorBlock: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            sectionLabel("Coach behaviour")
+            VStack(spacing: 10) {
+                rowToggle(
+                    title: "Stream replies",
+                    sub: "Show free-form chat tokens as they arrive instead of waiting for the full response.",
+                    isOn: Binding(
+                        get: { state.config.overlayStreamingEnabled },
+                        set: { state.config.overlayStreamingEnabled = $0; state.config.save() }
+                    )
+                )
+                rowDivider
+                rowToggle(
+                    title: "Auto follow-up",
+                    sub: "When you take something different from my pick, post a one-line acknowledgment + pivot.",
+                    isOn: Binding(
+                        get: { state.config.overlayCoachAutoFollowup },
+                        set: { state.config.overlayCoachAutoFollowup = $0; state.config.save() }
+                    )
+                )
+                rowDivider
+                rowToggle(
+                    title: "Global hotkey (\(hotKeyDisplay))",
+                    sub: "Press anywhere — even inside fullscreen STS2 — to open the Coach.",
+                    isOn: Binding(
+                        get: { state.config.overlayHotKeyEnabled },
+                        set: {
+                            state.config.overlayHotKeyEnabled = $0
+                            state.config.save()
+                            state.overlayController.applyHotKeyBinding()
+                        }
+                    )
+                )
+            }
+            .padding(12)
+            .background(
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .fill(Color.white.opacity(0.03))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .stroke(Color.white.opacity(0.06), lineWidth: 1)
+            )
+        }
+    }
+
+    /// Pretty-print the configured global hot-key for the toggle
+    /// label. Falls back to "⌥Space" if either field doesn't decode.
+    private var hotKeyDisplay: String {
+        let mods = state.config.overlayHotKeyModifiersRaw
+            .compactMap { OverlayHotKey.Modifier(rawValue: $0) }
+        let key = OverlayHotKey.Key(rawValue: state.config.overlayHotKeyKeyRaw) ?? .space
+        let modSymbols = mods.map { m -> String in
+            switch m {
+            case .option:  return "⌥"
+            case .command: return "⌘"
+            case .control: return "⌃"
+            case .shift:   return "⇧"
+            }
+        }.joined()
+        let resolvedMods = modSymbols.isEmpty ? "⌥" : modSymbols
+        return resolvedMods + key.label
+    }
+
+    // MARK: - Monitor picker
+
+    private var monitorBlock: some View {
+        let screens = NSScreen.screens
+        // Only show the picker when more than one display is connected.
+        // Single-display users have no choice to make.
+        guard screens.count > 1 else { return AnyView(EmptyView()) }
+
+        let sorted = screens.sorted { $0.frame.minX < $1.frame.minX }
+        let pinnedUUID = state.config.overlayGameMonitorUUID
+
+        return AnyView(
+            VStack(alignment: .leading, spacing: 6) {
+                sectionLabel("Game monitor")
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Which display is STS2 running on? Screenshots always capture this screen.")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.white.opacity(0.5))
+                        .fixedSize(horizontal: false, vertical: true)
+                    // Horizontal scroll for unusual 3+ monitor setups.
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 6) {
+                            // "Auto" pill — clears the pin so the leftmost
+                            // display is used automatically.
+                            let autoSelected = pinnedUUID == nil
+                            monitorButton(
+                                label: "Auto",
+                                sublabel: "leftmost",
+                                selected: autoSelected
+                            ) {
+                                state.config.overlayGameMonitorUUID = nil
+                                state.config.save()
+                                state.overlayController.syncGameDisplayPublic()
+                            }
+                            ForEach(Array(sorted.enumerated()), id: \.offset) { idx, screen in
+                                let uuid = OverlayController.uuidString(for: screen)
+                                let isSelected = uuid != nil && uuid == pinnedUUID
+                                let posLabel = positionLabel(for: screen, in: sorted, index: idx)
+                                monitorButton(
+                                    label: screen.localizedName,
+                                    sublabel: posLabel,
+                                    selected: isSelected
+                                ) {
+                                    state.config.overlayGameMonitorUUID = uuid
+                                    state.config.save()
+                                    state.overlayController.syncGameDisplayPublic()
+                                }
+                            }
+                        }
+                    }
+                }
+                .padding(12)
+                .background(
+                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        .fill(Color.white.opacity(0.03))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        .stroke(Color.white.opacity(0.06), lineWidth: 1)
+                )
+            }
+        )
+    }
+
+    private func positionLabel(for screen: NSScreen, in sorted: [NSScreen], index: Int) -> String {
+        if sorted.count == 2 {
+            return index == 0 ? "left" : "right"
+        }
+        if index == 0 { return "leftmost" }
+        if index == sorted.count - 1 { return "rightmost" }
+        return "center"
+    }
+
+    private func monitorButton(label: String, sublabel: String, selected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(label)
+                    .font(.system(size: 10.5, weight: .heavy))
+                    .foregroundStyle(selected ? .black : .white)
+                    .lineLimit(1)
+                Text(sublabel)
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundStyle(selected ? Color.black.opacity(0.6) : Color.white.opacity(0.45))
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .background(
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(selected
+                          ? Color(red: 1, green: 0.55, blue: 0.10)
+                          : Color.white.opacity(0.06))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .stroke(selected
+                            ? Color.clear
+                            : Color.white.opacity(0.10), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: - Toggles
@@ -1516,16 +1753,31 @@ struct ChatBubble: View {
                         alignment: HorizontalAlignment) -> some View {
         VStack(alignment: alignment, spacing: 4) {
             if message.role == .user, message.attachedScreenshot {
-                HStack(spacing: 4) {
-                    Image(systemName: "photo.fill")
-                        .font(.system(size: 9, weight: .bold))
-                    Text("Screen attached")
-                        .font(.system(size: 9, weight: .heavy))
+                HStack(spacing: 8) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                            .fill(LinearGradient(colors: [Color(red: 0.40, green: 0.65, blue: 1.00), Color(red: 0.75, green: 0.55, blue: 1.00)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                            .opacity(0.6)
+                        Image(systemName: "viewfinder")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(.white)
+                    }
+                    .frame(width: 28, height: 18)
+                    .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color.white.opacity(0.3), lineWidth: 1))
+                    
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("Screen attached")
+                            .font(.system(size: 9.5, weight: .heavy))
+                            .foregroundStyle(.white.opacity(0.9))
+                        Text("Current turn context")
+                            .font(.system(size: 8, weight: .semibold))
+                            .foregroundStyle(.white.opacity(0.6))
+                    }
                 }
-                .foregroundStyle(.white.opacity(0.85))
-                .padding(.horizontal, 6)
-                .padding(.vertical, 2)
-                .background(Capsule().fill(Color.black.opacity(0.18)))
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
+                .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.black.opacity(0.25)))
+                .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(Color.white.opacity(0.15), lineWidth: 1))
             }
             // Render text + a subtle blinking caret while tokens are
             // still arriving. The caret only renders for assistant
@@ -1692,9 +1944,23 @@ private struct PathNodeRow: View {
                             .foregroundStyle(.white)
                             .padding(.horizontal, 5)
                             .padding(.vertical, 1.5)
-                            .background(
-                                Capsule().fill(Color(red: 1, green: 0.55, blue: 0.10))
-                            )
+                            .background(Capsule().fill(Color(red: 1, green: 0.55, blue: 0.10)))
+                    }
+                    if let dir = node.direction, !dir.isEmpty {
+                        let arrow: String = {
+                            switch dir.uppercased() {
+                            case "LEFT":   return "←"
+                            case "RIGHT":  return "→"
+                            case "CENTER": return "↑"
+                            default:       return dir
+                            }
+                        }()
+                        Text(arrow)
+                            .font(.system(size: 10, weight: .heavy, design: .monospaced))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 1.5)
+                            .background(Capsule().fill(Color.white.opacity(0.12)))
                     }
                     Spacer(minLength: 0)
                     Text("Step \(index + 1)")
@@ -1813,26 +2079,36 @@ private struct PathRoomMeta {
 // =========================================================================
 
 struct ThinkingDots: View {
-    @State private var phase = 0
-    private let timer = Timer.publish(every: 0.4, on: .main, in: .common).autoconnect()
+    @State private var phase = false
 
     var body: some View {
-        HStack(spacing: 6) {
-            ForEach(0..<3, id: \.self) { i in
-                Circle()
-                    .fill(Color.white.opacity(phase == i ? 0.85 : 0.25))
-                    .frame(width: 6, height: 6)
-            }
+        HStack(spacing: 8) {
+            Image(systemName: "sparkles")
+                .font(.system(size: 11, weight: .heavy))
+                .foregroundStyle(Color(red: 1, green: 0.55, blue: 0.10))
+                .rotationEffect(.degrees(phase ? 15 : -15))
+            Text("Coach is thinking...")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.85))
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 6)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
         .background(
-            Capsule().fill(Color.white.opacity(0.05))
+            Capsule()
+                .fill(LinearGradient(colors: [
+                    Color(red: 1, green: 0.55, blue: 0.10).opacity(0.2),
+                    Color(red: 1, green: 0.35, blue: 0.08).opacity(0.05),
+                ], startPoint: .leading, endPoint: .trailing))
         )
         .overlay(
-            Capsule().stroke(Color.white.opacity(0.10), lineWidth: 1)
+            Capsule().stroke(Color(red: 1, green: 0.55, blue: 0.10).opacity(0.4), lineWidth: 1)
         )
-        .onReceive(timer) { _ in phase = (phase + 1) % 3 }
+        .opacity(phase ? 1 : 0.6)
+        .onAppear {
+            withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) {
+                phase = true
+            }
+        }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.leading, 14)
     }

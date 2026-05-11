@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Run Coach</title>
+<link rel="stylesheet" href="overlay.css"/>
+</head>
+<body class="pill-mode">
+
+<!-- ── PILL STATE ─────────────────────────────── -->
+<div id="pill" class="pill">
+  <img id="pill-emblem" class="emblem" src="emblem.png" alt=""/>
+  <div id="pill-status" class="pill-status" onclick="expandChat()">
+    <span class="idle-dot" id="live-dot"></span>
+    <span id="pill-text">Run Coach · idle</span>
+  </div>
+  <button class="coach-btn" id="coach-btn" onclick="expandChat()">
+    <span class="sparkle">✦</span> Coach
+    <span class="unseen-dot" id="unseen-dot" style="display:none">0</span>
+  </button>
+  <button class="close-btn" onclick="closePill()" title="Return to The Vault">✕</button>
+</div>
+
+<!-- ── CHAT CARD STATE ────────────────────────── -->
+<div id="chat" class="chat" style="display:none">
+  <!-- Header -->
+  <div class="chat-header">
+    <img class="emblem" src="emblem.png" alt=""/>
+    <div class="chat-title">
+      <strong>Run Coach</strong>
+      <span id="provider-label" class="provider-label">Anthropic · claude-sonnet-4-6</span>
+    </div>
+    <span class="beta-badge">BETA</span>
+    <div class="header-icons">
+      <button class="icon-btn" onclick="showSettings()" title="Settings">⚙</button>
+      <button class="icon-btn" onclick="collapseToPill()" title="Collapse">⌃</button>
+      <button class="icon-btn" onclick="openMainWindow()" title="Open Vault">⧉</button>
+      <button class="icon-btn" onclick="closePill()" title="Close">✕</button>
+    </div>
+  </div>
+  <div class="divider"></div>
+
+  <!-- Live run strip -->
+  <div id="live-strip" class="live-strip" style="display:none">
+    <span class="live-strip-dot"></span>
+    <span id="live-strip-text"></span>
+  </div>
+  <div class="divider" id="live-strip-divider" style="display:none"></div>
+
+  <!-- Chat messages -->
+  <div id="chat-scroll" class="chat-scroll">
+    <div id="messages"></div>
+    <div id="thinking" class="thinking-dots" style="display:none">
+      <span></span><span></span><span></span>
+    </div>
+  </div>
+  <div class="divider"></div>
+
+  <!-- Command palette -->
+  <div class="palette" id="palette">
+    <div class="palette-row">
+      <button class="assist-btn" id="assist-btn" onclick="doAssist()">
+        <span>⚡</span> Assist
+        <kbd>Alt+↵</kbd>
+      </button>
+      <button class="trash-btn" onclick="clearChat()" title="Clear chat" id="trash-btn">🗑</button>
+    </div>
+    <div class="palette-row">
+      <button class="chip chip-orange" onclick="doChip('card')">🎴 Card pick</button>
+      <button class="chip chip-gold" onclick="doChip('relic')">👑 Boss relic</button>
+      <button class="chip chip-teal" onclick="doChip('shop')">🛍 Shop</button>
+    </div>
+    <div class="palette-row">
+      <button class="chip chip-blue" onclick="doChip('path')">🗺 Path</button>
+      <button class="chip chip-purple" onclick="doChip('event')">❓ Event</button>
+      <button class="chip chip-red" onclick="doChip('fight')">⚔ Fight</button>
+      <button class="chip chip-gold" onclick="doChip('plan')">📋 Plan</button>
+    </div>
+  </div>
+
+  <!-- Input row -->
+  <div class="input-row">
+    <button class="cam-btn" id="cam-btn" onclick="toggleScreenshot()" title="Attach screenshot">📷</button>
+    <div class="input-wrap">
+      <textarea id="user-input" class="user-input" rows="1"
+        placeholder="Ask the Coach about your run…"
+        onkeydown="handleKey(event)"
+        oninput="autoResize(this)"></textarea>
+    </div>
+    <button class="send-btn" onclick="sendMessage()" title="Send">↑</button>
+  </div>
+
+  <!-- Footer -->
+  <div class="chat-footer">
+    <span id="status-line">Alt+↵ Assist · ↵ Send · Esc collapse</span>
+    <span id="cost-line" class="cost-line"></span>
+  </div>
+</div>
+
+<!-- ── SETTINGS STATE ─────────────────────────── -->
+<div id="settings" class="settings" style="display:none">
+  <div class="chat-header">
+    <img class="emblem" src="emblem.png" alt=""/>
+    <div class="chat-title"><strong>Coach Settings</strong></div>
+    <div class="header-icons">
+      <button class="icon-btn" onclick="closeSettings()">✕</button>
+    </div>
+  </div>
+  <div class="divider"></div>
+  <div class="settings-body">
+    <label class="settings-label">AI Provider</label>
+    <div class="provider-tiles">
+      <button class="provider-tile" id="tile-anthropic" onclick="setProvider('anthropic')">
+        <strong>Anthropic</strong><span>Claude</span>
+      </button>
+      <button class="provider-tile" id="tile-openai" onclick="setProvider('openai')">
+        <strong>OpenAI</strong><span>GPT-4o</span>
+      </button>
+    </div>
+    <label class="settings-label">API Key</label>
+    <div class="key-row">
+      <input id="key-input" class="key-input" type="password" placeholder="sk-ant-… or sk-…" autocomplete="off"/>
+      <button class="key-save-btn" onclick="saveKey()">Save</button>
+    </div>
+    <div id="key-status" class="key-status"></div>
+    <label class="settings-label">Model (optional override)</label>
+    <input id="model-input" class="key-input" type="text" placeholder="claude-sonnet-4-6 / gpt-4o-mini"/>
+    <label class="settings-label">Custom system instructions (optional)</label>
+    <textarea id="custom-prompt" class="custom-prompt" rows="3" placeholder="e.g. I'm a beginner. Keep advice simple."></textarea>
+    <div class="settings-toggles">
+      <label class="toggle-row">
+        <input type="checkbox" id="toggle-screenshot" checked onchange="prefs.screenshot=this.checked;savePrefs()"/>
+        Attach screenshot with every request
+      </label>
+      <label class="toggle-row">
+        <input type="checkbox" id="toggle-followup" checked onchange="prefs.autoFollowup=this.checked;savePrefs()"/>
+        Auto follow-up when you deviate from advice
+      </label>
+    </div>
+    <button class="clear-keys-btn" onclick="clearAllKeys()">Clear all saved keys</button>
+  </div>
+</div>
+
+<script src="overlay.js"></script>
+</body>
+</html>

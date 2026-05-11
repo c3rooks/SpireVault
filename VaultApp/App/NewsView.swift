@@ -380,7 +380,7 @@ enum NewsCatalog {
                 ),
                 .feature(
                     title: "Bring your own key",
-                    body: "OpenAI (default model `gpt-4o-mini`) or Anthropic (default model `claude-3-5-sonnet-20241022`). Your key is stored in the macOS Keychain under com.coreycrooks.thevault.overlay and only ever leaves your Mac as an Authorization / x-api-key header on the call to the provider you picked. The Vault servers never touch it, never see your screenshots, never see the prompt or reply."
+                    body: "OpenAI (default model `gpt-4o-mini`) or Anthropic (default model `claude-3-5-sonnet-latest`). Your key is stored in the macOS Keychain under com.coreycrooks.thevault.overlay and only ever leaves your Mac as an Authorization / x-api-key header on the call to the provider you picked. The Vault servers never touch it, never see your screenshots, never see the prompt or reply."
                 ),
 
                 .heading("How to enable it"),

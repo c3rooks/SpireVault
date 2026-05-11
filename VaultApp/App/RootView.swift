@@ -13,20 +13,11 @@ struct RootView: View {
                 OnboardingView()
             } else {
                 VStack(spacing: 0) {
-                    // Persistent self-update banner. Lives above the
-                    // sidebar+detail split so it's visible no matter
-                    // which tab the user is on. We learned (from a
-                    // user stuck on v0.8.1 long after v0.9.x shipped)
-                    // that burying the update prompt inside Settings
-                    // is the same as not surfacing it at all — once
-                    // the standalone Settings sidebar row was retired
-                    // in v0.9, there was no in-window affordance to
-                    // even discover that auto-update had found
-                    // anything. The banner fixes that.
                     if state.updateService.bannerShouldShow {
                         UpdateBanner(service: state.updateService)
                             .transition(.move(edge: .top).combined(with: .opacity))
                     }
+                    TranslocationBanner()
                     HSplit(section: $section)
                 }
                 .animation(.spring(response: 0.32, dampingFraction: 0.86),
@@ -526,53 +517,76 @@ struct Sidebar: View {
 
     @ViewBuilder
     private func signedInPillMenu(me: PlayerProfile) -> some View {
-        // The persona pill is the only entry point for Settings, Beta,
-        // and Sign out on the desktop sidebar — the standalone rows
-        // were retired in v0.9 to mirror the cloud. That hand-off
-        // worked great visually but produced a real bug: with
-        // `.menuIndicator(.hidden)` + `.menuStyle(.borderlessButton)` +
-        // `.buttonStyle(.plain)` the result looks like static text. A
-        // user on a fresh install reads it as "this is just my name
-        // displayed" and never clicks. We address that here with a
-        // visible disclosure chevron, a hover-state background pill,
-        // and a tooltip explaining what the menu does.
-        Menu {
+        HStack(spacing: 10) {
+            // Avatar circle
+            ZStack {
+                Circle()
+                    .fill(Theme.gold.opacity(0.18))
+                if let url = me.avatarURL.flatMap(URL.init) {
+                    AsyncImage(url: url) { phase in
+                        if case .success(let img) = phase {
+                            img.resizable().scaledToFill()
+                        } else {
+                            Text(String(me.personaName.prefix(1)).uppercased())
+                                .font(.system(size: 12, weight: .black, design: .rounded))
+                                .foregroundStyle(Theme.gold)
+                        }
+                    }
+                    .clipShape(Circle())
+                } else {
+                    Text(String(me.personaName.prefix(1)).uppercased())
+                        .font(.system(size: 12, weight: .black, design: .rounded))
+                        .foregroundStyle(Theme.gold)
+                }
+            }
+            .frame(width: 28, height: 28)
+            .overlay(Circle().stroke(Theme.gold.opacity(0.5), lineWidth: 1))
+
+            // Name + subtitle
+            VStack(alignment: .leading, spacing: 1) {
+                Text(me.personaName)
+                    .font(.system(size: 12, weight: .heavy))
+                    .foregroundStyle(Theme.text)
+                    .lineLimit(1)
+                Text("Steam connected")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Theme.textTertiary)
+            }
+
+            Spacer(minLength: 0)
+
+            // Gear button
             Button {
                 selection = .settings
             } label: {
-                Label("Settings", systemImage: "gearshape.fill")
+                Image(systemName: "gearshape.fill")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.textTertiary)
+                    .frame(width: 22, height: 22)
+                    .contentShape(Rectangle())
             }
-            Button {
-                selection = .beta
-            } label: {
-                Label("Beta features", systemImage: "flask.fill")
-            }
+            .buttonStyle(.plain)
+            .help("Settings")
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Theme.cardBG.opacity(0.5))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(Theme.cardBorder.opacity(0.6), lineWidth: 1)
+        )
+        .contextMenu {
+            Button { selection = .settings } label: { Label("Settings", systemImage: "gearshape.fill") }
+            Button { selection = .beta } label: { Label("Beta features", systemImage: "flask.fill") }
+            Button { selection = .coop } label: { Label("Open Co-op", systemImage: "person.2.wave.2.fill") }
             Divider()
-            if let updateMenuLabel {
-                Button {
-                    selection = .settings
-                } label: {
-                    Label(updateMenuLabel, systemImage: "arrow.down.circle.fill")
-                }
-            }
-            Button {
-                selection = .coop
-            } label: {
-                Label("Open Co-op", systemImage: "person.2.wave.2.fill")
-            }
-            Divider()
-            Button(role: .destructive) {
-                state.steamAuth.signOut()
-            } label: {
+            Button(role: .destructive) { state.steamAuth.signOut() } label: {
                 Label("Sign out of Steam", systemImage: "rectangle.portrait.and.arrow.right")
             }
-        } label: {
-            PersonaPillLabel(me: me)
         }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .buttonStyle(.plain)
-        .help("Account, settings, and beta features")
     }
 
     private var updateMenuLabel: String? {
@@ -946,5 +960,84 @@ private struct HeaderButton: View {
         }
         .buttonStyle(.plain)
         .onHover { hover = $0 }
+    }
+}
+
+// =========================================================================
+// TranslocationBanner
+// -------------------------------------------------------------------------
+// macOS App Translocation fires when a quarantined app is launched from
+// /Applications. The OS silently runs the app from a read-only shadow copy
+// under /private/var/folders/.../AppTranslocation, which means code and
+// features from the current /Applications bundle never reach the user.
+//
+// Detection: if our bundle path contains "AppTranslocation" we are running
+// from the shadow — not the real install. We surface a one-click fix that
+// strips the quarantine attribute and relaunches, so the user lands on the
+// correct binary without needing a Terminal.
+// =========================================================================
+
+private struct TranslocationBanner: View {
+    @State private var dismissed = false
+
+    private var isTranslocated: Bool {
+        Bundle.main.bundlePath.contains("AppTranslocation")
+    }
+
+    var body: some View {
+        if isTranslocated && !dismissed {
+            HStack(spacing: 10) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(Color(red: 1, green: 0.75, blue: 0.10))
+                    .font(.system(size: 13, weight: .semibold))
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Running from a temporary copy")
+                        .font(.system(size: 12, weight: .heavy))
+                        .foregroundStyle(Theme.text)
+                    Text("macOS is sandboxing this install. Click Fix to run the real app.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Theme.textSecondary)
+                }
+                Spacer()
+                Button("Fix & Relaunch") {
+                    fixTranslocation()
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(Color(red: 1, green: 0.55, blue: 0.10))
+                .controlSize(.small)
+                Button {
+                    dismissed = true
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(Theme.textTertiary)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .background(Color(red: 0.50, green: 0.30, blue: 0.00).opacity(0.35))
+            .overlay(
+                Rectangle()
+                    .frame(height: 1)
+                    .foregroundStyle(Color(red: 1, green: 0.55, blue: 0.10).opacity(0.40)),
+                alignment: .bottom
+            )
+            .transition(.move(edge: .top).combined(with: .opacity))
+        }
+    }
+
+    private func fixTranslocation() {
+        // Strip quarantine from the installed copy, then relaunch from it.
+        let task = Process()
+        task.launchPath = "/bin/sh"
+        task.arguments = ["-c",
+            "xattr -dr com.apple.quarantine /Applications/The\\ Vault.app && " +
+            "open /Applications/The\\ Vault.app && " +
+            "sleep 0.5"
+        ]
+        try? task.run()
+        task.waitUntilExit()
+        NSApp.terminate(nil)
     }
 }

@@ -1,0 +1,137 @@
+name: Build & Release — Windows .exe
+
+# Triggers:
+#   • Push a version tag (v0.9.9, v1.0.0) → full release with GitHub Release upload
+#   • Manual trigger (workflow_dispatch) → build only, no release upload
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      upload_release:
+        description: 'Upload to GitHub Release?'
+        required: false
+        default: 'false'
+        type: boolean
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  build-windows:
+    name: Windows .exe
+    runs-on: windows-latest
+
+    steps:
+      # ── Checkout ───────────────────────────────────────────────────────────
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # full history so `git describe` works for version
+
+      # ── Rust toolchain ─────────────────────────────────────────────────────
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      # ── Rust build cache (speeds repeated builds by ~70%) ──────────────────
+      - name: Cache Rust artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: WindowsApp/src-tauri -> target
+
+      # ── Node / npm (for Tauri CLI) ─────────────────────────────────────────
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: WindowsApp/package-lock.json
+
+      - name: Install npm dependencies
+        working-directory: WindowsApp
+        run: npm ci
+
+      # ── WebView2 runtime (guaranteed on windows-latest, but explicit) ──────
+      # windows-latest ships WebView2 Evergreen; no install needed.
+
+      # ── Sync version from git tag ──────────────────────────────────────────
+      - name: Extract version from tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "VAULT_VERSION=$VERSION" >> "$GITHUB_ENV"
+          # Patch Cargo.toml version so the binary reports the release version.
+          sed -i "s/^version = \".*\"/version = \"$VERSION\"/" \
+            WindowsApp/src-tauri/Cargo.toml
+          # Patch tauri.conf.json version.
+          sed -i "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" \
+            WindowsApp/src-tauri/tauri.conf.json
+
+      # ── Build .exe + NSIS installer ────────────────────────────────────────
+      - name: Build The Vault (release)
+        working-directory: WindowsApp
+        run: npm run build
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+
+      # ── Locate outputs ─────────────────────────────────────────────────────
+      - name: List build outputs
+        shell: bash
+        run: |
+          find WindowsApp/src-tauri/target/release/bundle -type f \
+            \( -name "*.exe" -o -name "*.msi" \) | sort
+
+      # ── Upload artifacts (always, for inspection) ──────────────────────────
+      - name: Upload NSIS installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: TheVault-Windows-Installer
+          path: |
+            WindowsApp/src-tauri/target/release/bundle/nsis/*.exe
+            WindowsApp/src-tauri/target/release/bundle/msi/*.msi
+          retention-days: 14
+
+      # ── Create / update GitHub Release ─────────────────────────────────────
+      - name: Upload to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            WindowsApp/src-tauri/target/release/bundle/nsis/TheVault_*_x64-setup.exe
+            WindowsApp/src-tauri/target/release/bundle/msi/TheVault_*_x64_en-US.msi
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          tag_name: ${{ github.ref_name }}
+          name: "The Vault ${{ github.ref_name }}"
+          body: |
+            ## What's New
+            See [CHANGELOG.md](https://github.com/c3rooks/SpireVault/blob/main/CHANGELOG.md) for details.
+
+            ## Install
+            **Windows:** Download and run `TheVault_*_x64-setup.exe`.
+            macOS users should right-click → Open on first launch.
+
+            > First-time Windows users: Windows Defender SmartScreen may show
+            > "Windows protected your PC." Click **More info → Run anyway**.
+            > This only appears until the installer builds reputation (~50 installs).
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ── Parallel: also trigger macOS DMG build if the macOS workflow exists ──
+  notify-macos:
+    name: Notify macOS CI
+    needs: build-windows
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger macOS build
+        run: |
+          echo "Windows build succeeded for $GITHUB_REF_NAME"
+          echo "Ensure the macOS DMG workflow is also triggered by this tag."

@@ -151,6 +151,48 @@ public struct PresenceEntry: Codable, Hashable, Identifiable {
         self.inSTS2 = inSTS2
         self.updatedAt = updatedAt
     }
+
+    enum CodingKeys: String, CodingKey {
+        case steamID, anonId, personaName, avatarURL, discordHandle, stats, status, note, inSTS2, updatedAt
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        if let steam = try container.decodeIfPresent(String.self, forKey: .steamID) {
+            self.steamID = steam
+        } else if let anon = try container.decodeIfPresent(String.self, forKey: .anonId) {
+            self.steamID = anon
+        } else {
+            throw DecodingError.dataCorruptedError(forKey: .steamID, in: container, debugDescription: "No steamID or anonId")
+        }
+        
+        if let persona = try container.decodeIfPresent(String.self, forKey: .personaName) {
+            self.personaName = persona
+        } else {
+            self.personaName = "Player \(self.steamID.prefix(4))"
+        }
+        
+        self.avatarURL = try container.decodeIfPresent(String.self, forKey: .avatarURL)
+        self.discordHandle = try container.decodeIfPresent(String.self, forKey: .discordHandle)
+        self.stats = try container.decodeIfPresent(PlayerStats.self, forKey: .stats)
+        self.status = try container.decode(PresenceStatus.self, forKey: .status)
+        self.note = try container.decodeIfPresent(String.self, forKey: .note) ?? ""
+        self.inSTS2 = try container.decodeIfPresent(Bool.self, forKey: .inSTS2) ?? false
+        self.updatedAt = try container.decode(Date.self, forKey: .updatedAt)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(steamID, forKey: .steamID)
+        try container.encode(personaName, forKey: .personaName)
+        try container.encodeIfPresent(avatarURL, forKey: .avatarURL)
+        try container.encodeIfPresent(discordHandle, forKey: .discordHandle)
+        try container.encodeIfPresent(stats, forKey: .stats)
+        try container.encode(status, forKey: .status)
+        try container.encode(note, forKey: .note)
+        try container.encode(inSTS2, forKey: .inSTS2)
+        try container.encode(updatedAt, forKey: .updatedAt)
+    }
 }
 
 /// Body for `POST /presence` — what the client sends on each heartbeat.

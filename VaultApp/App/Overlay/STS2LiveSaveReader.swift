@@ -241,7 +241,18 @@ final class STS2LiveSaveReader {
         if let ps = player["potions"] as? [[String: Any]] {
             for p in ps {
                 if let id = p["id"] as? String {
-                    potions.append(stripPrefix("POTION.", id).lowercased())
+                    let normalized = stripPrefix("POTION.", id).lowercased()
+                    // Skip empty potion slots — STS2 represents unfilled
+                    // slots as objects with id "POTION.empty_potion" or
+                    // "POTION.placeholder". Including them causes the diff
+                    // to emit spurious "Used X" / "Found X" chips whenever
+                    // a slot shifts position in the save file.
+                    guard !normalized.isEmpty,
+                          normalized != "empty_potion",
+                          normalized != "placeholder",
+                          normalized != "empty",
+                          normalized != "none" else { continue }
+                    potions.append(normalized)
                 }
             }
         }
@@ -259,6 +270,8 @@ final class STS2LiveSaveReader {
         }
 
         let character: String? = {
+            // STS2 uses player["character_id"] = "CHARACTER.SILENT" etc.
+            if let s = player["character_id"] as? String { return stripPrefix("CHARACTER.", s).lowercased() }
             if let s = player["character"] as? String { return stripPrefix("CHARACTER.", s).lowercased() }
             if let s = obj["character"] as? String { return stripPrefix("CHARACTER.", s).lowercased() }
             if let dict = player["character"] as? [String: Any], let s = dict["id"] as? String {
@@ -425,13 +438,7 @@ final class STS2LiveSaveWatcher {
     func stop() {
         debounceWork?.cancel()
         debounceWork = nil
-        source?.cancel()
-        source = nil
-        if fd >= 0 {
-            close(fd)
-            fd = -1
-        }
-        watchedPath = nil
+        tearDownSourceOnly()
         attachTimer?.invalidate()
         attachTimer = nil
         onChange = nil
@@ -780,25 +787,37 @@ struct SnapshotDelta: Equatable {
         }
 
         // ---- Potions ----
-        let potionAdds = arrayDiff(current.potions, minus: previous.potions)
-        let potionsGone = arrayDiff(previous.potions, minus: current.potions)
-        for p in potionAdds {
-            out.append(.init(
-                kind: .potionAdded,
-                label: prettyRelicName(p),
-                detail: nil,
-                floor: floor,
-                observedAt: now
-            ))
+        // Use bag (multiset) semantics — the game stores potions in
+        // slot-indexed arrays, so slot order can shift without any
+        // player action, which causes false "Used X / Added X" pairs.
+        // Counting by name removes the ordering sensitivity.
+        let prevPotionBag = bag(previous.potions)
+        let currPotionBag = bag(current.potions)
+        let potionAddsMap  = bagDiff(currPotionBag, minus: prevPotionBag)
+        let potionsGoneMap = bagDiff(prevPotionBag, minus: currPotionBag)
+        for (p, count) in potionAddsMap {
+            let pretty = prettyRelicName(p)
+            for _ in 0 ..< count {
+                out.append(.init(
+                    kind: .potionAdded,
+                    label: pretty,
+                    detail: nil,
+                    floor: floor,
+                    observedAt: now
+                ))
+            }
         }
-        for p in potionsGone {
-            out.append(.init(
-                kind: .potionUsed,
-                label: prettyRelicName(p),
-                detail: nil,
-                floor: floor,
-                observedAt: now
-            ))
+        for (p, count) in potionsGoneMap {
+            let pretty = prettyRelicName(p)
+            for _ in 0 ..< count {
+                out.append(.init(
+                    kind: .potionUsed,
+                    label: pretty,
+                    detail: nil,
+                    floor: floor,
+                    observedAt: now
+                ))
+            }
         }
 
         // ---- Gold ----

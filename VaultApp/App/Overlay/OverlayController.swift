@@ -2,6 +2,7 @@ import AppKit
 import SwiftUI
 import Combine
 import VaultCore
+import ScreenCaptureKit
 
 // =========================================================================
 // OverlayController
@@ -30,8 +31,17 @@ import VaultCore
 // servers see zero overlay traffic.
 // =========================================================================
 
+/// Tiny observer interface the AI service uses to tell the controller
+/// "something new arrived in the chat that the player may not have
+/// seen yet". Lets the controller bump the unseen-dot on the pill
+/// without the service having to know anything about pills or modes.
 @MainActor
-final class OverlayController: ObservableObject {
+protocol OverlayObserverDelegate: AnyObject {
+    func notePotentiallyUnseenMessage()
+}
+
+@MainActor
+final class OverlayController: ObservableObject, OverlayObserverDelegate {
 
     // MARK: - Public state
 
@@ -57,6 +67,21 @@ final class OverlayController: ObservableObject {
     /// "are we showing the chat or the pill?" without caring about
     /// settings.
     var expanded: Bool { mode != .pill }
+
+    /// How many tracker / assistant messages have arrived while the
+    /// chat is collapsed. The pill renders a small attention dot when
+    /// this is non-zero so the player knows the Coach has something
+    /// new without expanding. Cleared whenever the chat opens.
+    @Published private(set) var unseenObservations: Int = 0
+
+    /// Called by `OverlayAIService` when a tracker chip or follow-up
+    /// assistant message lands. Bumps the counter only while the chat
+    /// is collapsed; when the chat is open the player is already
+    /// looking at the message, so there's nothing unseen.
+    func notePotentiallyUnseenMessage() {
+        guard mode == .pill else { return }
+        unseenObservations += 1
+    }
 
     // MARK: - Plumbing
 
@@ -86,6 +111,12 @@ final class OverlayController: ObservableObject {
     init(appState: AppState) {
         self.appState = appState
         self.enabled = appState.config.overlayEnabled
+        // Self-assign as the observer of the AI service so tracker
+        // chips and Coach follow-ups bump the unseen-dot when chat is
+        // collapsed. Done in init (not lazily on `show()`) so the dot
+        // works correctly even if the user toggles enable/disable
+        // without ever explicitly opening chat.
+        appState.aiService.observerDelegate = self
     }
 
     deinit {
@@ -127,15 +158,19 @@ final class OverlayController: ObservableObject {
         let resolvedModifiers = modifiers.isEmpty ? [.option] : modifiers
         let hk = OverlayHotKey()
         hk.register(modifiers: resolvedModifiers, key: key) { [weak self] in
-            // Default action: surface the chat and focus the input.
-            // If the panel was already showing the chat, the hot-key
-            // collapses it back to the pill — same "press to invoke,
-            // press again to dismiss" muscle memory as Spotlight.
+            // Press behaviour, by current mode:
+            //   * .pill     → expand to chat (and focus the input
+            //                 via OverlayExpandedView.onAppear).
+            //   * .settings → switch to chat — settings is rarely
+            //                 what the player wants to see when they
+            //                 just hit the "ask the Coach" hotkey.
+            //   * .chat     → collapse back to the pill, same
+            //                 "press to invoke, press again to
+            //                 dismiss" muscle memory as Spotlight.
             guard let self else { return }
-            if self.mode == .chat {
-                self.collapse()
-            } else {
-                self.showChat()
+            switch self.mode {
+            case .pill, .settings: self.showChat()
+            case .chat:            self.collapse()
             }
         }
         hotKey = hk
@@ -269,36 +304,48 @@ final class OverlayController: ObservableObject {
         self.panel = p
         observeOriginChanges(panel: p)
         applySize(animated: false)
+        p.alphaValue = 0.0
         p.orderFrontRegardless()
-        // Late layer cleanup. We set the hosting view's layer to clear
-        // AFTER SwiftUI has rendered into it once — touching `host.layer`
-        // before NSHostingView has materialized its backing path can
-        // trigger an AppKit layout cycle that deadlocks subsequent
-        // setFrame() calls on the panel. Doing it on the next runloop
-        // tick gives SwiftUI time to settle. This is the actual fix for
-        // the "black box behind the rounded border" report — without
-        // this, the host's default dark layer paints through the
-        // rounded SwiftUI card.
-        DispatchQueue.main.async { [weak host] in
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0.22
+            ctx.timingFunction = CAMediaTimingFunction(controlPoints: 0.16, 1, 0.3, 1)
+            p.animator().alphaValue = 1.0
+        }
+        // Late layer cleanup + initial display sync on the next runloop
+        // tick — by then AppKit has assigned the panel to a screen, so
+        // syncGameDisplay() can resolve the correct display ID.
+        DispatchQueue.main.async { [weak self, weak host] in
             host?.wantsLayer = true
             host?.layer?.isOpaque = false
             host?.layer?.backgroundColor = NSColor.clear.cgColor
+            self?.syncGameDisplay()
         }
     }
 
+
     func hide() {
-        panel?.orderOut(nil)
-        panel = nil
-        hosting = nil
-        // Reset to the pill so re-enabling later starts from the
-        // canonical small state. Without this, a user who opens chat
-        // (or settings), toggles "Enable" off in Beta → Run Coach,
-        // then toggles it back on would get the chat/settings panel
-        // back at its larger size — which violates the mental model
-        // "the pill comes back when I re-enable." Doing this on hide
-        // is safe: there's no panel to re-size, so it's a pure
-        // state reset that the next `show()` reads.
-        mode = .pill
+        guard let p = panel else { return }
+        NSAnimationContext.runAnimationGroup({ ctx in
+            ctx.duration = 0.18
+            ctx.timingFunction = CAMediaTimingFunction(controlPoints: 0.16, 1, 0.3, 1)
+            p.animator().alphaValue = 0.0
+        }, completionHandler: { [weak self] in
+            Task { @MainActor [weak self] in
+                guard let self = self, !self.enabled else { return }
+                p.orderOut(nil)
+                self.panel = nil
+                self.hosting = nil
+                // Reset to the pill so re-enabling later starts from the
+                // canonical small state. Without this, a user who opens chat
+                // (or settings), toggles "Enable" off in Beta → Run Coach,
+                // then toggles it back on would get the chat/settings panel
+                // back at its larger size — which violates the mental model
+                // "the pill comes back when I re-enable." Doing this on hide
+                // is safe: there's no panel to re-size, so it's a pure
+                // state reset that the next `show()` reads.
+                self.mode = .pill
+            }
+        })
     }
 
     func toggleExpanded() {
@@ -310,6 +357,10 @@ final class OverlayController: ObservableObject {
         guard mode != .chat else { return }
         mode = .chat
         applySize(animated: true)
+        // Clear the unseen-observations counter the moment the chat
+        // opens. This is the read-receipt — by definition, anything
+        // the player can now see has been seen.
+        unseenObservations = 0
     }
 
     func showSettings() {
@@ -334,6 +385,12 @@ final class OverlayController: ObservableObject {
             }
         }
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    /// Public entry point for the monitor picker in OverlaySettingsView.
+    /// Re-resolves the game display ID after the user pins or unpins a monitor.
+    func syncGameDisplayPublic() {
+        syncGameDisplay()
     }
 
     /// Re-apply window-level + sharingType after the user changes them
@@ -411,8 +468,72 @@ final class OverlayController: ObservableObject {
         ) { [weak self] _ in
             Task { @MainActor [weak self] in
                 self?.scheduleOriginSave()
+                self?.syncGameDisplay()
             }
         }
+        NotificationCenter.default.addObserver(
+            forName: NSWindow.didChangeScreenNotification,
+            object: panel,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.syncGameDisplay()
+            }
+        }
+    }
+
+    /// Pushes the display ID of the game monitor to OverlayAIService.
+    ///
+    /// Resolution order:
+    ///   1. User-pinned UUID (config.overlayGameMonitorUUID) — survives reboots.
+    ///   2. Auto: leftmost connected display on multi-monitor setups (the
+    ///      "game on the left, Vault on the right" default). On a single
+    ///      display falls back to the panel's own screen.
+    ///
+    /// We do NOT use panel.screen directly here because it can be nil
+    /// immediately after orderFrontRegardless() during the first show().
+    private func syncGameDisplay() {
+        appState?.aiService.gameDisplayID = resolvedGameDisplayID()
+    }
+
+    /// Returns the CGDirectDisplayID that should be used for AI captures.
+    /// Exposed so OverlaySettingsView can refresh the binding after the
+    /// user picks a different monitor.
+    func resolvedGameDisplayID() -> CGDirectDisplayID {
+        let screens = NSScreen.screens
+        // 1. Pinned UUID preference.
+        if let uuid = appState?.config.overlayGameMonitorUUID {
+            if let match = screens.first(where: { Self.uuidString(for: $0) == uuid }),
+               let num = match.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber {
+                return CGDirectDisplayID(num.uint32Value)
+            }
+            // UUID no longer matches any screen — fall through to auto.
+        }
+        // 2. Auto: leftmost screen on multi-monitor, panel screen on single.
+        if screens.count > 1 {
+            let leftmost = screens.min(by: { $0.frame.minX < $1.frame.minX })
+            if let s = leftmost,
+               let num = s.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber {
+                return CGDirectDisplayID(num.uint32Value)
+            }
+        }
+        // 3. Fall back to panel screen / main display.
+        guard let panel else { return CGMainDisplayID() }
+        let center = NSPoint(x: panel.frame.midX, y: panel.frame.midY)
+        guard let screen = NSScreen.screens.first(where: { $0.frame.contains(center) }),
+              let number = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber
+        else { return CGMainDisplayID() }
+        return CGDirectDisplayID(number.uint32Value)
+    }
+
+    /// Stable UUID string for a given NSScreen. Uses CGDisplayCreateUUID
+    /// which is backed by EDID + connector and survives reboots. Returns
+    /// nil for virtual/mirrored displays that have no physical UUID.
+    static func uuidString(for screen: NSScreen) -> String? {
+        guard let num = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber else { return nil }
+        let displayID = CGDirectDisplayID(num.uint32Value)
+        guard let cfUUID = CGDisplayCreateUUIDFromDisplayID(displayID)?.takeRetainedValue() else { return nil }
+        return CFUUIDCreateString(nil, cfUUID) as String?
     }
 
     private func scheduleOriginSave() {

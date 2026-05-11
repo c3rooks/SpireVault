@@ -180,62 +180,61 @@ setInterval(refreshPresence, 30_000);
 //
 // Case 3 is what we hit before the v0.1 release is cut. Better to send the user
 // to a real working URL (the build-from-source section in the README) than a 404.
-const dmgLink     = document.getElementById("dmg-link");
-const heroCTA     = document.getElementById("download-cta");
-const heroVersion = document.getElementById("hero-version");
-const installVer  = document.getElementById("install-version");
+const dmgLink      = document.getElementById("dmg-link");
+const exeLink      = document.getElementById("exe-link");
+const heroCTA      = document.getElementById("download-cta-mac");
+const heroWinCTA   = document.getElementById("download-cta-win");
+const heroVersion  = document.getElementById("hero-version");
+const installVer   = document.getElementById("install-version");
+const installVerWin = document.getElementById("install-version-win");
 
 const BUILD_FROM_SOURCE_URL =
   `https://github.com/${GITHUB_REPO}#build-from-source`;
 const RELEASES_URL = `https://github.com/${GITHUB_REPO}/releases`;
 
 function setDownloadFallback(label) {
-  if (heroVersion) heroVersion.textContent = label;
-  if (installVer)  installVer.textContent  = label;
+  if (heroVersion)    heroVersion.textContent    = label;
+  if (installVer)     installVer.textContent     = label;
+  if (installVerWin)  installVerWin.textContent  = label;
   if (dmgLink) {
     dmgLink.href = BUILD_FROM_SOURCE_URL;
     dmgLink.target = "_blank";
     dmgLink.rel = "noopener";
   }
-  if (heroCTA) {
-    heroCTA.href = "#install";
+  if (exeLink) {
+    exeLink.href = RELEASES_URL;
+    exeLink.target = "_blank";
+    exeLink.rel = "noopener";
   }
+  if (heroCTA)    heroCTA.href    = "#install";
+  if (heroWinCTA) heroWinCTA.href = "#install";
 }
 
 async function resolveLatestRelease() {
-  try {
-    const resp = await fetch(
-      `https://api.github.com/repos/${GITHUB_REPO}/releases/latest`,
-      { cache: "no-store" }
-    );
-    if (resp.status === 404) {
-      // Repo private / no releases yet → don't pretend a download exists.
-      setDownloadFallback("build from source");
-      return;
-    }
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    const data = await resp.json();
-    const tag  = (data.tag_name || "").replace(/^v/, "") || null;
-    const dmg  = (data.assets || []).find(
-      (a) => /\.dmg$/i.test(a.name) && a.browser_download_url
-    );
-    if (heroVersion && tag)  heroVersion.textContent = `v${tag}`;
-    if (installVer  && tag)  installVer.textContent  = `v${tag}`;
-    if (dmgLink && dmg) {
-      dmgLink.href = dmg.browser_download_url;
-      dmgLink.removeAttribute("target");
-    } else if (dmgLink) {
-      dmgLink.href = RELEASES_URL;
-      dmgLink.target = "_blank";
-    }
-    if (heroCTA && dmg) {
-      heroCTA.href = dmg.browser_download_url;
-    }
-  } catch {
-    // Network error or rate-limited GitHub API. Don't break the buttons —
-    // route to the releases page where the user can pick manually.
-    if (dmgLink) { dmgLink.href = RELEASES_URL; dmgLink.target = "_blank"; }
-    if (heroCTA) { heroCTA.href = RELEASES_URL; heroCTA.target = "_blank"; }
+  const version = "v0.9.9";
+  if (heroVersion)    heroVersion.textContent    = version;
+  if (installVer)     installVer.textContent     = version;
+  if (installVerWin)  installVerWin.textContent  = version;
+
+  // macOS DMG — served locally from /assets/
+  if (dmgLink) {
+    dmgLink.href = "/assets/The.Vault.dmg";
+    dmgLink.removeAttribute("target");
+  }
+  if (heroCTA) {
+    heroCTA.href = "/assets/The.Vault.dmg";
+    heroCTA.removeAttribute("target");
+  }
+
+  // Windows EXE — served from GitHub Releases (CI uploads it on each tag)
+  const exeHref = `https://github.com/${GITHUB_REPO}/releases/latest/download/TheVault_${version.replace("v","")}_x64-setup.exe`;
+  if (exeLink) {
+    exeLink.href = exeHref;
+    exeLink.removeAttribute("target");
+  }
+  if (heroWinCTA) {
+    heroWinCTA.href = exeHref;
+    heroWinCTA.removeAttribute("target");
   }
 }
 resolveLatestRelease();

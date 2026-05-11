@@ -5,6 +5,66 @@ Dates in YYYY-MM-DD. The project follows [Semantic Versioning](https://semver.or
 loosely — patch bumps for fixes, minor for features, major if I ever
 break the wire format.
 
+## v0.9.9 — 2026-05-10
+
+Run Coach overlay perf + UX pass: instant tracker chips, global
+hotkey, streaming chat, opinionated follow-ups, and an at-a-glance
+unseen-observations dot on the pill. The overlay still only opens
+its own network connections — no Vault server touches any of this.
+
+**Tracker chips now land within ~50ms of the save write.** STS2
+fsync()s `current_run.save` after every map node, every reward
+pick, and every relic gain. Previously we polled it on a 4-second
+loop, so a "Took Streamline+" chip could lag 0–4 seconds behind the
+player's click. Now a `DispatchSource.makeFileSystemObjectSource`
+(kqueue-backed) watches the file directly and fires within ~50ms,
+debounced to 250ms to coalesce the triple-flush STS2 sometimes does.
+The 4s timer becomes an 8s backstop — only used if the watcher
+can't attach (file not yet on disk).
+
+**Global hotkey: ⌥Space opens the Coach from anywhere.** Even
+inside fullscreen STS2. Built on Carbon's `RegisterEventHotKey` so
+the user never has to grant Accessibility access — the OS routes
+hot-key events to us before any other app, and the input field
+auto-focuses on expand. Press it again to dismiss. Configurable
+modifier+key in Coach settings → Coach behaviour → Global hotkey.
+
+**Streaming responses for free-form chat.** Asking a question or
+hitting Recap now streams tokens token-by-token instead of staring
+at a spinner for 3-8s. Both providers supported (OpenAI and
+Anthropic SSE). Structured cards (Path / Reward / Shop / Event /
+Combat) still wait for a clean parse — half-streamed JSON would
+look like garbage. Toggle off in settings if your provider rate-
+limits SSE.
+
+**Coach auto-follow-up on disagreements.** When a tracker chip
+fires with `DIFFERENT` or `SKIPPED` (e.g. you took Bash when I
+recommended Streamline+), the Coach posts a one-line acknowledgment
++ pivot ("OK Bash works if you upgrade it; otherwise look for a
+removal at next shop"). Off uses zero tokens; on adds one ~100-token
+call per disagreed pick. Coalesced — only one in-flight follow-up
+at a time.
+
+**Unseen-observations dot on the collapsed pill.** Tracker chips and
+Coach follow-ups that arrive while the chat is collapsed now bump a
+small attention dot on the Coach pill button. Cleared the moment you
+expand the chat — pure read-receipt semantics.
+
+**Glossary fuzzy lookup + miss telemetry.** The bundled card /
+relic glossary keys are snake_case, but STS2 saves use CamelCase
+("BurningBlood"). A new fuzzy resolver strips non-alphanumerics on
+both sides so all three save conventions ("BurningBlood",
+"burning_blood", "Burning Blood") resolve to the same entry. For
+cards / relics still not in the glossary, we now log them to
+`~/Library/Application Support/SpireVault/missing-cards.log`
+(once per ID per process; never uploaded) so future builds know
+exactly which IDs to add. The model also gets a `[glossary-misses]`
+hint telling it to hedge on those specifically rather than
+hallucinate effects.
+
+Smoke-tested: 6/6 SSE + hotkey + glossary + debounce scenarios pass.
+Debug + Release builds clean, zero linter warnings on overlay files.
+
 ## v0.9.8 — 2026-05-10
 
 Fixes the "where are all the changes?" report from a user stuck on

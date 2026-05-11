@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>The Vault</title>
+  <style>
+    html, body { margin: 0; padding: 0; width: 100%; height: 100%;
+                 background: #0d0b14; display: flex;
+                 align-items: center; justify-content: center;
+                 font-family: system-ui, sans-serif; color: #888; }
+    .loading { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+    .logo { width: 64px; height: 64px; border-radius: 14px;
+            background: linear-gradient(135deg, #6b4cff, #d4af37);
+            display: flex; align-items: center; justify-content: center;
+            font-size: 28px; }
+    p { margin: 0; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <!--
+    Tauri loads the real companion (app.spirevault.app) directly via
+    tauri.conf.json "url". This index.html is only served during local
+    `cargo tauri dev` when the companion URL is unreachable — it shows
+    a loading indicator so the window isn't blank.
+  -->
+  <div class="loading">
+    <div class="logo">⚡</div>
+    <p>Loading The Vault…</p>
+  </div>
+</body>
+</html>
