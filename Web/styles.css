@@ -11215,277 +11215,1576 @@ html.is-desktop-host .empty-state-cta-upload {
 }
 
 /* =========================================================================
-   Co-op run-lobbies redesign (v119)
-   Adds the four-section co-op page layout. Status card stays at the top
-   with the new preferences grid, then context cards (sessions / lobbies /
-   invites), then the open-lobby browser, then recommendations, then the
-   legacy active player feed as a collapsible long-tail.
+   Co-op Lobby Board — daily-use rebuild (v128, beta toggle + chip polish).
+
+   Goal: a polished daily-use lobby board, not a marketing hero page.
+
+   Layout:
+     .coop-page          1440px page shell with denser padding
+     .coop-bar           compact command bar (stats | CTAs); beta-only surface
+     .coop-workspace     2-col grid: main 1fr + sidebar 340px; beta-only
+       .coop-work-main   Invites, Open Run Lobbies, Best Matches
+       .coop-work-side   Your status, Current activity, How-it-works
+     .coop-section       generic section header + content
+     .coop-feed-section  Players Looking Now — visible in BOTH Classic + Beta
+     .coop-side-card     sidebar status / activity / howto cards
+     .coop-modal         Run Preferences · Post a Run · Quick Match
+
+   Beta toggle:
+     body.coop-lobby-beta-on   → new lobby UI visible
+     body.coop-lobby-beta-off  → Classic Co-op: command bar + workspace
+                                 hidden; the feed section becomes the
+                                 primary surface alongside the status
+                                 pills mirrored into a Classic banner.
+
+   Typography: Playfair is reserved for section titles only. Routine UI
+   labels (card titles, stats, intent rows, etc.) use the page sans-serif.
    ========================================================================= */
-.coop-status-card .coop-prefs-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px 16px;
-  margin-top: 12px;
-}
-.coop-pref-field {
+
+/* ── Page shell ──────────────────────────────────────────────────────
+   The co-op page overrides .panel-body's default padding so the command
+   bar and the 2-col workspace can stretch to a comfortable max width on
+   wide desktops while staying readable on narrow viewports. The shell
+   targets a 1440px max so Open Runs has room to feel like a real board
+   surface rather than a squeezed column. */
+.coop-page {
+  width: 100%;
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 24px 32px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 22px;
+  /* Hard guard against any descendant accidentally creating a wider
+     scroll region on phones/narrow webviews. */
   min-width: 0;
+  overflow-x: clip;
 }
-.coop-pref-field--wide { grid-column: 1 / -1; }
-.coop-pref-field .field-label {
-  font-size: 12px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--text-2);
+/* Belt-and-suspenders: every direct flex/grid child gets min-width: 0
+   so long words / unbreakable tokens can't push the layout wider than
+   the viewport. */
+.coop-page > * { min-width: 0; max-width: 100%; }
+@media (max-width: 1180px) {
+  .coop-page { padding: 22px 24px; }
 }
-.coop-pref-field input[type="text"],
-.coop-pref-field input[type="number"],
-.coop-pref-field select.coop-select {
-  width: 100%;
-  padding: 8px 10px;
-  border-radius: 8px;
-  border: 1px solid var(--border-strong, rgba(255,255,255,0.12));
-  background: var(--card-raised, rgba(255,255,255,0.04));
-  color: var(--text, #f7f4ec);
-  font: inherit;
-}
-.coop-pref-field input:focus,
-.coop-pref-field select:focus {
-  outline: 2px solid var(--accent, #ff6b1a);
-  outline-offset: 1px;
-}
-.coop-status-actions {
+.coop-head-slim {
   display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 14px;
+  width: 100%;
 }
-.coop-helper-copy {
-  margin-top: 10px;
+.coop-head-slim h2 { margin: 4px 0 2px; font-size: 22px; }
+.coop-head-slim .panel-sub { font-size: 12.5px; }
+.coop-refresh { padding: 6px 12px; min-width: 0; }
+.coop-refresh svg { flex-shrink: 0; }
+
+/* ── Buttons: small variants reused across the co-op surface ───────── */
+.btn-sm { font-size: 13px; padding: 7px 14px; gap: 6px; }
+.btn-xs { font-size: 11.5px; padding: 4px 10px; gap: 5px; }
+.btn-xs.btn-primary, .btn-xs.btn-ghost { border-radius: 8px; }
+.btn-primary.is-busy,
+.btn-ghost.is-busy {
+  opacity: 0.55;
+  pointer-events: none;
+  position: relative;
+}
+.btn-primary.is-busy::after,
+.btn-ghost.is-busy::after {
+  content: "";
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  animation: coop-spin 0.6s linear infinite;
+  margin-left: 4px;
+}
+@keyframes coop-spin { to { transform: rotate(360deg); } }
+.coop-link-btn {
+  background: transparent;
+  border: 0;
+  color: var(--accent-hi);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 2px;
+  cursor: pointer;
+  transition: color 0.15s ease;
+}
+.coop-link-btn:hover { color: var(--gold); text-decoration: underline; text-underline-offset: 3px; }
+.coop-link-btn:focus-visible {
+  outline: 2px solid var(--accent-hi);
+  outline-offset: 3px;
+  border-radius: 4px;
 }
 
-.coop-section {
-  margin-top: 24px;
+/* ── A. COMMAND BAR ─────────────────────────────────────────────────
+   Single horizontal strip directly below the slim page title. Live
+   stats on the left, CTAs on the right. No hero, no second title:
+   this is the "always-on" toolbar of the lobby board, not a banner. */
+.coop-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 16px;
+  border-radius: 12px;
+  border: 1px solid var(--border-strong);
+  background:
+    linear-gradient(180deg, var(--card-raised), var(--card));
+  box-shadow: 0 6px 20px -18px rgba(0,0,0,0.6);
 }
+.coop-bar-stats {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.coop-bar-divider {
+  width: 1px;
+  height: 22px;
+  background: var(--border-strong);
+}
+.coop-bar-stat {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+.coop-bar-stat-num {
+  font-family: inherit;
+  font-size: 17px;
+  font-weight: 800;
+  line-height: 1;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.coop-bar-stat-num.is-zero { color: var(--text-3); }
+.coop-bar-stat-num.is-hot {
+  color: var(--accent-hi);
+  text-shadow: 0 0 14px rgba(255,107,26,0.35);
+}
+.coop-bar-stat-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.coop-bar-cta-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.coop-bar-cta-row .btn-primary,
+.coop-bar-cta-row .btn-ghost {
+  white-space: nowrap;
+}
+
+/* ── B. WORKSPACE — main column + sidebar ───────────────────────────
+   1fr main column hosts open lobbies + recommendations; fixed 320px
+   sidebar hosts status / current activity / how-it-works (collapsible). */
+.coop-workspace {
+  display: grid;
+  grid-template-columns: minmax(720px, 1fr) 340px;
+  gap: 28px;
+  align-items: start;
+  width: 100%;
+}
+.coop-work-main {
+  min-width: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+.coop-work-side {
+  width: 340px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  position: sticky;
+  top: 92px;
+}
+/* When the main column can't hold its 720px minimum we drop to a
+   single column rather than letting the board get cramped. */
+@media (max-width: 1180px) {
+  .coop-workspace {
+    grid-template-columns: minmax(0, 1fr) 320px;
+    gap: 22px;
+  }
+  .coop-work-side { width: 320px; }
+}
+
+/* ── Sidebar cards ───────────────────────────────────────────────── */
+.coop-side-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  border: 1px solid var(--border-strong);
+  background: linear-gradient(180deg, var(--card-raised), var(--card));
+}
+.coop-side-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.coop-side-card-head .eyebrow {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  margin: 0;
+}
+
+/* Status card */
+.coop-side-status .coop-side-me {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.coop-side-avatar {
+  width: 38px;
+  height: 38px;
+  border-radius: 9px;
+  border: 1px solid rgba(212,175,55,0.45);
+  background: var(--bg-deep);
+  object-fit: cover;
+  flex-shrink: 0;
+}
+.coop-side-me-id {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+.coop-side-me-id strong {
+  font-size: 13.5px;
+  font-weight: 800;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.coop-side-me-id .small { font-size: 11px; }
+.coop-side-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 2px 0 4px;
+}
+.coop-side-pills .pill {
+  padding: 3px 9px;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+.coop-side-intent {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 4px;
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(0,0,0,0.18);
+  border: 1px solid rgba(212,175,55,0.18);
+}
+.coop-side-intent:empty { display: none; }
+.coop-side-intent-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11.5px;
+}
+.coop-side-intent-key {
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.coop-side-intent-val {
+  color: var(--text);
+  font-weight: 700;
+  font-size: 12px;
+  text-align: right;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.coop-side-intent-val.is-empty { color: var(--text-3); font-style: italic; font-weight: 600; }
+.coop-side-intent-note {
+  grid-column: 1 / -1;
+  font-size: 11px;
+  color: var(--text-2);
+  font-style: italic;
+  margin-top: 2px;
+  line-height: 1.4;
+}
+.coop-side-hint {
+  font-size: 10.5px;
+  color: var(--text-3);
+  margin: 0;
+  line-height: 1.4;
+}
+.coop-side-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+/* Live chip used both in the sidebar status card head and elsewhere */
+.coop-live-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  color: var(--win);
+  padding: 2px 8px 2px 6px;
+  border-radius: 999px;
+  background: rgba(109,217,124,0.10);
+  border: 1px solid rgba(109,217,124,0.4);
+}
+.coop-live-chip .dot { background: var(--win); width: 6px; height: 6px; }
+.coop-live-chip.is-stale {
+  color: var(--text-3);
+  background: rgba(255,255,255,0.04);
+  border-color: var(--border-strong);
+}
+.coop-live-chip.is-stale .dot { background: var(--text-3); animation: none; box-shadow: none; }
+
+/* Current-activity card (lives in the sidebar; same selectors as before
+   so existing coop-lobbies.js renderers keep working). */
+.coop-side-activity { padding: 14px 16px; }
+.coop-active-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.coop-active-card .avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 9px;
+  border: 1px solid rgba(212,175,55,0.45);
+}
+.coop-active-meta { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.coop-active-eyebrow {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.coop-active-title {
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 800;
+  margin: 0;
+  letter-spacing: 0;
+  line-height: 1.25;
+}
+.coop-active-sub {
+  margin: 0;
+  font-size: 11.5px;
+  color: var(--text-2);
+  line-height: 1.45;
+}
+.coop-active-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-start;
+}
+.coop-active-card--paired   { border-left: 3px solid rgba(109,217,124,0.65); padding-left: 10px; }
+.coop-active-card--hosting  { border-left: 3px solid rgba(212,175,55,0.65); padding-left: 10px; }
+.coop-active-card--joined   { border-left: 3px solid rgba(212,175,55,0.5);  padding-left: 10px; }
+.coop-active-card--idle     { border-left: 3px solid var(--border-strong);  padding-left: 10px; }
+.coop-active-card--paired .coop-active-eyebrow  { color: var(--win); }
+.coop-active-card--hosting .coop-active-eyebrow { color: var(--gold); }
+.coop-active-card--joined .coop-active-eyebrow  { color: var(--gold); }
+
+/* How-it-works — collapsed by default */
+.coop-side-howto { padding: 0; }
+.coop-howto-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  padding: 12px 16px;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  border-radius: 12px;
+  transition: background 0.15s ease;
+}
+.coop-howto-toggle:hover { background: rgba(255,255,255,0.025); }
+.coop-howto-toggle:focus-visible {
+  outline: 2px solid var(--accent-hi);
+  outline-offset: -2px;
+}
+.coop-howto-toggle-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.coop-howto-toggle-meta .eyebrow {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.coop-howto-summary {
+  font-size: 11.5px;
+  color: var(--text-2);
+  line-height: 1.4;
+}
+.coop-howto-caret {
+  display: inline-flex;
+  color: var(--text-3);
+  transition: transform 0.15s ease, color 0.15s ease;
+  flex-shrink: 0;
+}
+.coop-howto-toggle[aria-expanded="true"] .coop-howto-caret {
+  transform: rotate(180deg);
+  color: var(--gold);
+}
+.coop-howto-toggle[aria-expanded="true"] { background: rgba(212,175,55,0.04); }
+.coop-howto-body {
+  padding: 0 16px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.coop-howto-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.coop-howto-list li {
+  display: grid;
+  grid-template-columns: 22px 1fr;
+  gap: 10px;
+  align-items: flex-start;
+}
+.coop-howto-num {
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: inherit;
+  font-size: 11.5px;
+  font-weight: 800;
+  color: var(--gold);
+  background: rgba(212,175,55,0.10);
+  border: 1px solid rgba(212,175,55,0.40);
+}
+.coop-howto-list li > div strong {
+  display: block;
+  font-size: 12.5px;
+  font-weight: 800;
+  margin-bottom: 1px;
+  color: var(--text);
+}
+.coop-howto-list li > div p {
+  margin: 0;
+  font-size: 11.5px;
+  color: var(--text-2);
+  line-height: 1.45;
+}
+.coop-howto-trust {
+  margin: 0;
+  padding: 9px 10px;
+  border-radius: 8px;
+  background: rgba(0,0,0,0.22);
+  border-left: 2px solid rgba(212,175,55,0.55);
+  font-size: 10.5px;
+  color: var(--text-2);
+  line-height: 1.45;
+  font-style: italic;
+}
+
+/* Legacy selectors kept so anything pre-painted by other code (or stuck
+   in a cached DOM) still hides cleanly. */
+.coop-sidebar-mini,
+.coop-strip,
+.coop-hero,
+.coop-main-grid,
+.coop-sidebar-col,
+.coop-active-state.is-legacy { display: none !important; }
+.coop-modal-status-pills { margin: 6px 0 4px; }
+
+/* ── Sections ────────────────────────────────────────────────────────
+   Generic container used by both main column (Open lobbies, Recs) and
+   the active-players feed below the workspace. */
+.coop-section { margin-top: 0; }
+.coop-section--urgent {
+  padding: 14px 16px;
+  background:
+    radial-gradient(60% 100% at 0% 0%, rgba(255,107,26,0.08), transparent 60%),
+    linear-gradient(180deg, rgba(255,107,26,0.03), rgba(255,107,26,0.01));
+  border: 1px solid rgba(255,107,26,0.35);
+  border-radius: 12px;
+}
+.coop-section--urgent .coop-section-title { color: var(--accent-hi); }
+
+/* ── Board card (Open Runs primary surface) ─────────────────────────
+   Wraps the dominant feature on the page in a real bordered panel so
+   the section header, helper, count pill, primary CTA, and the list
+   (or polished empty state) all read as a single product surface. */
+.coop-board {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 18px 20px 20px;
+  border-radius: 14px;
+  border: 1px solid var(--border-strong);
+  background:
+    radial-gradient(80% 110% at 0% 0%, rgba(255,107,26,0.04), transparent 60%),
+    linear-gradient(180deg, var(--card-raised), var(--card));
+  box-shadow: 0 14px 32px -26px rgba(0,0,0,0.7);
+  min-height: 320px;
+}
+.coop-board-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 14px;
+  border-bottom: 1px dashed var(--border-strong);
+}
+.coop-board-head-text { min-width: 0; }
+.coop-board-head-text .coop-section-title { font-size: 22px; }
+.coop-board-head-text .coop-section-sub { margin-top: 6px; }
+.coop-board-head-actions { flex-shrink: 0; display: flex; gap: 8px; align-items: center; }
+/* The board's internal list/empty state spans the full inner width. */
+.coop-board .coop-lobbies-list { width: 100%; }
+
 .coop-section-head {
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 10px;
+  margin-bottom: 12px;
 }
-.coop-section-head--toggleable .btn-ghost {
-  flex: 0 0 auto;
-}
+.coop-section-head--toggleable .btn-ghost { flex: 0 0 auto; }
 .coop-section-title {
-  font-size: 18px;
+  font-family: 'Playfair Display', serif;
+  font-size: 19px;
   font-weight: 800;
   margin: 0;
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
+  letter-spacing: 0;
+  line-height: 1.2;
+  color: var(--text);
+}
+.coop-section-title .count-pill {
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(212,175,55,0.10);
+  border: 1px solid rgba(212,175,55,0.30);
+  color: var(--gold);
+  line-height: 1.3;
 }
 .coop-section-sub {
   margin: 4px 0 0 0;
-  color: var(--text-2, #b7b2a4);
-  font-size: 13px;
-}
-.coop-empty {
-  padding: 16px;
-  border: 1px dashed var(--border-strong, rgba(255,255,255,0.12));
-  border-radius: 12px;
-  text-align: center;
-  color: var(--text-2, #b7b2a4);
-}
-.coop-empty p { margin: 0; }
-
-/* Context cards */
-.coop-context {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  margin-top: 16px;
-}
-.coop-card {
-  padding: 14px;
-  border: 1px solid var(--border-strong, rgba(255,255,255,0.12));
-  border-radius: 12px;
-  background: var(--card, rgba(255,255,255,0.03));
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.coop-card--session { border-color: rgba(109,217,124,0.4); background: rgba(109,217,124,0.06); }
-.coop-card--lobby   { border-color: rgba(212,175,55,0.35); background: rgba(212,175,55,0.05); }
-.coop-card--invites { border-color: rgba(155,131,255,0.35); background: rgba(155,131,255,0.05); }
-.coop-card-head {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-width: 0;
-}
-.coop-card-head h4 {
-  margin: 0;
-  font-size: 16px;
-  font-weight: 800;
-}
-.coop-card-head .avatar {
-  width: 44px;
-  height: 44px;
-  border-radius: 8px;
-  object-fit: cover;
-}
-.coop-card-head .avatar.sm {
-  width: 32px;
-  height: 32px;
-}
-.coop-card-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 4px;
-}
-.coop-card-actions .btn-primary.sm,
-.coop-card-actions .btn-ghost.sm {
-  font-size: 13px;
-  padding: 6px 12px;
-}
-
-/* Lobby cards (host & browser) */
-.coop-lobby-title h4 {
-  margin: 0;
-  font-size: 15px;
-  font-weight: 800;
-}
-.coop-tag-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 6px;
-}
-.coop-tag {
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  padding: 3px 8px;
-  border-radius: 999px;
-  border: 1px solid var(--border-strong, rgba(255,255,255,0.12));
-  background: rgba(255,255,255,0.03);
-  color: var(--text-2, #b7b2a4);
-}
-.coop-tag--status {
-  border-color: rgba(212,175,55,0.5);
-  color: var(--gold, #d4af37);
-}
-.coop-tag--count {
-  border-color: rgba(109,217,124,0.4);
-  color: var(--win, #6dd97c);
-}
-.coop-lobby-note {
-  margin: 0;
-  font-size: 13px;
-  color: var(--text, #f7f4ec);
-  font-style: italic;
-}
-.coop-join-reqs {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.coop-join-reqs h5 {
-  margin: 4px 0;
+  color: var(--text-2);
   font-size: 12px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--text-2, #b7b2a4);
+  max-width: 64ch;
+  line-height: 1.45;
 }
-.coop-join-req-row,
-.coop-invite-row {
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  gap: 10px;
-  align-items: center;
-  padding: 8px;
-  border-radius: 8px;
-  background: rgba(255,255,255,0.04);
-}
-.coop-join-req-meta,
-.coop-invite-meta {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-.coop-join-req-meta strong,
-.coop-invite-meta strong {
-  font-size: 13px;
-}
+.coop-section-cta { flex: 0 0 auto; }
 
-/* Open lobby browser */
+/* ── Lobby card grid ───────────────────────────────────────────────── */
 .coop-lobbies-list {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: 12px;
+  min-width: 0;
+}
+/* Empty cards must NOT inherit the 280px grid-cell width. They span
+   every column so the body text has the full board to flow into,
+   which fixes the "one word per line" / huge-dead-space failure. */
+.coop-lobbies-list > .coop-empty-card,
+.coop-recs-list > .coop-empty-card,
+.coop-invites-list > .coop-empty-card {
+  grid-column: 1 / -1;
+  width: 100%;
 }
 .coop-lobby-card {
-  padding: 14px;
-  border: 1px solid var(--border-strong, rgba(255,255,255,0.12));
-  border-radius: 12px;
-  background: var(--card, rgba(255,255,255,0.03));
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 10px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  border: 1px solid var(--border-strong);
+  background: linear-gradient(180deg, var(--card-raised) 0%, var(--card) 100%);
+  box-shadow: 0 6px 22px -18px rgba(0,0,0,0.6);
+  transition: border-color 0.15s ease, transform 0.1s ease, box-shadow 0.15s ease;
+  min-width: 0;
 }
-.coop-lobby-card:hover { border-color: rgba(212,175,55,0.35); }
-.coop-lobby-active {
+.coop-lobby-card:hover {
+  border-color: rgba(212,175,55,0.45);
+  transform: translateY(-1px);
+  box-shadow: 0 14px 28px -18px rgba(212,175,55,0.35);
+}
+.coop-lobby-card--mine {
+  border-color: rgba(212,175,55,0.55);
+  background: linear-gradient(180deg, rgba(212,175,55,0.06), var(--card));
+}
+.coop-lobby-card--paired {
+  border-color: rgba(109,217,124,0.45);
+  background: linear-gradient(180deg, rgba(109,217,124,0.05), var(--card));
+}
+.coop-lobby-card-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+}
+.coop-lobby-card-head .avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  flex-shrink: 0;
+}
+.coop-lobby-card-title {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+.coop-lobby-card-title h4 {
+  font-family: inherit;
+  margin: 0 0 1px;
+  font-size: 14px;
+  font-weight: 800;
+  line-height: 1.25;
+  color: var(--text);
+  letter-spacing: -0.005em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.coop-lobby-host {
+  font-size: 11px;
+  color: var(--text-3);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.coop-lobby-host strong { color: var(--text-2); font-weight: 700; }
+.coop-lobby-card-meta {
   margin-left: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 3px;
+  flex-shrink: 0;
+}
+.coop-badge-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.coop-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  padding: 2px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  background: rgba(255,255,255,0.03);
+  color: var(--text-2);
+  white-space: nowrap;
+}
+.coop-badge--goal {
+  border-color: rgba(255,107,26,0.5);
+  color: var(--accent-hi);
+  background: rgba(255,107,26,0.10);
+}
+.coop-badge--asc {
+  border-color: rgba(212,175,55,0.5);
+  color: var(--gold);
+  background: rgba(212,175,55,0.10);
+}
+.coop-badge--voice {
+  border-color: rgba(155,131,255,0.5);
+  color: var(--silent);
+  background: rgba(155,131,255,0.08);
+}
+.coop-badge--players {
+  border-color: rgba(109,217,124,0.5);
+  color: var(--win);
+  background: rgba(109,217,124,0.10);
+}
+.coop-badge--status-open    { border-color: rgba(109,217,124,0.5); color: var(--win); background: rgba(109,217,124,0.10); }
+.coop-badge--status-pending { border-color: rgba(212,175,55,0.5); color: var(--gold); background: rgba(212,175,55,0.10); }
+.coop-badge--status-full    { border-color: var(--border-strong); color: var(--text-3); background: rgba(255,255,255,0.04); }
+.coop-badge--discord {
+  border-color: rgba(88,101,242,0.55);
+  color: #a4b1ff;
+  background: rgba(88,101,242,0.12);
+}
+.coop-badge--match-strong   { border-color: rgba(109,217,124,0.6); color: var(--win); background: rgba(109,217,124,0.14); }
+.coop-badge--match-good     { border-color: rgba(155,131,255,0.55); color: var(--silent); background: rgba(155,131,255,0.10); }
+.coop-badge--match-different{ border-color: rgba(212,175,55,0.45); color: var(--gold); background: rgba(212,175,55,0.10); }
+.coop-badge--match-recent   { border-color: var(--border-strong); color: var(--text-2); }
+
+.coop-lobby-note {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(0,0,0,0.22);
+  border-left: 2px solid rgba(212,175,55,0.55);
+  font-style: italic;
+  font-size: 12px;
+  color: var(--text-2);
+  line-height: 1.45;
+}
+.coop-lobby-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  justify-content: space-between;
+  padding-top: 2px;
+  border-top: 1px dashed var(--border-strong);
+}
+.coop-lobby-time {
+  font-size: 10.5px;
+  color: var(--text-3);
+}
+.coop-lobby-actions {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+.coop-lobby-actions .btn-sm,
+.coop-lobby-actions .btn-xs {
+  padding: 5px 10px;
+  font-size: 11.5px;
 }
 
-/* Recommendations */
+/* ── Recommended-match cards ──────────────────────────────────────── */
 .coop-recs-list {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
   gap: 12px;
+  min-width: 0;
 }
 .coop-rec-card {
-  padding: 14px;
-  border: 1px solid var(--border-strong, rgba(255,255,255,0.12));
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
   border-radius: 12px;
-  background: var(--card, rgba(255,255,255,0.03));
+  border: 1px solid var(--border-strong);
+  background: linear-gradient(180deg, var(--card-raised), var(--card));
+  box-shadow: 0 6px 22px -18px rgba(0,0,0,0.6);
+  transition: border-color 0.15s ease, transform 0.1s ease, box-shadow 0.15s ease;
+  min-width: 0;
+}
+.coop-rec-card:hover {
+  border-color: rgba(212,175,55,0.45);
+  transform: translateY(-1px);
+  box-shadow: 0 14px 28px -18px rgba(212,175,55,0.30);
+}
+.coop-rec-card--strong   { border-color: rgba(109,217,124,0.45); }
+.coop-rec-card--good     { border-color: rgba(155,131,255,0.4); }
+.coop-rec-card--different{ border-color: rgba(212,175,55,0.30); }
+.coop-rec-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+}
+.coop-rec-head .avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  flex-shrink: 0;
+}
+.coop-rec-name {
+  font-family: inherit;
+  font-size: 13.5px;
+  font-weight: 800;
+  margin: 0 0 1px;
+  letter-spacing: -0.005em;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.coop-rec-sub {
+  font-size: 11px;
+  color: var(--text-3);
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+}
+
+/* ── Invites & requests section ───────────────────────────────────── */
+.coop-invites-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 10px;
+}
+.coop-invite-card {
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border-strong);
+  background: linear-gradient(180deg, var(--card-raised), var(--card));
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
-.coop-rec-strong { border-color: rgba(109,217,124,0.45); }
-.coop-rec-good { border-color: rgba(155,131,255,0.4); }
-.coop-rec-different { border-color: rgba(212,175,55,0.3); }
-.coop-rec-recent { border-color: rgba(255,255,255,0.1); }
+.coop-invite-card--incoming { border-color: rgba(255,107,26,0.45); background: linear-gradient(180deg, rgba(255,107,26,0.07), var(--card)); }
+.coop-invite-card--outgoing { border-color: rgba(155,131,255,0.35); background: linear-gradient(180deg, rgba(155,131,255,0.06), var(--card)); }
+.coop-invite-card--joinreq  { border-color: rgba(212,175,55,0.45); background: linear-gradient(180deg, rgba(212,175,55,0.08), var(--card)); }
+.coop-invite-card-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.coop-invite-card-head .avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 9px;
+}
+.coop-invite-card-head .coop-invite-meta {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+.coop-invite-card-head strong {
+  font-size: 13.5px;
+  font-weight: 800;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.coop-invite-kind {
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+  white-space: nowrap;
+  align-self: flex-start;
+}
+.coop-invite-card--incoming .coop-invite-kind { color: var(--accent-hi); }
+.coop-invite-card--outgoing .coop-invite-kind { color: var(--silent); }
+.coop-invite-card--joinreq  .coop-invite-kind { color: var(--gold); }
+.coop-invite-msg {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--text);
+  font-style: italic;
+  line-height: 1.5;
+}
+.coop-invite-expiry {
+  font-size: 11.5px;
+  color: var(--text-3);
+}
 
-/* Create-lobby inline form */
-.coop-create-lobby-form {
-  margin-top: 12px;
-  padding: 14px;
-  border: 1px solid var(--accent, #ff6b1a);
+/* ── Empty states ─────────────────────────────────────────────────────
+   Two variants:
+     .coop-empty-card--compact   small inline placeholder (Best Matches)
+     .coop-empty-card--openruns  full-width hero-style empty for Open Runs
+   Both share the same primitives so wording stays consistent. */
+.coop-empty-card {
+  padding: 18px 20px;
   border-radius: 12px;
-  background: rgba(255,107,26,0.04);
+  border: 1px dashed rgba(212,175,55,0.30);
+  background: linear-gradient(180deg, rgba(212,175,55,0.025), var(--card));
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-areas:
+    "title actions"
+    "body  actions"
+    "chips chips";
+  gap: 6px 16px;
+  align-items: center;
+  width: 100%;
+}
+.coop-empty-card--compact { padding: 14px 16px; gap: 4px 12px; }
+.coop-empty-card.coop-skeleton {
+  display: block;
+  text-align: center;
+  border-style: solid;
+  border-color: var(--border-strong);
+  background: linear-gradient(180deg, var(--card-raised), var(--card));
+}
+
+/* The Open Runs empty state lives INSIDE the board card, so it
+   intentionally has no outer border or background — it inherits the
+   board's surface. Content is centered horizontally as a single
+   column with a generous text width, giving the body room to breathe
+   without leaving a giant void on either side. */
+.coop-empty-card--openruns {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  /* Slightly shorter than before so Best Matches stays close to the
+     viewport fold on a 1080p laptop. Padding handles the breathing
+     room; min-height keeps the empty state from feeling collapsed. */
+  min-height: 200px;
+  padding: 22px 16px;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.coop-empty-card--openruns .coop-empty-card-text {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 12px;
+  /* Spec calls for 520–620px reading width; 600 sits in the middle
+     and keeps two-line wraps balanced on the target body copy. */
+  max-width: 600px;
+  width: 100%;
+  /* Belt-and-suspenders so the text container itself never inherits a
+     pathologically small inline-size from a grid cell parent. */
+  min-width: 0;
+}
+.coop-empty-card--openruns .coop-empty-title {
+  grid-area: unset;
+  font-size: 22px;
+  font-weight: 800;
+  line-height: 1.2;
+  margin: 0;
+}
+.coop-empty-card--openruns .coop-empty-body {
+  grid-area: unset;
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--text-2);
+  max-width: 56ch;
+  overflow-wrap: normal;
+  word-break: normal;
+  hyphens: none;
+  text-wrap: pretty;
+}
+.coop-empty-card--openruns .coop-empty-actions {
+  grid-area: unset;
+  justify-content: center;
+  align-self: auto;
+  gap: 10px;
+  margin-top: 2px;
+}
+.coop-empty-card--openruns .coop-empty-examples {
+  grid-area: unset;
+  justify-content: center;
+  margin-top: 6px;
+  flex-direction: column;
+  gap: 8px;
+}
+.coop-empty-card--openruns .coop-empty-examples-row {
+  justify-content: center;
+}
+
+/* Inline horizontal empty card used by Best Matches when there are
+   no recommendations. Compact single row on desktop — text on the
+   left, action on the right. Spans the full board column via the
+   grid-spanning rule above. */
+.coop-empty-card--inline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 14px 18px;
+  border: 1px dashed rgba(212,175,55,0.30);
+  background: linear-gradient(180deg, rgba(212,175,55,0.02), var(--card));
+  border-radius: 12px;
+  width: 100%;
+  min-width: 0;
+}
+.coop-empty-card--inline .coop-empty-card-text {
+  min-width: 0;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.coop-empty-card--inline .coop-empty-title {
+  grid-area: unset;
+  font-size: 14px;
+  font-weight: 800;
+  margin: 0;
+  line-height: 1.25;
+  white-space: nowrap;
+}
+.coop-empty-card--inline .coop-empty-body {
+  grid-area: unset;
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--text-2);
+  max-width: none;
+  line-height: 1.5;
+  overflow-wrap: normal;
+  word-break: normal;
+  hyphens: none;
+  text-wrap: pretty;
+}
+.coop-empty-card--inline .coop-empty-actions {
+  grid-area: unset;
+  align-self: center;
+  justify-content: flex-end;
+  flex-shrink: 0;
+}
+
+.coop-empty-icon { display: none; }
+.coop-empty-title {
+  grid-area: title;
+  font-family: inherit;
+  font-size: 14.5px;
+  font-weight: 800;
+  margin: 0;
+  color: var(--text);
+  letter-spacing: -0.005em;
+  line-height: 1.25;
+}
+.coop-empty-body {
+  grid-area: body;
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-2);
+  max-width: 64ch;
+  line-height: 1.45;
+}
+.coop-empty-actions {
+  grid-area: actions;
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-self: center;
+}
+.coop-empty-actions .btn-sm { padding: 6px 12px; font-size: 12px; }
+.coop-empty-actions .btn-xs { padding: 5px 10px; font-size: 11px; }
+.coop-skeleton .coop-empty-body { color: var(--text-3); font-style: italic; }
+.coop-skeleton .coop-empty-title,
+.coop-skeleton .coop-empty-actions,
+.coop-skeleton .coop-empty-examples { display: none; }
+
+/* Example Run Lobbies — illustrative tags shown in the Open Run
+   Lobbies empty state. These are NOT inputs and NOT buttons; they're
+   purely visual examples of the kinds of run lobbies you can post.
+   Solid filled tag look with no border so they don't read as text
+   fields. cursor: default + pointer-events: none reinforces that
+   they're decorative. Per-chip modifiers tint the fill + text for
+   goal / asc / learning so the row feels intentional. */
+.coop-empty-examples {
+  grid-area: chips;
+  margin-top: 4px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.coop-empty-examples-label {
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.coop-empty-examples-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: inherit;
+}
+.coop-empty-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 24px;
+  padding: 0 11px;
+  border-radius: 999px;
+  border: 0;
+  background: rgba(245, 158, 11, 0.22);
+  color: rgba(255, 224, 168, 0.98);
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: default;
+  user-select: none;
+  pointer-events: none;
+  /* Intentionally decorative — looks like a tag, not an input. */
+}
+.coop-empty-chip-asc {
+  color: rgba(255, 224, 168, 0.98);
+}
+.coop-empty-chip-goal {
+  color: rgba(255, 218, 192, 0.98);
+  background: rgba(255, 107, 26, 0.22);
+}
+.coop-empty-chip-learn {
+  color: rgba(220, 210, 255, 0.98);
+  background: rgba(155, 131, 255, 0.24);
+}
+
+/* The big ghost-card variant is no longer used, but keep the selector
+   harmless in case stale CSS is still cached on a client. */
+.coop-lobby-card--ghost { display: none !important; }
+
+/* ── Modals (Run Preferences / Post a Run / Quick Match) ──────────── */
+.coop-modal {
+  max-width: 540px;
+}
+.coop-modal--lobby { max-width: 600px; }
+.coop-modal--quickmatch { max-width: 460px; }
+.coop-modal-body { padding: 22px 24px 24px; }
+
+.coop-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.coop-form .field-label {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--gold);
+  margin: 0 0 6px;
+}
+.coop-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 14px;
+}
+.coop-pref-field {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.coop-pref-field--wide { grid-column: 1 / -1; }
+.coop-pref-field input[type="text"],
+.coop-pref-field input[type="number"],
+.coop-pref-field select.coop-select,
+.coop-pref-field select {
+  width: 100%;
+  padding: 9px 12px;
+  border-radius: 9px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-deep);
+  color: var(--text);
+  font: inherit;
+  font-size: 13.5px;
+}
+.coop-pref-field select {
+  appearance: none;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--text-3) 50%),
+    linear-gradient(135deg, var(--text-3) 50%, transparent 50%);
+  background-position: calc(100% - 18px) 50%, calc(100% - 13px) 50%;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+  padding-right: 32px;
+  cursor: pointer;
+}
+.coop-pref-field input:focus,
+.coop-pref-field select:focus {
+  outline: none;
+  border-color: var(--gold);
+  box-shadow: 0 0 0 3px rgba(212,175,55,0.18);
+}
+.coop-form-preview {
+  margin-top: 6px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(0,0,0,0.20);
+  border: 1px dashed var(--border-strong);
+}
+.coop-form-preview .field-label { margin-bottom: 8px; display: block; }
+.coop-lobby-card--preview {
+  background: linear-gradient(180deg, var(--card-raised), var(--card));
+}
+.coop-form-error {
+  margin: 0;
+  padding: 9px 12px;
+  border-radius: 9px;
+  background: rgba(255, 95, 109, 0.10);
+  border: 1px solid rgba(255, 95, 109, 0.45);
+  color: var(--loss);
+  font-size: 12.5px;
+}
+.coop-form-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+.coop-form-actions .btn-primary,
+.coop-form-actions .btn-ghost { flex: 0 0 auto; }
+
+/* Quick-match body inside its modal */
+.coop-quickmatch-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 6px 0 14px;
+}
+.coop-quickmatch-card {
+  padding: 14px 16px;
+  border-radius: 12px;
+  border: 1px solid rgba(109,217,124,0.45);
+  background: linear-gradient(180deg, rgba(109,217,124,0.10), var(--card));
   display: flex;
   flex-direction: column;
   gap: 10px;
 }
-.coop-create-lobby-form h4 {
-  margin: 0 0 4px 0;
+.coop-quickmatch-empty {
+  padding: 20px 16px;
+  border-radius: 12px;
+  border: 1px dashed var(--border-strong);
+  text-align: center;
+}
+.coop-quickmatch-empty .coop-empty-title { font-size: 15px; margin-bottom: 4px; }
+
+/* ── Active players feed (secondary, below the workspace) ─────────── */
+.coop-feed-section {
+  border-top: 1px dashed var(--border-strong);
+  padding-top: 16px;
+  margin-top: 4px;
+}
+.coop-feed-section .feed[hidden] { display: none; }
+.coop-feed-section .feed { margin-top: 8px; }
+.coop-feed-section .footnote { margin-top: 8px; }
+
+/* ── Responsive ─────────────────────────────────────────────────────
+   Below 1024px we drop to a single column. The right rail stacks below
+   the main content rather than getting pinched into something useless
+   like a 220px sidebar next to a 500px main column. */
+@media (max-width: 1024px) {
+  .coop-page { padding: 20px; gap: 16px; }
+  .coop-bar {
+    flex-wrap: wrap;
+    gap: 12px;
+    padding: 12px 14px;
+  }
+  .coop-workspace { grid-template-columns: minmax(0, 1fr); gap: 18px; }
+  .coop-work-side {
+    width: 100%;
+    position: static;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 12px;
+  }
+}
+/* Tablet + mid-phone — collapse the bar into a stacked vertical block
+   and keep the board panel from ever pushing past viewport width. */
+@media (max-width: 720px) {
+  .coop-page { padding: 14px 14px 56px; gap: 14px; }
+  .coop-head-slim { gap: 8px; }
+  .coop-head-slim h2 { font-size: 19px; line-height: 1.2; }
+  .coop-head-slim .panel-sub { font-size: 12.5px; }
+  .coop-bar { padding: 12px; flex-direction: column; align-items: stretch; gap: 10px; }
+  .coop-bar-stats { width: 100%; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+  .coop-bar-stat { flex: 1 1 auto; justify-content: center; min-width: 0; }
+  .coop-bar-divider { display: none; }
+  .coop-bar-cta-row { flex-wrap: wrap; width: 100%; }
+  .coop-bar-cta-row .btn-primary,
+  .coop-bar-cta-row .btn-ghost { flex: 1 1 140px; justify-content: center; }
+  .coop-bar-cta-row .coop-link-btn { width: 100%; justify-content: center; padding: 6px 4px; }
+  .coop-board { padding: 14px 14px 16px; min-height: 0; }
+  .coop-board-head { flex-direction: column; align-items: stretch; gap: 8px; padding-bottom: 12px; }
+  .coop-board-head-actions { align-self: stretch; }
+  .coop-board-head-actions .btn-primary { width: 100%; justify-content: center; }
+  .coop-section-head { flex-direction: column; align-items: stretch; gap: 8px; }
+  .coop-section-cta { align-self: flex-start; }
+  .coop-lobbies-list,
+  .coop-recs-list,
+  .coop-invites-list { grid-template-columns: 1fr; }
+  .coop-form-grid { grid-template-columns: 1fr; }
+  .coop-modal-body { padding: 18px 18px 22px; }
+  .coop-empty-card--openruns { min-height: 0; padding: 18px 4px; }
+  .coop-empty-card--openruns .coop-empty-title { font-size: 19px; }
+  .coop-empty-card--openruns .coop-empty-body { font-size: 13.5px; }
+  .coop-empty-card--openruns .coop-empty-actions { flex-direction: column; align-items: stretch; width: 100%; max-width: 280px; }
+  .coop-empty-card--openruns .coop-empty-actions .btn-sm { width: 100%; justify-content: center; }
+  .coop-empty-card--inline { flex-direction: column; align-items: stretch; gap: 10px; }
+  .coop-empty-card--inline .coop-empty-title { white-space: normal; }
+  .coop-empty-card--inline .coop-empty-actions { justify-content: flex-start; }
+  .coop-empty-card--inline .coop-empty-actions .btn-sm { width: 100%; justify-content: center; }
+  .coop-empty-card {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "title"
+      "body"
+      "actions"
+      "chips";
+  }
+  .coop-empty-actions { justify-content: flex-start; }
+}
+@media (max-width: 480px) {
+  .coop-lobby-card, .coop-rec-card { padding: 12px 14px; }
+  .coop-section-title { font-size: 16px; }
+  .coop-bar-title { font-size: 18px; }
+  .coop-bar-stat-num { font-size: 16px; }
 }
 
-/* Mobile tweaks */
-@media (max-width: 640px) {
-  .coop-status-card .coop-prefs-grid { grid-template-columns: 1fr; }
-  .coop-section-head { flex-direction: column; align-items: stretch; }
-  .coop-join-req-row, .coop-invite-row { grid-template-columns: auto 1fr; }
-  .coop-join-req-row .coop-card-actions, .coop-invite-row .coop-card-actions {
-    grid-column: 1 / -1;
+/* ── Co-op Lobby Beta — badge, switcher, surface hiding ──────────────
+   The Co-op tab ships two presentations of the same live state:
+     • Classic Co-op — the legacy roster + status pills surface, shown
+       when body.coop-lobby-beta-off is set.
+     • Co-op Lobby Beta — the new command bar + Open Run Lobbies
+       board + right rail, shown when body.coop-lobby-beta-on is set.
+   Toggle plumbing lives in script.js (ENABLE_COOP_LOBBY_BETA + the
+   spirevault.coopLobbyBeta localStorage key). This block is the
+   CSS-only side of the switch. */
+
+/* Beta badge — small purple pill that sits inline next to the page
+   title when the beta is enabled. Visually distinct from the warm
+   gold/orange CTA palette so it can't be mistaken for a button. */
+.coop-beta-badge {
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
+  margin-left: 10px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(155, 131, 255, 0.18);
+  color: rgba(220, 210, 255, 0.98);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  line-height: 1.6;
+}
+
+/* One-liner under the page subtitle. Subtle but tappable. */
+.coop-beta-action-row {
+  margin: 6px 0 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--text-3);
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.coop-beta-action-text {
+  color: var(--text-3);
+}
+.coop-beta-switch.coop-link-btn {
+  font-size: inherit;
+  font-weight: 700;
+  padding: 0;
+  color: var(--text-2);
+  text-decoration: underline;
+  text-decoration-color: rgba(245, 158, 11, 0.45);
+  text-underline-offset: 3px;
+}
+.coop-beta-switch.coop-link-btn:hover {
+  color: var(--gold);
+  text-decoration-color: var(--gold);
+}
+
+/* Kill switch hides the badge + switch link entirely. The toggle
+   row in the Beta features tab is hidden at the JS layer (renderer
+   returns ""), so no extra rule is needed there. */
+body.coop-lobby-beta-killed .coop-beta-badge,
+body.coop-lobby-beta-killed .coop-beta-action-row {
+  display: none !important;
+}
+
+/* Co-op Lobby Beta discovery banner — one-time announcement that
+   surfaces in the Classic Co-op tab so existing users find the new
+   toggle. Hidden by default; renderCoopDiscoveryBanner() in
+   script.js shows it when the kill switch is on AND the dismiss
+   flag isn't set yet. Visually distinct from the page chrome:
+   warm gold border + soft glow + small NEW eyebrow. The mode-swap
+   rule below also hides it whenever the user is on the Beta UI. */
+.coop-discovery-banner {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 18px;
+  border: 1px solid rgba(245, 158, 11, 0.55);
+  border-radius: 14px;
+  background:
+    linear-gradient(135deg, rgba(245, 158, 11, 0.16) 0%, rgba(255, 107, 26, 0.10) 60%, rgba(155, 131, 255, 0.08) 100%),
+    var(--card);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 224, 168, 0.08),
+    0 12px 32px rgba(0, 0, 0, 0.28),
+    0 0 28px rgba(245, 158, 11, 0.10);
+  margin-bottom: 4px;
+}
+.coop-discovery-banner-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: rgba(245, 158, 11, 0.28);
+  color: rgba(255, 232, 188, 1);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+.coop-discovery-banner-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.coop-discovery-banner-title {
+  font-size: 14.5px;
+  font-weight: 800;
+  color: var(--text);
+}
+.coop-discovery-banner-text {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-2);
+  max-width: 64ch;
+}
+.coop-discovery-banner-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.coop-discovery-banner-skip.coop-link-btn {
+  color: var(--text-3);
+  font-weight: 600;
+}
+.coop-discovery-banner-skip.coop-link-btn:hover {
+  color: var(--text-2);
+}
+.coop-discovery-banner-close {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+  color: var(--text-3);
+  cursor: pointer;
+}
+.coop-discovery-banner-close:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.04);
+}
+@media (max-width: 720px) {
+  .coop-discovery-banner {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+    gap: 10px;
+    padding: 14px 14px 16px;
+  }
+  .coop-discovery-banner-actions {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .coop-discovery-banner-actions .btn-primary {
+    width: 100%;
+    justify-content: center;
   }
 }
 
-.btn-sm { font-size: 12px; padding: 4px 10px; }
+/* Mode swap — Beta vs Classic.
+   Every Beta-only DOM block carries data-coop-mode="beta".
+   Every Classic-only DOM block carries data-coop-mode="classic".
+   Body class flips them in one rule. The two surfaces coexist in
+   the same panel so a single rule swaps them with zero JS. */
+body.coop-lobby-beta-on  [data-coop-mode="classic"],
+body.coop-lobby-beta-off [data-coop-mode="beta"] {
+  display: none !important;
+}
+
+/* Classic surface — restore the original Co-op page presentation.
+   The .panel-body padding override on .coop-page is fine for Beta's
+   1440px shell, but Classic uses the legacy .me-card + .feed-heading
+   inside a narrower comfortable column. Cap to 980px and centre. */
+body.coop-lobby-beta-off [data-tab="coop"] .coop-page {
+  max-width: 1100px;
+  padding: 16px 24px 32px;
+  gap: 18px;
+}
+.classic-coop-surface {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: 100%;
+  min-width: 0;
+}
+.classic-coop-surface .me-howto {
+  align-self: stretch;
+}
+
+/* Updated feed empty state — paired strings live in script.js.
+   Sub-line styling lives here so the wording stays editable without
+   touching the JS file. */
+.feed-empty p {
+  margin: 0 0 4px;
+}
+.feed-empty p:last-child {
+  margin: 0;
+}
+.feed-empty-sub {
+  color: var(--text-3);
+  font-size: 13px;
+}
 

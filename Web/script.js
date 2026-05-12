@@ -17,7 +17,7 @@ import * as Stats from "/lib/stats-engine.js?v=4";
 import * as HistoryStore from "/lib/history-store.js?v=8";
 import * as InviteAPI from "/lib/invites.js?v=4";
 import * as HighlightsAPI from "/lib/highlights.js?v=1";
-import * as CoopLobbies from "/lib/coop-lobbies.js?v=1";
+import * as CoopLobbies from "/lib/coop-lobbies.js?v=10";
 import * as AscInfo from "/lib/ascension-info.js?v=1";
 import * as CharInfo from "/lib/character-info.js?v=1";
 import * as RelicInfo from "/lib/relic-info.js?v=1";
@@ -69,12 +69,198 @@ const STS2_APP_ID = "2868840";
  * on an old client — instruct hard refresh. If it DOES match, the
  * bug is real and we can stop chasing cache ghosts.
  */
-const VAULT_BUILD = "v153-2026-05-10-desktop-bridge-deterministic-ready";
+const VAULT_BUILD = "v164-2026-05-12-coop-beta-discovery-banner";
 
 // Feature flag — set to `true` only on local dev when iterating on the
 // Run Companion Overlay. Production stays false until the feature is
 // genuinely ready, so users never see a half-baked tab in their nav.
 const OVERLAY_NAV_VISIBLE = false;
+
+// ─────────────────────────────────────────────────────────────────────
+//  Co-op Lobby Beta — kill switch + per-user opt-in.
+//
+//  The Co-op tab now ships two presentations of the same live
+//  matchmaking state:
+//
+//    • Classic Co-op — the legacy roster surface. Status pills + the
+//      Players Looking Now feed. Friendly default for existing users.
+//    • Co-op Lobby Beta — the new command bar + Open Run Lobbies
+//      board + Best Matches + right rail. Opt-in.
+//
+//  Both share the exact same backend (presence, lobbies, invites,
+//  pair state). A Classic user can see, invite, and pair with a Beta
+//  user — there is no separate matchmaking pool. The toggle is
+//  purely a client-side presentation flip.
+//
+//  ENABLE_COOP_LOBBY_BETA is the build-level kill switch. When
+//  `false`, the toggle is hidden and every client renders Classic
+//  Co-op regardless of saved preference. Flip it back to `true`
+//  to expose the toggle again — no other code changes needed.
+//
+//  Per-user opt-in is stored in localStorage under
+//  `spirevault.coopLobbyBeta` and reflected as a `<body>` class so
+//  CSS can swap surfaces without re-rendering JS.
+// ─────────────────────────────────────────────────────────────────────
+const ENABLE_COOP_LOBBY_BETA = true;
+const COOP_LOBBY_BETA_KEY    = "spirevault.coopLobbyBeta";
+
+function isCoopLobbyBetaEnabled() {
+  if (!ENABLE_COOP_LOBBY_BETA) return false;
+  try {
+    return localStorage.getItem(COOP_LOBBY_BETA_KEY) === "on";
+  } catch {
+    return false;
+  }
+}
+
+function setCoopLobbyBetaEnabled(on) {
+  try { localStorage.setItem(COOP_LOBBY_BETA_KEY, on ? "on" : "off"); }
+  catch { /* private mode → silently ignore; flag becomes session-only */ }
+  applyCoopLobbyBetaClass();
+  renderCoopBetaHeaderControls();
+  try { renderCoopDiscoveryBanner(); } catch {}
+  try { if (window.RunCoach?.renderBetaTab) window.RunCoach.renderBetaTab(); } catch {}
+}
+
+function applyCoopLobbyBetaClass() {
+  const on = isCoopLobbyBetaEnabled();
+  const cls = document.body?.classList;
+  if (!cls) return;
+  cls.toggle("coop-lobby-beta-on",  on);
+  cls.toggle("coop-lobby-beta-off", !on);
+  // Surface the kill switch state too, so any UI that hides the
+  // toggle when the feature is killed can do so with a single CSS
+  // selector instead of duplicating the JS check.
+  cls.toggle("coop-lobby-beta-killed", !ENABLE_COOP_LOBBY_BETA);
+}
+window.__VAULT_COOP_BETA__ = {
+  isEnabled: isCoopLobbyBetaEnabled,
+  setEnabled: setCoopLobbyBetaEnabled,
+  killSwitch: () => ENABLE_COOP_LOBBY_BETA,
+};
+// Stamp the body class as early as possible so the first paint
+// already renders the correct surface (no Classic→Beta flicker on
+// reload). `document.body` may not exist yet at this point in the
+// script; defer one tick if so.
+if (document.body) applyCoopLobbyBetaClass();
+else document.addEventListener("DOMContentLoaded", applyCoopLobbyBetaClass, { once: true });
+
+/**
+ * Paint the small "Co-op Lobby Beta" badge + "Switch to Classic"
+ * link (when beta is on), or the "Try the Co-op Lobby Beta" banner
+ * (when beta is off). Both surfaces are injected into the Co-op tab
+ * slim header so they sit alongside the page title, with no impact
+ * on the surrounding layout.
+ *
+ * Idempotent — safe to call multiple times. Re-renders on every
+ * toggle and on Co-op tab activation.
+ */
+function renderCoopBetaHeaderControls() {
+  const $slim = document.querySelector('[data-tab="coop"] .coop-head-slim');
+  if (!$slim) return;
+  const titleBox = $slim.firstElementChild;
+  if (!titleBox) return;
+
+  // 1) Inline beta badge in the title row (only when beta is ON).
+  let $badge = titleBox.querySelector(".coop-beta-badge");
+  if (isCoopLobbyBetaEnabled() && ENABLE_COOP_LOBBY_BETA) {
+    if (!$badge) {
+      $badge = document.createElement("span");
+      $badge.className = "coop-beta-badge";
+      $badge.title = "You're trying the new Co-op Lobby experience. Switch back anytime from the link below.";
+      $badge.textContent = "Co-op Lobby Beta";
+      const $h2 = titleBox.querySelector("h2");
+      if ($h2) $h2.appendChild($badge);
+    }
+  } else if ($badge) {
+    $badge.remove();
+  }
+
+  // 2) Below the subtitle, a single subtle action line:
+  //    • Beta on:  "You're using the new Co-op Lobby Beta. Switch back to Classic Co-op"
+  //    • Beta off: "Try the new Co-op Lobby Beta"
+  //    • Killed:   nothing rendered.
+  let $row = titleBox.querySelector(".coop-beta-action-row");
+  if (!ENABLE_COOP_LOBBY_BETA) {
+    if ($row) $row.remove();
+    return;
+  }
+  if (!$row) {
+    $row = document.createElement("p");
+    $row.className = "coop-beta-action-row";
+    titleBox.appendChild($row);
+  }
+  if (isCoopLobbyBetaEnabled()) {
+    $row.innerHTML =
+      '<span class="coop-beta-action-text">You\u2019re using the Co-op Lobby Beta.</span> ' +
+      '<button type="button" class="coop-link-btn coop-beta-switch" data-coop-beta="off">Switch back to Classic Co-op</button>';
+  } else {
+    $row.innerHTML =
+      '<span class="coop-beta-action-text">Classic Co-op.</span> ' +
+      '<button type="button" class="coop-link-btn coop-beta-switch" data-coop-beta="on">Try the Co-op Lobby Beta</button>';
+  }
+}
+
+// Single delegated click handler for both switch buttons. Bound once.
+document.addEventListener("click", (ev) => {
+  const btn = ev.target instanceof Element ? ev.target.closest("[data-coop-beta]") : null;
+  if (!btn) return;
+  ev.preventDefault();
+  setCoopLobbyBetaEnabled(btn.dataset.coopBeta === "on");
+});
+
+// ─────────────────────────────────────────────────────────────────────
+//  Co-op Lobby Beta — first-run discovery banner.
+//
+//  Surfaced inside the Co-op tab so existing signed-in users see the
+//  new toggle the next time they land on Co-op. Shown when:
+//    • kill switch is ON (ENABLE_COOP_LOBBY_BETA)
+//    • user is still in Classic mode
+//    • dismiss flag in localStorage hasn't been set yet
+//
+//  This is purely an in-app announcement — no backend, no email, no
+//  push. Once dismissed (either by clicking Try the Beta or Not now),
+//  the flag persists per-browser and the banner stays hidden.
+// ─────────────────────────────────────────────────────────────────────
+const COOP_LOBBY_BETA_DISCOVERY_KEY = "spirevault.coopLobbyBeta.discoveryDismissed";
+
+function isCoopBetaDiscoveryDismissed() {
+  try { return localStorage.getItem(COOP_LOBBY_BETA_DISCOVERY_KEY) === "1"; }
+  catch { return false; }
+}
+
+function dismissCoopBetaDiscovery() {
+  try { localStorage.setItem(COOP_LOBBY_BETA_DISCOVERY_KEY, "1"); }
+  catch { /* private mode → banner just won't return this session */ }
+  renderCoopDiscoveryBanner();
+}
+
+function renderCoopDiscoveryBanner() {
+  const $banner = document.getElementById("coop-discovery-banner");
+  if (!$banner) return;
+  const shouldShow =
+    ENABLE_COOP_LOBBY_BETA &&
+    !isCoopLobbyBetaEnabled() &&
+    !isCoopBetaDiscoveryDismissed();
+  $banner.hidden = !shouldShow;
+}
+
+// Delegated handler for the banner's two buttons + the × close.
+document.addEventListener("click", (ev) => {
+  const btn = ev.target instanceof Element ? ev.target.closest("[data-coop-discovery]") : null;
+  if (!btn) return;
+  ev.preventDefault();
+  const action = btn.dataset.coopDiscovery;
+  if (action === "try") {
+    // Flip into Beta and remember — the toggle is now in the slim
+    // header so users can return to Classic at any time without
+    // seeing this banner again.
+    setCoopLobbyBetaEnabled(true);
+    dismissCoopBetaDiscovery();
+  } else if (action === "dismiss") {
+    dismissCoopBetaDiscovery();
+  }
+});
 console.info(`[Vault] build ${VAULT_BUILD}`);
 window.__VAULT_BUILD__ = VAULT_BUILD;
 try {
@@ -1328,7 +1514,15 @@ function startSteamSignIn() {
     );
     return;
   }
-  const u = new URL(`${SERVER_URL}/auth/steam/start`);
+  // Route Steam sign-in through the same-origin /api/* Pages proxy so
+  // the worker that mints the session matches the worker that /me will
+  // later validate against. In production both are the same prod
+  // worker; in dev/preview the Pages function proxies to whichever
+  // worker `WORKER_ORIGIN_OVERRIDE` points at (e.g. the preview
+  // worker). Hitting SERVER_URL directly would always go to prod and
+  // mint a token the preview worker doesn't know about → infinite
+  // sign-in loop in the dev env.
+  const u = new URL(`${window.location.origin}/api/auth/steam/start`);
   u.searchParams.set("return", RETURN_URL);
   u.searchParams.set("nonce", nonce);
   window.location.assign(u.toString());
@@ -1630,13 +1824,20 @@ async function boot() {
       if ($meAvatar) $meAvatar.src = session.avatarURL;
       const $mobileAvatar = document.getElementById("me-pill-avatar-mobile");
       if ($mobileAvatar) $mobileAvatar.src = session.avatarURL;
+      // Classic surface mirror — same avatar as the Beta sidebar
+      // status card, painted into the legacy .me-card.
+      const $classicAvatar = document.getElementById("classic-me-avatar");
+      if ($classicAvatar) $classicAvatar.src = session.avatarURL;
     }
     const $mePersona = document.getElementById("me-persona");
     if ($mePersona) $mePersona.textContent = session.personaName;
+    const $classicPersona = document.getElementById("classic-me-persona");
+    if ($classicPersona) $classicPersona.textContent = session.personaName;
     const $meTier = document.getElementById("me-tier");
-    if ($meTier) {
-      $meTier.textContent = "Signed in with Steam · " + session.steamID.slice(0,4) + "…" + session.steamID.slice(-4);
-    }
+    const tierText = "Signed in with Steam · " + session.steamID.slice(0,4) + "…" + session.steamID.slice(-4);
+    if ($meTier) $meTier.textContent = tierText;
+    const $classicTier = document.getElementById("classic-me-tier");
+    if ($classicTier) $classicTier.textContent = tierText;
     setStatus("connecting", "Connecting…");
     // Paint the profile dock at boot so the user sees their status pill
     // immediately, before the first heartbeat round-trip lands.
@@ -1702,6 +1903,12 @@ async function boot() {
   // user's last tab — that way even if they're going straight to
   // Recent Runs, they see the pill on the sidebar immediately.
   refreshNewsBadge();
+  // Paint the Co-op Lobby Beta badge / Switch-to-Classic link in the
+  // Co-op slim header *before* we route. The Co-op panel is hidden
+  // for non-Co-op tabs anyway but the markup needs to be correct so a
+  // tab switch later doesn't briefly flash the wrong state. Same
+  // deal for the first-run discovery banner.
+  try { applyCoopLobbyBetaClass(); renderCoopBetaHeaderControls(); renderCoopDiscoveryBanner(); } catch {}
   // Honor deep links from both query and path:
   //   - /?tab=<id>
   //   - /overlay
@@ -2549,6 +2756,16 @@ function switchTab(tab) {
       allowPermissionPrompt: true,
     });
   }
+  // Co-op slim header carries the beta badge / Classic-switch link.
+  // Repaint on every tab activation so a switch from Settings →
+  // Co-op shows the most recent toggle state without waiting on a
+  // separate re-render path. The discovery banner is painted from
+  // the same hook so a user who hasn't visited Co-op yet sees it
+  // the first time they land here after this deploy.
+  if (tab === "coop") {
+    try { renderCoopBetaHeaderControls(); } catch {}
+    try { renderCoopDiscoveryBanner(); } catch {}
+  }
   renderActiveTab();
 }
 
@@ -3128,10 +3345,41 @@ function wireCoopForm() {
       // immediately flip them back to AFK on the next idle window.
       lastUserActivityAt = Date.now();
       userExplicitStatusAt = Date.now();
+      // Mirror selection into the Classic surface so flipping
+      // status in the Beta UI immediately updates Classic and
+      // vice-versa.
+      setRadio("classic-status", el.value);
       schedulePush();
     })
   );
-  document.getElementById("me-discord").addEventListener("input", schedulePush);
+  // Classic Co-op radios route through the same handler chain so
+  // both surfaces share one source of truth. We reflect into the
+  // beta radio first so anything still listening on
+  // `input[name="status"]` keeps working unchanged.
+  document.querySelectorAll('input[name="classic-status"]').forEach((el) =>
+    el.addEventListener("change", () => {
+      lastUserActivityAt = Date.now();
+      userExplicitStatusAt = Date.now();
+      const betaRadio = document.querySelector(`input[name="status"][value="${el.value}"]`);
+      if (betaRadio) betaRadio.checked = true;
+      schedulePush();
+    })
+  );
+
+  const $betaDiscord = document.getElementById("me-discord");
+  if ($betaDiscord) $betaDiscord.addEventListener("input", schedulePush);
+  // Classic Discord input lives directly on the page (it isn't
+  // gated behind a modal like the Beta one), so we mirror its value
+  // into the Beta input and trigger the same push pipeline. The
+  // Beta input is what readMyForm() reads, so this keeps a single
+  // upload path even though there are two visible inputs.
+  const $classicDiscord = document.getElementById("classic-me-discord");
+  if ($classicDiscord) {
+    $classicDiscord.addEventListener("input", () => {
+      if ($betaDiscord) $betaDiscord.value = $classicDiscord.value;
+      schedulePush();
+    });
+  }
 
   // Restore last status from local draft FIRST so the radio shows
   // immediately, then pull the authoritative copy from the server
@@ -3139,7 +3387,8 @@ function wireCoopForm() {
   // mobile — the server has the truth, localStorage doesn't).
   const draft = readDraft();
   setRadio("status", draft.status ?? "looking");
-  document.getElementById("me-discord").value = draft.discordHandle ?? "";
+  if ($betaDiscord) $betaDiscord.value = draft.discordHandle ?? "";
+  if ($classicDiscord) $classicDiscord.value = draft.discordHandle ?? "";
 
   // Pull our own row from the roster on mount and use it to
   // override the local draft if it's fresher. This is what makes
@@ -3176,6 +3425,8 @@ async function hydrateMyStatusFromServer() {
     if (me.discordHandle) {
       const $d = document.getElementById("me-discord");
       if ($d && !$d.value) $d.value = me.discordHandle;
+      const $cd = document.getElementById("classic-me-discord");
+      if ($cd && !$cd.value) $cd.value = me.discordHandle;
     }
     saveDraft({ status: me.status, discordHandle: me.discordHandle });
   } catch { /* offline at boot is fine */ }
@@ -3335,8 +3586,11 @@ async function pullFeed() {
     lastFeed = list;
     if (activeTab === "coop") renderFeed(list);
     updateCoopBadge();
-    document.getElementById("last-updated").textContent =
-      "Last updated " + new Date().toLocaleTimeString();
+    const stamp = "Last updated " + new Date().toLocaleTimeString();
+    const $lu = document.getElementById("last-updated");
+    if ($lu) $lu.textContent = stamp;
+    const $cLu = document.getElementById("classic-last-updated");
+    if ($cLu) $cLu.textContent = stamp;
   } catch (e) {
     console.warn("feed fetch failed", e);
   }
@@ -5172,16 +5426,38 @@ function renderFeed(list) {
   const looking = others.filter((p) => p.status === "looking").length;
   const activeNow = others.filter((p) => isActiveNow(p)).length;
 
-  document.getElementById("online-count").textContent = String(others.length);
-  document.getElementById("online-summary").textContent =
-    others.length === 0
+  // Beta-side count + summary. Both are guarded because the Beta UI
+  // no longer renders an inline summary <p> (the slim header is the
+  // page subtitle in Beta), but #online-count still exists in the
+  // Players Looking Now section header.
+  const $bCount = document.getElementById("online-count");
+  if ($bCount) $bCount.textContent = String(others.length);
+  const $bSummary = document.getElementById("online-summary");
+  if ($bSummary) {
+    $bSummary.textContent = others.length === 0
       ? "No one else has signed up yet. Be the first."
       : `${others.length} signed-up player${others.length === 1 ? "" : "s"} · ` +
         `${activeNow} active now · ${looking} looking · ${inGame} in Slay the Spire 2`;
+  }
 
   const $feed = document.getElementById("feed");
-  if (others.length === 0) {
-    $feed.innerHTML = `<div class="feed-empty"><p>You're on the feed. Be the first someone bumps into.</p></div>`;
+  if ($feed && others.length === 0) {
+    // Empty state on the Co-op tab. The feed doubles as the "Players
+    // Looking Now" list inside the new lobby UI, so the copy is
+    // worded around the lobby flow rather than the legacy roster.
+    $feed.innerHTML = `
+      <div class="feed-empty">
+        <p><strong>No other players looking right now.</strong></p>
+        <p class="feed-empty-sub">Post a Run so people can join you.</p>
+      </div>`;
+    // Classic surface still needs its own empty-state copy + count
+    // even if Beta took the early return.
+    renderClassicCoopMirror(list, others, { inGame, looking, activeNow });
+    return;
+  }
+  if (!$feed) {
+    // No Beta feed in the DOM (shouldn't happen, but be defensive).
+    renderClassicCoopMirror(list, others, { inGame, looking, activeNow });
     return;
   }
 
@@ -5207,8 +5483,21 @@ function renderFeed(list) {
   }
 
   $feed.innerHTML = others.map(renderRow).join("");
-  // Wire actions
-  $feed.querySelectorAll("button[data-act='discord']").forEach((btn) => {
+  wireFeedActions($feed);
+  // Classic surface uses the exact same sorted `others` so the two
+  // lists are always in the same order.
+  renderClassicCoopMirror(list, others, { inGame, looking, activeNow });
+}
+
+/**
+ * Wire the per-row "Copy Discord" and "Invite to play" buttons. Pulled
+ * into a helper so both the Beta `#feed` and the Classic `#classic-feed`
+ * containers can share the exact same interaction without duplicating
+ * the listeners or accidentally drifting.
+ */
+function wireFeedActions(root) {
+  if (!root) return;
+  root.querySelectorAll("button[data-act='discord']").forEach((btn) => {
     btn.addEventListener("click", () => {
       const handle = btn.dataset.handle ?? "";
       navigator.clipboard?.writeText(handle).catch(() => {});
@@ -5216,9 +5505,61 @@ function renderFeed(list) {
       setTimeout(() => (btn.textContent = "Copy Discord"), 1500);
     });
   });
-  $feed.querySelectorAll("button[data-act='invite']").forEach((btn) => {
+  root.querySelectorAll("button[data-act='invite']").forEach((btn) => {
     btn.addEventListener("click", () => openInviteModal(btn.dataset.id, btn.dataset.name));
   });
+}
+
+/**
+ * Paint the Classic Co-op surface from the same `list` + `others`
+ * already computed by renderFeed. The Classic DOM uses suffixed IDs
+ * (#classic-online-summary, #classic-online-count, #classic-feed,
+ * #classic-last-updated) so it can sit in the same panel as the Beta
+ * surface without ID collisions.
+ *
+ * `summary.{inGame,looking,activeNow}` are passed in so we don't
+ * recompute them — keeps the mirror an O(rows) DOM write only.
+ *
+ * Idempotent and DOM-safe: every node lookup is guarded so the
+ * mirror is a no-op if any classic-side element happens to be
+ * missing (e.g., during a partial render or a future markup tweak).
+ */
+function renderClassicCoopMirror(list, others, summary) {
+  const $sub = document.getElementById("classic-online-summary");
+  if ($sub) {
+    const total = (list || []).length;
+    if (total === 0) {
+      $sub.textContent = "Loading…";
+    } else {
+      $sub.textContent =
+        `${total} signed-up player${total === 1 ? "" : "s"} · ` +
+        `${summary.activeNow} active now · ${summary.looking} looking · ` +
+        `${summary.inGame} in Slay the Spire 2`;
+    }
+  }
+  const $count = document.getElementById("classic-online-count");
+  if ($count) $count.textContent = String((others || []).length);
+
+  const $feed = document.getElementById("classic-feed");
+  if ($feed) {
+    if ((others || []).length === 0) {
+      // Classic uses the original "be the first" copy so it reads
+      // like the pre-lobby Co-op page rather than the Beta wording.
+      $feed.innerHTML = `<div class="feed-empty"><p>You're on the feed. Be the first someone bumps into.</p></div>`;
+    } else {
+      $feed.innerHTML = others.map(renderRow).join("");
+      wireFeedActions($feed);
+    }
+  }
+
+  // Reflect the user's current status into the Classic radios on
+  // every poll so the segment stays correct even if the user changes
+  // status from the profile popover or another tab.
+  const me = (list || []).find((p) => p.steamID === session?.steamID);
+  const myStatus = me?.status || "";
+  document
+    .querySelectorAll('#classic-status-pills input[name="classic-status"]')
+    .forEach((r) => { r.checked = r.value === myStatus; });
 }
 
 /**
@@ -5321,7 +5662,7 @@ function renderRow(p) {
           ${pairedPartner ? `<span class="tag paired" title="${isPairedWithMe ? "You're co-oping with this player right now." : "Currently playing with " + esc(pairedPartner)}">${isPairedWithMe ? "Co-op &mdash; with you" : "Co-op &mdash; w/ " + esc(pairedPartner)}</span>` : ""}
           ${lastActive ? `<span class="last-active is-${freshness}" title="Last heartbeat ${esc(p.updatedAt ?? "")}">${esc(lastActive)}</span>` : ""}
         </div>
-        <p class="row-hint muted">${pairedPartner && !isPairedWithMe ? "Already in a co-op session." : "Send them an invite to play."}</p>
+        <p class="row-hint muted">${pairedPartner && !isPairedWithMe ? "Already in a co-op pairing." : "Send them an invite to play."}</p>
       </div>
       <div class="actions">
         <button class="btn-primary sm" data-act="invite" data-id="${esc(sid)}" data-name="${esc(persona)}"${pairedPartner && !isPairedWithMe ? " disabled" : ""}>${pairedPartner && !isPairedWithMe ? "Busy" : "Invite to play"}</button>
@@ -10826,7 +11167,7 @@ function renderCards(report) {
  * every state mutation) so flipping a chip doesn't blow away the
  * surrounding content. Persisted to localStorage so the user's
  * filters survive a refresh — power users tend to settle on
- * "show me only my A20 wins" or similar.
+ * "show me only my A10 wins" or similar.
  */
 const STORAGE_RUN_FILTERS = "vault.web.runfilters.v1";
 let runFilters = (() => {
@@ -11544,13 +11885,13 @@ function renderProfilePopover() {
       <div class="profile-pop-status-seg" role="radiogroup" aria-label="Status" data-locked="${statusLocked}">
         ${segHtml}
       </div>
-      ${statusLocked ? `<p class="profile-pop-status-lock">Auto-set while you're in a co-op session.</p>` : ""}
+      ${statusLocked ? `<p class="profile-pop-status-lock">Auto-set while you're in a co-op pairing.</p>` : ""}
     </section>
 
     <section class="profile-pop-section" data-pop-section="party">
       <header class="profile-pop-section-head">
         <span class="profile-pop-section-dot ${pair ? "is-live" : ""}" aria-hidden="true"></span>
-        <span>Co-op session</span>
+        <span>Co-op Pairing</span>
       </header>
       ${renderProfilePopoverPair(pair)}
     </section>
@@ -11603,7 +11944,7 @@ function renderProfilePopover() {
 
 function renderProfilePopoverPair(pair) {
   if (!pair) {
-    return `<p class="profile-pop-empty">Not in a co-op session. Accept or send an invite to pair up.</p>`;
+    return `<p class="profile-pop-empty">Not in a co-op pairing. Accept or send an invite to pair up.</p>`;
   }
   const partner = pair.partners[0];
   const others = pair.partners.slice(1);
@@ -11633,7 +11974,7 @@ function renderProfilePopoverPair(pair) {
            href="${profileHref}"
            title="Open ${esc(partner.partnerPersona)}'s Steam profile">Profile</a>
         <button class="btn-ghost sm" type="button" data-pop-action="end-coop"
-          title="Leave this co-op session">End</button>
+          title="Leave this co-op pairing">End</button>
       </div>
       ${others.length
         ? `<ul class="profile-pop-pair-extra">${others.map((p) =>
@@ -11862,15 +12203,31 @@ function wireProfilePopover(el) {
 }
 
 function showPushingPill(visible) {
-  const pill = document.getElementById("me-pushing-pill");
-  if (visible) { pill.hidden = false; pill.textContent = "Sending…"; }
-  else { pill.hidden = false; pill.textContent = "Saved"; }
-  if (!visible) setTimeout(() => (pill.hidden = true), 800);
+  // Show the same "Sending…" / "Saved" badge on both the Beta and
+  // Classic surfaces' me-cards so the user gets immediate feedback
+  // no matter which co-op presentation is active.
+  const pills = [
+    document.getElementById("me-pushing-pill"),
+    document.getElementById("classic-me-pushing-pill"),
+  ].filter(Boolean);
+  pills.forEach((pill) => {
+    pill.hidden = false;
+    pill.textContent = visible ? "Sending…" : "Saved";
+  });
+  if (!visible) setTimeout(() => pills.forEach((p) => { p.hidden = true; }), 800);
 }
 
 function setRadio(name, value) {
   const el = document.querySelector(`input[name="${name}"][value="${value}"]`);
   if (el) el.checked = true;
+  // The Classic Co-op surface mirrors the same status set under a
+  // separate radio group (name="classic-status") so it can coexist
+  // with the Beta radios in the same panel. Keep them in lockstep
+  // so flipping status from either surface is reflected everywhere.
+  if (name === "status") {
+    const classic = document.querySelector(`input[name="classic-status"][value="${value}"]`);
+    if (classic) classic.checked = true;
+  }
 }
 
 function toast(msg, opts = {}) {

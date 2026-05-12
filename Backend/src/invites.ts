@@ -59,11 +59,13 @@ const SENDER_RATE_WINDOW_S = 60 * 60;
  * NOTE: do not add anything that could be used as harassment when sent
  * unsolicited.
  */
+// Ascension references match Slay the Spire 2 (max A10). The preset
+// ids stay backwards-compatible; only the rendered text changed.
 export const INVITE_MESSAGES: Readonly<Record<string, string>> = Object.freeze({
   coop_any:        "Want to co-op? Any ascension.",
-  coop_low:        "Want to co-op? Low ascension / casual.",
-  coop_high:       "Want to co-op? A15+.",
-  coop_a20:        "Want to co-op? A20 only.",
+  coop_low:        "Want to co-op? Casual / low ascension.",
+  coop_high:       "Want to co-op? High Ascension (A8–A10).",
+  coop_a20:        "Want to co-op? High Ascension (A10).",
   coop_voice:      "Want to co-op with voice chat?",
   coop_quick:      "One quick run? ~30 min.",
   watch:           "Mind if I spectate your next run?",

@@ -34,7 +34,7 @@ import {
   buildClearCookie,
   buildSetCookie,
   readSessionCookie,
-  WORKER_ORIGIN,
+  getWorkerOrigin,
 } from "../_shared/cookie.js";
 
 const json = (body, init = {}) =>
@@ -66,10 +66,10 @@ function looksLikeSessionToken(s) {
  * 503 from the worker silently logged real users out of normal-
  * browser sessions. Now we only clear on a definitive auth-fail.
  */
-async function rehydrate(token) {
+async function rehydrate(token, workerOrigin) {
   let r;
   try {
-    r = await fetch(`${WORKER_ORIGIN}/me`, {
+    r = await fetch(`${workerOrigin}/me`, {
       headers: { authorization: `Bearer ${token}` },
     });
   } catch (err) {
@@ -95,8 +95,9 @@ async function rehydrate(token) {
 }
 
 export async function onRequest(context) {
-  const { request } = context;
+  const { request, env } = context;
   const method = request.method.toUpperCase();
+  const workerOrigin = getWorkerOrigin(env);
 
   if (method === "OPTIONS") {
     return new Response(null, { status: 204 });
@@ -113,7 +114,7 @@ export async function onRequest(context) {
     if (!looksLikeSessionToken(token)) {
       return json({ error: "bad_token" }, { status: 400 });
     }
-    const result = await rehydrate(token);
+    const result = await rehydrate(token, workerOrigin);
     if (!result.ok) {
       // Don't set the cookie if the worker doesn't recognize the
       // bearer — otherwise we'd persist garbage that just generates
@@ -128,14 +129,14 @@ export async function onRequest(context) {
     }
     return json(result.profile, {
       status: 200,
-      headers: { "set-cookie": buildSetCookie(token) },
+      headers: { "set-cookie": buildSetCookie(token, undefined, request) },
     });
   }
 
   if (method === "GET") {
     const token = readSessionCookie(request);
     if (!token) return json({ error: "no_cookie" }, { status: 401 });
-    const result = await rehydrate(token);
+    const result = await rehydrate(token, workerOrigin);
     if (result.ok) return json(result.profile);
 
     if (result.definitive) {
@@ -143,7 +144,7 @@ export async function onRequest(context) {
       // Clear the cookie so the client doesn't keep retrying with it.
       return json(
         { error: "expired", status: result.status },
-        { status: 401, headers: { "set-cookie": buildClearCookie() } }
+        { status: 401, headers: { "set-cookie": buildClearCookie(request) } }
       );
     }
 
@@ -165,7 +166,7 @@ export async function onRequest(context) {
     // locally so the user is logged out from this device immediately.
     if (token) {
       try {
-        await fetch(`${WORKER_ORIGIN}/me`, {
+        await fetch(`${workerOrigin}/me`, {
           method: "DELETE",
           headers: { authorization: `Bearer ${token}` },
         });
@@ -175,7 +176,7 @@ export async function onRequest(context) {
     }
     return json(
       { ok: true },
-      { headers: { "set-cookie": buildClearCookie() } }
+      { headers: { "set-cookie": buildClearCookie(request) } }
     );
   }
 

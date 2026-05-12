@@ -129,6 +129,8 @@
           ${renderSupportBanner(pip, cap, browser)}
         </section>
 
+        ${renderCoopLobbyBetaCard()}
+
         <section class="beta-card">
           <header class="beta-card-head">
             <h4>Provider &amp; key</h4>
@@ -230,6 +232,46 @@
     wireBetaTab($body);
   }
 
+  // ─────────────────────────────────────────────────────────────────────
+  //  Co-op Lobby Beta toggle — surfaced on the Beta features tab so
+  //  users can flip the new Co-op surface on/off from a single place.
+  //  The actual state, kill switch, and CSS plumbing live in
+  //  script.js (see ENABLE_COOP_LOBBY_BETA, isCoopLobbyBetaEnabled).
+  //  We just paint the row and forward toggles into the shared API
+  //  exposed via window.__VAULT_COOP_BETA__.
+  // ─────────────────────────────────────────────────────────────────────
+  function coopBetaApi() {
+    return (typeof window !== "undefined" && window.__VAULT_COOP_BETA__) || null;
+  }
+
+  function renderCoopLobbyBetaCard() {
+    const api = coopBetaApi();
+    if (!api) return "";
+    const killed  = !api.killSwitch();
+    const enabled = api.isEnabled();
+    // Kill switch off: hide the toggle entirely so users can't even
+    // see the option. Classic Co-op stays the only surface.
+    if (killed) return "";
+    return `
+      <section class="beta-card" data-coop-beta-card>
+        <header class="beta-card-head">
+          <h4>Co-op Lobby Beta</h4>
+          <p class="beta-card-sub">Try the new lobby-based co-op page. Post runs, quick match with compatible players, and browse open run lobbies. You can switch back anytime.</p>
+        </header>
+        <div class="beta-toggle-list">
+          <label class="beta-toggle">
+            <input type="checkbox" data-rc-action="set-coop-beta" ${enabled ? "checked" : ""} />
+            <span class="beta-toggle-track" aria-hidden="true"></span>
+            <span class="beta-toggle-text">
+              <strong>Enable Co-op Lobby Beta</strong>
+              <span>When off, you see Classic Co-op. Both surfaces talk to the same live matchmaking — Classic and Beta players can still see, invite, and pair with each other.</span>
+            </span>
+          </label>
+        </div>
+      </section>
+    `;
+  }
+
   function renderSupportBanner(pip, cap, browser) {
     if (pip && cap) return "";
     const name = browser?.name || "your browser";
@@ -298,6 +340,12 @@
     }
     if (action === "set-screenshot") {
       writeState({ includeScreenshot: !!node.checked });
+      return;
+    }
+    if (action === "set-coop-beta") {
+      const api = coopBetaApi();
+      if (api) api.setEnabled(!!node.checked);
+      // setEnabled() already re-renders this tab; no extra call needed.
       return;
     }
     if (action === "set-system") {

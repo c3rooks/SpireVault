@@ -270,12 +270,14 @@ export interface CoopPresenceFeedRow {
  * deliberately do *not* let arbitrary text through — that's the whole
  * point of keeping invites un-harassable.
  */
+// Ascension references match Slay the Spire 2 (max A10). The preset
+// ids stay backwards-compatible; only the rendered text changed.
 export const COOP_INVITE_MESSAGES: Readonly<Record<string, string>> =
   Object.freeze({
     coop_any: "Want to co-op? Any ascension.",
-    coop_low: "Want to co-op? Low ascension / casual.",
-    coop_high: "Want to co-op? A15+.",
-    coop_a20: "Want to co-op? A20 only.",
+    coop_low: "Want to co-op? Casual / low ascension.",
+    coop_high: "Want to co-op? High Ascension (A8–A10).",
+    coop_a20: "Want to co-op? High Ascension (A10).",
     coop_voice: "Want to co-op with voice chat?",
     coop_quick: "One quick run? ~30 min.",
     coop_daily: "Want to co-op the daily?",

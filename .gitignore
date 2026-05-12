@@ -50,6 +50,12 @@ Site/node_modules/
 Site/.env
 Site/.env.*
 Web/node_modules/
+Web/.dev.vars
+Web/.dev.vars.*
+
+# Wrangler — auto-generated types from `wrangler types`. Local artifact;
+# always regeneratable from wrangler.toml + the runtime version pin.
+Backend/worker-configuration.d.ts
 Web/.env
 Web/.env.*
 

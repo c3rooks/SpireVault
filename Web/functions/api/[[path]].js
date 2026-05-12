@@ -23,7 +23,7 @@
  * default. By proxying the worker through the same origin as the page,
  * the cookie is first-party and persists across mobile sessions.
  */
-import { readSessionCookie, WORKER_ORIGIN } from "../_shared/cookie.js";
+import { readSessionCookie, getWorkerOrigin } from "../_shared/cookie.js";
 
 /**
  * Headers we strip before forwarding to the worker. Cloudflare /
@@ -51,7 +51,7 @@ const HOP_HEADERS = new Set([
 ]);
 
 export async function onRequest(context) {
-  const { request, params } = context;
+  const { request, params, env } = context;
   const url = new URL(request.url);
 
   // `params.path` is the wildcard segments — for `/api/presence` it's
@@ -64,7 +64,7 @@ export async function onRequest(context) {
     ? [params.path]
     : [];
   const upstreamPath = "/" + segments.join("/");
-  const upstreamURL = WORKER_ORIGIN + upstreamPath + url.search;
+  const upstreamURL = getWorkerOrigin(env) + upstreamPath + url.search;
 
   const headers = new Headers();
   for (const [k, v] of request.headers.entries()) {
