@@ -69,7 +69,7 @@ const STS2_APP_ID = "2868840";
  * on an old client — instruct hard refresh. If it DOES match, the
  * bug is real and we can stop chasing cache ghosts.
  */
-const VAULT_BUILD = "v165-2026-05-12-coop-scale-900";
+const VAULT_BUILD = "v166-2026-05-13-victory-confetti-and-auto-refresh-banner";
 
 // Feature flag — set to `true` only on local dev when iterating on the
 // Run Companion Overlay. Production stays false until the feature is
@@ -6833,11 +6833,74 @@ let autoRefreshState = {
 };
 const autoRefreshSubscribers = new Set();
 function publishAutoRefreshState(patch) {
+  const prevPhase = autoRefreshState.phase;
   Object.assign(autoRefreshState, patch);
+  // If the auto-refresh recovered (paused/error → ok), clear the
+  // session dismiss so a future failure shows the banner again. The
+  // banner is "tell me once" per problem occurrence, not "tell me once
+  // per session" — that would be too quiet.
+  if ((prevPhase === "paused-permission" || prevPhase === "error") &&
+      (autoRefreshState.phase === "ok" || autoRefreshState.phase === "running")) {
+    window.__autoRefreshBannerDismissed = false;
+  }
   refreshAutoRefreshPill();
+  // The in-tab pill ONLY renders on Recent Runs. When the browser
+  // silently drops the FSA permission grant (common on Chromium after
+  // restart / sleep), a user on Overview has zero signal that the
+  // auto-refresh has stopped working — they reach for the manual
+  // Import button because nothing on the page suggests anything is
+  // broken. The global banner is the always-visible hook for
+  // paused/error states regardless of which tab is active.
+  try { refreshAutoRefreshGlobalBanner(); } catch (e) { console.warn("auto-refresh global banner failed", e); }
   for (const fn of autoRefreshSubscribers) {
     try { fn(autoRefreshState); } catch (e) { console.warn("auto-refresh subscriber threw", e); }
   }
+}
+
+/** Render (or update) the always-visible global banner. Idempotent —
+ *  safe to call on every state change. The banner is injected once into
+ *  `<body>` and persists across tab switches so the user sees a clear
+ *  "Auto-refresh paused — Resume" prompt from any view. */
+function refreshAutoRefreshGlobalBanner() {
+  const s = autoRefreshState;
+  const visible = s.phase === "paused-permission" || s.phase === "error";
+
+  let $banner = document.getElementById("auto-refresh-global-banner");
+  if (!visible) {
+    if ($banner) $banner.remove();
+    return;
+  }
+  if (!$banner) {
+    $banner = document.createElement("div");
+    $banner.id = "auto-refresh-global-banner";
+    document.body.appendChild($banner);
+  }
+  const target = s.linkedTarget ? esc(s.linkedTarget) : "your linked save folder";
+  if (s.phase === "paused-permission") {
+    $banner.className = "auto-refresh-global-banner is-paused";
+    $banner.innerHTML = `
+      <span class="auto-refresh-global-dot" aria-hidden="true"></span>
+      <div class="auto-refresh-global-text">
+        <strong>Auto-refresh paused</strong>
+        <span>The browser dropped access to ${target}. One click reconnects — no need to re-pick the folder.</span>
+      </div>
+      <button class="btn-primary auto-refresh-global-cta" type="button" data-action="resume-auto-refresh">Resume auto-refresh</button>
+      <button class="auto-refresh-global-close" type="button" data-action="dismiss-auto-refresh-banner" aria-label="Dismiss until next state change">×</button>`;
+  } else {
+    $banner.className = "auto-refresh-global-banner is-error";
+    $banner.innerHTML = `
+      <span class="auto-refresh-global-dot" aria-hidden="true"></span>
+      <div class="auto-refresh-global-text">
+        <strong>Auto-refresh hit a snag</strong>
+        <span>Last check ${esc(relativeAgo(s.lastCheckedAt))} — will retry automatically. Click Retry to push it now.</span>
+      </div>
+      <button class="btn-primary auto-refresh-global-cta" type="button" data-action="resume-auto-refresh">Retry now</button>
+      <button class="auto-refresh-global-close" type="button" data-action="dismiss-auto-refresh-banner" aria-label="Dismiss until next state change">×</button>`;
+  }
+  // Honor a session-scoped dismiss flag so users who don't want the
+  // banner right now aren't nagged on every state ping. Cleared on
+  // page reload (we want a fresh check to surface a real problem).
+  if (window.__autoRefreshBannerDismissed) $banner.classList.add("is-hidden");
 }
 
 /** Re-paint the auto-refresh status pill that lives above the Recent
@@ -6931,6 +6994,18 @@ function wireAutoRefreshUI() {
     if (!e.target.closest('[data-action="resume-auto-refresh"]')) return;
     e.preventDefault();
     void resumeAutoRefresh({ fromButton: true });
+  });
+
+  // Dismiss button on the global banner — hides for the rest of the
+  // session. A new state transition (e.g. paused → ok → paused again)
+  // rebuilds the banner from scratch via refreshAutoRefreshGlobalBanner
+  // and we deliberately re-show it because that's a fresh problem.
+  document.addEventListener("click", (e) => {
+    if (!(e.target instanceof Element)) return;
+    if (!e.target.closest('[data-action="dismiss-auto-refresh-banner"]')) return;
+    e.preventDefault();
+    window.__autoRefreshBannerDismissed = true;
+    document.getElementById("auto-refresh-global-banner")?.remove();
   });
 
   // Opportunistic: any pointerdown / keydown counts as a user gesture,
@@ -7424,10 +7499,17 @@ async function commitParsedRuns(runs, sourceName, { silent, fileCount = 1 }) {
     try { evaluateMilestones(); } catch (e) { console.warn("milestones failed", e); }
   }
   // Victory celebration overlay — fires when 1–3 new wins land (covers a
-  // fresh run completing mid-session or a quick back-to-back). Skipped for
-  // demo data and large bulk imports (first-time import of 50+ runs should
-  // not trigger a celebration for each).
-  if (!wasDemo && newWins.length > 0 && newCompletedCount <= 3) {
+  // fresh run completing mid-session or a quick back-to-back). Skipped
+  // for demo data and bulk first-time imports.
+  //
+  // Gate is on *new wins*, not total new runs: a user who plays 4 games
+  // since last refresh (3 losses + 1 win) absolutely still wants their
+  // win celebrated. The "bulk first import" carve-out is now based on
+  // whether they had any prior runs at all — if they did, this is an
+  // incremental refresh and we celebrate; if they didn't, we assume the
+  // 50-run dump from their save folder is onboarding and stay quiet.
+  const hadPriorRuns = parsedRuns.length > newCompletedCount;
+  if (!wasDemo && newWins.length > 0 && newWins.length <= 3 && hadPriorRuns) {
     const streak = currentStreak(parsedRuns);
     const streakCount = streak.kind === "win" ? streak.count : 1;
     try { showVictoryCelebration(newWins[0], streakCount); } catch (e) { console.warn("victory celebration failed", e); }
@@ -10505,6 +10587,14 @@ const CHAR_META = (() => {
 })();
 
 function showVictoryCelebration(run, streakCount) {
+  // The old overlay slapped a 75 % dark backdrop over the entire app and
+  // trapped a small confetti canvas inside it. Stats updated behind a
+  // black wall and the celebration felt like a "you have a new email"
+  // modal instead of "you just won an STS2 run". This version is
+  // unboxed: confetti rains over the live page, a brief character-tinted
+  // edge flash gives the moment a punch, and the card sits as a toast
+  // near the bottom so the user can still see their new run appearing
+  // on the Overview stats behind it.
   document.getElementById("victory-overlay")?.remove();
 
   const meta = CHAR_META[run.character] || { label: capitalize(run.character || "Unknown"), color: "#d4af37" };
@@ -10519,22 +10609,26 @@ function showVictoryCelebration(run, streakCount) {
 
   const overlay = document.createElement("div");
   overlay.id = "victory-overlay";
+  // No `aria-modal` — the page content is still readable behind the
+  // celebration on purpose. The card is still a `dialog` so screen
+  // readers announce it, but focus is NOT trapped and the rest of the
+  // app stays interactive (Refresh / Import / tab nav all work).
   overlay.setAttribute("role", "dialog");
-  overlay.setAttribute("aria-modal", "true");
   overlay.setAttribute("aria-label", "Victory");
+  overlay.style.setProperty("--char-color", meta.color);
   overlay.innerHTML = `
-    <div class="victory-backdrop" id="victory-backdrop"></div>
+    <div class="victory-flash" aria-hidden="true"></div>
     <div class="victory-confetti-canvas" aria-hidden="true"></div>
-    <div class="victory-card" role="document" style="--char-color:${esc(meta.color)}">
+    <div class="victory-card" role="document">
       <div class="victory-trophy" aria-hidden="true">🏆</div>
       <div class="victory-eyebrow">Victory</div>
       <h2 class="victory-title">${esc(meta.label)}${esc(ascStr)}</h2>
       ${floorStr ? `<p class="victory-floor">${esc(floorStr)}</p>` : ""}
       ${streakHtml}
       <button type="button" class="victory-dismiss" id="victory-dismiss">Continue</button>
-    </div>
-    <div class="victory-progress" role="progressbar" aria-label="Auto-closes in 6 seconds" aria-valuenow="100">
-      <div class="victory-progress-fill"></div>
+      <div class="victory-progress" role="progressbar" aria-label="Auto-closes in 6 seconds" aria-valuenow="100">
+        <div class="victory-progress-fill"></div>
+      </div>
     </div>`;
   document.body.appendChild(overlay);
 
@@ -10549,33 +10643,39 @@ function showVictoryCelebration(run, streakCount) {
     setTimeout(() => overlay.remove(), 450);
   };
 
-  const timer = setTimeout(dismiss, 6000);
+  // Slightly longer auto-close because the card is non-blocking now —
+  // user can keep scrolling stats behind it. 7s is plenty.
+  const timer = setTimeout(dismiss, 7000);
 
   document.getElementById("victory-dismiss")?.addEventListener("click", () => { clearTimeout(timer); dismiss(); });
-  document.getElementById("victory-backdrop")?.addEventListener("click", () => { clearTimeout(timer); dismiss(); });
 
   const onKey = (e) => { if (e.key === "Escape") { clearTimeout(timer); dismiss(); document.removeEventListener("keydown", onKey); } };
   document.addEventListener("keydown", onKey);
 
-  // Focus the dismiss button for keyboard accessibility
-  setTimeout(() => document.getElementById("victory-dismiss")?.focus(), 100);
+  setTimeout(() => document.getElementById("victory-dismiss")?.focus({ preventScroll: true }), 100);
 }
 
 function spawnConfetti(canvas, accentColor) {
   if (!canvas) return;
   const COLORS = [accentColor || "#d4af37", "#ff6b1a", "#7b61ff", "#6dd97c", "#ff4f4f", "#61c4d9", "#fff8e7", "#d4af37"];
-  for (let i = 0; i < 64; i++) {
+  // Denser drop (~2.2× pieces) and wider stagger so the rain feels
+  // continuous for the full 7-second window. Each piece picks its own
+  // velocity, drift, rotation, and shape so the eye doesn't lock onto
+  // a repeating pattern.
+  const COUNT = 140;
+  for (let i = 0; i < COUNT; i++) {
     const el = document.createElement("div");
     el.className = "victory-confetti-piece";
-    const left = 4 + Math.random() * 92;
-    const delay = Math.random() * 2.8;
-    const dur   = 2.4 + Math.random() * 2.4;
-    const w     = 5 + Math.random() * 9;
-    const h     = w * (0.4 + Math.random() * 1.1);
-    const rot   = -360 + Math.random() * 720;
-    const drift = -50 + Math.random() * 100;
+    const left  = -2 + Math.random() * 104;
+    const delay = Math.random() * 3.4;
+    const dur   = 2.6 + Math.random() * 3.4;
+    const w     = 5 + Math.random() * 11;
+    const h     = w * (0.4 + Math.random() * 1.2);
+    const rot   = -540 + Math.random() * 1080;
+    const drift = -90 + Math.random() * 180;
     const color = COLORS[Math.floor(Math.random() * COLORS.length)];
-    const radius = Math.random() > 0.45 ? "2px" : "50%";
+    const shape = Math.random();
+    const radius = shape > 0.7 ? "50%" : (shape > 0.4 ? "2px" : "1px");
     el.style.cssText = `left:${left}%;animation-delay:${delay}s;animation-duration:${dur}s;width:${w}px;height:${h}px;background:${color};border-radius:${radius};--rot:${rot}deg;--drift:${drift}px;`;
     canvas.appendChild(el);
   }
