@@ -13146,6 +13146,107 @@ body.coop-lobby-beta-off [data-tab="coop"] .coop-page {
   .coop-filter-actions { align-self: flex-start; }
   /* Discovery banner: prevent close button overlapping the eyebrow pill */
   .coop-discovery-banner-eyebrow { padding-right: 36px; }
+  .coop-search { width: 100%; }
+  .coop-search-input { width: 100%; }
+}
+
+/* ==========================================================================
+   Co-op v167: "Find anyone" search input + match rationale
+   --------------------------------------------------------------------------
+   Used in three places: above Open Run Lobbies (inside .coop-filter-bar),
+   above Best Matches (.coop-filter-bar--compact), and above the Players
+   Looking Now feed (.coop-search--feed). Shares the same input style so
+   the whole co-op tab reads as one consistent search surface.
+   ========================================================================== */
+.coop-search {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  background: rgba(255, 255, 255, 0.02);
+  min-width: 220px;
+  max-width: 360px;
+  flex: 0 1 auto;
+  transition: border-color 120ms, background 120ms, box-shadow 120ms;
+}
+.coop-search:hover {
+  border-color: rgba(212, 175, 55, 0.45);
+}
+.coop-search:focus-within {
+  border-color: rgba(212, 175, 55, 0.75);
+  background: rgba(212, 175, 55, 0.06);
+  box-shadow: 0 0 0 3px rgba(212, 175, 55, 0.12);
+}
+.coop-search-icon {
+  flex-shrink: 0;
+  color: var(--text-2);
+  opacity: 0.7;
+}
+.coop-search:focus-within .coop-search-icon {
+  color: var(--gold, #d4af37);
+  opacity: 1;
+}
+.coop-search-input {
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text-1);
+  font-size: 12.5px;
+  padding: 1px 0;
+  width: 100%;
+  min-width: 0;
+  /* Use the page font so the search input doesn't introduce a
+     Times-style serif (Safari default). */
+  font-family: inherit;
+}
+.coop-search-input::placeholder {
+  color: var(--text-2);
+  opacity: 0.7;
+}
+.coop-search-input::-webkit-search-decoration,
+.coop-search-input::-webkit-search-cancel-button,
+.coop-search-input::-webkit-search-results-button,
+.coop-search-input::-webkit-search-results-decoration {
+  -webkit-appearance: none;
+}
+.coop-filter-bar--compact {
+  margin-bottom: 8px;
+}
+/* Feed search lives in the section header, not a filter bar. Give it
+   its own row so the layout stays clean even when the toggle button
+   (Show all / Hide) is on the same header row. */
+.coop-search--feed {
+  display: flex;
+  width: 100%;
+  margin-top: 8px;
+  max-width: 100%;
+}
+
+/* "Why this match" rationale line on Best Matches cards. */
+.coop-rec-rationale {
+  margin: 4px 0 0;
+  padding: 6px 9px;
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: var(--text-2);
+  background: rgba(212, 175, 55, 0.06);
+  border-left: 2px solid rgba(212, 175, 55, 0.4);
+  border-radius: 0 6px 6px 0;
+}
+.coop-rec-rationale-key {
+  color: var(--gold, #d4af37);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  margin-right: 4px;
+}
+.coop-rec-card--strong .coop-rec-rationale {
+  background: rgba(80, 220, 120, 0.07);
+  border-left-color: rgba(80, 220, 120, 0.45);
+}
+.coop-rec-card--strong .coop-rec-rationale-key {
+  color: rgba(120, 235, 150, 0.95);
 }
 
 /* ==========================================================================

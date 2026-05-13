@@ -50,6 +50,11 @@ let lobbySort = "best";
 let lobbyCompact = (() => { try { return localStorage.getItem("coop_compact") === "1"; } catch { return false; } })();
 let lobbiesVisible = CARDS_PAGE;
 let recsVisible = CARDS_PAGE;
+// Free-text search across lobby title/host/note/discord and across Best
+// Matches persona/note. Pure client filter — never hits the network so it
+// stays snappy even when capped server payloads land 200+ rows.
+let lobbySearchQuery = "";
+let recsSearchQuery = "";
 
 // =========================================================================
 // Public API
@@ -254,7 +259,12 @@ function render(state) {
   renderRecommendations(state);
 
   const $count = document.getElementById("online-count");
-  if ($count) $count.textContent = String(state.activePlayerFeed?.length || 0);
+  if ($count) {
+    const total = Number.isFinite(state.playersOnlineCount)
+      ? state.playersOnlineCount
+      : (state.activePlayerFeed?.length || 0);
+    $count.textContent = String(total);
+  }
 }
 
 function renderAgeLabels(state) {
@@ -274,10 +284,21 @@ function renderAgeLabels(state) {
 function renderBarStats(state) {
   const lobbies = state.openLobbies || [];
   const feed = state.activePlayerFeed || [];
-  const lookingCount = feed.filter((p) => p.status === "looking").length;
-  const activeCount = feed.length;
+  // Prefer server-provided TRUE totals when present so the bar still
+  // reads "8,431 active" even though we cap the feed payload to ~200
+  // rows. Falls back to the local list size for backwards compat with
+  // older /coop/state bundles.
+  const lobbiesTotal = Number.isFinite(state.openLobbiesTotalCount)
+    ? state.openLobbiesTotalCount
+    : lobbies.length;
+  const lookingCount = Number.isFinite(state.lookingNowCount)
+    ? state.lookingNowCount
+    : feed.filter((p) => p.status === "looking").length;
+  const activeCount = Number.isFinite(state.playersOnlineCount)
+    ? state.playersOnlineCount
+    : feed.length;
 
-  setBarStat("coop-stat-lobbies", lobbies.length, { highlightOnNonZero: true });
+  setBarStat("coop-stat-lobbies", lobbiesTotal, { highlightOnNonZero: true });
   setBarStat("coop-stat-looking", lookingCount);
   setBarStat("coop-stat-active", activeCount);
 }
@@ -676,9 +697,19 @@ function renderLobbies(state) {
 
   const slice = filtered.slice(0, lobbiesVisible);
   const remaining = filtered.length - slice.length;
+  // Server may have capped the open-lobbies payload at the top N most
+  // relevant hosts; if so, surface the true total so users know what
+  // they're browsing.
+  const trueTotal = Number.isFinite(state.openLobbiesTotalCount)
+    ? state.openLobbiesTotalCount
+    : allLobbies.length;
+  const capActive = trueTotal > allLobbies.length;
   let html = "";
-  if (filtered.length < allLobbies.length) {
-    html += `<p class="coop-filter-stats">Showing ${Math.min(slice.length, filtered.length)} of ${filtered.length} matching (${allLobbies.length} total)</p>`;
+  if (filtered.length < allLobbies.length || capActive) {
+    const matchingFrom = capActive
+      ? `${filtered.length} matching from top ${allLobbies.length} (of ${trueTotal} total)`
+      : `${filtered.length} of ${allLobbies.length} matching`;
+    html += `<p class="coop-filter-stats">Showing ${Math.min(slice.length, filtered.length)} · ${matchingFrom}</p>`;
   }
   html += slice.map((l) => renderLobbyCard(l, mySid, pendingByLobby, state, lobbyCompact)).join("");
   if (remaining > 0) {
@@ -750,12 +781,78 @@ function lobbyMatchesFilters(lobby) {
     const v = lobby.voicePreference || "";
     if (v && v !== voice) return false;
   }
+  if (lobbySearchQuery) {
+    if (!lobbyMatchesText(lobby, lobbySearchQuery)) return false;
+  }
   return true;
+}
+
+/**
+ * Free-text "find anyone" matcher across the fields a user might
+ * actually type — title, host name, note, Discord handle, character
+ * names, and even bare ascension digits ("8" matches lobbies with
+ * A8 in their range). Case-insensitive. Tokenized so "a10 heart"
+ * narrows to lobbies that match BOTH tokens.
+ */
+function lobbyMatchesText(lobby, query) {
+  const tokens = String(query).toLowerCase().split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return true;
+  const haystack = [
+    lobby.title,
+    lobby.hostPersonaName,
+    lobby.note,
+    lobby.discordHandle,
+    lobby.goal,
+    goalLabel(lobby.goal),
+    ascensionLabel(lobby.ascensionMin, lobby.ascensionMax),
+    voiceLabel(lobby.voicePreference),
+    ...(lobby.preferredCharacters || []),
+  ].filter(Boolean).join(" ").toLowerCase();
+  return tokens.every((t) => {
+    if (haystack.includes(t)) return true;
+    // Bare ascension digits — "8" should match a lobby whose
+    // [ascensionMin..ascensionMax] range covers 8.
+    const ascDigit = parseInt(t.replace(/^a/, ""), 10);
+    if (Number.isFinite(ascDigit)) {
+      const lo = lobby.ascensionMin ?? 0;
+      const hi = lobby.ascensionMax ?? GAME_CONFIG.maxAscension;
+      if (ascDigit >= lo && ascDigit <= hi) return true;
+    }
+    return false;
+  });
+}
+
+function recMatchesText(rec, query) {
+  const tokens = String(query).toLowerCase().split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return true;
+  const haystack = [
+    rec.personaName,
+    rec.note,
+    rec.goal,
+    goalLabel(rec.goal),
+    ascensionLabel(rec.ascensionMin, rec.ascensionMax),
+    voiceLabel(rec.voicePreference),
+    rec.hasDiscord ? "discord" : "",
+    rec.label,
+  ].filter(Boolean).join(" ").toLowerCase();
+  return tokens.every((t) => {
+    if (haystack.includes(t)) return true;
+    const ascDigit = parseInt(t.replace(/^a/, ""), 10);
+    if (Number.isFinite(ascDigit)) {
+      const lo = rec.ascensionMin ?? 0;
+      const hi = rec.ascensionMax ?? GAME_CONFIG.maxAscension;
+      if (ascDigit >= lo && ascDigit <= hi) return true;
+    }
+    return false;
+  });
 }
 
 function clearLobbyFilters() {
   lobbyFilters = { goal: "", asc: "", voice: "" };
+  lobbySearchQuery = "";
   lobbiesVisible = CARDS_PAGE;
+  const $search = document.getElementById("coop-lobby-search");
+  if ($search) $search.value = "";
   syncChipUI();
   renderLobbies(lastState);
 }
@@ -833,9 +930,10 @@ function renderRecommendations(state) {
   const $list = document.getElementById("coop-recs-list");
   const $count = document.getElementById("coop-recs-count");
   if (!$list || !$count) return;
-  const recs = state.recommendedMatches || [];
-  $count.textContent = String(recs.length);
-  if (recs.length === 0) {
+  ensureRecsSearchUI();
+  const allRecs = state.recommendedMatches || [];
+  $count.textContent = String(allRecs.length);
+  if (allRecs.length === 0) {
     $list.innerHTML = `
       <div class="coop-empty-card coop-empty-card--compact coop-empty-card--inline">
         <div class="coop-empty-card-text">
@@ -848,9 +946,32 @@ function renderRecommendations(state) {
       </div>`;
     return;
   }
+  const me = state.presence;
+  const recs = allRecs.filter((r) => recMatchesText(r, recsSearchQuery));
+  if (recs.length === 0) {
+    $list.innerHTML = `
+      <div class="coop-empty-card coop-empty-card--compact coop-empty-card--inline">
+        <div class="coop-empty-card-text">
+          <h4 class="coop-empty-title">No matches for &ldquo;${esc(recsSearchQuery)}&rdquo;</h4>
+          <p class="coop-empty-body">Try a different name, ascension number, or character.</p>
+        </div>
+        <button class="btn-ghost btn-sm" type="button" id="coop-recs-clear-search">Clear search</button>
+      </div>`;
+    document.getElementById("coop-recs-clear-search")?.addEventListener("click", () => {
+      recsSearchQuery = "";
+      const $s = document.getElementById("coop-recs-search");
+      if ($s) $s.value = "";
+      renderRecommendations(lastState);
+    });
+    return;
+  }
   const slice = recs.slice(0, recsVisible);
   const remaining = recs.length - slice.length;
-  let html = slice.map(renderRecCard).join("");
+  let html = "";
+  if (recsSearchQuery) {
+    html += `<p class="coop-filter-stats">Showing ${slice.length} of ${recs.length} matching &ldquo;${esc(recsSearchQuery)}&rdquo;</p>`;
+  }
+  html += slice.map((r) => renderRecCard(r, me)).join("");
   if (remaining > 0) {
     html += `<div class="coop-load-more"><button class="coop-load-more-btn" id="coop-load-more-recs">Show ${Math.min(CARDS_PAGE, remaining)} more <span class="coop-load-more-count">(${remaining} left)</span></button></div>`;
   }
@@ -861,7 +982,90 @@ function renderRecommendations(state) {
   });
 }
 
-function renderRecCard(rec) {
+/**
+ * Mount a slim search input above the Best Matches list the first
+ * time recs render. Idempotent — repeat calls bail out.
+ */
+function ensureRecsSearchUI() {
+  if (document.getElementById("coop-recs-search-bar")) return;
+  const $section = document.getElementById("coop-recs-section");
+  const $list = document.getElementById("coop-recs-list");
+  if (!$section || !$list) return;
+  const wrap = document.createElement("div");
+  wrap.id = "coop-recs-search-bar";
+  wrap.className = "coop-filter-bar coop-filter-bar--compact";
+  wrap.innerHTML = `
+    <label class="coop-search" for="coop-recs-search">
+      <svg class="coop-search-icon" width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+        <circle cx="7" cy="7" r="4.5" stroke="currentColor" stroke-width="1.6"/>
+        <path d="M10.5 10.5 L13.5 13.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+      </svg>
+      <input
+        id="coop-recs-search"
+        type="search"
+        class="coop-search-input"
+        placeholder="Search matches (name, Discord, A8…)"
+        autocomplete="off"
+        spellcheck="false"
+        aria-label="Search best matches"
+      />
+    </label>`;
+  $section.insertBefore(wrap, $list);
+  const $input = wrap.querySelector("#coop-recs-search");
+  if ($input) {
+    let t = null;
+    $input.addEventListener("input", () => {
+      clearTimeout(t);
+      t = setTimeout(() => {
+        recsSearchQuery = String($input.value || "").trim();
+        recsVisible = CARDS_PAGE;
+        renderRecommendations(lastState);
+      }, 120);
+    });
+  }
+}
+
+/**
+ * Build a short, human "why this match" rationale from the rec and the
+ * current user's presence. Returns 2–3 concrete reasons separated by
+ * `·`, e.g. "Same goal · A8–10 overlap · Voice · Discord". Falls back
+ * to a neutral string when no reasons stand out so the UI is always
+ * filled.
+ */
+function rationaleFor(rec, me) {
+  if (!rec) return "";
+  const reasons = [];
+  const myGoal = me?.goal || "";
+  const theirGoal = rec.goal || "";
+  if (myGoal && theirGoal && (myGoal === theirGoal || myGoal === "any" || theirGoal === "any")) {
+    reasons.push(myGoal === "any" || theirGoal === "any" ? "Any goal" : `Same goal · ${goalLabel(theirGoal)}`);
+  } else if (theirGoal) {
+    reasons.push(goalLabel(theirGoal));
+  }
+  const myLo = me?.ascensionMin ?? 0, myHi = me?.ascensionMax ?? GAME_CONFIG.maxAscension;
+  const tLo = rec.ascensionMin ?? 0, tHi = rec.ascensionMax ?? GAME_CONFIG.maxAscension;
+  if (myLo <= tHi && tLo <= myHi) {
+    const lo = Math.max(myLo, tLo);
+    const hi = Math.min(myHi, tHi);
+    reasons.push(lo === hi ? `A${lo} overlap` : `A${lo}–A${hi} overlap`);
+  }
+  const myVoice = me?.voicePreference;
+  const tVoice = rec.voicePreference;
+  if (myVoice && tVoice) {
+    if (myVoice === tVoice && myVoice === "yes") reasons.push("Voice chat");
+    else if (myVoice === tVoice && myVoice === "no") reasons.push("No voice");
+    else if (myVoice === "optional" || tVoice === "optional") reasons.push("Voice flexible");
+  }
+  if (rec.hasDiscord && (myVoice === "yes" || myVoice === "optional")) {
+    reasons.push("Discord ready");
+  }
+  if (reasons.length === 0) {
+    return statusLabel(rec.status || "looking");
+  }
+  return reasons.slice(0, 3).join(" · ");
+}
+
+function renderRecCard(rec, me) {
   const cls = ({
     "Strong match": "coop-rec-card--strong",
     "Good match": "coop-rec-card--good",
@@ -881,6 +1085,7 @@ function renderRecCard(rec) {
     rec.voicePreference ? `<span class="coop-badge coop-badge--voice">${esc(voiceLabel(rec.voicePreference))}</span>` : "",
     rec.hasDiscord ? `<span class="coop-badge coop-badge--discord">Discord</span>` : "",
   ].filter(Boolean).join("");
+  const rationale = rationaleFor(rec, me);
   return `
     <article class="coop-rec-card ${cls}" data-rec-sid="${esc(rec.steamId)}">
       <div class="coop-rec-head">
@@ -891,6 +1096,7 @@ function renderRecCard(rec) {
         </div>
       </div>
       <div class="coop-badge-row">${badges}</div>
+      ${rationale ? `<p class="coop-rec-rationale" title="Why this match"><span class="coop-rec-rationale-key">Match:</span> ${esc(rationale)}</p>` : ""}
       ${rec.note ? `<p class="coop-lobby-note">&ldquo;${esc(rec.note)}&rdquo;</p>` : ""}
       <div class="coop-lobby-actions">
         <button class="btn-primary btn-sm" data-coop-action="invite-rec" data-id="${esc(rec.steamId)}" data-name="${esc(rec.personaName)}">Invite</button>
@@ -910,6 +1116,21 @@ function wireFilterBar() {
   bar.className = "coop-filter-bar";
   bar.id = "coop-lobby-filter-bar";
   bar.innerHTML = `
+    <label class="coop-search" for="coop-lobby-search">
+      <svg class="coop-search-icon" width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+        <circle cx="7" cy="7" r="4.5" stroke="currentColor" stroke-width="1.6"/>
+        <path d="M10.5 10.5 L13.5 13.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+      </svg>
+      <input
+        id="coop-lobby-search"
+        type="search"
+        class="coop-search-input"
+        placeholder="Search lobbies (name, Discord, A8, Defect…)"
+        autocomplete="off"
+        spellcheck="false"
+        aria-label="Search open run lobbies"
+      />
+    </label>
     <div class="coop-filter-row">
       <div class="coop-chip-group" id="coop-chips-goal" role="group" aria-label="Filter by goal">
         <button type="button" class="coop-chip is-active" data-coop-filter="goal" data-value="">All</button>
@@ -956,6 +1177,23 @@ function wireFilterBar() {
   if ($header && $list) $section.insertBefore(bar, $list);
   else $section.prepend(bar);
 
+  // Wire the search input — debounce light so each keystroke doesn't
+  // re-render the whole list. A 120 ms debounce feels instant but
+  // skips work between fast keystrokes.
+  const $search = bar.querySelector("#coop-lobby-search");
+  if ($search) {
+    let t = null;
+    $search.addEventListener("input", () => {
+      clearTimeout(t);
+      t = setTimeout(() => {
+        lobbySearchQuery = String($search.value || "").trim();
+        lobbiesVisible = CARDS_PAGE;
+        syncChipUI();
+        renderLobbies(lastState);
+      }, 120);
+    });
+  }
+
   // Chip clicks (includes Clear button)
   bar.addEventListener("click", (e) => {
     if (e.target.closest("#coop-filter-clear")) {
@@ -1000,7 +1238,11 @@ function syncChipUI() {
       chip.classList.toggle("is-active", chip.dataset.value === lobbyFilters[dim]);
     });
   });
-  const hasActive = lobbyFilters.goal !== "" || lobbyFilters.asc !== "" || lobbyFilters.voice !== "";
+  const hasActive =
+    lobbyFilters.goal !== "" ||
+    lobbyFilters.asc !== "" ||
+    lobbyFilters.voice !== "" ||
+    lobbySearchQuery !== "";
   const $clear = document.getElementById("coop-filter-clear");
   if ($clear) $clear.hidden = !hasActive;
 }

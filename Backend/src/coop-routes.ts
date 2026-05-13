@@ -378,7 +378,7 @@ async function buildStateBundle(
   //   - exclude the user's own lobby (it's surfaced as `lobby`)
   //   - status === "open"
   const now = Date.now();
-  const openLobbies = allLobbies.filter((l) => {
+  const openLobbiesAll = allLobbies.filter((l) => {
     if (l.status !== "open") return false;
     if (l.hostSteamId === steamID) return false;
     const host = allPresence.find((p) => p.steamId === l.hostSteamId);
@@ -406,15 +406,24 @@ async function buildStateBundle(
     );
     return m.length > 0 ? labelToNumeric(m[0]!.label) : 0;
   };
-  openLobbies.sort((a, b) => {
+  openLobbiesAll.sort((a, b) => {
     const sa = scoreFor(a.hostSteamId);
     const sb = scoreFor(b.hostSteamId);
     if (sb !== sa) return sb - sa;
     return Date.parse(b.createdAt) - Date.parse(a.createdAt);
   });
 
+  // Cap the open-lobbies wire payload. At 8000 users the lobby count
+  // can grow into the hundreds; the client browses with sort+filter
+  // so anything past the top 50 by relevance is never seen. Future:
+  // a "show more" cursor for power users. For now the cap is the
+  // pragmatic shield against ballooning bundle size.
+  const OPEN_LOBBIES_CAP = 50;
+  const openLobbies = openLobbiesAll.slice(0, OPEN_LOBBIES_CAP);
+  const openLobbiesTotalCount = openLobbiesAll.length;
+
   // Active player feed: everyone fresh, capped to keep payload bounded.
-  const activePlayerFeed: CoopPresenceFeedRow[] = allPresence
+  const activePlayerFeedAll: CoopPresenceFeedRow[] = allPresence
     .map((p) => ({
       steamId: p.steamId,
       personaName: p.personaName,
@@ -442,10 +451,42 @@ async function buildStateBundle(
       return true;
     });
 
-  activePlayerFeed.sort((a, b) => {
+  activePlayerFeedAll.sort((a, b) => {
     if (a.isActive !== b.isActive) return a.isActive ? -1 : 1;
     return Date.parse(b.lastHeartbeatAt) - Date.parse(a.lastHeartbeatAt);
   });
+
+  // True totals — computed BEFORE the wire cap so the lobby bar stays
+  // accurate at any scale. The feed cap below is purely a payload-size
+  // shield (200 rows × ~250 bytes ≈ 50 KB on the wire vs. ~2 MB
+  // uncapped at 8000 users).
+  const playersOnlineCount = activePlayerFeedAll.filter((r) => r.isActive).length;
+  const lookingNowCount = activePlayerFeedAll.filter(
+    (r) => r.isActive && r.status === "looking",
+  ).length;
+  const pairedNowCount = activePlayerFeedAll.filter(
+    (r) => r.isActive && r.status === "paired",
+  ).length;
+
+  // Always keep the user's session partner in the feed even if the
+  // freshness cut would knock them out — otherwise the activity card
+  // can't render the partner's name.
+  const partnerSteamId =
+    mySession?.status === "active"
+      ? (mySession.playerSteamIds || []).find((sid) => sid !== steamID)
+      : undefined;
+
+  const ACTIVE_FEED_CAP = 200;
+  let activePlayerFeed = activePlayerFeedAll.slice(0, ACTIVE_FEED_CAP);
+  if (
+    partnerSteamId &&
+    !activePlayerFeed.some((r) => r.steamId === partnerSteamId)
+  ) {
+    const partnerRow = activePlayerFeedAll.find(
+      (r) => r.steamId === partnerSteamId,
+    );
+    if (partnerRow) activePlayerFeed = [partnerRow, ...activePlayerFeed];
+  }
 
   return {
     presence,
@@ -456,8 +497,12 @@ async function buildStateBundle(
     incomingJoinRequests,
     outgoingJoinRequests,
     openLobbies,
+    openLobbiesTotalCount,
     recommendedMatches,
     activePlayerFeed,
+    playersOnlineCount,
+    lookingNowCount,
+    pairedNowCount,
     serverTime: new Date(now).toISOString(),
   };
 }

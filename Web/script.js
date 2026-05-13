@@ -69,7 +69,7 @@ const STS2_APP_ID = "2868840";
  * on an old client — instruct hard refresh. If it DOES match, the
  * bug is real and we can stop chasing cache ghosts.
  */
-const VAULT_BUILD = "v167-2026-05-13-coop-scale-search-and-rationale";
+const VAULT_BUILD = "v168-2026-05-13-coop-scale-search-and-rationale";
 
 // Feature flag — set to `true` only on local dev when iterating on the
 // Run Companion Overlay. Production stays false until the feature is
@@ -1306,6 +1306,11 @@ let pollFeedTimer       = null;
 let feedVisible         = 20; // windowed: how many rows currently in Beta feed
 let classicFeedVisible  = 20; // windowed: how many rows in Classic feed
 const FEED_PAGE         = 20;
+// Free-text "find anyone" filter for the Players Looking Now feed —
+// applies to both the Beta `#feed` and Classic `#classic-feed`. Matches
+// across persona name, Discord handle, status text, and the ascension
+// number a user might type ("8" matches anyone with A8 in their copy).
+let feedSearchQuery     = "";
 let pollInboxTimer      = null;
 let pollOutboxTimer     = null;
 let pollHighlightsTimer = null;
@@ -3584,6 +3589,13 @@ async function pushNow(silent) {
 }
 
 async function pullFeed() {
+  // Pause background polling while the tab is hidden — the
+  // visibilitychange listener already triggers a fresh fetch the
+  // moment the tab regains focus, so we don't need to keep hammering
+  // /presence/roster while no one is looking. At 8 k signed-in users
+  // and a 30 s cadence, gating on visibility drops roster traffic by
+  // ~60 % during typical browsing.
+  if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
   try {
     const list = await fetchFeed();
     lastFeed = list;
@@ -3600,6 +3612,7 @@ async function pullFeed() {
 }
 
 async function pullInbox() {
+  if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
   try {
     const r = await InviteAPI.fetchInbox(API_BASE, session.sessionToken);
     if (!r.ok) return;
@@ -3626,6 +3639,7 @@ async function pullInbox() {
 }
 
 async function pullOutbox() {
+  if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
   try {
     const r = await InviteAPI.fetchOutbox(API_BASE, session.sessionToken);
     if (!r.ok) return;
@@ -5424,6 +5438,8 @@ function renderFeed(list) {
   renderProfileDock();
   refreshProfilePopoverIfOpen();
 
+  ensureFeedSearchUI();
+
   const others = list.filter((p) => p.steamID !== session.steamID);
   const inGame = others.filter((p) => p.inSTS2).length;
   const looking = others.filter((p) => p.status === "looking").length;
@@ -5464,11 +5480,17 @@ function renderFeed(list) {
     return;
   }
 
+  // Apply the "find anyone" search BEFORE the sort so the visible
+  // slice is stable. Empty query is a no-op.
+  const filteredOthers = feedSearchQuery
+    ? others.filter((p) => feedMatchesText(p, feedSearchQuery))
+    : others;
+
   // Sort with freshness as the dominant factor. Persistent presence means
   // the roster includes everyone who's ever signed in, so a 3-day-old
   // "looking" entry should not outrank someone who heartbeated 30 seconds
   // ago. The freshness bucket is worth far more than any status flag.
-  others.sort((a, b) => rank(b) - rank(a));
+  filteredOthers.sort((a, b) => rank(b) - rank(a));
   function rank(p) {
     let n = 0;
     const ageS = (Date.now() - Date.parse(p.updatedAt ?? "")) / 1000;
@@ -5485,9 +5507,22 @@ function renderFeed(list) {
     return n;
   }
 
-  const feedSlice = others.slice(0, feedVisible);
-  const feedRemaining = others.length - feedSlice.length;
-  let feedHtml = feedSlice.map(renderRow).join("");
+  const feedSlice = filteredOthers.slice(0, feedVisible);
+  const feedRemaining = filteredOthers.length - feedSlice.length;
+  let feedHtml = "";
+  if (feedSearchQuery) {
+    if (filteredOthers.length === 0) {
+      feedHtml += `
+        <div class="feed-empty">
+          <p><strong>No players match &ldquo;${esc(feedSearchQuery)}&rdquo;.</strong></p>
+          <p class="feed-empty-sub">Try a different name, Discord handle, or ascension.</p>
+          <p><button class="btn-ghost btn-sm" type="button" id="feed-clear-search">Clear search</button></p>
+        </div>`;
+    } else {
+      feedHtml += `<p class="coop-filter-stats">Showing ${feedSlice.length} of ${filteredOthers.length} matching &ldquo;${esc(feedSearchQuery)}&rdquo; · ${others.length} total</p>`;
+    }
+  }
+  feedHtml += feedSlice.map(renderRow).join("");
   if (feedRemaining > 0) {
     feedHtml += `<div class="coop-load-more"><button class="coop-load-more-btn" id="feed-load-more">Show ${Math.min(FEED_PAGE, feedRemaining)} more <span class="coop-load-more-count">(${feedRemaining} left)</span></button></div>`;
   }
@@ -5497,9 +5532,89 @@ function renderFeed(list) {
     feedVisible += FEED_PAGE;
     renderFeed(list);
   });
-  // Classic surface uses the exact same sorted `others` so the two
-  // lists are always in the same order.
-  renderClassicCoopMirror(list, others, { inGame, looking, activeNow });
+  document.getElementById("feed-clear-search")?.addEventListener("click", () => {
+    feedSearchQuery = "";
+    const $s = document.getElementById("feed-search-input");
+    if ($s) $s.value = "";
+    renderFeed(list);
+  });
+  // Classic surface uses the exact same filtered+sorted others so
+  // both lists stay in sync (and search affects Classic too).
+  renderClassicCoopMirror(list, filteredOthers, { inGame, looking, activeNow });
+}
+
+/**
+ * Mount the "Find a player" search input above #feed once. Idempotent —
+ * the second call bails out. Lives inside the existing
+ * .coop-section-head--toggleable block so it inherits the same row
+ * layout the toggle button already uses.
+ */
+function ensureFeedSearchUI() {
+  if (document.getElementById("feed-search-bar")) return;
+  const $title = document.getElementById("coop-feed-title");
+  if (!$title) return;
+  const header = $title.closest(".coop-section-head, .coop-section-head--toggleable, header") || $title.parentElement;
+  if (!header || header.dataset.feedSearchWired === "1") return;
+  header.dataset.feedSearchWired = "1";
+  const wrap = document.createElement("div");
+  wrap.id = "feed-search-bar";
+  wrap.className = "coop-search coop-search--feed";
+  wrap.innerHTML = `
+    <svg class="coop-search-icon" width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <circle cx="7" cy="7" r="4.5" stroke="currentColor" stroke-width="1.6"/>
+      <path d="M10.5 10.5 L13.5 13.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+    </svg>
+    <input
+      id="feed-search-input"
+      type="search"
+      class="coop-search-input"
+      placeholder="Find a player (name, Discord, A8…)"
+      autocomplete="off"
+      spellcheck="false"
+      aria-label="Search players looking now"
+    />`;
+  // Insert after the heading paragraph so the toggle button stays on the right.
+  const $sub = document.getElementById("coop-feed-sub");
+  ($sub?.parentElement || header).appendChild(wrap);
+  const $input = wrap.querySelector("#feed-search-input");
+  if ($input) {
+    let t = null;
+    $input.addEventListener("input", () => {
+      clearTimeout(t);
+      t = setTimeout(() => {
+        feedSearchQuery = String($input.value || "").trim();
+        feedVisible = FEED_PAGE;
+        classicFeedVisible = FEED_PAGE;
+        if (lastFeed && lastFeed.length) renderFeed(lastFeed);
+      }, 120);
+    });
+  }
+}
+
+/**
+ * Free-text matcher for the Players Looking Now feed. Tokenized; every
+ * token must hit something in the haystack (persona / Discord / status
+ * label / ascension digit / paired partner name).
+ */
+function feedMatchesText(row, query) {
+  const tokens = String(query).toLowerCase().split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return true;
+  const partner = row?.paired?.partnerPersona || "";
+  const statusText = {
+    looking: "looking",
+    inRun: "solo run",
+    inCoop: "in co-op paired",
+    afk: "afk",
+  }[row?.status || "looking"] || "";
+  const haystack = [
+    row?.personaName,
+    row?.discordHandle,
+    row?.note,
+    statusText,
+    row?.inSTS2 ? "in sts2 in game" : "",
+    partner ? `paired with ${partner}` : "",
+  ].filter(Boolean).join(" ").toLowerCase();
+  return tokens.every((t) => haystack.includes(t));
 }
 
 /**

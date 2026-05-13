@@ -226,6 +226,12 @@ export interface RecommendedMatch {
 /**
  * Bundled response for `GET /coop/state`. One round-trip per poll keeps
  * the co-op tab snappy and rate-limit-friendly under high user counts.
+ *
+ * `activePlayerFeed` and `openLobbies` are payload-capped at the server
+ * so the wire size stays bounded even when 8k users are online. The
+ * `*TotalCount` / `playersOnlineCount` / `lookingNowCount` fields
+ * carry the true totals so the lobby bar still reads accurately, and
+ * the renderer can show "Showing 200 of 4,500" when the cap kicks in.
  */
 export interface CoopStateBundle {
   presence: CoopPresence;
@@ -236,8 +242,16 @@ export interface CoopStateBundle {
   incomingJoinRequests: JoinRequest[];
   outgoingJoinRequests: JoinRequest[];
   openLobbies: RunLobby[];
+  /** Total count of OPEN lobbies before the payload cap was applied. */
+  openLobbiesTotalCount?: number;
   recommendedMatches: RecommendedMatch[];
   activePlayerFeed: CoopPresenceFeedRow[];
+  /** Live presence rows (active, not hidden as stale) — true total. */
+  playersOnlineCount?: number;
+  /** Active rows whose status === "looking" — true total. */
+  lookingNowCount?: number;
+  /** Active rows currently paired — true total. */
+  pairedNowCount?: number;
   serverTime: string;
 }
 
