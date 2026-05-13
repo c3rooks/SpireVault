@@ -1,4 +1,4 @@
-// coop-lobbies.js — v11 (Co-op Lobby Beta surface)
+// coop-lobbies.js — v12 (Co-op Lobby Beta surface)
 // =========================================================================
 // Drives the Co-op Lobby Beta surface:
 //   A. Compact command bar with 3 stats + CTAs (Post a Run, Quick Match,
