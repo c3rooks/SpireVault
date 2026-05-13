@@ -46,6 +46,18 @@ html, body {
   scroll-behavior: smooth;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+  /* Lock the horizontal axis. The hero perspective transform, the
+     floating presence card, and the background grid all sit just
+     inside the viewport on narrow mobile widths — on iOS Safari that
+     was enough to let the page pan sideways and expose dark space on
+     the right edge. `overflow-x: clip` stops the pan without
+     creating a new scroll container (so `position: sticky` on .nav
+     still works and anchor jumps stay smooth). `100%` widths are a
+     defence-in-depth belt: even if some descendant tries to size
+     itself to `100vw` and triggers iOS Safari's scrollbar-aware
+     viewport math, it can't pull the body wider than its parent. */
+  max-width: 100%;
+  overflow-x: clip;
 }
 
 a { color: var(--accent-hi); text-decoration: none; }
