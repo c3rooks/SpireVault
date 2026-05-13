@@ -69,7 +69,7 @@ const STS2_APP_ID = "2868840";
  * on an old client — instruct hard refresh. If it DOES match, the
  * bug is real and we can stop chasing cache ghosts.
  */
-const VAULT_BUILD = "v166-2026-05-13-victory-confetti-and-auto-refresh-banner";
+const VAULT_BUILD = "v167-2026-05-13-coop-scale-search-and-rationale";
 
 // Feature flag — set to `true` only on local dev when iterating on the
 // Run Companion Overlay. Production stays false until the feature is
@@ -11502,6 +11502,13 @@ function refreshCompareBar() {
   }
 }
 
+// STS2 ascension ceiling. Slay the Spire 2 caps ascension at A10 (vs
+// STS1's A20), so the Recent Runs filter buckets and bucket-membership
+// logic both treat A10 as the maximum. Kept local to the filter
+// renderer instead of imported from `coop-lobbies.js` so the Recent
+// Runs view never picks up a circular dependency on co-op code.
+const STS2_MAX_ASCENSION = 10;
+
 function applyRunFilters(runs) {
   const q = (runFilters.search || "").toLowerCase().trim();
   return runs.filter((r) => {
@@ -11509,10 +11516,15 @@ function applyRunFilters(runs) {
     if (runFilters.outcome === "wins" && !r.won) return false;
     if (runFilters.outcome === "losses" && r.won) return false;
     if (runFilters.ascensionTier !== "all") {
-      const a = Number.isFinite(r.ascension) ? r.ascension : -1;
-      if (runFilters.ascensionTier === "low"  && !(a >= 0 && a <= 4))  return false;
-      if (runFilters.ascensionTier === "mid"  && !(a >= 5 && a <= 14)) return false;
-      if (runFilters.ascensionTier === "high" && !(a >= 15)) return false;
+      // Clamp legacy / out-of-range ascensions into the STS2 ladder so
+      // a stray A20 save from a STS1-leftover importer still buckets
+      // cleanly into the top tier instead of vanishing from results.
+      const raw = Number.isFinite(r.ascension) ? r.ascension : -1;
+      const a = raw < 0 ? -1 : Math.min(STS2_MAX_ASCENSION, raw);
+      if (runFilters.ascensionTier === "a0"   && !(a === 0))             return false;
+      if (runFilters.ascensionTier === "low"  && !(a >= 1 && a <= 4))    return false;
+      if (runFilters.ascensionTier === "mid"  && !(a >= 5 && a <= 8))    return false;
+      if (runFilters.ascensionTier === "high" && !(a >= 9 && a <= STS2_MAX_ASCENSION)) return false;
     }
     if (q) {
       const hay = [r.character, r.seed, r.sourceFile, r.won ? "victory win" : "defeat loss"]
@@ -11524,11 +11536,17 @@ function applyRunFilters(runs) {
 }
 
 const RUN_FILTER_CHARACTERS = ["ironclad", "silent", "defect", "regent", "necrobinder"];
+// STS2 ascension buckets: A0 is the default "any character can pick it"
+// entry point so it stands alone; A1–A4 covers the early climb;
+// A5–A8 the mid climb; A9–A10 is the high-asc bucket where the meta
+// sharpens. A11+ is impossible in STS2 — the clamp in applyRunFilters
+// folds any rogue legacy save into the top bucket.
 const RUN_FILTER_TIERS = [
   { id: "all",  label: "All Asc" },
-  { id: "low",  label: "A0–A4" },
-  { id: "mid",  label: "A5–A14" },
-  { id: "high", label: "A15+"  },
+  { id: "a0",   label: "A0"      },
+  { id: "low",  label: "A1–A4"   },
+  { id: "mid",  label: "A5–A8"   },
+  { id: "high", label: "A9–A10"  },
 ];
 const RUN_FILTER_OUTCOMES = [
   { id: "all",    label: "All" },
@@ -13697,7 +13715,11 @@ function drawShareCard(run, opts = {}) {
   const pillY = glyphY + 50;
   let pillX = titleX;
   if (Number.isFinite(run.ascension)) {
-    pillX += drawPill(ctx, pillX, pillY, `ASCENSION ${run.ascension}`, "#d4af37", true) + 8;
+    // Clamp to the STS2 ascension ceiling so any rogue legacy save
+    // imported with an STS1 value (A11–A20) never renders on a card
+    // that gets shared to Discord/Reddit/X.
+    const ascDisplay = Math.max(0, Math.min(STS2_MAX_ASCENSION, run.ascension));
+    pillX += drawPill(ctx, pillX, pillY, `ASCENSION ${ascDisplay}`, "#d4af37", true) + 8;
   }
   if (Number.isFinite(run.floorReached)) {
     pillX += drawPill(ctx, pillX, pillY, `FLOOR ${run.floorReached}`, "#9aa3b2", false) + 8;
