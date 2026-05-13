@@ -7317,6 +7317,7 @@ async function commitParsedRuns(runs, sourceName, { silent, fileCount = 1 }) {
   // surfacing it in the "N new runs from disk" toast would feel wrong
   // (the count wouldn't match what showed up in the stats).
   const newCompletedCount = completedRuns.filter((r) => !previousIds.has(r.id)).length;
+  const newWins = completedRuns.filter((r) => !previousIds.has(r.id) && r.won === true);
   // Real data has arrived — flip out of demo mode so the banner disappears.
   isDemoMode = false;
 
@@ -7421,6 +7422,15 @@ async function commitParsedRuns(runs, sourceName, { silent, fileCount = 1 }) {
     // that something cool happened even when their data view didn't
     // visibly change.
     try { evaluateMilestones(); } catch (e) { console.warn("milestones failed", e); }
+  }
+  // Victory celebration overlay — fires when 1–3 new wins land (covers a
+  // fresh run completing mid-session or a quick back-to-back). Skipped for
+  // demo data and large bulk imports (first-time import of 50+ runs should
+  // not trigger a celebration for each).
+  if (!wasDemo && newWins.length > 0 && newCompletedCount <= 3) {
+    const streak = currentStreak(parsedRuns);
+    const streakCount = streak.kind === "win" ? streak.count : 1;
+    try { showVictoryCelebration(newWins[0], streakCount); } catch (e) { console.warn("victory celebration failed", e); }
   }
   // Analytics: fire one ingest_complete event per real ingest. Demo
   // data is excluded because it would inflate counts. We tag silent
@@ -10476,6 +10486,99 @@ function showMilestoneToast(title, body, icon) {
   };
   $card.querySelector(".milestone-close").addEventListener("click", dismiss);
   setTimeout(dismiss, 5400);
+}
+
+// =========================================================================
+// Victory Celebration Overlay
+// =========================================================================
+const CHAR_META = (() => {
+  const map = {};
+  for (const c of [
+    { id: "ironclad",    label: "Ironclad",    color: "#e94560" },
+    { id: "silent",      label: "Silent",      color: "#6dd97c" },
+    { id: "defect",      label: "Defect",      color: "#4dc8ff" },
+    { id: "watcher",     label: "Watcher",     color: "#c084fc" },
+    { id: "regent",      label: "Regent",      color: "#fbbf24" },
+    { id: "necrobinder", label: "Necrobinder", color: "#a78bfa" },
+  ]) map[c.id] = c;
+  return map;
+})();
+
+function showVictoryCelebration(run, streakCount) {
+  document.getElementById("victory-overlay")?.remove();
+
+  const meta = CHAR_META[run.character] || { label: capitalize(run.character || "Unknown"), color: "#d4af37" };
+  const ascStr = run.ascension > 0 ? ` · A${run.ascension}` : "";
+  const floorStr = run.floorReached ? `Floor ${run.floorReached}` : "";
+  const streakHtml = streakCount >= 2 ? `
+    <div class="victory-streak">
+      <span class="victory-streak-flame" aria-hidden="true">🔥</span>
+      <span class="victory-streak-num">${streakCount}</span>
+      <span class="victory-streak-label">in a row</span>
+    </div>` : "";
+
+  const overlay = document.createElement("div");
+  overlay.id = "victory-overlay";
+  overlay.setAttribute("role", "dialog");
+  overlay.setAttribute("aria-modal", "true");
+  overlay.setAttribute("aria-label", "Victory");
+  overlay.innerHTML = `
+    <div class="victory-backdrop" id="victory-backdrop"></div>
+    <div class="victory-confetti-canvas" aria-hidden="true"></div>
+    <div class="victory-card" role="document" style="--char-color:${esc(meta.color)}">
+      <div class="victory-trophy" aria-hidden="true">🏆</div>
+      <div class="victory-eyebrow">Victory</div>
+      <h2 class="victory-title">${esc(meta.label)}${esc(ascStr)}</h2>
+      ${floorStr ? `<p class="victory-floor">${esc(floorStr)}</p>` : ""}
+      ${streakHtml}
+      <button type="button" class="victory-dismiss" id="victory-dismiss">Continue</button>
+    </div>
+    <div class="victory-progress" role="progressbar" aria-label="Auto-closes in 6 seconds" aria-valuenow="100">
+      <div class="victory-progress-fill"></div>
+    </div>`;
+  document.body.appendChild(overlay);
+
+  spawnConfetti(overlay.querySelector(".victory-confetti-canvas"), meta.color);
+
+  let dismissed = false;
+  const dismiss = () => {
+    if (dismissed) return;
+    dismissed = true;
+    overlay.classList.add("victory-exit");
+    overlay.addEventListener("animationend", () => overlay.remove(), { once: true });
+    setTimeout(() => overlay.remove(), 450);
+  };
+
+  const timer = setTimeout(dismiss, 6000);
+
+  document.getElementById("victory-dismiss")?.addEventListener("click", () => { clearTimeout(timer); dismiss(); });
+  document.getElementById("victory-backdrop")?.addEventListener("click", () => { clearTimeout(timer); dismiss(); });
+
+  const onKey = (e) => { if (e.key === "Escape") { clearTimeout(timer); dismiss(); document.removeEventListener("keydown", onKey); } };
+  document.addEventListener("keydown", onKey);
+
+  // Focus the dismiss button for keyboard accessibility
+  setTimeout(() => document.getElementById("victory-dismiss")?.focus(), 100);
+}
+
+function spawnConfetti(canvas, accentColor) {
+  if (!canvas) return;
+  const COLORS = [accentColor || "#d4af37", "#ff6b1a", "#7b61ff", "#6dd97c", "#ff4f4f", "#61c4d9", "#fff8e7", "#d4af37"];
+  for (let i = 0; i < 64; i++) {
+    const el = document.createElement("div");
+    el.className = "victory-confetti-piece";
+    const left = 4 + Math.random() * 92;
+    const delay = Math.random() * 2.8;
+    const dur   = 2.4 + Math.random() * 2.4;
+    const w     = 5 + Math.random() * 9;
+    const h     = w * (0.4 + Math.random() * 1.1);
+    const rot   = -360 + Math.random() * 720;
+    const drift = -50 + Math.random() * 100;
+    const color = COLORS[Math.floor(Math.random() * COLORS.length)];
+    const radius = Math.random() > 0.45 ? "2px" : "50%";
+    el.style.cssText = `left:${left}%;animation-delay:${delay}s;animation-duration:${dur}s;width:${w}px;height:${h}px;background:${color};border-radius:${radius};--rot:${rot}deg;--drift:${drift}px;`;
+    canvas.appendChild(el);
+  }
 }
 
 // =========================================================================
