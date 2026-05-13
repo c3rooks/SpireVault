@@ -3,13 +3,13 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Spire Vault · Slay the Spire 2 companion and coop finder</title>
-  <meta name="description" content="Find a Slay the Spire 2 coop partner at your skill level. Live presence feed signed in via Steam. Free, open source, no signup." />
+  <title>Spire Vault · Slay the Spire 2 stats and co-op companion</title>
+  <meta name="description" content="Drop your Slay the Spire 2 save folder, see your stats, find a co-op partner at your level. Free, no signup, your saves stay on your machine." />
   <meta name="theme-color" content="#0c0a14" />
 
   <!-- Open Graph -->
-  <meta property="og:title" content="Spire Vault · Slay the Spire 2 companion and coop finder" />
-  <meta property="og:description" content="A live feed of Slay the Spire 2 players looking to play coop right now. Free, open source, signs in with Steam, no signup." />
+  <meta property="og:title" content="Spire Vault · Slay the Spire 2 stats and co-op companion" />
+  <meta property="og:description" content="Drop your STS2 save folder. See your stats. Find a co-op partner at your level. Free, no signup, source on GitHub." />
   <meta property="og:image" content="https://spirevault.app/assets/og.png?v=1" />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
@@ -17,15 +17,15 @@
   <meta property="og:url" content="https://spirevault.app" />
   <meta property="og:site_name" content="Spire Vault" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:title" content="Spire Vault · Slay the Spire 2 companion and coop finder" />
-  <meta name="twitter:description" content="A live feed of Slay the Spire 2 players looking to play coop right now. Free, open source, signs in with Steam, no signup." />
+  <meta name="twitter:title" content="Spire Vault · Slay the Spire 2 stats and co-op companion" />
+  <meta name="twitter:description" content="Drop your STS2 save folder. See your stats. Find a co-op partner at your level. Free, no signup, source on GitHub." />
   <meta name="twitter:image" content="https://spirevault.app/assets/og.png?v=1" />
 
   <link rel="icon" type="image/svg+xml" href="/assets/vault-mark.svg" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Playfair+Display:wght@700;900&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/styles.css?v=14" />
+  <link rel="stylesheet" href="/styles.css?v=15" />
 </head>
 <body>
   <!-- Background ornament -->
@@ -59,16 +59,16 @@
       <div class="hero-copy">
         <span class="eyebrow">Free · Open source · No signup</span>
         <h1 class="hero-h1">
-          Find a <span class="grad">Slay&nbsp;the&nbsp;Spire&nbsp;2</span><br class="hero-break" />
-          <span class="hero-noun">co&#8209;op&nbsp;partner</span> at your skill level.
+          Your <span class="grad">Slay&nbsp;the&nbsp;Spire&nbsp;2</span> stats.<br class="hero-break" />
+          And a <span class="hero-noun">co&#8209;op&nbsp;partner</span> at your level.
         </h1>
         <p class="lede">
-          STS2 co-op is friend-gated through Steam, which means today the only way
-          to find a partner is scrolling the global Discord for ten minutes. Spire
-          Vault is the missing piece: a live feed of who's around right now, a
-          one-click invite, and a green "co-oping with @them" pill on both rows
-          once a pair is locked in. Stats sync across every device you sign in on.
-          The actual game invite still goes through Steam.
+          Drop your save folder in once. The Vault parses every <code>.run</code>
+          file and hands you back winrate, current streak, PB floor, per-character
+          splits, every fight filterable. Sign in with Steam and the same app
+          shows you who else is around right now looking for a co-op run. Free,
+          no signup, your saves stay on your machine. The actual game invite
+          still goes through Steam &mdash; we just help you find each other.
         </p>
         <div class="cta-row">
           <a class="btn-primary" href="https://app.spirevault.app" id="web-cta">
@@ -115,7 +115,7 @@
           <div class="hfc-dot"></div>
           <div class="hfc-text">
             <strong id="hero-floating-count">Live presence</strong>
-            <span>refreshes every 12s</span>
+            <span>refreshes every 30s</span>
           </div>
         </div>
       </div>
@@ -133,18 +133,18 @@
         creates a chicken-and-egg problem: before you can play with someone,
         you need to already know them. If you didn't bring an STS2-loving
         friend to launch night, your only option today is the global Discord,
-        and good luck filtering that for "someone at A12 who's online right
-        now."
+        and good luck filtering that for "someone pushing A10 who's online
+        right now."
       </p>
       <p>
-        Spire Vault is the missing layer between "I want to play co-op" and
-        "I have a Steam friend to play with." It doesn't host games, route
-        invites, or replace anything Mega Crit built. It just shows you who's
-        around, what tier they're at, and how to reach out. From there, Steam
-        takes over and you play the game like you would today.
+        Spire Vault sits between "I want to play co-op" and "I have a Steam
+        friend to play with." It doesn't host games, route invites, or
+        replace anything Mega Crit built. It just shows you who's around,
+        what tier they're at, and how to reach out. Steam takes it from
+        there &mdash; same Steam invite, same in-game experience.
       </p>
       <p class="origin-bona-fides">
-        The whole thing is open source. The macOS app reads only files
+        The whole thing is open source. The desktop apps only read files
         already on your computer. Co-op uses Steam OpenID, so your password
         never touches the server. Every line of code is on
         <a href="https://github.com/c3rooks/SpireVault" target="_blank" rel="noopener">GitHub</a>,
@@ -164,8 +164,8 @@
     <div class="feature-grid">
       <article class="feature-card">
         <div class="feature-icon" data-color="gold">📜</div>
-        <h3>Local run history</h3>
-        <p>Auto-discovers your STS2 save folder. Parses every <code>.run</code> file. Builds a private history with winrate, max ascension, character and relic stats. Nothing leaves your Mac.</p>
+        <h3>Drop your save folder. Done.</h3>
+        <p>Points at your STS2 save folder, parses every <code>.run</code> file in it, builds a private history out of the lot. Winrate, max ascension, character splits, every relic you've touched. No upload, no signup, nothing leaves your computer. Re-scans silently in the background every 30 seconds.</p>
       </article>
       <article class="feature-card">
         <div class="feature-icon" data-color="ember">🎴</div>
@@ -174,8 +174,9 @@
       </article>
       <article class="feature-card">
         <div class="feature-icon" data-color="ascend">🤝</div>
-        <h3>Co-op partner finder + pair pills</h3>
-        <p>Sign in with Steam, see everyone else around right now, send a canned invite. When two players accept, both rows pick up a green <em>"Co-oping with @them"</em> pill so the rest of the feed knows who's already matched up. STS2 multiplayer takes it from there.</p>
+        <span class="feature-beta-pill feature-beta-pill--ascend">CLASSIC + LOBBY BETA</span>
+        <h3>Two ways to find a co-op partner</h3>
+        <p>Classic Co-op is the live roster &mdash; sign in with Steam, see who's around, fire a canned invite. Lobby Beta is the new path: post the run you actually want to play (character + ascension target), browse Open Run Lobbies, check Best Matches, accept or decline. Both feeds run side by side, both end in a Steam invite, both are free.</p>
       </article>
       <article class="feature-card">
         <div class="feature-icon" data-color="silent">📊</div>
@@ -189,8 +190,8 @@
       </article>
       <article class="feature-card">
         <div class="feature-icon" data-color="regent">⚡</div>
-        <h3>Open source</h3>
-        <p>MIT licensed. The macOS app, the CLI, the matchmaking server — all in one repo on GitHub. Audit it, fork it, run your own.</p>
+        <h3>Open source, end to end</h3>
+        <p>MIT licensed. macOS app, Windows app, web companion, the matchmaking Worker &mdash; all in one repo on GitHub. Read it, fork it, host your own. No hidden binary, no proprietary service.</p>
       </article>
       <!-- Run Coach feature card. Frame as Beta and bring-your-own-key
            up-front so nobody clicks Install expecting a free hosted AI.
@@ -221,15 +222,15 @@
         </span>
         <h2>A second pair of eyes on your run, sitting right above the game.</h2>
         <p class="runcoach-lede">
-          Run Coach is a small floating panel that lives over Slay the
-          Spire 2 — the same kind of always-on-top assistant Cluely uses
-          for code interviews, but pointed at deck-building decisions.
-          Tap a chip, ask a question, and it reads your live save file
-          (character, HP, gold, deck, relics, floor) <em>and</em> captures
-          the current frame of your screen, then tells you exactly which card
-          to take, which boss relic to grab, or whether to go left or right
-          at the fork. Bring your own OpenAI or Anthropic key. Nothing routes
-          through our servers.
+          Run Coach is a small always-on-top panel that lives over Slay
+          the Spire 2 &mdash; same idea as Cluely for code interviews,
+          but pointed at deck-building decisions. Tap a chip, ask a
+          question. It reads your live save (character, HP, gold, deck,
+          relics, floor) and grabs the current frame of your screen,
+          then tells you exactly which card to pick, which boss relic to
+          grab, or whether to go left or right at the fork. Bring your
+          own OpenAI or Anthropic key. Nothing routes through our
+          servers.
         </p>
         <ul class="runcoach-bullets">
           <li>
@@ -392,35 +393,45 @@
       <p class="section-sub">
         Real captures from the web companion at
         <a href="https://app.spirevault.app">app.spirevault.app</a>. Every
-        screenshot below is the actual app rendering sample data — including
-        the image-rich Share-Run card with real relic icons and card art
-        baked into the canvas.
+        screenshot below is the actual app on sample data &mdash; including
+        the Share-Run card, which renders real relic icons and card art
+        straight into the canvas.
       </p>
     </div>
+
+    <!-- TODO: drop in product.webm here (5–15s autoplay-muted-loop, no
+         audio, no controls). Best candidate clip: the new victory
+         celebration over the Overview tab — confetti + character-tinted
+         edge flash when 1–3 new wins land. Slot it as the first figure
+         in the showcase rail with class "screenshot is-live
+         screenshot-video", or above the rail as a full-width hero
+         banner. Don't ship until the file actually exists in
+         Site/assets/screenshots/. -->
+
     <div class="showcase-rail">
       <figure class="screenshot is-live">
-        <img src="/assets/screenshots/web-overview.png?v=5" alt="Overview tab — compact painted banner, 6 KPI cards (current streak, last-10 form, PB floor, fastest win, this week, best streak), winrate hero, highest ascension panel" loading="lazy" />
-        <figcaption>Overview · <strong>KPI strip + winrate hero + highest-ascension panel</strong></figcaption>
+        <img src="/assets/screenshots/web-overview.png?v=5" alt="Overview tab — six KPI cards (current streak, last-10 form, PB floor, fastest win, this week, best streak), winrate hero, highest-ascension panel" loading="lazy" />
+        <figcaption>Overview &middot; <strong>KPI strip, winrate hero, highest-ascension panel</strong></figcaption>
       </figure>
       <figure class="screenshot is-live">
-        <img src="/assets/screenshots/web-share.png?v=5" alt="Image-rich Share-Run card with actual relic icons and card art for every entry, character portrait, victory/defeat badge, and platform-recognizable Spire Vault footer" loading="lazy" />
-        <figcaption>Share card · <strong>real relic icons + card art, drop into Discord/Reddit/X</strong></figcaption>
+        <img src="/assets/screenshots/web-share.png?v=5" alt="Share-Run card with relic icons and final-deck card art rendered onto the canvas, character portrait, victory or defeat badge, Spire Vault footer" loading="lazy" />
+        <figcaption>Share card &middot; <strong>relic icons + deck art baked in, paste into Discord</strong></figcaption>
       </figure>
       <figure class="screenshot is-live">
         <img src="/assets/screenshots/web-run-detail.png?v=5" alt="Run detail modal — character portrait, full stats, every relic with its icon, every card in the final deck with its art" loading="lazy" />
-        <figcaption>Run detail · <strong>relics + final deck rendered with real art</strong></figcaption>
+        <figcaption>Run detail &middot; <strong>every relic + every card in the final deck</strong></figcaption>
       </figure>
       <figure class="screenshot is-live">
         <img src="/assets/screenshots/web-characters.png?v=5" alt="Characters tab — winrate cards for every STS2 character with run counts and per-character winrate trend" loading="lazy" />
-        <figcaption>Characters · <strong>per-character winrate at a glance</strong></figcaption>
+        <figcaption>Characters &middot; <strong>per-character winrate at a glance</strong></figcaption>
       </figure>
       <figure class="screenshot is-live">
-        <img src="/assets/screenshots/web-runs.png?v=5" alt="Recent Runs tab — filter chips by character/outcome/ascension, search, sortable run list" loading="lazy" />
-        <figcaption>Recent Runs · <strong>filter chips + click-to-inspect modal</strong></figcaption>
+        <img src="/assets/screenshots/web-runs.png?v=5" alt="Recent Runs tab — filter chips by character, outcome, ascension; search; sortable run list" loading="lazy" />
+        <figcaption>Recent Runs &middot; <strong>filter chips, click any row to inspect</strong></figcaption>
       </figure>
       <figure class="screenshot is-live">
-        <img src="/assets/screenshots/web-coop-live.png?v=3" alt="Live capture of the co-op presence feed at app.spirevault.app" loading="lazy" />
-        <figcaption>Co-op feed · <strong>live presence at app.spirevault.app</strong></figcaption>
+        <img src="/assets/screenshots/web-coop-live.png?v=3" alt="Live capture of the Classic Co-op presence feed at app.spirevault.app" loading="lazy" />
+        <figcaption>Co-op feed &middot; <strong>live presence, signed in with Steam</strong></figcaption>
       </figure>
     </div>
   </section>
@@ -432,16 +443,30 @@
         <span class="eyebrow">Co-op, demystified</span>
         <h2>Find people. Then play with them.</h2>
         <p>
-          STS2 multiplayer is friend-gated through Steam — no third-party tool can route those invites,
-          and we don't try. The Vault solves the actual problem: <em>finding someone at your level
-          who's around right now</em>.
+          STS2 multiplayer is friend-gated through Steam &mdash; no third-party tool can route
+          those invites, and we don't try. The Vault solves the actual problem: <em>finding
+          someone at your level who's around right now</em>.
         </p>
         <ol class="steps">
-          <li><span class="step-num">1</span><div><strong>Sign in with Steam.</strong> Official OpenID. Your password never leaves Valve.</div></li>
-          <li><span class="step-num">2</span><div><strong>See who's online.</strong> Live feed of every Vault user with their tier, status, and reach-out handles.</div></li>
-          <li><span class="step-num">3</span><div><strong>Reach out.</strong> One click opens their Steam profile, copies their Discord, or fires a friend request.</div></li>
-          <li><span class="step-num">4</span><div><strong>Play.</strong> Coordinate over Steam or Discord, host the STS2 multiplayer game, send the in-game invite — the same way you would today.</div></li>
+          <li><span class="step-num">1</span><div><strong>Sign in with Steam.</strong> Official OpenID. Your password is typed into Steam's login page, never ours.</div></li>
+          <li><span class="step-num">2</span><div><strong>See who's online.</strong> Live roster of every signed-in Vault user with their tier, status, and reach-out handles.</div></li>
+          <li><span class="step-num">3</span><div><strong>Reach out.</strong> One click opens their Steam profile, copies their Discord handle, or fires a friend request.</div></li>
+          <li><span class="step-num">4</span><div><strong>Play.</strong> Coordinate over Steam or Discord, host the STS2 lobby, send the in-game invite &mdash; same as you would today.</div></li>
         </ol>
+
+        <!-- New: Co-op Lobby Beta callout. Beta shipped in v166 of the web
+             companion. Classic Co-op is still the default, so we frame the
+             Beta as the alternate path rather than a replacement. -->
+        <aside class="coop-beta-note">
+          <span class="coop-beta-note-pill">NEW &middot; BETA</span>
+          <strong>Co-op Lobby Beta.</strong>
+          Don't want to scroll the live roster? Flip the Lobby Beta on
+          under <em>Beta</em> in the app. Post the run you actually want
+          to play (character + ascension target), browse Open Run
+          Lobbies, see Best Matches the server picks for you, accept or
+          decline invites. Classic Co-op stays the default; toggle back
+          any time.
+        </aside>
       </div>
       <aside class="coop-card" id="coop-card">
         <header class="coop-card-head">
@@ -484,11 +509,13 @@
   <section id="install" class="install">
     <div class="section-head">
       <span class="eyebrow">Install</span>
-      <h2>Three paths in. All free.</h2>
+      <h2>Three ways in. All free.</h2>
       <p class="section-sub">
-        Pick your platform. Mac and Windows get full native apps with run tracking,
-        Run Coach, and Share-Run cards. The web companion covers Linux, Chromebooks,
-        and anywhere else. All three share the same co-op feed.
+        Pick your platform. Mac and Windows get native apps with run tracking,
+        Run Coach, and Share-Run cards. The web companion covers Linux,
+        Chromebooks, and anywhere else with a browser. All three share the
+        same co-op feed and the same stats &mdash; sign in once, your runs
+        sync across every device.
       </p>
     </div>
     <div class="install-grid three">
@@ -501,11 +528,11 @@
           </div>
         </div>
         <ul class="feature-list">
-          <li>Reads your STS2 save folder; computes Vault stats locally</li>
-          <li>Live co-op feed with Steam + Discord reach-outs</li>
+          <li>Reads your STS2 save folder, computes Vault stats locally</li>
+          <li>Live co-op feed with Steam + Discord reach-outs (Lobby Beta optional)</li>
           <li>One-click PNG and Markdown share cards for any run</li>
-          <li>Run Coach (Beta) — opt-in, BYO API key</li>
-          <li>In-app updates · macOS 13+, Apple Silicon and Intel</li>
+          <li>Run Coach (Beta) &mdash; opt-in, bring your own API key</li>
+          <li>In-app updates &middot; macOS 13+, Apple Silicon and Intel</li>
         </ul>
         <a class="btn-primary inline full-width" id="dmg-link" href="#">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
@@ -524,11 +551,11 @@
           </div>
         </div>
         <ul class="feature-list">
-          <li>Auto-detects STS2 saves in %APPDATA%\SlayTheSpire2</li>
-          <li>Same live co-op feed — Steam + Discord reach-outs</li>
-          <li>Run Coach (Beta) — same panel, BYO API key</li>
-          <li>OBS/Game Bar invisible by default (WDA_EXCLUDEFROMCAPTURE)</li>
-          <li>Auto-updates · Windows 10/11, x64</li>
+          <li>Auto-detects STS2 saves in <code>%APPDATA%\SlayTheSpire2</code></li>
+          <li>Same live co-op feed &mdash; Classic and Lobby Beta both work</li>
+          <li>Run Coach (Beta) &mdash; same panel, bring your own API key</li>
+          <li>OBS / Game Bar invisible by default (WDA_EXCLUDEFROMCAPTURE)</li>
+          <li>Auto-updates &middot; Windows 10/11, x64</li>
         </ul>
         <a class="btn-primary inline full-width" id="exe-link" href="#">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
@@ -547,16 +574,17 @@
           </div>
         </div>
         <ul class="feature-list">
-          <li>Full run tracker — points at your STS2 folder, parses every <code>.run</code></li>
-          <li>KPI strip + winrate chart + image-rich Share-Run cards</li>
-          <li>Sign in with Steam — same identity, same live feed</li>
-          <li>Zero install, zero download, works on Chromebooks</li>
+          <li>Full run tracker &mdash; points at your STS2 folder, parses every <code>.run</code></li>
+          <li>KPI strip, winrate chart, Share-Run cards with real card art</li>
+          <li>Sign in with Steam &mdash; same identity, same live feed, same Lobby Beta</li>
+          <li>Cross-device sync &mdash; your stats follow you between Mac, Windows, browser</li>
+          <li>Zero install, zero download, works on Chromebooks and Linux</li>
         </ul>
         <a class="btn-primary inline full-width alt" href="https://app.spirevault.app">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 5l7 7-7 7"/></svg>
           <span>Open in browser</span>
         </a>
-        <p class="install-meta">No download required. Chrome on Windows can read your STS2 save folder directly via the File System Access API.</p>
+        <p class="install-meta">No download. Chrome / Edge read your STS2 save folder directly via the File System Access API.</p>
       </article>
     </div>
 
@@ -572,27 +600,27 @@
       <span class="eyebrow">Privacy &amp; trust</span>
       <h2>You can audit every line.</h2>
       <p class="section-sub">
-        Sign-in is Steam OpenID — the same flow Steam uses for every other site.
-        Your password never reaches our server. We store the minimum required
-        for matchmaking, and the entire codebase is on GitHub.
+        Sign-in is Steam OpenID &mdash; the same flow Steam uses for every other
+        site. Your password never reaches our server. We store the minimum
+        required for matchmaking, and the entire codebase is on GitHub.
       </p>
     </div>
     <div class="trust-grid">
       <div>
         <h4>What goes on the server</h4>
         <ul>
-          <li>Your verified Steam ID, persona, and avatar URL (from Steam Web API)</li>
+          <li>Your verified Steam ID, persona, and avatar URL (from the Steam Web API)</li>
           <li>The status, note, and optional Discord handle <em>you</em> type into the app</li>
-          <li>A session token for 30 days; sign-out drops it instantly</li>
-          <li><em>Optional:</em> your normalized run history, keyed to your Steam ID, when you opt into cloud sync.</li>
+          <li>A session token good for 30 days; sign-out drops it instantly</li>
+          <li><em>Optional:</em> your normalized run history, keyed to your Steam ID, only when you opt into cloud sync</li>
         </ul>
       </div>
       <div>
         <h4>What stays on your machine</h4>
         <ul>
-          <li>Your raw STS2 save files (we read them; we never upload them)</li>
-          <li>Card-by-card pickrate detail and per-run timing data</li>
-          <li>Anything at all when you haven't signed into co-op</li>
+          <li>The raw STS2 save files (we read them; we never upload them)</li>
+          <li>Card-by-card pick-rate detail and per-run timing data</li>
+          <li>Anything at all when you haven't signed in for co-op</li>
           <li>Your Discord chat, Steam friends list, anything Steam-account-adjacent that isn't Steam ID + persona + avatar</li>
         </ul>
       </div>
@@ -618,22 +646,36 @@
       </details>
       <details>
         <summary>What's the "Run Coach (Beta)" thing?</summary>
-        <p>Run Coach is an opt-in floating panel inside the macOS app —
-        a small window (260&times;40 pill or 420&times;540 chat card)
-        that sits on top of Slay the Spire 2. When you ask it
-        something, it grabs the current frame of your screen and sends
-        the question + the screenshot to your chosen AI (OpenAI or
-        Anthropic) using <em>your own API key</em>. Whatever the model
-        replies with shows up in the chat. That's it.</p>
+        <p>Run Coach is an opt-in floating panel that sits on top of
+        Slay the Spire 2 &mdash; a 260&times;40 pill that collapses to
+        a 420&times;540 chat card. Ask it something and it grabs the
+        current frame of your screen, sends the question + the
+        screenshot to your chosen AI (OpenAI or Anthropic) using
+        <em>your own API key</em>, and shows you what the model says
+        back. That's it.</p>
         <p>It's marked Beta on purpose and ships on both macOS and Windows.
         <strong>What it doesn't do:</strong> modify the game, read game
         memory, hook the process, talk to a Vault-hosted AI, or spend
-        any money on your behalf. Nothing about Run Coach changes how
-        runs are tracked. The overlay is streamer-safe by default
-        (hidden from screen recordings via
-        <code>NSWindow.sharingType=.none</code>) — toggle visibility
+        money on your behalf. Nothing about Run Coach changes how runs
+        are tracked. The overlay is streamer-safe by default (hidden
+        from screen recordings via
+        <code>NSWindow.sharingType=.none</code>) &mdash; toggle it
         under <em>Beta&nbsp;→&nbsp;Run&nbsp;Coach</em> if you do want
         it on stream.</p>
+      </details>
+      <details>
+        <summary>What's the "Co-op Lobby Beta"?</summary>
+        <p>Classic Co-op is the live roster you've probably seen: sign
+        in with Steam, see who's around, fire a canned invite. The
+        Lobby Beta is the alternate path. You post the run you actually
+        want to play &mdash; character, ascension target, vibe &mdash;
+        and the page shows a board of Open Run Lobbies, a Best Matches
+        rail picked by the server, and a request-to-join flow with
+        accept / decline.</p>
+        <p>Classic stays the default. Flip the Lobby Beta on under the
+        <em>Beta</em> tab (or the in-tab toggle on the Co-op page),
+        flip it off whenever. Same Steam sign-in, same live presence
+        underneath, same Steam invite to start the actual game.</p>
       </details>
       <details>
         <summary>Is this a mod? Could it get me banned?</summary>
@@ -651,22 +693,21 @@
       </details>
       <details>
         <summary>Is the Windows .exe the same as the Mac app?</summary>
-        <p>Yes — same backend (Cloudflare Worker), same UI (<code>app.spirevault.app</code>
-        embedded in a WebView2), same Run Coach overlay, same BYO-key flow, same co-op feed.
-        The native layer is rewritten in Rust (Tauri 2) instead of Swift, but everything
-        the player sees and every API call it makes is identical. Auto-updates ship
-        through GitHub Releases on the same tag cadence as the macOS DMG.</p>
-        <p>The one current difference: the Windows build is ad-hoc signed, so Windows Defender
-        SmartScreen will show "More info → Run anyway" on first launch — exactly like the macOS
-        "right-click → Open" step. Once the installer builds reputation (~50 installs),
-        SmartScreen clears automatically.</p>
+        <p>Yes &mdash; same backend (Cloudflare Worker), same UI (<code>app.spirevault.app</code>
+        embedded in a WebView2), same Run Coach overlay, same bring-your-own-key flow, same
+        co-op feed. The native layer is rewritten in Rust (Tauri 2) instead of Swift, but
+        everything the player sees and every API call it makes is identical. Auto-updates
+        ship through GitHub Releases on the same tag cadence as the macOS DMG.</p>
+        <p>The one current difference: the Windows build is ad-hoc signed, so SmartScreen
+        will show "More info &rarr; Run anyway" on first launch &mdash; same energy as
+        the macOS "right-click &rarr; Open" step. Once the installer builds reputation
+        (~50 installs), SmartScreen clears automatically.</p>
       </details>
       <details>
         <summary>Do I need an account?</summary>
-        <p>For the run tracker, no — it works fully offline. For co-op
-        matchmaking you sign in via Steam OpenID, which is Valve-hosted and
-        never sees your password. You can sign out at any time and your
-        session disappears.</p>
+        <p>For the run tracker, no &mdash; it works fully offline. For co-op
+        you sign in via Steam OpenID, which is Valve-hosted and never sees
+        your password. Sign out any time and your session disappears.</p>
       </details>
       <details>
         <summary>What does it cost?</summary>
@@ -691,11 +732,14 @@
       </details>
       <details>
         <summary>How does the co-op feed actually work?</summary>
-        <p>You sign in with Steam, set your status (Looking · Playing · Idle),
-        optionally add a Discord handle. Your client heartbeats your presence
-        every minute. The feed shows everyone heartbeating in the last few
-        minutes, with a button to open their Steam profile or copy their
-        Discord. The actual game session goes through Steam friends like normal.</p>
+        <p>You sign in with Steam, set your status (Looking &middot; Playing &middot;
+        Idle), optionally add a Discord handle. Your client heartbeats your presence
+        every minute. The feed shows everyone heartbeating in the last few minutes,
+        with a button to open their Steam profile or copy their Discord. The actual
+        game session goes through Steam friends like normal.</p>
+        <p>If you opt into the Co-op Lobby Beta, the same presence layer is what
+        decides whether your posted lobby shows up in someone else's Open Run
+        Lobbies board. Drop offline, the lobby drops off the board.</p>
       </details>
       <details>
         <summary>Can someone impersonate me?</summary>
@@ -707,14 +751,14 @@
       <details>
         <summary>Why should I trust some random tool with my Steam account?</summary>
         <p>You don't have to. Sign-in is Steam OpenID, which means your
-        password is typed into Steam's login page, not mine — the server
+        password is typed into Steam's login page, not mine &mdash; the server
         only ever sees the verified Steam ID Valve hands back. The
         <a href="https://github.com/c3rooks/SpireVault" target="_blank" rel="noopener">whole stack is on GitHub</a>;
         every outbound network call from the app is documented in
         <a href="https://github.com/c3rooks/SpireVault/blob/main/SECURITY.md" target="_blank" rel="noopener">SECURITY.md</a>.
-        The macOS app makes zero network calls except to the matchmaking
-        server (and only when you're signed in). Read the code, build it
-        yourself if you want, file an issue if something looks wrong.</p>
+        The desktop apps make zero network calls except to the matchmaking
+        server, and only when you're signed in. Read the code, build it
+        yourself, file an issue if something looks wrong.</p>
       </details>
     </div>
   </section>
@@ -728,9 +772,9 @@
         </svg>
       </div>
       <div class="also-body">
-        <span class="also-eyebrow">Also from me — for iOS</span>
+        <span class="also-eyebrow">Also from me &mdash; for iOS</span>
         <strong>Ascension Companion</strong>
-        <p>An STS run tracker for iPhone and iPad. The Vault library actually feeds its stats tab. On the App Store now.</p>
+        <p>STS run tracker for iPhone and iPad. The Vault parsing library feeds its stats tab. On the App Store now.</p>
       </div>
       <span class="also-arrow" aria-hidden="true">→</span>
     </a>

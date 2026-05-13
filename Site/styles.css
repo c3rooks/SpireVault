@@ -714,6 +714,14 @@ section {
   border: 1px solid rgba(245, 158, 11, 0.45);
   text-transform: uppercase;
 }
+/* Green variant — used on the co-op partner-finder card so the pill
+   colour echoes the green feature icon next to it rather than fighting
+   against it. */
+.feature-beta-pill--ascend {
+  background: rgba(109, 217, 124, 0.12);
+  color: var(--win);
+  border-color: rgba(109, 217, 124, 0.42);
+}
 
 /* ──────────────────────────────────────────────────────────────────────
    Run Coach (Beta) section
@@ -1388,6 +1396,45 @@ section {
 }
 .steps li > div { font-size: 14px; color: var(--text-2); }
 .steps li strong { color: var(--text); display: block; margin-bottom: 2px; font-weight: 700; }
+
+/* Co-op Lobby Beta callout — sits below the 4-step Classic walkthrough
+   to introduce the alternate path without dropping it on its own H2.
+   Ember-tinted to stand apart from the gold step list, but only mildly
+   — Classic is still the default and we don't want this to scream
+   louder than the steps above it. */
+.coop-beta-note {
+  margin-top: 22px;
+  padding: 16px 18px;
+  background: linear-gradient(180deg,
+    rgba(255, 107, 26, 0.08),
+    rgba(255, 107, 26, 0.02));
+  border: 1px solid rgba(255, 107, 26, 0.30);
+  border-radius: 12px;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--text-2);
+  max-width: 56ch;
+}
+.coop-beta-note strong { color: var(--text); font-weight: 700; }
+.coop-beta-note em {
+  color: var(--accent-hi);
+  font-style: normal;
+  font-weight: 600;
+}
+.coop-beta-note-pill {
+  display: inline-block;
+  margin-right: 8px;
+  vertical-align: 1px;
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 1.4px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(255, 107, 26, 0.18);
+  border: 1px solid rgba(255, 107, 26, 0.45);
+  color: var(--accent-hi);
+  text-transform: uppercase;
+}
 
 .coop-card {
   position: sticky;
