@@ -1,4 +1,4 @@
-// coop-lobbies.js — v12 (Co-op Lobby Beta surface)
+// coop-lobbies.js — v13 (Co-op Lobby Beta surface)
 // =========================================================================
 // Drives the Co-op Lobby Beta surface:
 //   A. Compact command bar with 3 stats + CTAs (Post a Run, Quick Match,
@@ -42,6 +42,14 @@ let heartbeatTimer = null;
 let ageTickerTimer = null;
 let isMounted = false;
 let pendingActions = new Set();
+
+// Tracks the active session id we last rendered. When this is set
+// and the next render reveals the session is gone, we infer the
+// partner ended the pairing and surface a one-line toast so the
+// activity card doesn't silently flip to Idle. Self-initiated ends
+// suppress the toast via `localEndPairingPending`.
+let lastKnownActiveSessionId = null;
+let localEndPairingPending = false;
 
 // Client-side filter / sort / density state (no backend involvement)
 const CARDS_PAGE = 12;
@@ -250,6 +258,22 @@ function isStale(presence) {
 // =========================================================================
 function render(state) {
   if (!state) return;
+  // Detect partner-initiated end-of-pairing BEFORE we repaint the
+  // activity card. If we had an active session on the previous
+  // render and the new state has none, the pairing ended. When
+  // `localEndPairingPending` is true the user clicked End Pairing
+  // themselves and already got "Pairing ended." — suppress the
+  // partner-side toast so we never double-notify.
+  const newActiveSessionId =
+    state.session && state.session.status === "active" ? state.session.sessionId : null;
+  if (lastKnownActiveSessionId && !newActiveSessionId) {
+    if (!localEndPairingPending) {
+      bootCtx?.deps?.toast?.("Your co-op partner ended the pairing.");
+    }
+    localEndPairingPending = false;
+  }
+  lastKnownActiveSessionId = newActiveSessionId;
+
   reflectFormFromPresence(state.presence);
   renderBarStats(state);
   renderSideStatusCard(state);
@@ -1649,6 +1673,10 @@ function wireDelegatedClicks() {
         return;
       }
       case "end-session":
+        // Mark this end as locally-initiated so the next render
+        // doesn't fire the partner-ended toast on top of our own
+        // "Pairing ended." success message.
+        localEndPairingPending = true;
         await doAction(key, btn, () => jsonFetch(`/coop/sessions/${btn.dataset.id}/end`, { body: {} }), "Pairing ended.");
         return;
       case "close-lobby":

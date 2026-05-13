@@ -17,7 +17,7 @@ import * as Stats from "/lib/stats-engine.js?v=4";
 import * as HistoryStore from "/lib/history-store.js?v=8";
 import * as InviteAPI from "/lib/invites.js?v=4";
 import * as HighlightsAPI from "/lib/highlights.js?v=1";
-import * as CoopLobbies from "/lib/coop-lobbies.js?v=12";
+import * as CoopLobbies from "/lib/coop-lobbies.js?v=13";
 import * as AscInfo from "/lib/ascension-info.js?v=1";
 import * as CharInfo from "/lib/character-info.js?v=1";
 import * as RelicInfo from "/lib/relic-info.js?v=1";
@@ -69,7 +69,7 @@ const STS2_APP_ID = "2868840";
  * on an old client — instruct hard refresh. If it DOES match, the
  * bug is real and we can stop chasing cache ghosts.
  */
-const VAULT_BUILD = "v168-2026-05-13-coop-scale-search-and-rationale";
+const VAULT_BUILD = "v169-2026-05-13-coop-partner-end-toast-and-auto-afk-restore";
 
 // Feature flag — set to `true` only on local dev when iterating on the
 // Run Companion Overlay. Production stays false until the feature is
@@ -3353,6 +3353,11 @@ function wireCoopForm() {
       // immediately flip them back to AFK on the next idle window.
       lastUserActivityAt = Date.now();
       userExplicitStatusAt = Date.now();
+      // Any explicit choice (including a manual AFK pick) cancels
+      // the auto-AFK restore. Without this, picking AFK by hand
+      // would be silently flipped back to Looking the next time
+      // the user touched the mouse.
+      autoAfkActiveSince = 0;
       // Mirror selection into the Classic surface so flipping
       // status in the Beta UI immediately updates Classic and
       // vice-versa.
@@ -3368,6 +3373,7 @@ function wireCoopForm() {
     el.addEventListener("change", () => {
       lastUserActivityAt = Date.now();
       userExplicitStatusAt = Date.now();
+      autoAfkActiveSince = 0;
       const betaRadio = document.querySelector(`input[name="status"][value="${el.value}"]`);
       if (betaRadio) betaRadio.checked = true;
       schedulePush();
@@ -3513,15 +3519,44 @@ const IDLE_AFK_AFTER_MS  = 15 * 60_000; // 15 min idle → auto-AFK
 const IDLE_GRACE_MS      = 5  * 60_000; // 5 min after manual choice, no auto-flip
 let lastUserActivityAt   = Date.now();
 let userExplicitStatusAt = Date.now();
+// Timestamp the auto-AFK loop stamped on the LAST automatic flip
+// to "afk". Used to distinguish "user manually picked AFK" (leave
+// alone) from "we flipped them automatically and now they're back
+// at the keyboard" (restore to Looking so the roster doesn't keep
+// showing them grey). Cleared the moment we restore them or the
+// user changes status by hand.
+let autoAfkActiveSince   = 0;
+
+function maybeClearAutoAfkOnActivity() {
+  if (!autoAfkActiveSince) return;
+  if (!session?.steamID) { autoAfkActiveSince = 0; return; }
+  const current = (document.querySelector('input[name="status"]:checked') || {}).value;
+  // If they manually moved off AFK already, just drop the flag.
+  if (current !== "afk") { autoAfkActiveSince = 0; return; }
+  // Restore quietly — the status pill flips back to Looking, the
+  // next heartbeat pushes it server-side, and the roster shows
+  // them live again without a "you were AFK" toast spamming.
+  autoAfkActiveSince = 0;
+  setRadio("status", "looking");
+  saveDraft({ ...readDraft(), status: "looking" });
+  schedulePush(0);
+  sendBeacon("auto-afk-restored", "trigger=activity");
+}
 
 ["mousemove", "mousedown", "keydown", "touchstart", "scroll"].forEach((ev) => {
   window.addEventListener(ev, () => {
     lastUserActivityAt = Date.now();
+    // Cheap fast-path — most ticks see autoAfkActiveSince === 0
+    // and bail immediately.
+    if (autoAfkActiveSince) maybeClearAutoAfkOnActivity();
   }, { passive: true });
 });
 
 document.addEventListener("visibilitychange", () => {
-  if (document.visibilityState === "visible") lastUserActivityAt = Date.now();
+  if (document.visibilityState === "visible") {
+    lastUserActivityAt = Date.now();
+    if (autoAfkActiveSince) maybeClearAutoAfkOnActivity();
+  }
 });
 
 setInterval(() => {
@@ -3536,6 +3571,10 @@ setInterval(() => {
   setRadio("status", "afk");
   saveDraft({ ...readDraft(), status: "afk" });
   schedulePush(0);
+  // Stamp the auto-AFK flag so the next real user activity restores
+  // them to Looking instead of leaving them grey-pilled on the
+  // roster forever.
+  autoAfkActiveSince = Date.now();
   sendBeacon("auto-afk-flipped", `from=${current} idleMs=${idleMs}`);
 }, 60_000);
 
