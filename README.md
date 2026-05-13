@@ -246,12 +246,6 @@ Spire 2 and answers "what should I play next?" using your own AI key.
 Lives behind the **Beta** tab in both the macOS app and the web
 companion. Off by default, free to never touch.
 
-<p align="center">
-  <img src="Site/assets/screenshots/overlay-combat.png" width="70%" alt="Run Coach overlay showing a turn plan mid-combat — energy budget, ordered card plays with targets, incoming damage, and next-turn note" />
-  <br />
-  <sub><em>Turn plan during a multi-enemy fight. Ordered plays, target priority, incoming damage, hold-for-next-turn list. The overlay is invisible to OBS and QuickTime.</em></sub>
-</p>
-
 ```mermaid
 flowchart LR
     User["You<br/>asks the coach"]
@@ -425,9 +419,9 @@ single Worker, around 1k lines of TypeScript total.
 
 ## Who built this
 
-I'm Corey Crooks. I play STS2 (Silent main, occasional Watcher when I
-want to feel clever), I write code professionally, and I built this
-because I got tired of scrolling Discord trying to find a co-op partner.
+I'm Corey Crooks. I play STS2 (Ironclad and Defect, mostly), I write
+code professionally, and I built this because I got tired of scrolling
+Discord trying to find a co-op partner.
 
 - Personal site: [coreycrooks.com](https://coreycrooks.com)
 - GitHub: [@c3rooks](https://github.com/c3rooks)
