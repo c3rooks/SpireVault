@@ -4978,6 +4978,12 @@ select#me-note option { background: var(--bg-deep); color: var(--text); }
     grid-template-columns: minmax(0, 1fr);
   }
   .sidebar, .content { min-width: 0; }
+  /* Hard-clip every tab panel and its body so no descendant (wide table,
+     code block, demo banner with a long path) can push the layout past
+     the viewport edge. `overflow-x: clip` blocks scroll without creating
+     a scroll container (unlike `hidden`), so nested overflow-y: auto
+     panels still scroll vertically. */
+  .tab-panel, .panel-body { min-width: 0; overflow-x: clip; }
 
   .sidebar {
     position: sticky;
@@ -5023,6 +5029,11 @@ select#me-note option { background: var(--bg-deep); color: var(--text); }
     scroll-snap-type: x proximity;
     scrollbar-width: none;
     -webkit-overflow-scrolling: touch;
+    /* Prevent iOS scroll chaining: when the strip reaches the end of its
+       scroll range, don't let momentum transfer to the page and drag the
+       whole viewport sideways. This is the primary fix for the mobile
+       "navigate right and left" bug. */
+    overscroll-behavior-x: contain;
     /* Critical: the strip itself must not grow past the sidebar's box.
        Without min-width:0 here, flex children expand the strip which
        in turn expands the .sidebar (its grid parent already has
@@ -7273,6 +7284,7 @@ html.prefer-compact-density .h-stat-num { font-size: 18px; }
     overflow-y: hidden;
     scroll-snap-type: x mandatory;
     -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
     gap: 10px;
     margin: 0 0 14px;
     padding: 2px 0 8px;
@@ -12786,5 +12798,231 @@ body.coop-lobby-beta-off [data-tab="coop"] .coop-page {
 .feed-empty-sub {
   color: var(--text-3);
   font-size: 13px;
+}
+
+/* ==========================================================================
+   Co-op Scale-900: Filter bar · Sort pills · Density toggle · Load more
+   ========================================================================== */
+
+/* Filter bar container */
+.coop-filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  /* No margin/border needed — .coop-board gap:16px handles spacing */
+}
+.coop-filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  flex: 1;
+  min-width: 0;
+}
+.coop-filter-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.coop-filter-divider {
+  display: inline-block;
+  width: 1px;
+  height: 18px;
+  background: var(--border-strong);
+  flex-shrink: 0;
+  margin: 0 2px;
+}
+.coop-chip-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+/* Clear active filters button */
+.coop-filter-clear {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,80,80,0.3);
+  background: rgba(255,80,80,0.08);
+  color: rgba(255,120,120,0.9);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 120ms, border-color 120ms;
+}
+.coop-filter-clear:hover {
+  background: rgba(255,80,80,0.15);
+  border-color: rgba(255,80,80,0.5);
+}
+
+/* Filter chips */
+.coop-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 11px;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  background: transparent;
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.4;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 120ms, color 120ms, border-color 120ms;
+}
+.coop-chip:hover {
+  border-color: rgba(212,175,55,0.5);
+  color: var(--text-1);
+}
+.coop-chip.is-active {
+  background: rgba(212,175,55,0.15);
+  border-color: rgba(212,175,55,0.6);
+  color: var(--gold, #d4af37);
+}
+
+/* Sort pills */
+.coop-sort-pills {
+  display: flex;
+  gap: 2px;
+}
+.coop-sort-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 9px;
+  border-radius: 5px;
+  border: none;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 100ms, color 100ms;
+}
+.coop-sort-pill:hover {
+  background: rgba(255,255,255,0.06);
+  color: var(--text-1);
+}
+.coop-sort-pill.is-active {
+  background: rgba(212,175,55,0.14);
+  color: var(--gold, #d4af37);
+}
+
+/* Density toggle button */
+.coop-density-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border-radius: 6px;
+  border: 1px solid var(--border-strong);
+  background: transparent;
+  cursor: pointer;
+  color: var(--text-2);
+  transition: background 100ms, color 100ms, border-color 100ms;
+}
+.coop-density-toggle:hover,
+.coop-density-toggle.is-compact {
+  background: rgba(255,255,255,0.08);
+  color: var(--text-1);
+  border-color: rgba(255,255,255,0.2);
+}
+
+/* Filter match stats text */
+.coop-filter-stats {
+  font-size: 11px;
+  color: var(--text-3);
+  margin: 0 0 6px;
+}
+
+/* Load more */
+.coop-load-more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 0 4px;
+  width: 100%;
+}
+.coop-load-more-btn {
+  padding: 8px 22px;
+  border-radius: 8px;
+  border: 1px solid var(--border-strong);
+  background: transparent;
+  color: var(--text-2);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 120ms, color 120ms, border-color 120ms;
+}
+.coop-load-more-btn:hover {
+  background: rgba(255,255,255,0.05);
+  color: var(--text-1);
+  border-color: rgba(255,255,255,0.22);
+}
+.coop-load-more-count {
+  opacity: 0.65;
+  margin-left: 2px;
+}
+
+/* Load-more and filter-stats are direct grid children — span all columns */
+.coop-lobbies-list > .coop-load-more,
+.coop-recs-list > .coop-load-more,
+.coop-lobbies-list > .coop-filter-stats {
+  grid-column: 1 / -1;
+}
+
+/* Compact lobby card */
+.coop-lobby-card--compact {
+  padding: 8px 12px;
+  gap: 4px;
+}
+.coop-lobby-card--compact:hover { transform: none; }
+.coop-lobby-card--compact .coop-lobby-note,
+.coop-lobby-card--compact .coop-lobby-host { display: none; }
+.coop-lobby-card--compact .coop-lobby-card-head .avatar {
+  width: 24px;
+  height: 24px;
+}
+.coop-lobby-card--compact .coop-lobby-card-title h4 { font-size: 13px; }
+.coop-lobby-card--compact .coop-lobby-foot {
+  border-top: none;
+  padding-top: 0;
+  margin-top: 0;
+}
+.coop-lobby-card--compact .coop-lobby-time { font-size: 10px; }
+.coop-lobby-card--compact .coop-badge {
+  font-size: 10px;
+  padding: 1px 6px;
+}
+
+/* Mobile overrides for filter bar */
+@media (max-width: 720px) {
+  .coop-filter-bar { flex-wrap: nowrap; flex-direction: column; align-items: stretch; gap: 8px; }
+  .coop-filter-row {
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    gap: 4px;
+    padding-bottom: 2px;
+    /* Fade the right edge to hint at horizontal scroll */
+    -webkit-mask-image: linear-gradient(to right, black calc(100% - 28px), transparent 100%);
+    mask-image: linear-gradient(to right, black calc(100% - 28px), transparent 100%);
+  }
+  .coop-filter-row::-webkit-scrollbar { display: none; }
+  .coop-chip-group { flex-wrap: nowrap; flex-shrink: 0; }
+  .coop-filter-divider { flex-shrink: 0; }
+  .coop-chip { font-size: 11px; padding: 3px 9px; flex-shrink: 0; }
+  .coop-filter-actions { align-self: flex-start; }
+  /* Discovery banner: prevent close button overlapping the eyebrow pill */
+  .coop-discovery-banner-eyebrow { padding-right: 36px; }
 }
 

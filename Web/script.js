@@ -17,7 +17,7 @@ import * as Stats from "/lib/stats-engine.js?v=4";
 import * as HistoryStore from "/lib/history-store.js?v=8";
 import * as InviteAPI from "/lib/invites.js?v=4";
 import * as HighlightsAPI from "/lib/highlights.js?v=1";
-import * as CoopLobbies from "/lib/coop-lobbies.js?v=10";
+import * as CoopLobbies from "/lib/coop-lobbies.js?v=11";
 import * as AscInfo from "/lib/ascension-info.js?v=1";
 import * as CharInfo from "/lib/character-info.js?v=1";
 import * as RelicInfo from "/lib/relic-info.js?v=1";
@@ -69,7 +69,7 @@ const STS2_APP_ID = "2868840";
  * on an old client — instruct hard refresh. If it DOES match, the
  * bug is real and we can stop chasing cache ghosts.
  */
-const VAULT_BUILD = "v164-2026-05-12-coop-beta-discovery-banner";
+const VAULT_BUILD = "v165-2026-05-12-coop-scale-900";
 
 // Feature flag — set to `true` only on local dev when iterating on the
 // Run Companion Overlay. Production stays false until the feature is
@@ -1303,6 +1303,9 @@ try {
 } catch { /* non-browser env (test runner, SSR snapshot) */ }
 let pendingInviteToID = null; // who the modal is targeting
 let pollFeedTimer       = null;
+let feedVisible         = 20; // windowed: how many rows currently in Beta feed
+let classicFeedVisible  = 20; // windowed: how many rows in Classic feed
+const FEED_PAGE         = 20;
 let pollInboxTimer      = null;
 let pollOutboxTimer     = null;
 let pollHighlightsTimer = null;
@@ -5482,8 +5485,18 @@ function renderFeed(list) {
     return n;
   }
 
-  $feed.innerHTML = others.map(renderRow).join("");
+  const feedSlice = others.slice(0, feedVisible);
+  const feedRemaining = others.length - feedSlice.length;
+  let feedHtml = feedSlice.map(renderRow).join("");
+  if (feedRemaining > 0) {
+    feedHtml += `<div class="coop-load-more"><button class="coop-load-more-btn" id="feed-load-more">Show ${Math.min(FEED_PAGE, feedRemaining)} more <span class="coop-load-more-count">(${feedRemaining} left)</span></button></div>`;
+  }
+  $feed.innerHTML = feedHtml;
   wireFeedActions($feed);
+  document.getElementById("feed-load-more")?.addEventListener("click", () => {
+    feedVisible += FEED_PAGE;
+    renderFeed(list);
+  });
   // Classic surface uses the exact same sorted `others` so the two
   // lists are always in the same order.
   renderClassicCoopMirror(list, others, { inGame, looking, activeNow });
@@ -5547,8 +5560,18 @@ function renderClassicCoopMirror(list, others, summary) {
       // like the pre-lobby Co-op page rather than the Beta wording.
       $feed.innerHTML = `<div class="feed-empty"><p>You're on the feed. Be the first someone bumps into.</p></div>`;
     } else {
-      $feed.innerHTML = others.map(renderRow).join("");
+      const classicSlice = others.slice(0, classicFeedVisible);
+      const classicRemaining = others.length - classicSlice.length;
+      let classicHtml = classicSlice.map(renderRow).join("");
+      if (classicRemaining > 0) {
+        classicHtml += `<div class="coop-load-more"><button class="coop-load-more-btn" id="classic-feed-load-more">Show ${Math.min(FEED_PAGE, classicRemaining)} more <span class="coop-load-more-count">(${classicRemaining} left)</span></button></div>`;
+      }
+      $feed.innerHTML = classicHtml;
       wireFeedActions($feed);
+      document.getElementById("classic-feed-load-more")?.addEventListener("click", () => {
+        classicFeedVisible += FEED_PAGE;
+        renderFeed(lastFeed);
+      });
     }
   }
 

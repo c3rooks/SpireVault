@@ -1,4 +1,4 @@
-// coop-lobbies.js — v10 (Co-op Lobby Beta surface)
+// coop-lobbies.js — v11 (Co-op Lobby Beta surface)
 // =========================================================================
 // Drives the Co-op Lobby Beta surface:
 //   A. Compact command bar with 3 stats + CTAs (Post a Run, Quick Match,
@@ -43,6 +43,14 @@ let ageTickerTimer = null;
 let isMounted = false;
 let pendingActions = new Set();
 
+// Client-side filter / sort / density state (no backend involvement)
+const CARDS_PAGE = 12;
+let lobbyFilters = { goal: "", asc: "", voice: "" };
+let lobbySort = "best";
+let lobbyCompact = (() => { try { return localStorage.getItem("coop_compact") === "1"; } catch { return false; } })();
+let lobbiesVisible = CARDS_PAGE;
+let recsVisible = CARDS_PAGE;
+
 // =========================================================================
 // Public API
 // =========================================================================
@@ -57,6 +65,7 @@ export function mountCoopLobbies(ctx) {
   wireQuickMatchModal();
   wireFeedToggle();
   wireHowToToggle();
+  wireFilterBar();
   // The visible status pills also fire savePresence (Looking / AFK toggle).
   document.querySelectorAll('#status-pills input[name="status"]').forEach((el) => {
     el.addEventListener("change", () => void savePresence({ silent: true }));
@@ -623,19 +632,65 @@ function renderLobbies(state) {
   const $list = document.getElementById("coop-lobbies-list");
   const $count = document.getElementById("coop-lobbies-count");
   if (!$list || !$count) return;
-  const lobbies = state.openLobbies || [];
-  $count.textContent = String(lobbies.length);
-  if (lobbies.length === 0) {
+
+  const allLobbies = state.openLobbies || [];
+  $count.textContent = String(allLobbies.length);
+
+  if (allLobbies.length === 0) {
     $list.innerHTML = renderEmptyLobbies();
     return;
   }
+
   const mySid = state.presence?.steamId;
   const pendingByLobby = new Map(
     (state.outgoingJoinRequests || [])
       .filter((r) => r.status === "pending")
       .map((r) => [r.lobbyId, r])
   );
-  $list.innerHTML = lobbies.map((l) => renderLobbyCard(l, mySid, pendingByLobby, state)).join("");
+
+  const filtered = allLobbies.filter(lobbyMatchesFilters);
+  const me = state.presence;
+  if (lobbySort === "best") {
+    filtered.sort((a, b) =>
+      relevanceScore(b, me) - relevanceScore(a, me) ||
+      new Date(b.updatedAt) - new Date(a.updatedAt)
+    );
+  } else if (lobbySort === "newest") {
+    filtered.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+  } else {
+    filtered.sort((a, b) => (a.ascensionMin ?? 0) - (b.ascensionMin ?? 0));
+  }
+
+  if (filtered.length === 0) {
+    $list.innerHTML = `
+      <div class="coop-empty-card coop-empty-card--compact coop-empty-card--inline">
+        <div class="coop-empty-card-text">
+          <h4 class="coop-empty-title">No lobbies match your filters</h4>
+          <p class="coop-empty-body">Try adjusting the goal, ascension, or voice filters above.</p>
+        </div>
+        <button class="btn-ghost btn-sm" type="button" id="coop-clear-filters">Clear filters</button>
+      </div>`;
+    document.getElementById("coop-clear-filters")?.addEventListener("click", clearLobbyFilters);
+    return;
+  }
+
+  const slice = filtered.slice(0, lobbiesVisible);
+  const remaining = filtered.length - slice.length;
+  let html = "";
+  if (filtered.length < allLobbies.length) {
+    html += `<p class="coop-filter-stats">Showing ${Math.min(slice.length, filtered.length)} of ${filtered.length} matching (${allLobbies.length} total)</p>`;
+  }
+  html += slice.map((l) => renderLobbyCard(l, mySid, pendingByLobby, state, lobbyCompact)).join("");
+  if (remaining > 0) {
+    html += `<div class="coop-load-more"><button class="coop-load-more-btn" id="coop-load-more-lobbies">Show ${Math.min(CARDS_PAGE, remaining)} more <span class="coop-load-more-count">(${remaining} left)</span></button></div>`;
+  }
+  $list.innerHTML = html;
+  if (lobbyCompact) $list.classList.add("is-compact");
+  else $list.classList.remove("is-compact");
+  document.getElementById("coop-load-more-lobbies")?.addEventListener("click", () => {
+    lobbiesVisible += CARDS_PAGE;
+    renderLobbies(lastState);
+  });
 }
 
 function renderEmptyLobbies() {
@@ -665,7 +720,47 @@ function renderEmptyLobbies() {
     </div>`;
 }
 
-function renderLobbyCard(lobby, mySid, pendingByLobby, state) {
+function relevanceScore(lobby, me) {
+  if (!me) return 0;
+  let score = 0;
+  const myGoal = me.goal || "";
+  const lobGoal = lobby.goal || "any";
+  if (!myGoal || myGoal === "any" || lobGoal === "any" || myGoal === lobGoal) score += 3;
+  const lo1 = me.ascensionMin ?? 0, hi1 = me.ascensionMax ?? GAME_CONFIG.maxAscension;
+  const lo2 = lobby.ascensionMin ?? 0, hi2 = lobby.ascensionMax ?? GAME_CONFIG.maxAscension;
+  if (lo1 <= hi2 && lo2 <= hi1) score += 2;
+  const myVoice = me.voicePreference || "";
+  const lobVoice = lobby.voicePreference || "";
+  if (!myVoice || !lobVoice || myVoice === lobVoice) score += 1;
+  return score;
+}
+
+function lobbyMatchesFilters(lobby) {
+  const { goal, asc, voice } = lobbyFilters;
+  if (goal) {
+    const g = lobby.goal || "any";
+    if (g !== goal && g !== "any") return false;
+  }
+  if (asc) {
+    const lo = lobby.ascensionMin ?? 0, hi = lobby.ascensionMax ?? GAME_CONFIG.maxAscension;
+    const [flo, fhi] = asc.split("-").map(Number);
+    if (hi < flo || lo > fhi) return false;
+  }
+  if (voice) {
+    const v = lobby.voicePreference || "";
+    if (v && v !== voice) return false;
+  }
+  return true;
+}
+
+function clearLobbyFilters() {
+  lobbyFilters = { goal: "", asc: "", voice: "" };
+  lobbiesVisible = CARDS_PAGE;
+  syncChipUI();
+  renderLobbies(lastState);
+}
+
+function renderLobbyCard(lobby, mySid, pendingByLobby, state, compact = false) {
   const isMine = lobby.hostSteamId === mySid;
   const isMember = (lobby.memberSteamIds || []).includes(mySid);
   const pendingReq = pendingByLobby.get(lobby.lobbyId);
@@ -675,6 +770,7 @@ function renderLobbyCard(lobby, mySid, pendingByLobby, state) {
     "coop-lobby-card",
     isMine ? "coop-lobby-card--mine" : "",
     isPaired ? "coop-lobby-card--paired" : "",
+    compact ? "coop-lobby-card--compact" : "",
   ].filter(Boolean).join(" ");
   const statusBadge = `
     <span class="coop-badge coop-badge--status-${esc(lobby.status)}">${esc(prettyStatus(lobby.status))}</span>`;
@@ -752,7 +848,17 @@ function renderRecommendations(state) {
       </div>`;
     return;
   }
-  $list.innerHTML = recs.map(renderRecCard).join("");
+  const slice = recs.slice(0, recsVisible);
+  const remaining = recs.length - slice.length;
+  let html = slice.map(renderRecCard).join("");
+  if (remaining > 0) {
+    html += `<div class="coop-load-more"><button class="coop-load-more-btn" id="coop-load-more-recs">Show ${Math.min(CARDS_PAGE, remaining)} more <span class="coop-load-more-count">(${remaining} left)</span></button></div>`;
+  }
+  $list.innerHTML = html;
+  document.getElementById("coop-load-more-recs")?.addEventListener("click", () => {
+    recsVisible += CARDS_PAGE;
+    renderRecommendations(lastState);
+  });
 }
 
 function renderRecCard(rec) {
@@ -791,6 +897,118 @@ function renderRecCard(rec) {
         <a class="btn-ghost btn-sm" target="_blank" rel="noopener" href="${esc(steamProfileUrl(rec.steamId))}">Steam</a>
       </div>
     </article>`;
+}
+
+// =========================================================================
+// Filter bar · chipbar + sort pills + density toggle
+// =========================================================================
+function wireFilterBar() {
+  const $section = document.getElementById("coop-lobbies-section");
+  if (!$section || document.getElementById("coop-lobby-filter-bar")) return;
+
+  const bar = document.createElement("div");
+  bar.className = "coop-filter-bar";
+  bar.id = "coop-lobby-filter-bar";
+  bar.innerHTML = `
+    <div class="coop-filter-row">
+      <div class="coop-chip-group" id="coop-chips-goal" role="group" aria-label="Filter by goal">
+        <button type="button" class="coop-chip is-active" data-coop-filter="goal" data-value="">All</button>
+        <button type="button" class="coop-chip" data-coop-filter="goal" data-value="any">Any run</button>
+        <button type="button" class="coop-chip" data-coop-filter="goal" data-value="casual">Casual</button>
+        <button type="button" class="coop-chip" data-coop-filter="goal" data-value="climb">Climb</button>
+        <button type="button" class="coop-chip" data-coop-filter="goal" data-value="high">High Asc</button>
+        <button type="button" class="coop-chip" data-coop-filter="goal" data-value="heart">Heart</button>
+        <button type="button" class="coop-chip" data-coop-filter="goal" data-value="daily">Daily</button>
+      </div>
+      <span class="coop-filter-divider" aria-hidden="true"></span>
+      <div class="coop-chip-group" id="coop-chips-asc" role="group" aria-label="Filter by ascension">
+        <button type="button" class="coop-chip is-active" data-coop-filter="asc" data-value="">Any A</button>
+        <button type="button" class="coop-chip" data-coop-filter="asc" data-value="0-3">A0–3</button>
+        <button type="button" class="coop-chip" data-coop-filter="asc" data-value="4-7">A4–7</button>
+        <button type="button" class="coop-chip" data-coop-filter="asc" data-value="8-10">A8–10</button>
+      </div>
+      <span class="coop-filter-divider" aria-hidden="true"></span>
+      <div class="coop-chip-group" id="coop-chips-voice" role="group" aria-label="Filter by voice preference">
+        <button type="button" class="coop-chip is-active" data-coop-filter="voice" data-value="">Any</button>
+        <button type="button" class="coop-chip" data-coop-filter="voice" data-value="yes">Voice</button>
+        <button type="button" class="coop-chip" data-coop-filter="voice" data-value="no">No Voice</button>
+      </div>
+      <button type="button" class="coop-filter-clear" id="coop-filter-clear" hidden>Clear</button>
+    </div>
+    <div class="coop-filter-actions">
+      <div class="coop-sort-pills" id="coop-sort-pills">
+        <button type="button" class="coop-sort-pill is-active" data-coop-sort="best">Best</button>
+        <button type="button" class="coop-sort-pill" data-coop-sort="newest">New</button>
+        <button type="button" class="coop-sort-pill" data-coop-sort="asc-level">Asc ↑</button>
+      </div>
+      <button type="button" class="coop-density-toggle${lobbyCompact ? " is-compact" : ""}" id="coop-density-toggle" title="Toggle compact view" aria-label="Toggle compact view" aria-pressed="${lobbyCompact}">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+          <rect y="1" width="14" height="2" rx="1" fill="currentColor"/>
+          <rect y="6" width="14" height="2" rx="1" fill="currentColor"/>
+          <rect y="11" width="14" height="2" rx="1" fill="currentColor"/>
+        </svg>
+      </button>
+    </div>`;
+
+  // Inject between the board header and the list
+  const $header = $section.querySelector(".coop-board-head");
+  const $list = document.getElementById("coop-lobbies-list");
+  if ($header && $list) $section.insertBefore(bar, $list);
+  else $section.prepend(bar);
+
+  // Chip clicks (includes Clear button)
+  bar.addEventListener("click", (e) => {
+    if (e.target.closest("#coop-filter-clear")) {
+      clearLobbyFilters();
+      return;
+    }
+    const chip = e.target.closest("[data-coop-filter]");
+    if (chip) {
+      const dim = chip.dataset.coopFilter;
+      lobbyFilters[dim] = chip.dataset.value;
+      lobbiesVisible = CARDS_PAGE;
+      syncChipUI();
+      renderLobbies(lastState);
+      return;
+    }
+    // Sort pills
+    const pill = e.target.closest("[data-coop-sort]");
+    if (pill) {
+      lobbySort = pill.dataset.coopSort;
+      lobbiesVisible = CARDS_PAGE;
+      syncSortUI();
+      renderLobbies(lastState);
+      return;
+    }
+    // Density toggle
+    if (e.target.closest("#coop-density-toggle")) {
+      lobbyCompact = !lobbyCompact;
+      try { localStorage.setItem("coop_compact", lobbyCompact ? "1" : "0"); } catch {}
+      const $btn = document.getElementById("coop-density-toggle");
+      if ($btn) {
+        $btn.classList.toggle("is-compact", lobbyCompact);
+        $btn.setAttribute("aria-pressed", String(lobbyCompact));
+      }
+      renderLobbies(lastState);
+    }
+  });
+}
+
+function syncChipUI() {
+  ["goal", "asc", "voice"].forEach((dim) => {
+    document.querySelectorAll(`[data-coop-filter="${dim}"]`).forEach((chip) => {
+      chip.classList.toggle("is-active", chip.dataset.value === lobbyFilters[dim]);
+    });
+  });
+  const hasActive = lobbyFilters.goal !== "" || lobbyFilters.asc !== "" || lobbyFilters.voice !== "";
+  const $clear = document.getElementById("coop-filter-clear");
+  if ($clear) $clear.hidden = !hasActive;
+}
+
+function syncSortUI() {
+  document.querySelectorAll("[data-coop-sort]").forEach((pill) => {
+    pill.classList.toggle("is-active", pill.dataset.coopSort === lobbySort);
+  });
 }
 
 // =========================================================================
@@ -1166,7 +1384,8 @@ function wireDelegatedClicks() {
       case "quick-match": closeAllCoopModals(); openQuickMatchModal(); return;
       case "go-afk": setRadioAndFire("status", "afk"); void savePresence({ silent: false }); return;
       case "scroll-invites": {
-        document.getElementById("coop-invites-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
+        const $inv = document.getElementById("coop-invites-section");
+        if ($inv && !$inv.hidden) $inv.scrollIntoView({ behavior: "smooth", block: "start" });
         return;
       }
       case "copy": {

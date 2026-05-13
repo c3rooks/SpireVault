@@ -31,7 +31,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Playfair+Display:wght@700;900&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/styles.css?v=131" />
+  <link rel="stylesheet" href="/styles.css?v=132" />
 
   <!-- Google tag (gtag.js) — Spire Vault GA4 stream G-09LEQ247HN.
        Loaded async so it never blocks the critical rendering path; the
@@ -879,9 +879,9 @@
                   <label><input type="radio" name="status" value="paired"><span class="pill ember">Paired</span></label>
                   <label><input type="radio" name="status" value="afk"><span class="pill mute">AFK</span></label>
                 </fieldset>
-                <dl class="coop-side-intent" id="coop-strip-intent" aria-label="Your run preferences">
+                <div class="coop-side-intent" id="coop-strip-intent" aria-label="Your run preferences" role="list">
                   <!-- Populated by coop-lobbies.js: Goal / Asc / Voice rows -->
-                </dl>
+                </div>
                 <p class="coop-side-hint">Visible while this page or the desktop companion is active.</p>
                 <div class="coop-side-actions">
                   <button class="btn-ghost btn-xs" type="button" data-coop-action="open-intent">Run Preferences</button>
@@ -1908,6 +1908,6 @@
        script.js's renderActiveTab() is called for the Beta tab. Cache
        bust string is bumped alongside the script.js bust on each ship. -->
   <script src="/run-coach.js?v=2" defer></script>
-  <script src="/script.js?v=164" type="module"></script>
+  <script src="/script.js?v=165" type="module"></script>
 </body>
 </html>
