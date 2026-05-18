@@ -69,7 +69,7 @@ const STS2_APP_ID = "2868840";
  * on an old client — instruct hard refresh. If it DOES match, the
  * bug is real and we can stop chasing cache ghosts.
  */
-const VAULT_BUILD = "v171-2026-05-18-coop-status-phases-2-3-steam-auto-status";
+const VAULT_BUILD = "v172-2026-05-18-coop-presence-accuracy-auto-afk-v2-sync";
 
 // Feature flag — set to `true` only on local dev when iterating on the
 // Run Companion Overlay. Production stays false until the feature is
@@ -3541,6 +3541,11 @@ function flipToAutoAway(trigger) {
   setRadio("status", "afk");
   saveDraft({ ...readDraft(), status: "afk" });
   schedulePush(0);
+  // Dispatch change event so coop-lobbies.js v2 savePresence also fires.
+  // Must happen BEFORE setting autoAfkActiveSince so the wireCoopForm
+  // listener's reset of autoAfkActiveSince=0 happens first.
+  document.querySelector('#status-pills input[name="status"][value="afk"]')
+    ?.dispatchEvent(new Event("change", { bubbles: true }));
   autoAfkActiveSince = Date.now();
   sendBeacon("auto-afk-flipped", `from=${current} trigger=${trigger}`);
 }
@@ -3558,6 +3563,9 @@ function maybeClearAutoAfkOnActivity() {
   setRadio("status", "looking");
   saveDraft({ ...readDraft(), status: "looking" });
   schedulePush(0);
+  // Dispatch change event so coop-lobbies.js v2 savePresence also fires.
+  document.querySelector('#status-pills input[name="status"][value="looking"]')
+    ?.dispatchEvent(new Event("change", { bubbles: true }));
   sendBeacon("auto-afk-restored", "trigger=activity");
 }
 
@@ -3591,11 +3599,13 @@ window.addEventListener("pagehide", () => {
   if (!current || current === "afk") return;
   // sendBeacon with a Blob so the Worker receives application/json (a plain
   // DOMString defaults to text/plain which the Worker won't parse as JSON).
-  const blob = new Blob(
-    [JSON.stringify({ ...readDraft(), status: "afk" })],
-    { type: "application/json" }
+  const payload = JSON.stringify({ ...readDraft(), status: "afk" });
+  navigator.sendBeacon?.(`${API_BASE}/presence`, new Blob([payload], { type: "application/json" }));
+  // Also update the Co-op v2 presence (same-origin → vault_session cookie
+  // ships automatically, Worker accepts it without an explicit header).
+  navigator.sendBeacon?.(`${API_BASE}/coop/presence`,
+    new Blob([JSON.stringify({ status: "afk" })], { type: "application/json" })
   );
-  navigator.sendBeacon?.(`${API_BASE}/presence`, blob);
 });
 
 setInterval(() => {
