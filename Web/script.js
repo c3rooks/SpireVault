@@ -69,7 +69,7 @@ const STS2_APP_ID = "2868840";
  * on an old client — instruct hard refresh. If it DOES match, the
  * bug is real and we can stop chasing cache ghosts.
  */
-const VAULT_BUILD = "v172-2026-05-18-coop-presence-accuracy-auto-afk-v2-sync";
+const VAULT_BUILD = "v173-2026-05-18-remove-character-pin";
 
 // Feature flag — set to `true` only on local dev when iterating on the
 // Run Companion Overlay. Production stays false until the feature is
@@ -2082,7 +2082,6 @@ async function boot() {
   applyPrefs();
   wireRunRowPreview();
   wireHighlightsControls();
-  wirePinnedCharsDelegation();
   wireKeyboardShortcuts();
   // "Find history.json" buttons (sidebar + every empty-state) all route here.
   // On Chromium browsers we use the File System Access API so we can remember
@@ -10544,19 +10543,6 @@ function renderCharCards(buckets, opts = {}) {
   if (!buckets || !buckets.length) {
     return `<p class="muted">No character data yet.</p>`;
   }
-  // Pinned characters float to the top of the grid. Inside pinned and
-  // unpinned groups we preserve whatever order the caller passed in
-  // (typically winrate-desc, computed in stats.js). Clicking the pin
-  // star toggles membership without otherwise rerunning stats — handled
-  // by the delegated click handler in `wirePinnedCharsDelegation`.
-  const pinned = getPinnedCharacters();
-  const ordered = buckets.slice().sort((a, b) => {
-    const ap = pinned.has(String(a.key).toLowerCase()) ? 1 : 0;
-    const bp = pinned.has(String(b.key).toLowerCase()) ? 1 : 0;
-    if (ap !== bp) return bp - ap;
-    return 0;
-  });
-
   const hint = expandable
     ? `<div class="char-card-cta">
          <span>View details</span>
@@ -10566,29 +10552,18 @@ function renderCharCards(buckets, opts = {}) {
   const cardClass = expandable ? "char-card is-clickable" : "char-card";
   return `
     <div class="char-grid">
-      ${ordered.map((c) => {
+      ${buckets.map((c) => {
         const theme = charTheme(c.key);
         const wr = (c.winrate * 100).toFixed(1);
         const lossCount = c.runs - c.wins;
-        const isPinned = pinned.has(String(c.key).toLowerCase());
         const dataAttrs = expandable
           ? `data-action="char-expand" data-char-key="${esc(c.key)}"`
           : `data-action="goto-tab" data-tab="characters"`;
         return `
-          <div class="${cardClass}${isPinned ? " is-pinned" : ""}" style="--char-color:${theme.color}"
+          <div class="${cardClass}" style="--char-color:${theme.color}"
                role="button" tabindex="0"
                ${dataAttrs}
-               aria-label="${esc(capitalize(c.key))}: ${wr}% winrate over ${c.runs} runs.${isPinned ? " Pinned." : ""} ${expandable ? "Tap to view details." : ""}">
-            <button class="char-card-pin" type="button"
-                    data-action="toggle-pin-character"
-                    data-char-key="${esc(c.key)}"
-                    aria-pressed="${isPinned ? "true" : "false"}"
-                    title="${isPinned ? "Unpin from top of grid" : "Pin to top of grid"}"
-                    aria-label="${isPinned ? "Unpin " : "Pin "}${esc(capitalize(c.key))}">
-              <svg viewBox="0 0 24 24" width="16" height="16" fill="${isPinned ? "currentColor" : "none"}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
-              </svg>
-            </button>
+               aria-label="${esc(capitalize(c.key))}: ${wr}% winrate over ${c.runs} runs.${expandable ? " Tap to view details." : ""}">
             <div class="char-card-head">
               <div class="char-card-icon">${charPortraitOrIcon(c.key, theme)}</div>
               <span class="char-card-runs">${c.runs} runs</span>
@@ -10604,34 +10579,6 @@ function renderCharCards(buckets, opts = {}) {
           </div>`;
       }).join("")}
     </div>`;
-}
-
-// =========================================================================
-// Pinned characters
-//
-// Local-only ordering preference — a small Set of character keys the user
-// has marked as favorites. Pinned characters float to the top of every
-// char-grid render. Stored in localStorage as a JSON array (Sets aren't
-// JSON-native).
-// =========================================================================
-const PINNED_CHARS_KEY = "vault.web.pinnedCharacters.v1";
-
-function getPinnedCharacters() {
-  try {
-    const raw = JSON.parse(localStorage.getItem(PINNED_CHARS_KEY) || "[]");
-    return new Set((Array.isArray(raw) ? raw : []).map((s) => String(s).toLowerCase()));
-  } catch { return new Set(); }
-}
-function setPinnedCharacters(set) {
-  try { localStorage.setItem(PINNED_CHARS_KEY, JSON.stringify([...set])); } catch {}
-}
-function togglePinnedCharacter(key) {
-  const k = String(key || "").toLowerCase();
-  if (!k) return;
-  const set = getPinnedCharacters();
-  if (set.has(k)) set.delete(k);
-  else set.add(k);
-  setPinnedCharacters(set);
 }
 
 // =========================================================================
@@ -11061,25 +11008,6 @@ function toggleKbdHelp() {
     });
   }
   $kbd.hidden = !$kbd.hidden;
-}
-
-// Delegated click for character-card pin button. Stops propagation so the
-// pin click never triggers the surrounding `char-expand` handler.
-function wirePinnedCharsDelegation() {
-  if (window.__pinnedCharsWired) return;
-  window.__pinnedCharsWired = true;
-  document.addEventListener("click", (e) => {
-    const btn = e.target.closest && e.target.closest('[data-action="toggle-pin-character"]');
-    if (!btn) return;
-    e.stopPropagation();
-    e.preventDefault();
-    const key = btn.getAttribute("data-char-key") || "";
-    togglePinnedCharacter(key);
-    // Cheap re-render of the active stats tab — the pinned set only
-    // affects sort order on character grids, so a refresh of the tab
-    // body is enough; we don't need to recompute stats.
-    renderActiveTab();
-  });
 }
 
 /** Inline character drill-down — shown below the grid on the
