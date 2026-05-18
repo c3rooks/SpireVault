@@ -1,4 +1,4 @@
-// coop-lobbies.js — v13 (Co-op Lobby Beta surface)
+// coop-lobbies.js — v14 (Co-op Lobby Beta surface)
 // =========================================================================
 // Drives the Co-op Lobby Beta surface:
 //   A. Compact command bar with 3 stats + CTAs (Post a Run, Quick Match,
@@ -794,7 +794,9 @@ function relevanceScore(lobby, me) {
 function lobbyMatchesFilters(lobby) {
   const { goal, asc, voice } = lobbyFilters;
   if (goal) {
-    const g = lobby.goal || "any";
+    // Normalise legacy "a20" → "high" so old lobbies still appear under the High Asc chip.
+    const raw = lobby.goal || "any";
+    const g = raw === "a20" ? "high" : raw;
     if (g !== goal && g !== "any") return false;
   }
   if (asc) {
