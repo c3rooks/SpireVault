@@ -5778,7 +5778,7 @@ function renderClassicCoopMirror(list, others, summary) {
   // every poll so the segment stays correct even if the user changes
   // status from the profile popover or another tab.
   const me = (list || []).find((p) => p.steamID === session?.steamID);
-  const myStatus = me?.status || "";
+  const myStatus = mapStatusFromLegacy(me?.status || "");
   document
     .querySelectorAll('#classic-status-pills input[name="classic-status"]')
     .forEach((r) => { r.checked = r.value === myStatus; });
@@ -5881,7 +5881,7 @@ function renderRow(p) {
       <div class="meta">
         <div class="meta-line">
           <span class="name">${esc(persona)}</span>
-          <span class="tag ${tagClass}">${tagLabel}</span>
+          <span class="tag ${tagClass}">${esc(tagLabel)}</span>
           ${p.inSTS2 ? `<span class="tag live">In STS2</span>` : ""}
           ${pairedPartner ? `<span class="tag paired" title="${isPairedWithMe ? "You're co-oping with this player right now." : "Currently playing with " + esc(pairedPartner)}">${isPairedWithMe ? "Co-op &mdash; with you" : "Co-op &mdash; w/ " + esc(pairedPartner)}</span>` : ""}
           ${lastActive ? `<span class="last-active is-${freshness}" title="Last heartbeat ${esc(p.updatedAt ?? "")}">${esc(lastActive)}</span>` : ""}
@@ -10827,7 +10827,7 @@ function showVictoryCelebration(run, streakCount) {
       ${floorStr ? `<p class="victory-floor">${esc(floorStr)}</p>` : ""}
       ${streakHtml}
       <button type="button" class="victory-dismiss" id="victory-dismiss">Continue</button>
-      <div class="victory-progress" role="progressbar" aria-label="Auto-closes in 6 seconds" aria-valuenow="100">
+      <div class="victory-progress" role="progressbar" aria-label="Auto-closes in 7 seconds" aria-valuenow="100">
         <div class="victory-progress-fill"></div>
       </div>
     </div>`;
@@ -10849,6 +10849,8 @@ function showVictoryCelebration(run, streakCount) {
   const timer = setTimeout(dismiss, 7000);
 
   document.getElementById("victory-dismiss")?.addEventListener("click", () => { clearTimeout(timer); dismiss(); });
+
+  overlay.addEventListener("click", (e) => { if (e.target === overlay) { clearTimeout(timer); dismiss(); } });
 
   const onKey = (e) => { if (e.key === "Escape") { clearTimeout(timer); dismiss(); document.removeEventListener("keydown", onKey); } };
   document.addEventListener("keydown", onKey);
