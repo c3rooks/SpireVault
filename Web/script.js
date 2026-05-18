@@ -17,7 +17,7 @@ import * as Stats from "/lib/stats-engine.js?v=4";
 import * as HistoryStore from "/lib/history-store.js?v=8";
 import * as InviteAPI from "/lib/invites.js?v=4";
 import * as HighlightsAPI from "/lib/highlights.js?v=1";
-import * as CoopLobbies from "/lib/coop-lobbies.js?v=13";
+import * as CoopLobbies from "/lib/coop-lobbies.js?v=14";
 import * as AscInfo from "/lib/ascension-info.js?v=1";
 import * as CharInfo from "/lib/character-info.js?v=1";
 import * as RelicInfo from "/lib/relic-info.js?v=1";
@@ -69,7 +69,7 @@ const STS2_APP_ID = "2868840";
  * on an old client — instruct hard refresh. If it DOES match, the
  * bug is real and we can stop chasing cache ghosts.
  */
-const VAULT_BUILD = "v169-2026-05-13-coop-partner-end-toast-and-auto-afk-restore";
+const VAULT_BUILD = "v170-2026-05-18-coop-status-redesign-away-labels-page-hidden-afk";
 
 // Feature flag — set to `true` only on local dev when iterating on the
 // Run Companion Overlay. Production stays false until the feature is
@@ -1794,7 +1794,7 @@ async function refreshPublicCount() {
       const activeNow = list.filter((p) => isActiveNow(p)).length;
       const head =
         list.length === 1 ? "1 player signed up" : `${list.length} players signed up`;
-      $text.textContent = `${head} · ${activeNow} active now · ${looking} looking`;
+      $text.textContent = `${head} · ${activeNow} online · ${looking} looking`;
     }
   } catch {
     $text.textContent = "Live count momentarily unavailable.";
@@ -2587,10 +2587,10 @@ async function refreshGuestRoster() {
     const total   = list.length;
     const head    = total === 1 ? "1 player signed up" : `${total} players signed up`;
     if ($count) {
-      $count.innerHTML = `<span class="dot dot-pulse" aria-hidden="true"></span>${head} · ${looking} looking for co-op · ${inGame} in STS2 right now`;
+      $count.innerHTML = `<span class="dot dot-pulse" aria-hidden="true"></span>${head} · ${looking} looking · ${inGame} in STS2 right now`;
     }
     if ($headSummary) {
-      $headSummary.textContent = `${head} · ${looking} looking · ${inGame} in Slay the Spire 2`;
+      $headSummary.textContent = `${head} · ${looking} looking · ${inGame} in STS2`;
     }
     if ($headCount) {
       $headCount.textContent = String(total);
@@ -2639,12 +2639,13 @@ async function refreshGuestRoster() {
 }
 
 function guestStatusLabel(p) {
-  if (p.inSTS2) return "In Slay the Spire 2 · " + (p.status === "looking" ? "looking for co-op" : p.status);
-  if (p.status === "looking") return "Looking for co-op";
-  if (p.status === "inRun") return "In a solo run";
-  if (p.status === "inCoop") return "Already in co-op";
-  if (p.status === "afk") return "AFK";
-  return "Signed up";
+  const STATUS_DISPLAY = {
+    looking: "Looking for Co-op", solo: "In a Run", paired: "In Co-op", afk: "Away",
+    inRun: "In a Run", inCoop: "In Co-op",
+  };
+  const label = STATUS_DISPLAY[p.status] || "Signed up";
+  if (p.inSTS2) return "In Slay the Spire 2 · " + (p.status === "looking" ? "looking for co-op" : label.toLowerCase());
+  return label;
 }
 
 function escapeHtml(s) {
@@ -3442,7 +3443,7 @@ async function hydrateMyStatusFromServer() {
       const $cd = document.getElementById("classic-me-discord");
       if ($cd && !$cd.value) $cd.value = me.discordHandle;
     }
-    saveDraft({ status: me.status, discordHandle: me.discordHandle });
+    saveDraft({ status: mapStatusFromLegacy(me.status), discordHandle: me.discordHandle });
   } catch { /* offline at boot is fine */ }
 }
 
@@ -3515,17 +3516,34 @@ function schedulePush(delay = 600) {
  * "is this player actually in the game right now" is enforced
  * upstream, not by the client. Nothing here can lie about that.
  */
-const IDLE_AFK_AFTER_MS  = 15 * 60_000; // 15 min idle → auto-AFK
-const IDLE_GRACE_MS      = 5  * 60_000; // 5 min after manual choice, no auto-flip
-let lastUserActivityAt   = Date.now();
-let userExplicitStatusAt = Date.now();
+const IDLE_AFK_AFTER_MS   = 15 * 60_000; // 15 min no activity on page → auto-away
+const HIDDEN_AFK_AFTER_MS = 10 * 60_000; // 10 min tab hidden continuously → auto-away
+const IDLE_GRACE_MS       = 5  * 60_000; // 5 min after manual choice, no auto-flip
+let lastUserActivityAt    = Date.now();
+let userExplicitStatusAt  = Date.now();
 // Timestamp the auto-AFK loop stamped on the LAST automatic flip
 // to "afk". Used to distinguish "user manually picked AFK" (leave
 // alone) from "we flipped them automatically and now they're back
 // at the keyboard" (restore to Looking so the roster doesn't keep
 // showing them grey). Cleared the moment we restore them or the
 // user changes status by hand.
-let autoAfkActiveSince   = 0;
+let autoAfkActiveSince    = 0;
+// Timer started when the page is hidden; fires after HIDDEN_AFK_AFTER_MS
+// to flip the user to "away" even if the tab stays open in background.
+let hiddenAfkTimer        = null;
+
+function flipToAutoAway(trigger) {
+  if (!session?.steamID) return;
+  const current = (document.querySelector('input[name="status"]:checked') || {}).value;
+  if (!current || current === "afk") return;
+  const sinceExplicit = Date.now() - userExplicitStatusAt;
+  if (sinceExplicit < IDLE_GRACE_MS) return;
+  setRadio("status", "afk");
+  saveDraft({ ...readDraft(), status: "afk" });
+  schedulePush(0);
+  autoAfkActiveSince = Date.now();
+  sendBeacon("auto-afk-flipped", `from=${current} trigger=${trigger}`);
+}
 
 function maybeClearAutoAfkOnActivity() {
   if (!autoAfkActiveSince) return;
@@ -3554,9 +3572,30 @@ function maybeClearAutoAfkOnActivity() {
 
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible") {
+    // Tab came back — cancel the hidden-AFK timer and restore if auto-away.
+    clearTimeout(hiddenAfkTimer);
+    hiddenAfkTimer = null;
     lastUserActivityAt = Date.now();
     if (autoAfkActiveSince) maybeClearAutoAfkOnActivity();
+  } else {
+    // Tab hidden — start the 10-min background-AFK timer.
+    clearTimeout(hiddenAfkTimer);
+    hiddenAfkTimer = setTimeout(() => flipToAutoAway("hidden"), HIDDEN_AFK_AFTER_MS);
   }
+});
+
+// Flip to away immediately when the user closes the tab or navigates away.
+window.addEventListener("pagehide", () => {
+  if (!session?.steamID) return;
+  const current = (document.querySelector('input[name="status"]:checked') || {}).value;
+  if (!current || current === "afk") return;
+  // sendBeacon with a Blob so the Worker receives application/json (a plain
+  // DOMString defaults to text/plain which the Worker won't parse as JSON).
+  const blob = new Blob(
+    [JSON.stringify({ ...readDraft(), status: "afk" })],
+    { type: "application/json" }
+  );
+  navigator.sendBeacon?.(`${API_BASE}/presence`, blob);
 });
 
 setInterval(() => {
@@ -3567,15 +3606,8 @@ setInterval(() => {
   if (sinceExplicit < IDLE_GRACE_MS) return;
   const current = (document.querySelector('input[name="status"]:checked') || {}).value;
   if (!current || current === "afk") return;
-  // Flip to AFK; the heartbeat will push it server-side.
-  setRadio("status", "afk");
-  saveDraft({ ...readDraft(), status: "afk" });
-  schedulePush(0);
-  // Stamp the auto-AFK flag so the next real user activity restores
-  // them to Looking instead of leaving them grey-pilled on the
-  // roster forever.
-  autoAfkActiveSince = Date.now();
-  sendBeacon("auto-afk-flipped", `from=${current} idleMs=${idleMs}`);
+  // Flip to away; the heartbeat will push it server-side.
+  flipToAutoAway(`idle ${Math.round(idleMs / 1000)}s`);
 }, 60_000);
 
 async function pushNow(silent) {
@@ -3617,6 +3649,19 @@ async function pushNow(silent) {
     if (resp.ok) {
       resetAuthFailures();
       lastSuccessfulHeartbeatAt = Date.now();
+      // Honor server-side status override (e.g., Worker detects Steam offline
+      // or inSTS2 change and sends back forceStatus to keep client in sync).
+      try {
+        const data = await resp.json();
+        if (data?.forceStatus) {
+          const v2 = mapStatusFromLegacy(data.forceStatus);
+          if (v2 !== readDraft().status) {
+            setRadio("status", v2);
+            saveDraft({ ...readDraft(), status: v2 });
+            autoAfkActiveSince = v2 === "afk" ? Date.now() : 0;
+          }
+        }
+      } catch { /* response may have no body */ }
     }
     setStatus(resp.ok ? "online" : "trouble", resp.ok ? "Live on the feed" : "Trouble reaching server");
   } catch (e) {
@@ -5495,7 +5540,7 @@ function renderFeed(list) {
     $bSummary.textContent = others.length === 0
       ? "No one else has signed up yet. Be the first."
       : `${others.length} signed-up player${others.length === 1 ? "" : "s"} · ` +
-        `${activeNow} active now · ${looking} looking · ${inGame} in Slay the Spire 2`;
+        `${activeNow} online · ${looking} looking · ${inGame} in STS2`;
   }
 
   const $feed = document.getElementById("feed");
@@ -5542,7 +5587,7 @@ function renderFeed(list) {
     }
     if (p.inSTS2)               n += 80; // currently in the game itself
     if (p.status === "looking") n += 40;
-    if (p.status === "inRun")   n += 10;
+    if (p.status === "inRun" || p.status === "solo") n += 10;
     return n;
   }
 
@@ -5640,10 +5685,10 @@ function feedMatchesText(row, query) {
   if (tokens.length === 0) return true;
   const partner = row?.paired?.partnerPersona || "";
   const statusText = {
-    looking: "looking",
-    inRun: "solo run",
-    inCoop: "in co-op paired",
-    afk: "afk",
+    looking: "looking for co-op",
+    solo: "in a run solo", inRun: "in a run solo",
+    paired: "in co-op paired", inCoop: "in co-op paired",
+    afk: "away afk",
   }[row?.status || "looking"] || "";
   const haystack = [
     row?.personaName,
@@ -5700,8 +5745,8 @@ function renderClassicCoopMirror(list, others, summary) {
     } else {
       $sub.textContent =
         `${total} signed-up player${total === 1 ? "" : "s"} · ` +
-        `${summary.activeNow} active now · ${summary.looking} looking · ` +
-        `${summary.inGame} in Slay the Spire 2`;
+        `${summary.activeNow} online · ${summary.looking} looking · ` +
+        `${summary.inGame} in STS2`;
     }
   }
   const $count = document.getElementById("classic-online-count");
@@ -5793,8 +5838,10 @@ function isActiveNow(p) {
 
 function renderRow(p) {
   const status = p.status ?? "looking";
-  const tagClass = { looking: "ok", inRun: "gold", inCoop: "ember", afk: "mute" }[status];
-  const tagLabel = { looking: "Looking", inRun: "Solo run", inCoop: "In co-op", afk: "AFK" }[status];
+  const tagClass = { looking: "ok", solo: "gold", paired: "ember", afk: "mute",
+                     inRun: "gold", inCoop: "ember" }[status] ?? "mute";
+  const tagLabel = { looking: "Looking for Co-op", solo: "In a Run", paired: "In Co-op", afk: "Away",
+                     inRun: "In a Run", inCoop: "In Co-op" }[status] ?? status;
 
   // Steam avatar — server-stamped, but defense-in-depth scrub.
   const safeAvatar = (() => {
@@ -11927,10 +11974,9 @@ function setStatus(state, label) {
 // =========================================================================
 
 const PROFILE_STATUS_LABELS = {
-  looking: "Looking",
-  inRun:   "In a solo run",
-  inCoop:  "In co-op",
-  afk:     "AFK",
+  looking: "Looking for Co-op",
+  solo:    "In a Run",   paired: "In Co-op",   afk: "Away",
+  inRun:   "In a Run",   inCoop: "In Co-op",
 };
 
 /**
@@ -11961,7 +12007,7 @@ function getMyPairFromFeed() {
  * be misleading. Otherwise we honor the user's drafted choice.
  */
 function getEffectiveStatus() {
-  if (getMyPairFromFeed()) return "inCoop";
+  if (getMyPairFromFeed()) return "paired";
   const draft = readDraft();
   return draft.status || "looking";
 }
@@ -12252,8 +12298,8 @@ function renderProfilePopover() {
   // visually locks rather than fights the server. We still show the
   // pressed pill — just block presses on the others.
   const statusLocked = !!pair;
-  const segOrder = ["looking", "inRun", "inCoop", "afk"];
-  const segShort = { looking: "Looking", inRun: "In a run", inCoop: "Co-op", afk: "AFK" };
+  const segOrder = ["looking", "solo", "paired", "afk"];
+  const segShort = { looking: "Looking", solo: "In a Run", paired: "In Co-op", afk: "Away" };
   const segHtml = segOrder.map((k) => {
     const pressed = effectiveStatus === k;
     return `<button type="button"

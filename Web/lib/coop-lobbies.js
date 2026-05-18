@@ -243,7 +243,8 @@ function voiceLabel(v) {
   return ({ yes: "Voice chat", no: "No voice", optional: "Voice optional" })[v] || "";
 }
 function statusLabel(s) {
-  return ({ looking: "Looking", solo: "In solo run", paired: "Paired", afk: "AFK", offline: "Offline" })[s] || "Looking";
+  return ({ looking: "Looking for Co-op", solo: "In a Run", paired: "In Co-op", afk: "Away", offline: "Offline",
+            inRun: "In a Run", inCoop: "In Co-op" })[s] || "Looking for Co-op";
 }
 function steamProfileUrl(sid) {
   return `https://steamcommunity.com/profiles/${encodeURIComponent(sid)}`;
