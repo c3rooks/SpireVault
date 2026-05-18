@@ -1,4 +1,4 @@
-// coop-lobbies.js — v14 (Co-op Lobby Beta surface)
+// coop-lobbies.js — v15 (Co-op Lobby Beta surface)
 // =========================================================================
 // Drives the Co-op Lobby Beta surface:
 //   A. Compact command bar with 3 stats + CTAs (Post a Run, Quick Match,
@@ -165,7 +165,15 @@ async function refreshState({ force = false } = {}) {
 async function sendHeartbeat() {
   if (!bootCtx?.session?.steamID) return;
   const r = await jsonFetch("/coop/heartbeat", { body: {} });
-  if (!r.ok && r.status === 401) bootCtx.deps?.onAuthFailure?.();
+  if (!r.ok && r.status === 401) { bootCtx.deps?.onAuthFailure?.(); return; }
+  // Honor server-side status override (Steam offline → "afk", entered STS2
+  // while "looking" → "solo", left STS2 after auto-solo → "looking").
+  if (r.ok && r.forceStatus) {
+    const currentStatus = document.querySelector('input[name="status"]:checked')?.value;
+    if (r.forceStatus !== currentStatus) {
+      setRadioAndFire("status", r.forceStatus);
+    }
+  }
 }
 
 function scheduleNextPoll() {

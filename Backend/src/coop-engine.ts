@@ -49,6 +49,8 @@ import {
 } from "./coop-store";
 import { getSessionProfile } from "./presence";
 
+const STS2_APP_ID = "2868840";
+
 // ---------- Errors / result type ----------
 
 export type CoopOk<T> = { ok: true; value: T };
@@ -179,6 +181,29 @@ async function profileFor(
   };
 }
 
+async function fetchSteamPlayerInfo(
+  env: Env,
+  steamId: string,
+): Promise<{ inSTS2: boolean; steamOnline: boolean }> {
+  if (!env.STEAM_WEB_API_KEY) return { inSTS2: false, steamOnline: true };
+  try {
+    const url =
+      `https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v2/` +
+      `?key=${env.STEAM_WEB_API_KEY}&steamids=${steamId}`;
+    const resp = await fetch(url, { cf: { cacheTtl: 30, cacheEverything: true } } as RequestInit);
+    if (!resp.ok) return { inSTS2: false, steamOnline: true };
+    const data = (await resp.json()) as any;
+    const players: any[] = data?.response?.players ?? [];
+    const player = players.find((p: any) => String(p?.steamid) === steamId);
+    if (!player) return { inSTS2: false, steamOnline: true };
+    const inSTS2 = player?.gameid && String(player.gameid) === STS2_APP_ID;
+    const steamOnline = Number(player.personastate) !== 0;
+    return { inSTS2: !!inSTS2, steamOnline };
+  } catch {
+    return { inSTS2: false, steamOnline: true };
+  }
+}
+
 export async function upsertPresenceV2(
   env: Env,
   steamId: string,
@@ -225,6 +250,8 @@ export async function upsertPresenceV2(
     preferredCharacters,
     currentLobbyId: prev?.currentLobbyId,
     currentSessionId: prev?.currentSessionId,
+    // User explicitly set their status — clear the auto-set flag.
+    statusAutoSet: false,
     lastHeartbeatAt: nowIso,
     expiresAt: new Date(now + COOP_PRESENCE_TTL_S * 1000).toISOString(),
     updatedAt: nowIso,
@@ -234,14 +261,43 @@ export async function upsertPresenceV2(
   return ok(next);
 }
 
+export type HeartbeatResult = { presence: CoopPresence; forceStatus?: CoopPresenceStatus };
+
 export async function heartbeatPresence(
   env: Env,
   steamId: string,
-): Promise<CoopResult<CoopPresence>> {
-  const prev = await readPresence(env, steamId);
-  const profile = await profileFor(env, steamId);
+): Promise<CoopResult<HeartbeatResult>> {
+  const [prev, profile, steamInfo] = await Promise.all([
+    readPresence(env, steamId),
+    profileFor(env, steamId),
+    fetchSteamPlayerInfo(env, steamId),
+  ]);
   const now = Date.now();
   const nowIso = new Date(now).toISOString();
+
+  let status: CoopPresenceStatus = prev?.status ?? "looking";
+  let statusAutoSet: boolean = prev?.statusAutoSet ?? false;
+  let forceStatus: CoopPresenceStatus | undefined;
+
+  // --- Steam-based auto-status logic ---
+  // Priority 1: Steam offline → push to "afk" (skip if already afk/offline/paired)
+  if (!steamInfo.steamOnline) {
+    if (status !== "afk" && status !== "offline" && status !== "paired") {
+      status = "afk";
+      statusAutoSet = true;
+      forceStatus = "afk";
+    }
+  // Priority 2: In STS2 while looking → auto-flip to "solo"
+  } else if (steamInfo.inSTS2 && status === "looking") {
+    status = "solo";
+    statusAutoSet = true;
+    forceStatus = "solo";
+  // Priority 3: Left STS2 after server auto-set to "solo" → restore "looking"
+  } else if (!steamInfo.inSTS2 && status === "solo" && statusAutoSet) {
+    status = "looking";
+    statusAutoSet = false;
+    forceStatus = "looking";
+  }
 
   const next: CoopPresence = {
     steamId,
@@ -249,7 +305,7 @@ export async function heartbeatPresence(
     avatarUrl: prev?.avatarUrl ?? profile.avatarUrl,
     steamProfileUrl:
       prev?.steamProfileUrl ?? `https://steamcommunity.com/profiles/${steamId}`,
-    status: prev?.status ?? "looking",
+    status,
     note: prev?.note,
     discordHandle: prev?.discordHandle,
     ascensionMin: prev?.ascensionMin,
@@ -259,14 +315,14 @@ export async function heartbeatPresence(
     preferredCharacters: prev?.preferredCharacters,
     currentLobbyId: prev?.currentLobbyId,
     currentSessionId: prev?.currentSessionId,
+    statusAutoSet,
     lastHeartbeatAt: nowIso,
     expiresAt: new Date(now + COOP_PRESENCE_TTL_S * 1000).toISOString(),
     updatedAt: nowIso,
   };
   await writePresence(env, next);
 
-  // Refresh the host's lobby TTL if they own one. This is what makes
-  // "lobbies expire if the host stops heartbeating" cheap to enforce.
+  // Refresh the host's lobby TTL if they own one.
   if (next.currentLobbyId) {
     const lobby = await readLobby(env, next.currentLobbyId);
     if (lobby && lobby.hostSteamId === steamId && lobby.status === "open") {
@@ -276,7 +332,7 @@ export async function heartbeatPresence(
     }
   }
 
-  return ok(next);
+  return ok({ presence: next, forceStatus });
 }
 
 // ---------- Helpers ----------

@@ -31,6 +31,7 @@ import {
   updateLobby,
   upsertPresenceV2,
   type CreateLobbyBody,
+  type HeartbeatResult,
   type PresenceUpsertBody,
   type SendInviteBody,
   type UpdateLobbyBody,
@@ -142,7 +143,10 @@ export async function handleCoopRoute(
     if (rl) return rl;
     const r = await heartbeatPresence(env, auth.steamID);
     if (!r.ok) return errResp(r.status, r.error, r.message);
-    return json({ ok: true, presence: r.value });
+    const { presence, forceStatus } = r.value as HeartbeatResult;
+    const body: Record<string, unknown> = { ok: true, presence };
+    if (forceStatus !== undefined) body.forceStatus = forceStatus;
+    return json(body);
   }
 
   if (method === "POST" && pathname === "/coop/lobbies") {

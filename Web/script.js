@@ -17,7 +17,7 @@ import * as Stats from "/lib/stats-engine.js?v=4";
 import * as HistoryStore from "/lib/history-store.js?v=8";
 import * as InviteAPI from "/lib/invites.js?v=4";
 import * as HighlightsAPI from "/lib/highlights.js?v=1";
-import * as CoopLobbies from "/lib/coop-lobbies.js?v=14";
+import * as CoopLobbies from "/lib/coop-lobbies.js?v=15";
 import * as AscInfo from "/lib/ascension-info.js?v=1";
 import * as CharInfo from "/lib/character-info.js?v=1";
 import * as RelicInfo from "/lib/relic-info.js?v=1";
@@ -69,7 +69,7 @@ const STS2_APP_ID = "2868840";
  * on an old client — instruct hard refresh. If it DOES match, the
  * bug is real and we can stop chasing cache ghosts.
  */
-const VAULT_BUILD = "v170-2026-05-18-coop-status-redesign-away-labels-page-hidden-afk";
+const VAULT_BUILD = "v171-2026-05-18-coop-status-phases-2-3-steam-auto-status";
 
 // Feature flag — set to `true` only on local dev when iterating on the
 // Run Companion Overlay. Production stays false until the feature is

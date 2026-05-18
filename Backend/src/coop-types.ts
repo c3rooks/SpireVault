@@ -87,6 +87,12 @@ export interface CoopPresence {
   currentLobbyId?: string;
   /** Active session — set when paired. */
   currentSessionId?: string;
+  /**
+   * True when the server automatically overrode the user's status (e.g.,
+   * Steam offline → "afk", or entered STS2 while "looking" → "solo").
+   * Cleared when the user explicitly sets their own status via upsert.
+   */
+  statusAutoSet?: boolean;
   lastHeartbeatAt: string;
   expiresAt: string;
   updatedAt: string;
