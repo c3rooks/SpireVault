@@ -2639,12 +2639,13 @@ async function refreshGuestRoster() {
 }
 
 function guestStatusLabel(p) {
-  if (p.inSTS2) return "In Slay the Spire 2 · " + (p.status === "looking" ? "looking for co-op" : p.status);
-  if (p.status === "looking") return "Looking for Co-op";
-  if (p.status === "inRun") return "In a Run";
-  if (p.status === "inCoop") return "In Co-op";
-  if (p.status === "afk") return "Away";
-  return "Signed up";
+  const STATUS_DISPLAY = {
+    looking: "Looking for Co-op", solo: "In a Run", paired: "In Co-op", afk: "Away",
+    inRun: "In a Run", inCoop: "In Co-op",
+  };
+  const label = STATUS_DISPLAY[p.status] || "Signed up";
+  if (p.inSTS2) return "In Slay the Spire 2 · " + (p.status === "looking" ? "looking for co-op" : label.toLowerCase());
+  return label;
 }
 
 function escapeHtml(s) {
@@ -3442,7 +3443,7 @@ async function hydrateMyStatusFromServer() {
       const $cd = document.getElementById("classic-me-discord");
       if ($cd && !$cd.value) $cd.value = me.discordHandle;
     }
-    saveDraft({ status: me.status, discordHandle: me.discordHandle });
+    saveDraft({ status: mapStatusFromLegacy(me.status), discordHandle: me.discordHandle });
   } catch { /* offline at boot is fine */ }
 }
 
@@ -3588,9 +3589,13 @@ window.addEventListener("pagehide", () => {
   if (!session?.steamID) return;
   const current = (document.querySelector('input[name="status"]:checked') || {}).value;
   if (!current || current === "afk") return;
-  // Use sendBeacon so the push fires even after the page unloads.
-  const body = JSON.stringify({ ...readDraft(), status: "afk" });
-  navigator.sendBeacon?.("/api/coop/presence", body);
+  // sendBeacon with a Blob so the Worker receives application/json (a plain
+  // DOMString defaults to text/plain which the Worker won't parse as JSON).
+  const blob = new Blob(
+    [JSON.stringify({ ...readDraft(), status: "afk" })],
+    { type: "application/json" }
+  );
+  navigator.sendBeacon?.(`${API_BASE}/presence`, blob);
 });
 
 setInterval(() => {
@@ -3647,11 +3652,14 @@ async function pushNow(silent) {
       // Honor server-side status override (e.g., Worker detects Steam offline
       // or inSTS2 change and sends back forceStatus to keep client in sync).
       try {
-        const data = await resp.clone().json();
-        if (data?.forceStatus && data.forceStatus !== readDraft().status) {
-          setRadio("status", mapStatusFromLegacy(data.forceStatus));
-          saveDraft({ ...readDraft(), status: data.forceStatus });
-          autoAfkActiveSince = data.forceStatus === "afk" ? Date.now() : 0;
+        const data = await resp.json();
+        if (data?.forceStatus) {
+          const v2 = mapStatusFromLegacy(data.forceStatus);
+          if (v2 !== readDraft().status) {
+            setRadio("status", v2);
+            saveDraft({ ...readDraft(), status: v2 });
+            autoAfkActiveSince = v2 === "afk" ? Date.now() : 0;
+          }
         }
       } catch { /* response may have no body */ }
     }
@@ -5579,7 +5587,7 @@ function renderFeed(list) {
     }
     if (p.inSTS2)               n += 80; // currently in the game itself
     if (p.status === "looking") n += 40;
-    if (p.status === "inRun")   n += 10;
+    if (p.status === "inRun" || p.status === "solo") n += 10;
     return n;
   }
 
@@ -5678,8 +5686,8 @@ function feedMatchesText(row, query) {
   const partner = row?.paired?.partnerPersona || "";
   const statusText = {
     looking: "looking for co-op",
-    inRun: "in a run solo",
-    inCoop: "in co-op paired",
+    solo: "in a run solo", inRun: "in a run solo",
+    paired: "in co-op paired", inCoop: "in co-op paired",
     afk: "away afk",
   }[row?.status || "looking"] || "";
   const haystack = [
@@ -5830,8 +5838,10 @@ function isActiveNow(p) {
 
 function renderRow(p) {
   const status = p.status ?? "looking";
-  const tagClass = { looking: "ok", inRun: "gold", inCoop: "ember", afk: "mute" }[status];
-  const tagLabel = { looking: "Looking for Co-op", inRun: "In a Run", inCoop: "In Co-op", afk: "Away" }[status];
+  const tagClass = { looking: "ok", solo: "gold", paired: "ember", afk: "mute",
+                     inRun: "gold", inCoop: "ember" }[status] ?? "mute";
+  const tagLabel = { looking: "Looking for Co-op", solo: "In a Run", paired: "In Co-op", afk: "Away",
+                     inRun: "In a Run", inCoop: "In Co-op" }[status] ?? status;
 
   // Steam avatar — server-stamped, but defense-in-depth scrub.
   const safeAvatar = (() => {
@@ -11965,9 +11975,8 @@ function setStatus(state, label) {
 
 const PROFILE_STATUS_LABELS = {
   looking: "Looking for Co-op",
-  inRun:   "In a Run",
-  inCoop:  "In Co-op",
-  afk:     "Away",
+  solo:    "In a Run",   paired: "In Co-op",   afk: "Away",
+  inRun:   "In a Run",   inCoop: "In Co-op",
 };
 
 /**
@@ -11998,7 +12007,7 @@ function getMyPairFromFeed() {
  * be misleading. Otherwise we honor the user's drafted choice.
  */
 function getEffectiveStatus() {
-  if (getMyPairFromFeed()) return "inCoop";
+  if (getMyPairFromFeed()) return "paired";
   const draft = readDraft();
   return draft.status || "looking";
 }
@@ -12289,8 +12298,8 @@ function renderProfilePopover() {
   // visually locks rather than fights the server. We still show the
   // pressed pill — just block presses on the others.
   const statusLocked = !!pair;
-  const segOrder = ["looking", "inRun", "inCoop", "afk"];
-  const segShort = { looking: "Looking", inRun: "In a Run", inCoop: "In Co-op", afk: "Away" };
+  const segOrder = ["looking", "solo", "paired", "afk"];
+  const segShort = { looking: "Looking", solo: "In a Run", paired: "In Co-op", afk: "Away" };
   const segHtml = segOrder.map((k) => {
     const pressed = effectiveStatus === k;
     return `<button type="button"
