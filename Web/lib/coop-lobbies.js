@@ -24,6 +24,12 @@
 // CoopStateBundle shape. This module is pure presentation + wording.
 // =========================================================================
 
+import {
+  mountCoopSandbox,
+  refreshSandboxFromState,
+  isCoopSandboxEnabled,
+} from "./coop-sandbox.js";
+
 const GAME_CONFIG = Object.freeze({
   game: "Slay the Spire 2",
   maxAscension: 10,
@@ -99,6 +105,12 @@ export function mountCoopLobbies(ctx) {
   scheduleNextHeartbeat();
   scheduleAgeTicker();
   document.addEventListener("visibilitychange", onVisibilityChange);
+  if (isCoopSandboxEnabled()) {
+    mountCoopSandbox({
+      ...ctx,
+      onReseed: () => void refreshState({ force: true }),
+    });
+  }
 }
 
 export function setCoopTabActive() {
@@ -301,6 +313,7 @@ function render(state) {
   renderInvites(state);
   renderLobbies(state);
   renderRecommendations(state);
+  refreshSandboxFromState(state);
 
   const $count = document.getElementById("online-count");
   if ($count) {
@@ -325,8 +338,26 @@ function renderAgeLabels(state) {
 // =========================================================================
 // A. Command bar — 3 stats on the top-right
 // =========================================================================
+function visibleOpenLobbies(state) {
+  const open = (state.openLobbies || []).filter(
+    (l) => l.status === "open" || l.status === "full",
+  );
+  const myLobby = state.lobby;
+  const mySid = state.presence?.steamId;
+  if (
+    myLobby &&
+    myLobby.hostSteamId === mySid &&
+    myLobby.status !== "closed" &&
+    myLobby.status !== "expired" &&
+    !open.some((l) => l.lobbyId === myLobby.lobbyId)
+  ) {
+    return [myLobby, ...open];
+  }
+  return open;
+}
+
 function renderBarStats(state) {
-  const lobbies = state.openLobbies || [];
+  const lobbies = visibleOpenLobbies(state);
   const feed = state.activePlayerFeed || [];
   // Prefer server-provided TRUE totals when present so the bar still
   // reads "8,431 active" even though we cap the feed payload to ~200
@@ -716,7 +747,7 @@ function renderLobbies(state) {
   const $count = document.getElementById("coop-lobbies-count");
   if (!$list || !$count) return;
 
-  const allLobbies = state.openLobbies || [];
+  const allLobbies = visibleOpenLobbies(state);
   $count.textContent = String(allLobbies.length);
   const $filterBar = document.getElementById("coop-lobby-filter-bar");
   if ($filterBar) $filterBar.hidden = allLobbies.length === 0;
@@ -951,8 +982,12 @@ function renderLobbyCard(lobby, mySid, pendingByLobby, state, compact = false) {
 
   let action = "";
   if (isMine) {
+    const partyBtn = lobby.partyId
+      ? `<a class="btn-primary btn-sm" href="/party/${esc(lobby.partyId)}">Open Party Room</a>`
+      : "";
     action = `
-      <button class="btn-ghost btn-sm" data-coop-action="open-edit-lobby" data-id="${esc(lobby.lobbyId)}">Edit</button>
+      ${partyBtn}
+      <button class="btn-ghost btn-sm" data-coop-action="open-edit-lobby" data-id="${esc(lobby.lobbyId)}">Manage</button>
       <button class="btn-ghost btn-sm" data-coop-action="close-lobby" data-id="${esc(lobby.lobbyId)}">Close</button>`;
   } else if (isMember) {
     action = `<span class="coop-badge coop-badge--players">You&rsquo;re in</span>`;

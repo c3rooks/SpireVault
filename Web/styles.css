@@ -13531,3 +13531,89 @@ body.coop-lobby-beta-off [data-tab="coop"] .coop-page {
   color: #9ed4ff;
 }
 
+/* ── Co-op dev sandbox (localhost only) ───────────────────────────── */
+.coop-sandbox-wrap {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 1200;
+  font-size: 12px;
+  max-width: min(320px, calc(100vw - 32px));
+}
+.coop-sandbox-toggle {
+  display: block;
+  margin-left: auto;
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(120, 200, 255, 0.35);
+  background: rgba(8, 12, 20, 0.92);
+  color: #9ed4ff;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 600;
+}
+.coop-sandbox-panel {
+  margin-top: 8px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(6, 8, 14, 0.96);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
+  color: var(--text-2);
+}
+.coop-sandbox-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  color: var(--text-1);
+}
+.coop-sandbox-close {
+  border: none;
+  background: transparent;
+  color: var(--text-3);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 4px;
+}
+.coop-sandbox-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 4px 0;
+}
+.coop-sandbox-row code {
+  font-size: 10px;
+  color: #c8d4e8;
+  word-break: break-all;
+  text-align: right;
+}
+.coop-sandbox-hr {
+  border: none;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  margin: 8px 0;
+}
+.coop-sandbox-label {
+  display: block;
+  margin: 6px 0;
+  font-size: 11px;
+}
+.coop-sandbox-select {
+  display: block;
+  width: 100%;
+  margin-top: 4px;
+  padding: 4px 6px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(0, 0, 0, 0.35);
+  color: var(--text-1);
+  font-size: 11px;
+}
+.coop-sandbox-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
