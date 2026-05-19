@@ -17,8 +17,8 @@ import * as Stats from "/lib/stats-engine.js?v=4";
 import * as HistoryStore from "/lib/history-store.js?v=8";
 import * as InviteAPI from "/lib/invites.js?v=4";
 import * as HighlightsAPI from "/lib/highlights.js?v=1";
-import * as CoopLobbies from "/lib/coop-lobbies.js?v=17";
-import { isCoopSandboxEnabled, openCoopSandboxPanel } from "/lib/coop-sandbox.js?v=1";
+import * as CoopLobbies from "/lib/coop-lobbies.js?v=18";
+import { isCoopSandboxEnabled, openCoopSandboxPanel } from "/lib/coop-sandbox.js?v=2";
 import * as PartyRoom from "/lib/party-room.js?v=1";
 import * as AscInfo from "/lib/ascension-info.js?v=1";
 import * as CharInfo from "/lib/character-info.js?v=1";
@@ -71,7 +71,7 @@ const STS2_APP_ID = "2868840";
  * on an old client — instruct hard refresh. If it DOES match, the
  * bug is real and we can stop chasing cache ghosts.
  */
-const VAULT_BUILD = "v173-2026-05-18-remove-character-pin";
+const VAULT_BUILD = "v174-2026-05-19-coop-sandbox-clarity";
 
 // Feature flag — set to `true` only on local dev when iterating on the
 // Run Companion Overlay. Production stays false until the feature is
@@ -362,15 +362,30 @@ let updateBannerShown   = false;
 const SS_RELOADED_FOR = "vault.update.reloadedForVersion";
 const SS_DISMISSED    = "vault.update.dismissed";
 
+function isUpdateCheckSuppressed() {
+  if (typeof IS_DESKTOP_HOST !== "undefined" && IS_DESKTOP_HOST) return true;
+  try {
+    const h = window.location.hostname;
+    if (
+      h === "localhost" ||
+      h === "127.0.0.1" ||
+      h === "::1" ||
+      h.endsWith(".localhost")
+    ) {
+      return true;
+    }
+  } catch { /* ignore */ }
+  try {
+    if (typeof import.meta !== "undefined" && import.meta.env?.DEV) return true;
+  } catch { /* ignore */ }
+  return false;
+}
+
 async function checkForUpdate() {
   if (updateCheckInflight || updateBannerShown) return;
-  // Inside the macOS app's WKWebView the update banner is misleading
-  // — what's stale is just the embedded web bundle, not "Spire Vault"
-  // itself. The desktop has its own native updater (UpdateService) that
-  // delivers DMG-level updates. Suppress the web-side nag entirely so
-  // users on the desktop don't see a phantom "Spire Vault is out of
-  // date" alert that has nothing to do with the app they installed.
-  if (typeof IS_DESKTOP_HOST !== "undefined" && IS_DESKTOP_HOST) return;
+  // Local dev and desktop builds: HTML/script version pins drift during
+  // iteration and the banner becomes a false positive on every tab focus.
+  if (isUpdateCheckSuppressed()) return;
   updateCheckInflight = true;
   try {
     const r = await fetch("/", {
@@ -429,14 +444,15 @@ async function checkForUpdate() {
  *  reason a stuck user reaches this code path). */
 function showUpdateBanner(liveVersion) {
   if (updateBannerShown) return;
-  updateBannerShown = true;
-  // Honor a per-tab dismiss. If the user explicitly closed the
-  // banner already, don't re-show it on every visibility-change.
+  // Honor a per-tab dismiss before marking shown — otherwise a
+  // dismissed banner blocks future genuine deploy notifications.
   try {
     if (sessionStorage.getItem(SS_DISMISSED) === String(liveVersion)) {
+      updateBannerShown = true;
       return;
     }
   } catch {}
+  updateBannerShown = true;
 
   const host = document.getElementById("app-content");
   if (!host) return;
@@ -516,14 +532,15 @@ function showUpdateBanner(liveVersion) {
  *  banner normally. */
 function showHardRefreshHint(liveVersion, myVersion) {
   if (updateBannerShown) return;
-  updateBannerShown = true;
-  // Per-tab dismissal still applies — if they dismissed the hint
-  // already, don't re-show it on every visibility change.
+  // Per-tab dismissal — if they dismissed the hint already, don't
+  // re-show it on every visibility change or poll.
   try {
     if (sessionStorage.getItem(SS_DISMISSED) === `hint:${liveVersion}`) {
+      updateBannerShown = true;
       return;
     }
   } catch {}
+  updateBannerShown = true;
 
   const host = document.getElementById("app-content");
   if (!host) return;

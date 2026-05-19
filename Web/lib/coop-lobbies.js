@@ -29,9 +29,12 @@ import {
   ensureCoopSandboxMounted,
   refreshSandboxFromState,
   isCoopSandboxEnabled,
-} from "./coop-sandbox.js?v=1";
+  filterOpenLobbiesForViewer,
+  filterRecommendationsForViewer,
+  isSandboxSteamId,
+} from "./coop-sandbox.js?v=2";
 
-export { ensureCoopSandboxMounted, isCoopSandboxEnabled } from "./coop-sandbox.js?v=1";
+export { ensureCoopSandboxMounted, isCoopSandboxEnabled } from "./coop-sandbox.js?v=2";
 
 const GAME_CONFIG = Object.freeze({
   game: "Slay the Spire 2",
@@ -344,11 +347,14 @@ function renderAgeLabels(state) {
 // A. Command bar — 3 stats on the top-right
 // =========================================================================
 function visibleOpenLobbies(state) {
-  const open = (state.openLobbies || []).filter(
-    (l) => l.status === "open" || l.status === "full",
+  const mySid = state.presence?.steamId;
+  const open = filterOpenLobbiesForViewer(
+    (state.openLobbies || []).filter(
+      (l) => l.status === "open" || l.status === "full",
+    ),
+    mySid,
   );
   const myLobby = state.lobby;
-  const mySid = state.presence?.steamId;
   if (
     myLobby &&
     myLobby.hostSteamId === mySid &&
@@ -976,6 +982,9 @@ function renderLobbyCard(lobby, mySid, pendingByLobby, state, compact = false) {
   ].filter(Boolean).join(" ");
   const statusBadge = `
     <span class="coop-badge coop-badge--status-${esc(lobby.status)}">${esc(prettyStatus(lobby.status))}</span>`;
+  const sandboxTag = isSandboxSteamId(lobby.hostSteamId)
+    ? `<span class="coop-badge coop-badge--sandbox">sandbox</span>`
+    : "";
   const badges = [
     `<span class="coop-badge coop-badge--goal">${esc(goalLabel(lobby.goal))}</span>`,
     `<span class="coop-badge coop-badge--asc">${esc(ascensionLabel(lobby.ascensionMin, lobby.ascensionMax))}</span>`,
@@ -1014,7 +1023,7 @@ function renderLobbyCard(lobby, mySid, pendingByLobby, state, compact = false) {
           <h4>${esc(lobby.title)}</h4>
           <span class="coop-lobby-host">Hosted by <strong>${esc(lobby.hostPersonaName || "Steam user")}</strong></span>
         </div>
-        <div class="coop-lobby-card-meta">${statusBadge}</div>
+        <div class="coop-lobby-card-meta">${statusBadge}${sandboxTag}</div>
       </div>
       <div class="coop-badge-row">${badges}</div>
       ${lobby.note ? `<p class="coop-lobby-note">&ldquo;${esc(lobby.note)}&rdquo;</p>` : ""}
@@ -1041,7 +1050,11 @@ function renderRecommendations(state) {
   const $count = document.getElementById("coop-recs-count");
   if (!$list || !$count) return;
   ensureRecsSearchUI();
-  const allRecs = state.recommendedMatches || [];
+  const mySid = state.presence?.steamId;
+  const allRecs = filterRecommendationsForViewer(
+    state.recommendedMatches || [],
+    mySid,
+  );
   $count.textContent = String(allRecs.length);
   if (allRecs.length === 0) {
     $list.innerHTML = `
@@ -1188,6 +1201,9 @@ function renderRecCard(rec, me) {
     "Different goal": "coop-badge--match-different",
     "Recently active": "coop-badge--match-recent",
   })[rec.label] || "coop-badge--match-recent";
+  const sandboxTag = isSandboxSteamId(rec.steamId)
+    ? `<span class="coop-badge coop-badge--sandbox">sandbox</span>`
+    : "";
   const badges = [
     `<span class="coop-badge ${matchBadgeCls}">${esc(rec.label || "Match")}</span>`,
     `<span class="coop-badge coop-badge--goal">${esc(goalLabel(rec.goal))}</span>`,
@@ -1201,11 +1217,11 @@ function renderRecCard(rec, me) {
       <div class="coop-rec-head">
         <img class="avatar" src="${esc(rec.avatarUrl || "/assets/vault-mark.svg")}" alt="" />
         <div style="min-width:0;flex:1;">
-          <h4 class="coop-rec-name">${esc(rec.personaName)}</h4>
+          <h4 class="coop-rec-name">${esc(rec.personaName)}${isSandboxSteamId(rec.steamId) ? ' <span class="coop-rec-sandbox-tag">(sandbox)</span>' : ""}</h4>
           <span class="coop-rec-sub">${esc(statusLabel(rec.status || "looking"))} · <span data-since="${esc(rec.lastHeartbeatAt)}">${esc(formatRelative(rec.lastHeartbeatAt))}</span></span>
         </div>
       </div>
-      <div class="coop-badge-row">${badges}</div>
+      <div class="coop-badge-row">${badges}${sandboxTag}</div>
       ${rationale ? `<p class="coop-rec-rationale" title="Why this match"><span class="coop-rec-rationale-key">Match:</span> ${esc(rationale)}</p>` : ""}
       ${rec.note ? `<p class="coop-lobby-note">&ldquo;${esc(rec.note)}&rdquo;</p>` : ""}
       <div class="coop-lobby-actions">

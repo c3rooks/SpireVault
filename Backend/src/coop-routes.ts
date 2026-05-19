@@ -42,6 +42,7 @@ import {
 } from "./coop-engine";
 import {
   COOP_INACTIVE_HIDE_S,
+  getActiveLobbyIdForHost,
   readLobby,
   readParty,
   readPresence,
@@ -382,6 +383,14 @@ async function buildStateBundle(
   let myLobby = presence.currentLobbyId
     ? await readLobby(env, presence.currentLobbyId)
     : null;
+  // Fallback: presence.currentLobbyId can lag after create/reconnect;
+  // the by-host index is authoritative for open hosted runs.
+  if (!myLobby) {
+    const hostLobbyId = await getActiveLobbyIdForHost(env, steamID);
+    if (hostLobbyId) {
+      myLobby = await readLobby(env, hostLobbyId);
+    }
+  }
   if (myLobby && myLobby.status !== "open" && myLobby.status !== "full" && myLobby.status !== "pending") {
     myLobby = null;
   }

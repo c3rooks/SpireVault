@@ -4,6 +4,8 @@
 const LS_SANDBOX = "spirevault.dev.coopSandbox";
 const LS_PERSONA = "spirevault.dev.activePersona";
 const LS_SCENARIO = "spirevault.dev.seedScenario";
+const LS_SHOW_SANDBOX = "spirevault.dev.showSandboxLobbies";
+const LS_INCLUDE_DEMO = "spirevault.dev.includeDemoUsers";
 /** Must match `STORAGE_SESSION` in script.js */
 const LS_VAULT_SESSION = "vault.web.session";
 
@@ -65,6 +67,84 @@ export function isCoopSandboxEnabled() {
   return false;
 }
 
+/** Sandbox seed personas use `local-*` Steam IDs. */
+export function isSandboxSteamId(steamId) {
+  return /^local-[a-z0-9_-]+$/i.test(String(steamId || ""));
+}
+
+/** Real signed-in Steam account (17-digit id). */
+export function isRealSteamUser(steamId) {
+  return /^\d{17}$/.test(String(steamId || ""));
+}
+
+function readLs(key) {
+  try { return localStorage.getItem(key); } catch { return null; }
+}
+
+function writeLs(key, val) {
+  try {
+    if (val == null) localStorage.removeItem(key);
+    else localStorage.setItem(key, val);
+  } catch { /* ignore */ }
+}
+
+function readBoolLs(key, defaultVal) {
+  const v = readLs(key);
+  if (v === "1") return true;
+  if (v === "0") return false;
+  return defaultVal;
+}
+
+/** Default: demo/sandbox rows hidden for real Steam users. */
+export function shouldShowSandboxLobbies(mySteamId) {
+  if (!isCoopSandboxEnabled()) return true;
+  const explicit = readLs(LS_SHOW_SANDBOX);
+  if (explicit === "1") return true;
+  if (explicit === "0") return false;
+  return isSandboxSteamId(mySteamId);
+}
+
+export function shouldIncludeDemoUsers(mySteamId) {
+  if (!isCoopSandboxEnabled()) return true;
+  const explicit = readLs(LS_INCLUDE_DEMO);
+  if (explicit === "1") return true;
+  if (explicit === "0") return false;
+  return isSandboxSteamId(mySteamId);
+}
+
+export function setShowSandboxLobbies(on) {
+  writeLs(LS_SHOW_SANDBOX, on ? "1" : "0");
+}
+
+export function setIncludeDemoUsers(on) {
+  writeLs(LS_INCLUDE_DEMO, on ? "1" : "0");
+}
+
+export function filterOpenLobbiesForViewer(lobbies, mySteamId) {
+  const rows = lobbies || [];
+  if (!isCoopSandboxEnabled() || shouldShowSandboxLobbies(mySteamId)) {
+    return rows;
+  }
+  return rows.filter((l) => !isSandboxSteamId(l.hostSteamId));
+}
+
+export function filterRecommendationsForViewer(recs, mySteamId) {
+  const rows = recs || [];
+  if (!isCoopSandboxEnabled() || shouldIncludeDemoUsers(mySteamId)) {
+    return rows;
+  }
+  return rows.filter((r) => !isSandboxSteamId(r.steamId));
+}
+
+function hasLeftoverSandboxData(counts) {
+  if (!counts) return false;
+  const scenario = counts.scenario;
+  if (scenario && scenario !== "" && scenario !== "—") return true;
+  const sandboxLobbies = Number(counts.sandboxLobbiesCount ?? 0);
+  const registryKeys = Number(counts.registryKeys ?? 0);
+  return sandboxLobbies > 0 || registryKeys > 0;
+}
+
 async function sandboxFetch(path, opts = {}) {
   const base = (bootCtx?.api ?? "/api").replace(/\/$/, "");
   const url = `${base}${path.startsWith("/") ? path : `/${path}`}`;
@@ -87,18 +167,7 @@ function envLabel() {
   return "other";
 }
 
-function readLs(key) {
-  try { return localStorage.getItem(key); } catch { return null; }
-}
-
-function writeLs(key, val) {
-  try {
-    if (val == null) localStorage.removeItem(key);
-    else localStorage.setItem(key, val);
-  } catch { /* ignore */ }
-}
-
-function panelHtml(personas = []) {
+function panelHtml(personas = [], mySteamId = "") {
   const opts = personas
     .map((p) => {
       const sel = readLs(LS_PERSONA) === p.steamId ? " selected" : "";
@@ -106,11 +175,20 @@ function panelHtml(personas = []) {
     })
     .join("");
   const scenarioOpts = SCENARIOS.map((s) => {
-    const sel = readLs(LS_SCENARIO) === s.id ? " selected" : "";
+    const sel = (readLs(LS_SCENARIO) || "A") === s.id ? " selected" : "";
     return `<option value="${s.id}"${sel}>${esc(s.label)}</option>`;
   }).join("");
 
   const c = sandboxCounts || {};
+  const leftover = hasLeftoverSandboxData(c);
+  const showSandbox = shouldShowSandboxLobbies(mySteamId);
+  const includeDemo = shouldIncludeDemoUsers(mySteamId);
+  const viewerLabel = isRealSteamUser(mySteamId)
+    ? "Real Steam user"
+    : isSandboxSteamId(mySteamId)
+      ? "Sandbox persona"
+      : "Signed out";
+
   return `
     <div class="coop-sandbox-panel" id="coop-sandbox-panel" hidden>
       <header class="coop-sandbox-head">
@@ -118,19 +196,35 @@ function panelHtml(personas = []) {
         <button type="button" class="coop-sandbox-close" id="coop-sandbox-close" aria-label="Collapse">×</button>
       </header>
       <div class="coop-sandbox-body" id="coop-sandbox-body">
+        ${leftover ? `
+        <div class="coop-sandbox-warn" role="status">
+          <strong>Sandbox data loaded</strong> — preview KV has leftover seeded lobbies or personas.
+          Use <em>Reset sandbox</em> for a clean board, or enable the toggles below to show demo rows.
+        </div>` : ""}
         <p class="coop-sandbox-row"><span>Environment</span><code>${esc(envLabel())}</code></p>
+        <p class="coop-sandbox-row"><span>Viewer</span><code>${esc(viewerLabel)}</code></p>
         <p class="coop-sandbox-row"><span>Origin</span><code>${esc(window.location.origin)}</code></p>
         <p class="coop-sandbox-row"><span>API base</span><code>${esc(bootCtx?.api ?? "")}</code></p>
         <p class="coop-sandbox-row"><span>Sandbox</span><code>${isCoopSandboxEnabled() ? "on" : "off"}</code></p>
         <hr class="coop-sandbox-hr" />
-        <label class="coop-sandbox-label">Act as
+        <label class="coop-sandbox-check">
+          <input type="checkbox" id="coop-sandbox-show-lobbies"${showSandbox ? " checked" : ""} />
+          Show sandbox lobbies on board
+        </label>
+        <label class="coop-sandbox-check">
+          <input type="checkbox" id="coop-sandbox-include-demo"${includeDemo ? " checked" : ""} />
+          Include demo users in Best Matches
+        </label>
+        <hr class="coop-sandbox-hr" />
+        <label class="coop-sandbox-label">Act as (demo only)
           <select id="coop-sandbox-persona" class="coop-sandbox-select">${opts}</select>
         </label>
         <label class="coop-sandbox-label">Seed scenario
           <select id="coop-sandbox-scenario" class="coop-sandbox-select">${scenarioOpts}</select>
         </label>
+        <p class="coop-sandbox-hint">Scenarios seed only when you click <strong>Seed scenario</strong> — never on page load.</p>
         <div class="coop-sandbox-counts" id="coop-sandbox-counts">
-          <p class="coop-sandbox-row"><span>Scenario</span><code>${esc(String(c.scenario ?? "—"))}</code></p>
+          <p class="coop-sandbox-row"><span>Scenario</span><code>${esc(String(c.scenario || readLs(LS_SCENARIO) || "—"))}</code></p>
           <p class="coop-sandbox-row"><span>Open lobbies</span><code>${esc(String(c.openLobbiesCount ?? "—"))}</code></p>
           <p class="coop-sandbox-row"><span>Sandbox lobbies</span><code>${esc(String(c.sandboxLobbiesCount ?? "—"))}</code></p>
           <p class="coop-sandbox-row"><span>Looking</span><code>${esc(String(c.playersLookingCount ?? "—"))}</code></p>
@@ -159,10 +253,26 @@ async function refreshSandboxCounts() {
     if ($counts && sandboxCounts) {
       const c = sandboxCounts;
       $counts.innerHTML = `
-        <p class="coop-sandbox-row"><span>Scenario</span><code>${esc(String(c.scenario ?? "—"))}</code></p>
+        <p class="coop-sandbox-row"><span>Scenario</span><code>${esc(String(c.scenario || readLs(LS_SCENARIO) || "—"))}</code></p>
         <p class="coop-sandbox-row"><span>Open lobbies</span><code>${esc(String(c.openLobbiesCount ?? "—"))}</code></p>
         <p class="coop-sandbox-row"><span>Sandbox lobbies</span><code>${esc(String(c.sandboxLobbiesCount ?? "—"))}</code></p>
         <p class="coop-sandbox-row"><span>Looking</span><code>${esc(String(c.playersLookingCount ?? "—"))}</code></p>`;
+    }
+    const $warn = document.querySelector(".coop-sandbox-warn");
+    const leftover = hasLeftoverSandboxData(sandboxCounts);
+    if (leftover && !$warn) {
+      const $body = document.getElementById("coop-sandbox-body");
+      if ($body) {
+        const div = document.createElement("div");
+        div.className = "coop-sandbox-warn";
+        div.setAttribute("role", "status");
+        div.innerHTML = `
+          <strong>Sandbox data loaded</strong> — preview KV has leftover seeded lobbies or personas.
+          Use <em>Reset sandbox</em> for a clean board, or enable the toggles below to show demo rows.`;
+        $body.insertBefore(div, $body.firstChild);
+      }
+    } else if (!leftover && $warn) {
+      $warn.remove();
     }
   } catch {
     sandboxCounts = null;
@@ -211,6 +321,8 @@ async function resetSandbox() {
   await sandboxFetch("/_debug/coop-sandbox/reset", { method: "POST" });
   writeLs(LS_SCENARIO, null);
   writeLs(LS_PERSONA, null);
+  writeLs(LS_SHOW_SANDBOX, null);
+  writeLs(LS_INCLUDE_DEMO, null);
   try {
     localStorage.removeItem(LS_VAULT_SESSION);
     localStorage.removeItem("vault_session");
@@ -221,7 +333,7 @@ async function resetSandbox() {
   window.location.reload();
 }
 
-function wirePanel() {
+function wirePanel(mySteamId = "") {
   document.getElementById("coop-sandbox-toggle")?.addEventListener("click", () => {
     const $p = document.getElementById("coop-sandbox-panel");
     if ($p) $p.hidden = !$p.hidden;
@@ -239,6 +351,14 @@ function wirePanel() {
   });
   document.getElementById("coop-sandbox-reset")?.addEventListener("click", () => {
     void resetSandbox().catch((e) => bootCtx?.deps?.toast?.(e.message));
+  });
+  document.getElementById("coop-sandbox-show-lobbies")?.addEventListener("change", (e) => {
+    setShowSandboxLobbies(!!e.target.checked);
+    bootCtx?.onReseed?.();
+  });
+  document.getElementById("coop-sandbox-include-demo")?.addEventListener("change", (e) => {
+    setIncludeDemoUsers(!!e.target.checked);
+    bootCtx?.onReseed?.();
   });
 }
 
@@ -258,18 +378,18 @@ export function ensureCoopSandboxMounted(ctx) {
 export function mountCoopSandbox(ctx) {
   if (!isCoopSandboxEnabled()) return;
   bootCtx = ctx || bootCtx || { api: "/api", deps: {} };
+  const mySteamId = bootCtx?.session?.steamID || "";
   if (panelMounted) {
     void refreshSandboxCounts();
     return;
   }
   panelMounted = true;
-  writeLs(LS_SANDBOX, "1");
 
   const wrap = document.createElement("div");
   wrap.className = "coop-sandbox-wrap";
   wrap.innerHTML = `
     <button type="button" class="coop-sandbox-toggle" id="coop-sandbox-toggle">Dev Sandbox</button>
-    ${panelHtml()}`;
+    ${panelHtml([], mySteamId)}`;
   document.body.appendChild(wrap);
 
   void sandboxFetch("/_debug/coop-sandbox/state")
@@ -278,13 +398,13 @@ export function mountCoopSandbox(ctx) {
       const personas = data.personas || [];
       const $panel = document.getElementById("coop-sandbox-panel");
       if ($panel) {
-        $panel.outerHTML = panelHtml(personas);
+        $panel.outerHTML = panelHtml(personas, mySteamId);
       }
-      wirePanel();
+      wirePanel(mySteamId);
       void refreshSandboxCounts();
     })
     .catch(() => {
-      wirePanel();
+      wirePanel(mySteamId);
     });
 }
 
@@ -292,26 +412,28 @@ export function refreshSandboxFromState(state) {
   if (!isCoopSandboxEnabled() || !state) return;
   const $counts = document.getElementById("coop-sandbox-counts");
   if (!$counts) return;
-  const lobbies = state.openLobbies || [];
-  const myLobby = state.lobby;
   const mySid = state.presence?.steamId;
+  const visible = lobbiesForBoard(state, mySid).length;
+  const myLobby = state.lobby;
   const hosted =
     myLobby && myLobby.hostSteamId === mySid && myLobby.status !== "closed";
-  const visible = lobbiesForBoard(state).length;
   $counts.innerHTML = `
-    <p class="coop-sandbox-row"><span>Scenario</span><code>${esc(readLs(LS_SCENARIO) || "—")}</code></p>
+    <p class="coop-sandbox-row"><span>Scenario</span><code>${esc(readLs(LS_SCENARIO) || sandboxCounts?.scenario || "—")}</code></p>
     <p class="coop-sandbox-row"><span>Visible board</span><code>${visible}</code></p>
     <p class="coop-sandbox-row"><span>Hosted (you)</span><code>${hosted ? "yes" : "no"}</code></p>
     <p class="coop-sandbox-row"><span>Pending reqs</span><code>${(state.incomingJoinRequests || []).length}</code></p>`;
 }
 
 /** Mirrors coop-lobbies board merge for debug counts. */
-export function lobbiesForBoard(state) {
-  const open = (state.openLobbies || []).filter(
-    (l) => l.status === "open" || l.status === "full",
+export function lobbiesForBoard(state, mySteamId) {
+  const open = filterOpenLobbiesForViewer(
+    (state.openLobbies || []).filter(
+      (l) => l.status === "open" || l.status === "full",
+    ),
+    mySteamId ?? state.presence?.steamId,
   );
   const myLobby = state.lobby;
-  const mySid = state.presence?.steamId;
+  const mySid = mySteamId ?? state.presence?.steamId;
   if (
     myLobby &&
     myLobby.hostSteamId === mySid &&
@@ -324,4 +446,10 @@ export function lobbiesForBoard(state) {
   return open;
 }
 
-export const COOP_SANDBOX_LS_KEYS = [LS_SANDBOX, LS_PERSONA, LS_SCENARIO];
+export const COOP_SANDBOX_LS_KEYS = [
+  LS_SANDBOX,
+  LS_PERSONA,
+  LS_SCENARIO,
+  LS_SHOW_SANDBOX,
+  LS_INCLUDE_DEMO,
+];

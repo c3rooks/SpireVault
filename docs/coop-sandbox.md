@@ -24,6 +24,8 @@ The **Dev Sandbox** floating button appears bottom-right on `localhost` / `127.0
 
 ## Seed scenarios
 
+Scenarios **never auto-seed on page load**. Click **Seed scenario** in the Dev Sandbox panel (or use the API). Leftover preview KV from a prior session shows a warning banner — use **Reset sandbox** for a clean board.
+
 | ID | What it sets up |
 |----|-----------------|
 | **A** | Empty board — only the active persona's presence |
@@ -76,6 +78,17 @@ Clears sandbox-tracked preview KV keys and localStorage dev keys (see below).
 | `spirevault.dev.coopSandbox` | `1` when sandbox mode was used this browser |
 | `spirevault.dev.activePersona` | Last `local-*` steam id from persona switch |
 | `spirevault.dev.seedScenario` | Last seeded scenario id (A–G) |
+| `spirevault.dev.showSandboxLobbies` | `1`/`0` — show `local-*` lobbies on the main board (default off for real Steam users) |
+| `spirevault.dev.includeDemoUsers` | `1`/`0` — include sandbox personas in Best Matches (default off for real Steam users) |
+
+## Real Steam user vs demo personas
+
+When signed in with a real 17-digit Steam ID on localhost:
+
+- Your hosted lobby appears on **Open Run Lobbies** (merged from `state.lobby` even when excluded from `openLobbies`).
+- Seeded Mega/Boble/Mako lobbies stay hidden until you check **Show sandbox lobbies on board** or click **Seed scenario** again.
+- Best Matches hides `local-*` personas unless **Include demo users in Best Matches** is checked.
+- When demo rows are visible, cards are tagged **sandbox** / **(sandbox)**.
 
 Existing unrelated keys (`coop_compact`, session token, etc.) are untouched except `vault_session` on reset.
 
