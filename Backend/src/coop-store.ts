@@ -5,7 +5,9 @@ import type {
   CoopInvite,
   JoinRequest,
   CoopSession,
+  CoopParty,
 } from "./coop-types";
+import { normalizeRunLobby } from "./coop-lobby-utils";
 
 /**
  * Storage primitives for the co-op matchmaking system.
@@ -50,6 +52,10 @@ const USER_JOINS_PREFIX = "coop:user-joins:";
 const SESSION_PREFIX = "coop:session:";
 const SESSION_BY_USER_PREFIX = "coop:session-by-user:";
 
+const PARTY_PREFIX = "coop:party:";
+const PARTY_BY_USER_PREFIX = "coop:party-by-user:";
+const PARTY_BY_LOBBY_PREFIX = "coop:party-by-lobby:";
+
 const DECLINE_COOLDOWN_PREFIX = "coop:decline:";
 
 // ---------- TTLs (seconds) ----------
@@ -60,6 +66,7 @@ export const COOP_LOBBY_TTL_S = 35 * 60;         // 30min + 5min grace
 export const COOP_INVITE_TTL_S = 3 * 60;         // 3 minute invites
 export const COOP_JOIN_REQUEST_TTL_S = 3 * 60;   // 3 minute join requests
 export const COOP_SESSION_TTL_S = 4 * 60 * 60;   // 4 hour sessions
+export const COOP_PARTY_TTL_S = 4 * 60 * 60;     // party room TTL
 export const COOP_DECLINE_COOLDOWN_S = 10 * 60;  // 10 minute pair cooldown
 export const COOP_INBOX_INDEX_TTL_S = 24 * 60 * 60;
 
@@ -225,16 +232,18 @@ export async function readLobby(
   env: Env,
   lobbyId: string,
 ): Promise<RunLobby | null> {
-  return getJSON<RunLobby>(env, LOBBY_PREFIX + lobbyId);
+  const raw = await getJSON<RunLobby>(env, LOBBY_PREFIX + lobbyId);
+  return raw ? normalizeRunLobby(raw) : null;
 }
 
 export async function writeLobby(env: Env, lobby: RunLobby): Promise<void> {
-  await putJSON(env, LOBBY_PREFIX + lobby.lobbyId, lobby, COOP_LOBBY_TTL_S);
+  const normalized = normalizeRunLobby(lobby);
+  await putJSON(env, LOBBY_PREFIX + normalized.lobbyId, normalized, COOP_LOBBY_TTL_S);
   await addToIndex(env, LOBBY_INDEX_KEY, lobby.lobbyId, COOP_INDEX_TTL_S);
   await putJSON(
     env,
     LOBBY_BY_HOST_PREFIX + lobby.hostSteamId,
-    { lobbyId: lobby.lobbyId, updatedAt: lobby.updatedAt },
+    { lobbyId: normalized.lobbyId, updatedAt: normalized.updatedAt },
     COOP_LOBBY_TTL_S,
   );
 }
@@ -473,4 +482,64 @@ export async function isUnderDeclineCooldown(
   const key = `${DECLINE_COOLDOWN_PREFIX}${fromSteamId}:${toSteamId}`;
   const blob = await getJSON<{ at: string }>(env, key);
   return blob != null;
+}
+
+// ---------- Parties ----------
+
+export async function readParty(
+  env: Env,
+  partyId: string,
+): Promise<CoopParty | null> {
+  return getJSON<CoopParty>(env, PARTY_PREFIX + partyId);
+}
+
+export async function writeParty(env: Env, party: CoopParty): Promise<void> {
+  await putJSON(env, PARTY_PREFIX + party.partyId, party, COOP_PARTY_TTL_S);
+  await putJSON(
+    env,
+    PARTY_BY_LOBBY_PREFIX + party.lobbyId,
+    { partyId: party.partyId, updatedAt: party.updatedAt },
+    COOP_PARTY_TTL_S,
+  );
+  for (const m of party.members) {
+    if (m.status !== "left") {
+      await putJSON(
+        env,
+        PARTY_BY_USER_PREFIX + m.steamId,
+        { partyId: party.partyId, status: party.status },
+        COOP_PARTY_TTL_S,
+      );
+    }
+  }
+}
+
+export async function deleteParty(env: Env, party: CoopParty): Promise<void> {
+  await del(env, PARTY_PREFIX + party.partyId);
+  await del(env, PARTY_BY_LOBBY_PREFIX + party.lobbyId);
+  for (const m of party.members) {
+    await del(env, PARTY_BY_USER_PREFIX + m.steamId);
+  }
+}
+
+export async function getActivePartyIdForUser(
+  env: Env,
+  steamId: string,
+): Promise<string | null> {
+  const blob = await getJSON<{ partyId: string; status: string }>(
+    env,
+    PARTY_BY_USER_PREFIX + steamId,
+  );
+  if (!blob || blob.status !== "active") return null;
+  return blob.partyId;
+}
+
+export async function getPartyIdForLobby(
+  env: Env,
+  lobbyId: string,
+): Promise<string | null> {
+  const blob = await getJSON<{ partyId: string }>(
+    env,
+    PARTY_BY_LOBBY_PREFIX + lobbyId,
+  );
+  return blob?.partyId ?? null;
 }

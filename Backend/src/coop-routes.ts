@@ -17,8 +17,12 @@ import {
   createLobby,
   declineInvite,
   declineJoinRequest,
+  endParty,
   endSession,
   heartbeatPresence,
+  leaveParty,
+  readPartyForUser,
+  updatePartyMemberStatus,
   isPresenceActive,
   listLobbies,
   listPresence,
@@ -39,6 +43,7 @@ import {
 import {
   COOP_INACTIVE_HIDE_S,
   readLobby,
+  readParty,
   readPresence,
   readSession,
 } from "./coop-store";
@@ -210,7 +215,13 @@ export async function handleCoopRoute(
       if (subroute === "accept") {
         const r = await acceptJoinRequest(env, auth.steamID, lobbyId, requesterSteamId);
         if (!r.ok) return errResp(r.status, r.error, r.message);
-        return json({ ok: true, session: r.value.session, lobby: r.value.lobby });
+        return json({
+          ok: true,
+          session: r.value.session,
+          lobby: r.value.lobby,
+          party: r.value.party,
+          partyId: r.value.party.partyId,
+        });
       }
       const r = await declineJoinRequest(env, auth.steamID, lobbyId, requesterSteamId);
       if (!r.ok) return errResp(r.status, r.error, r.message);
@@ -278,6 +289,53 @@ export async function handleCoopRoute(
     return json({ ok: true, ...r.value });
   }
 
+  // Party room
+  const partyGetMatch = pathname.match(/^\/coop\/parties\/([0-9a-f]{32})$/);
+  if (partyGetMatch && method === "GET") {
+    const auth = await requireSession(req, env);
+    if (auth instanceof Response) return auth;
+    const party = await readParty(env, partyGetMatch[1]!);
+    if (!party || party.status !== "active") {
+      return errResp(404, "not_found", "Party Room not found.");
+    }
+    const member = party.members.find((m) => m.steamId === auth.steamID);
+    if (!member || member.status === "left") {
+      return errResp(403, "not_participant", "You're not in this Party Room.");
+    }
+    return json({ ok: true, party });
+  }
+
+  const partyActionMatch = pathname.match(
+    /^\/coop\/parties\/([0-9a-f]{32})\/(status|leave|end)$/,
+  );
+  if (partyActionMatch && method === "POST") {
+    const auth = await requireSession(req, env);
+    if (auth instanceof Response) return auth;
+    const rl = await rateLimit(env, req, "coop-write", 60, 60);
+    if (rl) return rl;
+    const partyId = partyActionMatch[1]!;
+    const action = partyActionMatch[2];
+    if (action === "status") {
+      const body = (await readJson(req)) as { status?: string } | null;
+      const r = await updatePartyMemberStatus(
+        env,
+        auth.steamID,
+        partyId,
+        body?.status,
+      );
+      if (!r.ok) return errResp(r.status, r.error, r.message);
+      return json({ ok: true, party: r.value });
+    }
+    if (action === "leave") {
+      const r = await leaveParty(env, auth.steamID, partyId);
+      if (!r.ok) return errResp(r.status, r.error, r.message);
+      return json({ ok: true, ...r.value });
+    }
+    const r = await endParty(env, auth.steamID, partyId);
+    if (!r.ok) return errResp(r.status, r.error, r.message);
+    return json({ ok: true, ...r.value });
+  }
+
   return null;
 }
 
@@ -330,6 +388,7 @@ async function buildStateBundle(
   const mySession = presence.currentSessionId
     ? await readSession(env, presence.currentSessionId)
     : null;
+  const myParty = await readPartyForUser(env, steamID);
 
   // Incoming join requests if I host a lobby
   let incomingJoinRequests: JoinRequest[] = [];
@@ -495,6 +554,7 @@ async function buildStateBundle(
   return {
     presence,
     session: mySession,
+    party: myParty,
     lobby: myLobby,
     incomingInvites: filterPending(incomingInvites),
     outgoingInvites: filterPending(outgoingInvites),
