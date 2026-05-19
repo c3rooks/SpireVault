@@ -588,6 +588,12 @@ export async function updateLobby(
   if (body.discordHandle !== undefined) {
     lobby.discordHandle = sanitizeOptionalText(body.discordHandle, MAX_DISCORD_LEN);
   }
+  if (body.lobbySize !== undefined) {
+    const sizeRaw = clampInt(body.lobbySize, 2, 4);
+    if (sizeRaw === 2 || sizeRaw === 3 || sizeRaw === 4) {
+      lobby.lobbySize = sizeRaw;
+    }
+  }
 
   const now = Date.now();
   lobby.updatedAt = new Date(now).toISOString();

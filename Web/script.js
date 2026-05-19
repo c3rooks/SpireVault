@@ -17,7 +17,8 @@ import * as Stats from "/lib/stats-engine.js?v=4";
 import * as HistoryStore from "/lib/history-store.js?v=8";
 import * as InviteAPI from "/lib/invites.js?v=4";
 import * as HighlightsAPI from "/lib/highlights.js?v=1";
-import * as CoopLobbies from "/lib/coop-lobbies.js?v=15";
+import * as CoopLobbies from "/lib/coop-lobbies.js?v=16";
+import * as PartyRoom from "/lib/party-room.js?v=1";
 import * as AscInfo from "/lib/ascension-info.js?v=1";
 import * as CharInfo from "/lib/character-info.js?v=1";
 import * as RelicInfo from "/lib/relic-info.js?v=1";
@@ -1926,7 +1927,15 @@ async function boot() {
     const qsTab = new URLSearchParams(window.location.search).get("tab");
     const known = new Set(KNOWN_TABS);
     const path = (window.location.pathname || "/").replace(/\/+$/, "") || "/";
+    if (path === "/coop-v2") {
+      try {
+        history.replaceState(null, "", "/coop" + (window.location.search || ""));
+      } catch {}
+    }
+    const partyMatch = path.match(/^\/party\/([0-9a-f]{32})$/i);
+    if (partyMatch) window.__VAULT_PARTY_ID = partyMatch[1];
     if (path === "/overlay") initialTab = "overlay";
+    else if (partyMatch) initialTab = "coop";
     else if (qsTab && known.has(qsTab)) initialTab = qsTab;
   } catch {}
   const lastTab = localStorage.getItem(STORAGE_LAST_TAB);
@@ -2005,6 +2014,17 @@ async function boot() {
       });
     } catch (err) {
       console.warn("coop lobbies mount failed", err);
+    }
+    try {
+      if (window.__VAULT_PARTY_ID) {
+        PartyRoom.mountPartyRoom({
+          api: API_BASE,
+          session,
+          deps: { toast: (msg) => { if (msg) toast(msg); } },
+        }, window.__VAULT_PARTY_ID);
+      }
+    } catch (err) {
+      console.warn("party room mount failed", err);
     }
     // Refresh button. Debounced to once per ~5 s so a frustrated panic-clicker
     // can't blast our server quotas. The button visually "ticks" each press
