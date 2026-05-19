@@ -448,6 +448,18 @@ The only thing I ask is keep the privacy posture intact if you fork:
 local run history stays local, co-op stays opt-in, no surprise
 telemetry. The community will notice and it'll reflect on the original.
 
+## Partners
+
+This project is officially partnered with the Slay the Spire 2 LFG Discord
+Server — a growing community focused on matchmaking, strategy discussion, 
+daily runs, modding, and community events for Slay the Spire 2.
+
+The server also helps support development and beta testing for this 
+companion app through community feedback and testing.
+
+Join the community here:
+[Slay the Spire 2 LFG Discord](https://discord.com/invite/h69JeAfP)
+
 ## Thanks
 
 To Mega Crit, for making the best card game ever and not being weird
