@@ -103,8 +103,8 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            WindowsApp/src-tauri/target/release/bundle/nsis/TheVault_*_x64-setup.exe
-            WindowsApp/src-tauri/target/release/bundle/msi/TheVault_*_x64_en-US.msi
+            WindowsApp/src-tauri/target/release/bundle/nsis/*_x64-setup.exe
+            WindowsApp/src-tauri/target/release/bundle/msi/*_x64_en-US.msi
           draft: false
           prerelease: false
           generate_release_notes: true
