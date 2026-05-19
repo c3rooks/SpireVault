@@ -128,4 +128,10 @@ export interface Env {
    * routes 404 like any other unknown path.
    */
   LOCAL_DEBUG?: string;
+
+  /**
+   * Optional dev-only co-op sandbox toggle (see `coop-sandbox.ts`).
+   * Production deploys must leave this unset.
+   */
+  DEV_COOP_SANDBOX?: string;
 }

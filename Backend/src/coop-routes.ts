@@ -442,7 +442,9 @@ async function buildStateBundle(
   //   - status === "open"
   const now = Date.now();
   const openLobbiesAll = allLobbies.filter((l) => {
-    if (l.status !== "open") return false;
+    if (l.status !== "open" && l.status !== "full") return false;
+    // Host's own lobby is returned separately as `lobby`; the main board
+    // merges it client-side so hosts still see Manage/Close on the board.
     if (l.hostSteamId === steamID) return false;
     const host = allPresence.find((p) => p.steamId === l.hostSteamId);
     if (!host) return false;

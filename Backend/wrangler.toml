@@ -37,6 +37,7 @@ PUBLIC_BASE_URL = "http://127.0.0.1:8787"
 STS_APP_ID = "2868840"
 ALLOWED_RETURN_HOSTS = "spirevault.app,localhost,127.0.0.1"
 LOCAL_DEBUG = "1"
+DEV_COOP_SANDBOX = "1"
 
 [[env.localdev.kv_namespaces]]
 binding = "LOBBIES"

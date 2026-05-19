@@ -49,6 +49,7 @@ import { steamIDForRequest } from "./auth";
 import { checkAndConsume, clientIP, hashID } from "./ratelimit";
 import { handleNotifySignup } from "./notify";
 import { handleCoopRoute } from "./coop-routes";
+import { handleCoopSandboxRoute } from "./coop-sandbox";
 
 /**
  * Origins allowed to make credentialed cross-origin requests to the worker.
@@ -191,6 +192,9 @@ async function handle(
       // is set ONLY by `wrangler dev` (see `Backend/wrangler.toml`'s
       // `[env.localdev.vars]` block). In production the env var is
       // absent and these routes return 404 like any unknown path.
+      const sandboxResp = await handleCoopSandboxRoute(req, env, pathname, method);
+      if (sandboxResp) return sandboxResp;
+
       if (env.LOCAL_DEBUG === "1" && pathname.startsWith("/_debug/")) {
         if (method === "POST" && pathname === "/_debug/seed-session") {
           const body = await req.json().catch(() => null) as
