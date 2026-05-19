@@ -1,4 +1,4 @@
-// coop-lobbies.js — v15 (Co-op Lobby Beta surface)
+// coop-lobbies.js — v16 (Co-op Lobby Beta polish pass)
 // =========================================================================
 // Drives the Co-op Lobby Beta surface:
 //   A. Compact command bar with 3 stats + CTAs (Post a Run, Quick Match,
@@ -32,9 +32,9 @@ import {
   filterOpenLobbiesForViewer,
   filterRecommendationsForViewer,
   isSandboxSteamId,
-} from "./coop-sandbox.js?v=3";
+} from "./coop-sandbox.js?v=4";
 
-export { ensureCoopSandboxMounted, isCoopSandboxEnabled } from "./coop-sandbox.js?v=3";
+export { ensureCoopSandboxMounted, isCoopSandboxEnabled } from "./coop-sandbox.js?v=4";
 
 const GAME_CONFIG = Object.freeze({
   game: "Slay the Spire 2",
@@ -86,6 +86,59 @@ let recsVisible = CARDS_PAGE;
 // stays snappy even when capped server payloads land 200+ rows.
 let lobbySearchQuery = "";
 let recsSearchQuery = "";
+let filtersExpanded = false;
+
+const SANDBOX_STEAM_TOAST = "Sandbox user — no real Steam profile.";
+
+function sandboxSteamToast() {
+  bootCtx?.deps?.toast?.(SANDBOX_STEAM_TOAST);
+}
+
+function lobbyModeLabel(lobby) {
+  const m = lobby?.mode || "standard";
+  return { standard: "Standard", daily: "Daily", custom: "Custom" }[m] || m;
+}
+
+function renderLobbySeatRow(lobby) {
+  const cap = lobbySizeOf(lobby);
+  const members = lobbyMembers(lobby);
+  const hostUrl = lobby.hostAvatarUrl || "/assets/vault-mark.svg";
+  const slots = [
+    `<span class="coop-seat-slot coop-seat-slot--filled" title="${esc(lobby.hostPersonaName || "Host")}"><img src="${esc(hostUrl)}" alt="" /></span>`,
+  ];
+  const guests = members.filter((sid) => sid !== lobby.hostSteamId);
+  for (let i = 0; i < guests.length; i++) {
+    slots.push('<span class="coop-seat-slot coop-seat-slot--filled coop-seat-slot--guest" aria-label="Filled seat"></span>');
+  }
+  const empty = Math.max(0, cap - members.length);
+  for (let i = 0; i < empty; i++) {
+    slots.push('<span class="coop-seat-slot coop-seat-slot--empty" aria-hidden="true"></span>');
+  }
+  const need = openSeats(lobby);
+  return `
+    <div class="coop-seat-row">
+      <div class="coop-seat-slots">${slots.join("")}</div>
+      <span class="coop-seat-summary">${members.length}/${cap} seats${need > 0 ? ` · Need +${need}` : ""}</span>
+    </div>`;
+}
+
+function findLobbyById(state, lobbyId) {
+  if (state.lobby?.lobbyId === lobbyId) return state.lobby;
+  return (state.openLobbies || []).find((l) => l.lobbyId === lobbyId) || null;
+}
+
+function partyStatusLine(party, meSid) {
+  const me = party?.members?.find((m) => m.steamId === meSid);
+  const st = me?.status || "joined";
+  const map = {
+    joined: "Waiting for host",
+    ready: "Ready",
+    character_select: "In STS2 Lobby",
+    in_game: "In Run",
+    left: "Left",
+  };
+  return map[st] || st;
+}
 
 // =========================================================================
 // Public API
@@ -499,133 +552,113 @@ function renderActivityCard(state) {
   if (!$section) return;
 
   const me = state.presence;
+  const meSid = me?.steamId;
   const session = state.session;
-  const lobby = state.lobby;
-  const incoming = state.incomingInvites || [];
+  const lobby = state.lobby?.status !== "closed" ? state.lobby : null;
+  const party = state.party?.status === "active" ? state.party : null;
   const incomingJoinReqs = state.incomingJoinRequests || [];
-  const outgoingInvites = state.outgoingInvites || [];
   const outgoingJoinReqs = (state.outgoingJoinRequests || []).filter((r) => r.status === "pending");
 
-  // 0) Party Room — highest priority
-  if (state.party && state.party.status === "active") {
-    const pid = state.party.partyId;
+  const partyInGame = party?.members?.some((m) => m.steamId === meSid && m.status === "in_game");
+  if (me?.status === "solo" || partyInGame) {
     $section.innerHTML = `
       <article class="coop-active-card coop-active-card--paired">
         <div class="coop-active-meta">
-          <span class="coop-active-eyebrow">Party Room</span>
-          <h3 class="coop-active-title">Your party is open</h3>
-          <p class="coop-active-sub">Use the Party Room for STS2 handoff checklists and member status.</p>
-        </div>
-        <div class="coop-active-actions">
-          <a class="btn-primary btn-xs" href="/party/${esc(pid)}">Open Party Room</a>
+          <span class="coop-active-eyebrow">In Run</span>
+          <h3 class="coop-active-title">In Run</h3>
+          <p class="coop-active-sub">Seat requests are disabled while you&rsquo;re in a run.</p>
         </div>
       </article>`;
     return;
   }
 
-  // 1) Paired (active pairing) — highest priority
-  if (session && session.status === "active") {
-    const partnerSid = (session.playerSteamIds || []).find((sid) => sid !== me?.steamId);
-    const partner = (state.activePlayerFeed || []).find((p) => p.steamId === partnerSid);
-    const name = partner?.personaName || "your co-op partner";
-    const discord = partner?.discordHandle || "";
+  if (party) {
+    const filled = party.members.filter((m) => m.status !== "left").length;
+    const cap = party.lobbySize || lobbySizeOf(lobby || {});
+    const statusLine = partyStatusLine(party, meSid);
     $section.innerHTML = `
       <article class="coop-active-card coop-active-card--paired">
         <div class="coop-active-meta">
-          <span class="coop-active-eyebrow">Active pairing</span>
-          <h3 class="coop-active-title">Paired with ${esc(name)}</h3>
-          <p class="coop-active-sub">Send the Steam invite from their profile. Steam handles the actual co-op invite.</p>
+          <span class="coop-active-eyebrow">Party</span>
+          <h3 class="coop-active-title">You&rsquo;re in a party</h3>
+          <p class="coop-active-sub">${filled}/${cap} seats · Status: ${esc(statusLine)}</p>
         </div>
         <div class="coop-active-actions">
-          ${partnerSid ? `<a class="btn-primary btn-xs" target="_blank" rel="noopener" href="${esc(steamProfileUrl(partnerSid))}">Steam profile</a>` : ""}
-          ${discord ? `<button class="btn-ghost btn-xs" data-coop-action="copy" data-value="${esc(discord)}">Copy Discord</button>` : ""}
-          <button class="btn-ghost btn-xs" data-coop-action="end-session" data-id="${esc(session.sessionId)}">End Pairing</button>
+          <a class="btn-primary btn-xs" href="/party/${esc(party.partyId)}">Open Party Room</a>
         </div>
       </article>`;
     return;
   }
 
-  // 2) Hosting a posted run
-  if (lobby && lobby.hostSteamId === me?.steamId && lobby.status !== "closed") {
+  if (lobby && lobby.hostSteamId === meSid) {
     const memberCount = lobbyMembers(lobby).length || 1;
     const cap = lobbySizeOf(lobby);
     const pendCount = incomingJoinReqs.length;
+    const need = openSeats(lobby);
+    const partyBtn = lobby.partyId
+      ? `<a class="btn-primary btn-xs" href="/party/${esc(lobby.partyId)}">Open Party Room</a>`
+      : "";
     $section.innerHTML = `
       <article class="coop-active-card coop-active-card--hosting">
         <div class="coop-active-meta">
-          <span class="coop-active-eyebrow">You&rsquo;re hosting</span>
-          <h3 class="coop-active-title">${esc(lobby.title)}</h3>
-          <p class="coop-active-sub">${memberCount}/${cap} · ${
-            pendCount > 0
-              ? `<strong>${pendCount}</strong> pending request${pendCount === 1 ? "" : "s"}`
-              : "Waiting for seat requests."
+          <span class="coop-active-eyebrow">Hosting</span>
+          <h3 class="coop-active-title">You&rsquo;re hosting</h3>
+          <p class="coop-active-sub">${esc(lobby.title)}<br />${memberCount}/${cap} seats · Need +${need}${
+            pendCount > 0 ? `<br />Pending seat requests: <strong>${pendCount}</strong>` : ""
           }</p>
         </div>
         <div class="coop-active-actions">
           ${pendCount > 0 ? `<button class="btn-primary btn-xs" data-coop-action="scroll-invites">Review requests</button>` : ""}
-          <button class="btn-ghost btn-xs" data-coop-action="open-edit-lobby" data-id="${esc(lobby.lobbyId)}">Edit</button>
+          <button class="btn-ghost btn-xs" data-coop-action="open-edit-lobby" data-id="${esc(lobby.lobbyId)}">Manage</button>
+          ${partyBtn}
           <button class="btn-ghost btn-xs" data-coop-action="close-lobby" data-id="${esc(lobby.lobbyId)}">Close</button>
         </div>
       </article>`;
     return;
   }
 
-  // 3) In someone else's posted run (member but not host, no pairing yet)
-  if (lobby && lobby.hostSteamId !== me?.steamId && lobby.status !== "closed") {
+  if (outgoingJoinReqs.length > 0) {
+    const req = outgoingJoinReqs[0];
+    const reqLobby = findLobbyById(state, req.lobbyId);
+    const hostName = reqLobby?.hostPersonaName || "the host";
     $section.innerHTML = `
       <article class="coop-active-card coop-active-card--joined">
         <div class="coop-active-meta">
-          <span class="coop-active-eyebrow">You joined</span>
-          <h3 class="coop-active-title">${esc(lobby.title)}</h3>
-          <p class="coop-active-sub">Hosted by ${esc(lobby.hostPersonaName || "Steam user")}. Wait for the host to confirm.</p>
+          <span class="coop-active-eyebrow">Requested</span>
+          <h3 class="coop-active-title">Seat requested</h3>
+          <p class="coop-active-sub">Waiting for ${esc(hostName)} to accept your seat request.</p>
         </div>
         <div class="coop-active-actions">
-          <a class="btn-ghost btn-xs" target="_blank" rel="noopener" href="${esc(steamProfileUrl(lobby.hostSteamId))}">Steam profile</a>
+          <button class="btn-ghost btn-xs" data-coop-action="cancel-join" data-lobby="${esc(req.lobbyId)}">Cancel Request</button>
         </div>
       </article>`;
     return;
   }
 
-  // 4) Incoming invites pending
-  if (incoming.length > 0) {
+  if (session && session.status === "active") {
+    const partnerSid = (session.playerSteamIds || []).find((sid) => sid !== meSid);
+    const partner = (state.activePlayerFeed || []).find((p) => p.steamId === partnerSid);
+    const name = partner?.personaName || "your co-op partner";
     $section.innerHTML = `
-      <article class="coop-active-card coop-active-card--joined">
+      <article class="coop-active-card coop-active-card--paired">
         <div class="coop-active-meta">
-          <span class="coop-active-eyebrow">Invites waiting</span>
-          <h3 class="coop-active-title">${incoming.length} player${incoming.length === 1 ? "" : "s"} want${incoming.length === 1 ? "s" : ""} to co-op</h3>
-          <p class="coop-active-sub">Respond before they expire — see Invites &amp; requests above.</p>
+          <span class="coop-active-eyebrow">Pairing</span>
+          <h3 class="coop-active-title">Paired with ${esc(name)}</h3>
+          <p class="coop-active-sub">Open Party Room after the host accepts your seat, then add each other on Steam for STS2.</p>
         </div>
         <div class="coop-active-actions">
-          <button class="btn-primary btn-xs" data-coop-action="scroll-invites">View invites</button>
+          <button class="btn-ghost btn-xs" data-coop-action="end-session" data-id="${esc(session.sessionId)}">End Pairing</button>
         </div>
       </article>`;
     return;
   }
 
-  // 5) Outgoing invite / join request pending
-  if (outgoingInvites.length > 0 || outgoingJoinReqs.length > 0) {
-    const count = outgoingInvites.length + outgoingJoinReqs.length;
-    $section.innerHTML = `
-      <article class="coop-active-card coop-active-card--joined">
-        <div class="coop-active-meta">
-          <span class="coop-active-eyebrow">Waiting on others</span>
-          <h3 class="coop-active-title">${count} pending invite${count === 1 ? "" : "s"} out</h3>
-          <p class="coop-active-sub">You&rsquo;ll see a response here as soon as they reply.</p>
-        </div>
-        <div class="coop-active-actions">
-          <button class="btn-ghost btn-xs" data-coop-action="scroll-invites">View</button>
-        </div>
-      </article>`;
-    return;
-  }
-
-  // 6) Idle — default state
   $section.innerHTML = `
     <article class="coop-active-card coop-active-card--idle">
       <div class="coop-active-meta">
-        <span class="coop-active-eyebrow">Ready</span>
+        <span class="coop-active-eyebrow">Idle</span>
         <h3 class="coop-active-title">Ready to find a run</h3>
-        <p class="coop-active-sub">Post a run lobby, quick match, or browse open lobbies on the left.</p>
+        <p class="coop-active-sub">Post a run lobby, quick match, or browse open lobbies.</p>
       </div>
       <div class="coop-active-actions">
         <button class="btn-primary btn-xs" data-coop-action="open-create-lobby">+ Post a Run</button>
@@ -634,8 +667,9 @@ function renderActivityCard(state) {
     </article>`;
 }
 
+
 // =========================================================================
-// Invites & requests section (main column, above lobbies when active)
+// Seat Requests panel (main column, above lobbies when active)
 // =========================================================================
 function renderInvites(state) {
   const $section = document.getElementById("coop-invites-section");
@@ -657,9 +691,9 @@ function renderInvites(state) {
   $section.hidden = false;
   const cards = [
     ...incoming.map(renderIncomingInvite),
-    ...incomingJoinReqs.map(renderIncomingJoinReq),
+    ...incomingJoinReqs.map((r) => renderIncomingJoinReq(r, state)),
     ...outgoing.map(renderOutgoingInvite),
-    ...outgoingJoinReqs.map(renderOutgoingJoinReq),
+    ...outgoingJoinReqs.map((r) => renderOutgoingJoinReq(r, state)),
   ];
   $list.innerHTML = cards.join("");
 }
@@ -673,31 +707,30 @@ function renderIncomingInvite(i) {
           <strong>${esc(i.fromPersonaName || "Steam user")}</strong>
           <span class="coop-invite-expiry">expires in <span data-expires="${esc(i.expiresAt)}">${esc(formatCountdown(i.expiresAt))}</span></span>
         </div>
-        <span class="coop-invite-kind">Invite</span>
+        <span class="coop-invite-kind">Co-op</span>
       </div>
       <p class="coop-invite-msg">${esc(presetMessage(i.messagePreset) || "Want to co-op?")}</p>
       <div class="coop-lobby-actions">
         <button class="btn-primary btn-sm" data-coop-action="accept-invite" data-id="${esc(i.inviteId)}">Accept</button>
         <button class="btn-ghost btn-sm" data-coop-action="decline-invite" data-id="${esc(i.inviteId)}">Decline</button>
-        <a class="btn-ghost btn-sm" target="_blank" rel="noopener" href="${esc(steamProfileUrl(i.fromSteamId))}">Steam profile</a>
       </div>
     </article>`;
 }
-function renderIncomingJoinReq(r) {
+function renderIncomingJoinReq(r, state) {
+  const lobbyTitle = findLobbyById(state, r.lobbyId)?.title || "Run lobby";
   return `
     <article class="coop-invite-card coop-invite-card--joinreq">
       <div class="coop-invite-card-head">
         <img class="avatar" src="${esc(r.fromAvatarUrl || "/assets/vault-mark.svg")}" alt="" />
         <div class="coop-invite-meta">
-          <strong>${esc(r.fromPersonaName || "Steam user")}</strong>
-          <span class="coop-invite-expiry">requested a seat · <span data-expires="${esc(r.expiresAt)}">${esc(formatCountdown(r.expiresAt))}</span></span>
+          <strong>${esc(r.fromPersonaName || "Steam user")} requested a seat</strong>
+          <span class="coop-invite-expiry">${esc(lobbyTitle)} · expires in <span data-expires="${esc(r.expiresAt)}">${esc(formatCountdown(r.expiresAt))}</span></span>
         </div>
-        <span class="coop-invite-kind">Seat request</span>
+        <span class="coop-invite-kind">Incoming</span>
       </div>
       <div class="coop-lobby-actions">
-        <button class="btn-primary btn-sm" data-coop-action="accept-join" data-lobby="${esc(r.lobbyId)}" data-from="${esc(r.fromSteamId)}">Accept</button>
+        <button class="btn-primary btn-sm" data-coop-action="accept-join" data-lobby="${esc(r.lobbyId)}" data-from="${esc(r.fromSteamId)}">Accept Seat</button>
         <button class="btn-ghost btn-sm" data-coop-action="decline-join" data-lobby="${esc(r.lobbyId)}" data-from="${esc(r.fromSteamId)}">Decline</button>
-        <a class="btn-ghost btn-sm" target="_blank" rel="noopener" href="${esc(steamProfileUrl(r.fromSteamId))}">Steam profile</a>
       </div>
     </article>`;
 }
@@ -717,18 +750,16 @@ function renderOutgoingInvite(i) {
       </div>
     </article>`;
 }
-function renderOutgoingJoinReq(r) {
+function renderOutgoingJoinReq(r, state) {
+  const hostName = findLobbyById(state, r.lobbyId)?.hostPersonaName || "the host";
   return `
     <article class="coop-invite-card coop-invite-card--outgoing">
-      <div class="coop-invite-card-head">
-        <div class="coop-invite-meta">
-          <strong>Request sent</strong>
-          <span class="coop-invite-expiry">waiting on host · expires in <span data-expires="${esc(r.expiresAt)}">${esc(formatCountdown(r.expiresAt))}</span></span>
-        </div>
-        <span class="coop-invite-kind">Sent</span>
+      <div class="coop-invite-meta">
+        <strong>Seat requested</strong>
+        <span class="coop-invite-expiry">Waiting for ${esc(hostName)} to accept · expires in <span data-expires="${esc(r.expiresAt)}">${esc(formatCountdown(r.expiresAt))}</span></span>
       </div>
       <div class="coop-lobby-actions">
-        <button class="btn-ghost btn-sm" data-coop-action="cancel-join" data-lobby="${esc(r.lobbyId)}">Cancel</button>
+        <button class="btn-ghost btn-sm" data-coop-action="cancel-join" data-lobby="${esc(r.lobbyId)}">Cancel Request</button>
       </div>
     </article>`;
 }
@@ -978,19 +1009,16 @@ function renderLobbyCard(lobby, mySid, pendingByLobby, state, compact = false) {
     "coop-lobby-card",
     isMine ? "coop-lobby-card--mine" : "",
     isPaired ? "coop-lobby-card--paired" : "",
+    isSandboxSteamId(lobby.hostSteamId) ? "coop-lobby-card--sandbox" : "",
     compact ? "coop-lobby-card--compact" : "",
   ].filter(Boolean).join(" ");
   const statusBadge = `
     <span class="coop-badge coop-badge--status-${esc(lobby.status)}">${esc(prettyStatus(lobby.status))}</span>`;
-  const sandboxTag = isSandboxSteamId(lobby.hostSteamId)
-    ? `<span class="coop-badge coop-badge--sandbox">sandbox</span>`
-    : "";
   const badges = [
+    `<span class="coop-badge coop-badge--mode">${esc(lobbyModeLabel(lobby))}</span>`,
     `<span class="coop-badge coop-badge--goal">${esc(goalLabel(lobby.goal))}</span>`,
     `<span class="coop-badge coop-badge--asc">${esc(ascensionLabel(lobby.ascensionMin, lobby.ascensionMax))}</span>`,
     lobby.voicePreference ? `<span class="coop-badge coop-badge--voice">${esc(voiceLabel(lobby.voicePreference))}</span>` : "",
-    `<span class="coop-badge coop-badge--players">${members.length}/${cap}</span>`,
-    seatsOpen > 0 ? `<span class="coop-badge coop-badge--need">Need +${seatsOpen}</span>` : "",
     lobby.discordHandle ? `<span class="coop-badge coop-badge--discord">Discord</span>` : "",
   ].filter(Boolean).join("");
 
@@ -1008,7 +1036,9 @@ function renderLobbyCard(lobby, mySid, pendingByLobby, state, compact = false) {
   } else if (isPaired) {
     action = `<span class="coop-badge">Paired</span>`;
   } else if (pendingReq) {
-    action = `<button class="btn-ghost btn-sm" data-coop-action="cancel-join" data-lobby="${esc(lobby.lobbyId)}">Cancel seat request</button>`;
+    action = `
+      <button class="btn-ghost btn-sm" disabled>Seat Requested</button>
+      <button class="btn-ghost btn-sm" data-coop-action="cancel-join" data-lobby="${esc(lobby.lobbyId)}">Cancel</button>`;
   } else if (isFull) {
     action = `<button class="btn-ghost btn-sm" disabled>Full</button>`;
   } else {
@@ -1023,15 +1053,15 @@ function renderLobbyCard(lobby, mySid, pendingByLobby, state, compact = false) {
           <h4>${esc(lobby.title)}</h4>
           <span class="coop-lobby-host">Hosted by <strong>${esc(lobby.hostPersonaName || "Steam user")}</strong></span>
         </div>
-        <div class="coop-lobby-card-meta">${statusBadge}${sandboxTag}</div>
+        <div class="coop-lobby-card-meta">${statusBadge}</div>
       </div>
+      ${renderLobbySeatRow(lobby)}
       <div class="coop-badge-row">${badges}</div>
       ${lobby.note ? `<p class="coop-lobby-note">&ldquo;${esc(lobby.note)}&rdquo;</p>` : ""}
       <div class="coop-lobby-foot">
         <span class="coop-lobby-time" data-since="${esc(lobby.updatedAt)}">${esc(formatRelative(lobby.updatedAt))}</span>
         <div class="coop-lobby-actions">
           ${action}
-          <a class="btn-ghost btn-sm" target="_blank" rel="noopener" href="${esc(steamProfileUrl(lobby.hostSteamId))}">Steam</a>
           ${lobby.discordHandle ? `<button class="btn-ghost btn-sm" data-coop-action="copy" data-value="${esc(lobby.discordHandle)}">Copy Discord</button>` : ""}
         </div>
       </div>
@@ -1088,13 +1118,28 @@ function renderRecommendations(state) {
     });
     return;
   }
-  const slice = recs.slice(0, recsVisible);
-  const remaining = recs.length - slice.length;
+  const pendingByLobby = new Map(
+    (state.outgoingJoinRequests || [])
+      .filter((r) => r.status === "pending")
+      .map((r) => [r.lobbyId, r]),
+  );
+  const matchLobbies = visibleOpenLobbies(state)
+    .filter((l) => l.hostSteamId !== mySid && openSeats(l) > 0 && relevanceScore(l, me) >= 2)
+    .filter((l) => lobbyMatchesText(l, recsSearchQuery))
+    .sort((a, b) => relevanceScore(b, me) - relevanceScore(a, me));
+  const useLobbies = matchLobbies.length > 0;
+  const items = useLobbies ? matchLobbies : recs;
+  const slice = items.slice(0, recsVisible);
+  const remaining = items.length - slice.length;
   let html = "";
   if (recsSearchQuery) {
-    html += `<p class="coop-filter-stats">Showing ${slice.length} of ${recs.length} matching &ldquo;${esc(recsSearchQuery)}&rdquo;</p>`;
+    html += `<p class="coop-filter-stats">Showing ${slice.length} of ${items.length} matching &ldquo;${esc(recsSearchQuery)}&rdquo;</p>`;
+  } else if (useLobbies) {
+    html += `<p class="coop-filter-stats">Compatible open run lobbies for you</p>`;
   }
-  html += slice.map((r) => renderRecCard(r, me)).join("");
+  html += useLobbies
+    ? slice.map((l) => renderLobbyCard(l, mySid, pendingByLobby, state, true)).join("")
+    : slice.map((r) => renderRecCard(r, me)).join("");
   if (remaining > 0) {
     html += `<div class="coop-load-more"><button class="coop-load-more-btn" id="coop-load-more-recs">Show ${Math.min(CARDS_PAGE, remaining)} more <span class="coop-load-more-count">(${remaining} left)</span></button></div>`;
   }
@@ -1201,9 +1246,6 @@ function renderRecCard(rec, me) {
     "Different goal": "coop-badge--match-different",
     "Recently active": "coop-badge--match-recent",
   })[rec.label] || "coop-badge--match-recent";
-  const sandboxTag = isSandboxSteamId(rec.steamId)
-    ? `<span class="coop-badge coop-badge--sandbox">sandbox</span>`
-    : "";
   const badges = [
     `<span class="coop-badge ${matchBadgeCls}">${esc(rec.label || "Match")}</span>`,
     `<span class="coop-badge coop-badge--goal">${esc(goalLabel(rec.goal))}</span>`,
@@ -1217,16 +1259,15 @@ function renderRecCard(rec, me) {
       <div class="coop-rec-head">
         <img class="avatar" src="${esc(rec.avatarUrl || "/assets/vault-mark.svg")}" alt="" />
         <div style="min-width:0;flex:1;">
-          <h4 class="coop-rec-name">${esc(rec.personaName)}${isSandboxSteamId(rec.steamId) ? ' <span class="coop-rec-sandbox-tag">(sandbox)</span>' : ""}</h4>
+          <h4 class="coop-rec-name">${esc(rec.personaName)}</h4>
           <span class="coop-rec-sub">${esc(statusLabel(rec.status || "looking"))} · <span data-since="${esc(rec.lastHeartbeatAt)}">${esc(formatRelative(rec.lastHeartbeatAt))}</span></span>
         </div>
       </div>
-      <div class="coop-badge-row">${badges}${sandboxTag}</div>
+      <div class="coop-badge-row">${badges}</div>
       ${rationale ? `<p class="coop-rec-rationale" title="Why this match"><span class="coop-rec-rationale-key">Match:</span> ${esc(rationale)}</p>` : ""}
       ${rec.note ? `<p class="coop-lobby-note">&ldquo;${esc(rec.note)}&rdquo;</p>` : ""}
       <div class="coop-lobby-actions">
-        <button class="btn-primary btn-sm" data-coop-action="invite-rec" data-id="${esc(rec.steamId)}" data-name="${esc(rec.personaName)}">Invite</button>
-        <a class="btn-ghost btn-sm" target="_blank" rel="noopener" href="${esc(steamProfileUrl(rec.steamId))}">Steam</a>
+        <button class="btn-primary btn-sm" data-coop-action="start-run-lobby" data-hint="${esc(rec.personaName)}">Start Run Lobby</button>
       </div>
     </article>`;
 }
@@ -1257,7 +1298,22 @@ function wireFilterBar() {
         aria-label="Search open run lobbies"
       />
     </label>
-    <div class="coop-filter-row">
+    <div class="coop-filter-actions coop-filter-actions--primary">
+      <div class="coop-sort-pills" id="coop-sort-pills">
+        <button type="button" class="coop-sort-pill is-active" data-coop-sort="best">Best</button>
+        <button type="button" class="coop-sort-pill" data-coop-sort="newest">New</button>
+        <button type="button" class="coop-sort-pill" data-coop-sort="asc-level">Asc ↑</button>
+      </div>
+      <button type="button" class="coop-filter-toggle" id="coop-filter-toggle" aria-expanded="false" aria-controls="coop-filter-chips">Filters</button>
+      <button type="button" class="coop-density-toggle${lobbyCompact ? " is-compact" : ""}" id="coop-density-toggle" title="Toggle compact view" aria-label="Toggle compact view" aria-pressed="${lobbyCompact}">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+          <rect y="1" width="14" height="2" rx="1" fill="currentColor"/>
+          <rect y="6" width="14" height="2" rx="1" fill="currentColor"/>
+          <rect y="11" width="14" height="2" rx="1" fill="currentColor"/>
+        </svg>
+      </button>
+    </div>
+    <div class="coop-filter-row coop-filter-chips" id="coop-filter-chips" hidden>
       <div class="coop-chip-group" id="coop-chips-goal" role="group" aria-label="Filter by goal">
         <button type="button" class="coop-chip is-active" data-coop-filter="goal" data-value="">All</button>
         <button type="button" class="coop-chip" data-coop-filter="goal" data-value="any">Any run</button>
@@ -1281,21 +1337,7 @@ function wireFilterBar() {
         <button type="button" class="coop-chip" data-coop-filter="voice" data-value="no">No Voice</button>
       </div>
       <button type="button" class="coop-filter-clear" id="coop-filter-clear" hidden>Clear</button>
-    </div>
-    <div class="coop-filter-actions">
-      <div class="coop-sort-pills" id="coop-sort-pills">
-        <button type="button" class="coop-sort-pill is-active" data-coop-sort="best">Best</button>
-        <button type="button" class="coop-sort-pill" data-coop-sort="newest">New</button>
-        <button type="button" class="coop-sort-pill" data-coop-sort="asc-level">Asc ↑</button>
-      </div>
-      <button type="button" class="coop-density-toggle${lobbyCompact ? " is-compact" : ""}" id="coop-density-toggle" title="Toggle compact view" aria-label="Toggle compact view" aria-pressed="${lobbyCompact}">
-        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-          <rect y="1" width="14" height="2" rx="1" fill="currentColor"/>
-          <rect y="6" width="14" height="2" rx="1" fill="currentColor"/>
-          <rect y="11" width="14" height="2" rx="1" fill="currentColor"/>
-        </svg>
-      </button>
-    </div>`;
+    </div>;
 
   // Inject between the board header and the list
   const $header = $section.querySelector(".coop-board-head");
@@ -1322,6 +1364,17 @@ function wireFilterBar() {
 
   // Chip clicks (includes Clear button)
   bar.addEventListener("click", (e) => {
+    if (e.target.closest("#coop-filter-toggle")) {
+      filtersExpanded = !filtersExpanded;
+      const $chips = document.getElementById("coop-filter-chips");
+      const $btn = document.getElementById("coop-filter-toggle");
+      if ($chips) $chips.hidden = !filtersExpanded;
+      if ($btn) {
+        $btn.setAttribute("aria-expanded", String(filtersExpanded));
+        $btn.classList.toggle("is-active", filtersExpanded);
+      }
+      return;
+    }
     if (e.target.closest("#coop-filter-clear")) {
       clearLobbyFilters();
       return;
@@ -1669,14 +1722,15 @@ function openQuickMatchModal() {
   const $body = document.getElementById("coop-quickmatch-body");
   const $sub = document.getElementById("coop-quickmatch-sub");
   const $send = document.getElementById("coop-quickmatch-send");
+  const $title = document.getElementById("coop-modal-quickmatch-title");
   const $err = document.getElementById("coop-quickmatch-error");
   if (!$body || !$sub || !$send) return;
   $err.hidden = true; $err.textContent = "";
   $send.onclick = null;
-  $send.textContent = "Send Invite";
   if (topLobby) {
     pendingQuickMatchSid = null;
-    $sub.textContent = `Best open run: ${topLobby.title}`;
+    if ($title) $title.textContent = "Request a seat?";
+    $sub.textContent = "SpireVault found a compatible run lobby.";
     const seats = openSeats(topLobby);
     $body.innerHTML = `
       <article class="coop-quickmatch-card">
@@ -1709,11 +1763,11 @@ function openQuickMatchModal() {
 
   if (!top) {
     pendingQuickMatchSid = null;
-    $sub.textContent = "No compatible runs or players right now.";
+    if ($title) $title.textContent = "No match found yet";
+    $sub.textContent = "No compatible run lobbies or players are looking right now.";
     $body.innerHTML = `
       <div class="coop-quickmatch-empty">
-        <h4 class="coop-empty-title">No match found yet</h4>
-        <p class="coop-empty-body">No one compatible is looking right now. Post a Run so players can join you, or update your Run Preferences.</p>
+        <p class="coop-empty-body">Post a Run so players can request a seat, or update your Run Preferences.</p>
         <div class="coop-empty-actions" style="margin-top:10px;">
           <button class="btn-primary btn-sm" type="button" data-coop-action="open-create-lobby">+ Post a Run</button>
           <button class="btn-ghost btn-sm" type="button" data-coop-action="open-intent">Run Preferences</button>
@@ -1722,7 +1776,8 @@ function openQuickMatchModal() {
     $send.hidden = true;
   } else {
     pendingQuickMatchSid = top.steamId;
-    $sub.textContent = `SpireVault found ${top.personaName} as your best available match.`;
+    if ($title) $title.textContent = "Start a run lobby?";
+    $sub.textContent = "SpireVault can help you post a run lobby so compatible players can request a seat.";
     const badges = [
       `<span class="coop-badge coop-badge--match-strong">${esc(top.label || "Match")}</span>`,
       `<span class="coop-badge coop-badge--goal">${esc(goalLabel(top.goal))}</span>`,
@@ -1742,34 +1797,18 @@ function openQuickMatchModal() {
         ${top.note ? `<p class="coop-lobby-note">&ldquo;${esc(top.note)}&rdquo;</p>` : ""}
       </article>`;
     $send.hidden = false;
+    $send.textContent = "Post a Run";
+    $send.onclick = () => {
+      closeModal("coop-modal-quickmatch");
+      openCreateLobbyModal();
+      bootCtx.deps?.toast?.("Post a run lobby — compatible players can request a seat.");
+    };
   }
   openModal("coop-modal-quickmatch", { focus: false });
 }
 
 function wireQuickMatchModal() {
-  const $send = document.getElementById("coop-quickmatch-send");
-  if (!$send) return;
-  $send.addEventListener("click", async () => {
-    if (!pendingQuickMatchSid) return;
-    if ($send.classList.contains("is-busy")) return;
-    setBusy($send, true);
-    const me = lastState?.presence;
-    const target = (lastState?.recommendedMatches || []).find((r) => r.steamId === pendingQuickMatchSid);
-    const preset = pickInviteMessagePreset(me, target);
-    const r = await jsonFetch("/coop/invites", {
-      body: { toSteamId: pendingQuickMatchSid, messagePreset: preset },
-    });
-    setBusy($send, false);
-    if (!r.ok) {
-      const $err = document.getElementById("coop-quickmatch-error");
-      if ($err) { $err.textContent = r.message || "Couldn't send invite."; $err.hidden = false; }
-      return;
-    }
-    bootCtx.deps?.toast?.(`Invite sent to ${target?.personaName || "your match"}.`);
-    pendingQuickMatchSid = null;
-    closeModal("coop-modal-quickmatch");
-    await refreshState({ force: true });
-  });
+  /* Player-match confirm uses inline onclick in openQuickMatchModal. */
 }
 
 function pickInviteMessagePreset(me, candidate) {
@@ -1812,16 +1851,16 @@ function wireDelegatedClicks() {
         setTimeout(() => { btn.textContent = orig; }, 1400);
         return;
       }
-      case "invite-rec": {
-        const sid = btn.dataset.id;
-        const name = btn.dataset.name || "player";
-        if (typeof bootCtx.deps?.openInviteModal === "function") {
-          bootCtx.deps.openInviteModal(sid, name);
-        } else {
-          await doAction(key, btn, () => jsonFetch("/coop/invites", { body: { toSteamId: sid, messagePreset: "coop_any" } }), `Invite sent to ${name}.`);
-        }
+      case "start-run-lobby": {
+        closeAllCoopModals();
+        openCreateLobbyModal();
+        const hint = btn.dataset.hint;
+        if (hint) bootCtx.deps?.toast?.(`Post a run lobby — ${hint} can request a seat when they see it.`);
         return;
       }
+      case "steam-sandbox":
+        sandboxSteamToast();
+        return;
       case "end-session":
         // Mark this end as locally-initiated so the next render
         // doesn't fire the partner-ended toast on top of our own

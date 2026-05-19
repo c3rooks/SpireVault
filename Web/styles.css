@@ -13531,6 +13531,112 @@ body.coop-lobby-beta-off [data-tab="coop"] .coop-page {
   color: #9ed4ff;
 }
 
+.coop-seat-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 8px 0 4px;
+}
+.coop-seat-slots {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.coop-seat-slot {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  border: 1px dashed rgba(255, 255, 255, 0.14);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+.coop-seat-slot--filled {
+  border-style: solid;
+  border-color: rgba(212, 175, 55, 0.45);
+}
+.coop-seat-slot--filled img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.coop-seat-slot--guest {
+  background: rgba(212, 175, 55, 0.12);
+}
+.coop-seat-summary {
+  font-size: 12px;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+.coop-lobby-card--sandbox {
+  outline: 1px dashed rgba(120, 200, 255, 0.2);
+  outline-offset: -1px;
+}
+.coop-filter-actions--primary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.coop-filter-toggle {
+  padding: 3px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border-strong);
+  background: transparent;
+  color: var(--text-2);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.coop-filter-toggle.is-active,
+.coop-filter-toggle:hover {
+  border-color: rgba(212, 175, 55, 0.5);
+  color: var(--text-1);
+}
+.coop-filter-chips {
+  flex-basis: 100%;
+  padding-top: 4px;
+}
+.coop-filter-chips .coop-chip {
+  padding: 2px 8px;
+  font-size: 11px;
+}
+.coop-filter-bar {
+  gap: 6px 8px;
+}
+.coop-sandbox-scenarios {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+.coop-sandbox-actions--party {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border-strong);
+}
+.coop-party-slots {
+  list-style: none;
+  margin: 0 0 8px;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+.coop-party-slot {
+  font-size: 13px;
+  color: var(--text-2);
+}
+.coop-party-slot--empty {
+  opacity: 0.55;
+  font-style: italic;
+}
+.coop-party-panel--steps .coop-party-checklist {
+  margin: 0 0 10px;
+  padding-left: 18px;
+}
+
 /* ── Co-op dev sandbox (localhost only) ───────────────────────────── */
 .coop-beta-dev-sandbox {
   margin-left: 8px;
