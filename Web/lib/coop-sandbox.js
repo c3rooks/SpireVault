@@ -263,11 +263,21 @@ function panelHtml(personas = [], mySteamId = "") {
           <p class="coop-sandbox-row"><span>Sandbox lobbies</span><code>${esc(String(c.sandboxLobbiesCount ?? "—"))}</code></p>
           <p class="coop-sandbox-row"><span>Looking</span><code>${esc(String(c.playersLookingCount ?? "—"))}</code></p>
         </div>
+        <div class="coop-sandbox-scenarios" role="group" aria-label="Seed scenarios">
+          <button type="button" class="btn-ghost btn-xs" data-sandbox-scenario="A">Empty</button>
+          <button type="button" class="btn-ghost btn-xs" data-sandbox-scenario="B">Open lobbies</button>
+          <button type="button" class="btn-ghost btn-xs" data-sandbox-scenario="C">You hosting</button>
+          <button type="button" class="btn-ghost btn-xs" data-sandbox-scenario="D">Pending request</button>
+          <button type="button" class="btn-ghost btn-xs" data-sandbox-scenario="E">Accepted party</button>
+        </div>
         <div class="coop-sandbox-actions">
-          <button type="button" class="btn-primary btn-xs coop-sandbox-seed-b" id="coop-sandbox-seed-b">Seed scenario B</button>
           <button type="button" class="btn-ghost btn-xs" id="coop-sandbox-seed">Seed selected</button>
           <button type="button" class="btn-ghost btn-xs" id="coop-sandbox-reset">Reset sandbox</button>
           <button type="button" class="btn-ghost btn-xs" id="coop-sandbox-act-as">Switch persona</button>
+        </div>
+        <div class="coop-sandbox-actions coop-sandbox-actions--party">
+          <button type="button" class="btn-primary btn-xs" id="coop-sandbox-party-host">Open Party Room (host)</button>
+          <button type="button" class="btn-ghost btn-xs" id="coop-sandbox-party-joiner">Open Party Room (joiner)</button>
         </div>
       </div>
     </div>`;
@@ -393,6 +403,31 @@ async function seedScenario(scenarioOverride) {
   bootCtx?.onReseed?.();
 }
 
+async function fetchCoopStateForSandbox() {
+  const base = (bootCtx?.api ?? "/api").replace(/\/$/, "");
+  const res = await fetch(`${base}/coop/state`, {
+    credentials: "include",
+    cache: "no-store",
+    headers: { authorization: "Bearer __cookie__" },
+  });
+  if (!res.ok) return null;
+  return res.json().catch(() => null);
+}
+
+async function openSandboxPartyAs(role) {
+  const hostSid = document.getElementById("coop-sandbox-persona")?.value;
+  await seedScenario("E", hostSid);
+  if (role === "joiner") {
+    await actAsPersona("local-boble");
+    return;
+  }
+  bootCtx?.onReseed?.();
+  const state = await fetchCoopStateForSandbox();
+  const pid = state?.party?.partyId || state?.lobby?.partyId;
+  if (pid) window.location.assign(`/party/${pid}`);
+  else bootCtx?.deps?.toast?.("Seed Accepted party first, then open Party Room.");
+}
+
 async function resetSandbox() {
   await sandboxFetch("/_debug/coop-sandbox/reset", { method: "POST" });
   writeLs(LS_SCENARIO, null);
@@ -424,8 +459,17 @@ function wirePanel(mySteamId = "") {
     const sid = document.getElementById("coop-sandbox-persona")?.value;
     if (sid) void actAsPersona(sid).catch((e) => bootCtx?.deps?.toast?.(e.message));
   });
-  document.getElementById("coop-sandbox-seed-b")?.addEventListener("click", () => {
-    void seedScenario("B").catch((e) => bootCtx?.deps?.toast?.(e.message));
+  document.querySelectorAll("[data-sandbox-scenario]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const id = btn.dataset.sandboxScenario;
+      void seedScenario(id).catch((e) => bootCtx?.deps?.toast?.(e.message));
+    });
+  });
+  document.getElementById("coop-sandbox-party-host")?.addEventListener("click", () => {
+    void openSandboxPartyAs("host").catch((e) => bootCtx?.deps?.toast?.(e.message));
+  });
+  document.getElementById("coop-sandbox-party-joiner")?.addEventListener("click", () => {
+    void openSandboxPartyAs("joiner").catch((e) => bootCtx?.deps?.toast?.(e.message));
   });
   document.getElementById("coop-sandbox-seed")?.addEventListener("click", () => {
     void seedScenario().catch((e) => bootCtx?.deps?.toast?.(e.message));
