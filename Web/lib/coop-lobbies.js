@@ -26,9 +26,12 @@
 
 import {
   mountCoopSandbox,
+  ensureCoopSandboxMounted,
   refreshSandboxFromState,
   isCoopSandboxEnabled,
-} from "./coop-sandbox.js";
+} from "./coop-sandbox.js?v=1";
+
+export { ensureCoopSandboxMounted, isCoopSandboxEnabled } from "./coop-sandbox.js?v=1";
 
 const GAME_CONFIG = Object.freeze({
   game: "Slay the Spire 2",
@@ -105,15 +108,17 @@ export function mountCoopLobbies(ctx) {
   scheduleNextHeartbeat();
   scheduleAgeTicker();
   document.addEventListener("visibilitychange", onVisibilityChange);
-  if (isCoopSandboxEnabled()) {
-    mountCoopSandbox({
-      ...ctx,
-      onReseed: () => void refreshState({ force: true }),
-    });
-  }
+  ensureCoopSandboxMounted({
+    ...ctx,
+    onReseed: () => void refreshState({ force: true }),
+  });
 }
 
 export function setCoopTabActive() {
+  ensureCoopSandboxMounted({
+    ...bootCtx,
+    onReseed: () => void refreshState({ force: true }),
+  });
   void refreshState({ force: true });
 }
 

@@ -4,6 +4,14 @@
 const LS_SANDBOX = "spirevault.dev.coopSandbox";
 const LS_PERSONA = "spirevault.dev.activePersona";
 const LS_SCENARIO = "spirevault.dev.seedScenario";
+/** Must match `STORAGE_SESSION` in script.js */
+const LS_VAULT_SESSION = "vault.web.session";
+
+const PROD_HOSTS = new Set([
+  "spirevault.app",
+  "app.spirevault.app",
+  "www.spirevault.app",
+]);
 
 const SCENARIOS = [
   { id: "A", label: "A — Empty" },
@@ -19,16 +27,39 @@ let panelMounted = false;
 let bootCtx = null;
 let sandboxCounts = null;
 
-export function isCoopSandboxEnabled() {
+export function isLocalCoopDevHost() {
   if (typeof window === "undefined") return false;
   const host = window.location.hostname;
-  const prodHosts = ["spirevault.app", "app.spirevault.app", "www.spirevault.app"];
-  if (prodHosts.includes(host)) return false;
-  if (host === "localhost" || host === "127.0.0.1" || host.endsWith(".localhost")) {
+  if (PROD_HOSTS.has(host)) return false;
+  if (
+    host === "localhost" ||
+    host === "127.0.0.1" ||
+    host === "::1" ||
+    host === "0.0.0.0" ||
+    host.endsWith(".localhost")
+  ) {
     return true;
   }
+  // wrangler pages dev (http://127.0.0.1:8788)
+  const port = window.location.port;
+  if (
+    window.location.protocol === "http:" &&
+    (port === "8788" || port === "8080" || port === "3000")
+  ) {
+    return true;
+  }
+  return false;
+}
+
+export function isCoopSandboxEnabled() {
+  if (typeof window === "undefined") return false;
+  if (isLocalCoopDevHost()) return true;
   try {
     if (localStorage.getItem(LS_SANDBOX) === "1") return true;
+  } catch { /* ignore */ }
+  try {
+    const qs = new URLSearchParams(window.location.search);
+    if (qs.get("coopSandbox") === "1") return true;
   } catch { /* ignore */ }
   if (typeof import.meta !== "undefined" && import.meta.env?.DEV) return true;
   return false;
@@ -146,8 +177,15 @@ async function actAsPersona(steamId) {
   writeLs(LS_PERSONA, data.steamID);
   writeLs(LS_SANDBOX, "1");
   if (data.token) {
+    const sess = {
+      steamID: data.steamID,
+      personaName: data.personaName || data.steamID,
+      avatarURL: data.avatarURL || undefined,
+      sessionToken: data.token,
+      signedInAt: new Date().toISOString(),
+    };
     try {
-      localStorage.setItem("vault_session", data.token);
+      localStorage.setItem(LS_VAULT_SESSION, JSON.stringify(sess));
     } catch { /* ignore */ }
     document.cookie = `vault_session=${encodeURIComponent(data.token)}; Path=/; SameSite=Lax`;
   }
@@ -174,6 +212,7 @@ async function resetSandbox() {
   writeLs(LS_SCENARIO, null);
   writeLs(LS_PERSONA, null);
   try {
+    localStorage.removeItem(LS_VAULT_SESSION);
     localStorage.removeItem("vault_session");
   } catch { /* ignore */ }
   document.cookie = "vault_session=; Path=/; Max-Age=0";
@@ -203,9 +242,22 @@ function wirePanel() {
   });
 }
 
+/** Open the floating panel (mounts first if needed). */
+export function openCoopSandboxPanel(ctx) {
+  ensureCoopSandboxMounted(ctx);
+  const $p = document.getElementById("coop-sandbox-panel");
+  if ($p) $p.hidden = false;
+  document.getElementById("coop-sandbox-toggle")?.scrollIntoView({ block: "nearest" });
+}
+
+export function ensureCoopSandboxMounted(ctx) {
+  if (!isCoopSandboxEnabled()) return;
+  mountCoopSandbox(ctx || bootCtx || { api: "/api", deps: {} });
+}
+
 export function mountCoopSandbox(ctx) {
   if (!isCoopSandboxEnabled()) return;
-  bootCtx = ctx;
+  bootCtx = ctx || bootCtx || { api: "/api", deps: {} };
   if (panelMounted) {
     void refreshSandboxCounts();
     return;

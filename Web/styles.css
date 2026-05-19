@@ -13532,6 +13532,24 @@ body.coop-lobby-beta-off [data-tab="coop"] .coop-page {
 }
 
 /* ── Co-op dev sandbox (localhost only) ───────────────────────────── */
+.coop-beta-dev-sandbox {
+  margin-left: 8px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  border: 1px solid rgba(120, 200, 255, 0.45);
+  background: rgba(8, 20, 36, 0.85);
+  color: #9ed4ff;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+  vertical-align: middle;
+}
+.coop-beta-dev-sandbox:hover {
+  border-color: rgba(160, 220, 255, 0.7);
+  color: #c8e8ff;
+}
 .coop-sandbox-wrap {
   position: fixed;
   right: 16px;

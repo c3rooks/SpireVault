@@ -17,7 +17,8 @@ import * as Stats from "/lib/stats-engine.js?v=4";
 import * as HistoryStore from "/lib/history-store.js?v=8";
 import * as InviteAPI from "/lib/invites.js?v=4";
 import * as HighlightsAPI from "/lib/highlights.js?v=1";
-import * as CoopLobbies from "/lib/coop-lobbies.js?v=16";
+import * as CoopLobbies from "/lib/coop-lobbies.js?v=17";
+import { isCoopSandboxEnabled, openCoopSandboxPanel } from "/lib/coop-sandbox.js?v=1";
 import * as PartyRoom from "/lib/party-room.js?v=1";
 import * as AscInfo from "/lib/ascension-info.js?v=1";
 import * as CharInfo from "/lib/character-info.js?v=1";
@@ -121,6 +122,15 @@ function setCoopLobbyBetaEnabled(on) {
   renderCoopBetaHeaderControls();
   try { renderCoopDiscoveryBanner(); } catch {}
   try { if (window.RunCoach?.renderBetaTab) window.RunCoach.renderBetaTab(); } catch {}
+  if (on && isCoopSandboxEnabled()) {
+    try {
+      CoopLobbies.ensureCoopSandboxMounted({
+        api: API_BASE,
+        session,
+        deps: { toast: (msg) => { if (msg) toast(msg); } },
+      });
+    } catch { /* non-fatal */ }
+  }
 }
 
 function applyCoopLobbyBetaClass() {
@@ -175,6 +185,37 @@ function renderCoopBetaHeaderControls() {
     }
   } else if ($badge) {
     $badge.remove();
+  }
+
+  // Local dev: prominent Dev Sandbox chip (localhost / 127.0.0.1:8788 only).
+  let $devChip = titleBox.querySelector(".coop-beta-dev-sandbox");
+  if (isCoopLobbyBetaEnabled() && isCoopSandboxEnabled()) {
+    if (!$devChip) {
+      $devChip = document.createElement("button");
+      $devChip.type = "button";
+      $devChip.className = "coop-beta-dev-sandbox";
+      $devChip.textContent = "Dev Sandbox";
+      $devChip.title = "Open the local co-op test harness (seed lobbies, switch personas)";
+      $devChip.addEventListener("click", (ev) => {
+        ev.preventDefault();
+        try {
+          CoopLobbies.ensureCoopSandboxMounted({
+            api: API_BASE,
+            session,
+            deps: { toast: (msg) => { if (msg) toast(msg); } },
+          });
+          openCoopSandboxPanel({
+            api: API_BASE,
+            session,
+            deps: { toast: (msg) => { if (msg) toast(msg); } },
+          });
+        } catch { /* ignore */ }
+      });
+      const $h2 = titleBox.querySelector("h2");
+      if ($h2) $h2.appendChild($devChip);
+    }
+  } else if ($devChip) {
+    $devChip.remove();
   }
 
   // 2) Below the subtitle, a single subtle action line:
@@ -1439,7 +1480,11 @@ let isDemoMode = false;
     clearTimeout(t);
     if (r.ok) {
       const j = await r.json();
-      if (j && /^\d{17}$/.test(j.steamID || "")) {
+      const sid = j?.steamID || "";
+      const sidOk =
+        /^\d{17}$/.test(sid) ||
+        (isCoopSandboxEnabled() && /^local-[a-z0-9_-]+$/i.test(sid));
+      if (j && sidOk) {
         // Cookie session is valid. Decide how to merge with whatever
         // localStorage already had:
         //   - Same Steam ID + has a real bearer? Keep the localStorage
@@ -2793,6 +2838,15 @@ function switchTab(tab) {
   if (tab === "coop") {
     try { renderCoopBetaHeaderControls(); } catch {}
     try { renderCoopDiscoveryBanner(); } catch {}
+    if (isCoopSandboxEnabled()) {
+      try {
+        CoopLobbies.ensureCoopSandboxMounted({
+          api: API_BASE,
+          session,
+          deps: { toast: (msg) => { if (msg) toast(msg); } },
+        });
+      } catch { /* non-fatal */ }
+    }
   }
   renderActiveTab();
 }
@@ -12695,7 +12749,11 @@ function readSession() {
     const raw = localStorage.getItem(STORAGE_SESSION);
     if (!raw) return null;
     const j = JSON.parse(raw);
-    if (j && /^\d{17}$/.test(j.steamID || "") && j.sessionToken) return j;
+    const sid = j?.steamID || "";
+    const sidOk =
+      /^\d{17}$/.test(sid) ||
+      (isCoopSandboxEnabled() && /^local-[a-z0-9_-]+$/i.test(sid));
+    if (j && sidOk && j.sessionToken) return j;
     return null;
   } catch { return null; }
 }

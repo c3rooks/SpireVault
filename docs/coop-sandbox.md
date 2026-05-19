@@ -10,9 +10,9 @@ Local-only tooling to seed fake users, lobbies, seat requests, and party rooms f
    ```
    WORKER_ORIGIN_OVERRIDE=http://127.0.0.1:8787
    ```
-4. Open `http://127.0.0.1:8788`, enable **Co-op Lobby Beta**, sign in via dev login or the sandbox panel.
+4. Open **`http://127.0.0.1:8788`** (not `app.spirevault.app` — production hides the panel). Enable **Co-op Lobby Beta** in Settings → Beta or the Co-op tab switcher.
 
-Quick dev login:
+Quick dev login (sets cookie + reload with sandbox persona):
 
 ```
 http://127.0.0.1:8788/api/_dev-login?as=c3rooks
@@ -20,7 +20,7 @@ http://127.0.0.1:8788/api/_dev-login?as=c3rooks
 
 Other personas: `Boble`, `Mako`, `Mega`, `IAmWeird`.
 
-The **Dev Sandbox** panel appears bottom-right on localhost when the Co-op Lobby Beta surface is mounted.
+The **Dev Sandbox** floating button appears bottom-right on `localhost` / `127.0.0.1` (and `:8788`) whenever you are signed in and Co-op Lobby Beta is on. A **Dev Sandbox** chip also appears in the Co-op tab title row on local dev.
 
 ## Seed scenarios
 
