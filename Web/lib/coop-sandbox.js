@@ -95,13 +95,18 @@ function readBoolLs(key, defaultVal) {
   return defaultVal;
 }
 
-/** Default: demo/sandbox rows hidden for real Steam users. */
+/** Loopback dev hosts default sandbox rows ON; production preview keeps them OFF for real Steam users. */
+function loopbackSandboxDefaultsOn() {
+  return isLocalCoopDevHost();
+}
+
+/** Default: ON on localhost/127.0.0.1; OFF for real Steam users on preview hosts. */
 export function shouldShowSandboxLobbies(mySteamId) {
   if (!isCoopSandboxEnabled()) return true;
   const explicit = readLs(LS_SHOW_SANDBOX);
   if (explicit === "1") return true;
   if (explicit === "0") return false;
-  return isSandboxSteamId(mySteamId);
+  return loopbackSandboxDefaultsOn() || isSandboxSteamId(mySteamId);
 }
 
 export function shouldIncludeDemoUsers(mySteamId) {
@@ -109,7 +114,14 @@ export function shouldIncludeDemoUsers(mySteamId) {
   const explicit = readLs(LS_INCLUDE_DEMO);
   if (explicit === "1") return true;
   if (explicit === "0") return false;
-  return isSandboxSteamId(mySteamId);
+  return loopbackSandboxDefaultsOn() || isSandboxSteamId(mySteamId);
+}
+
+/** Persist loopback defaults the first time the Dev Sandbox panel opens. */
+export function ensureLoopbackSandboxDefaults() {
+  if (!loopbackSandboxDefaultsOn()) return;
+  if (readLs(LS_SHOW_SANDBOX) == null) writeLs(LS_SHOW_SANDBOX, "1");
+  if (readLs(LS_INCLUDE_DEMO) == null) writeLs(LS_INCLUDE_DEMO, "1");
 }
 
 export function setShowSandboxLobbies(on) {
@@ -141,8 +153,22 @@ function hasLeftoverSandboxData(counts) {
   const scenario = counts.scenario;
   if (scenario && scenario !== "" && scenario !== "—") return true;
   const sandboxLobbies = Number(counts.sandboxLobbiesCount ?? 0);
+  const openLobbies = Number(counts.openLobbiesCount ?? 0);
   const registryKeys = Number(counts.registryKeys ?? 0);
-  return sandboxLobbies > 0 || registryKeys > 0;
+  return sandboxLobbies > 0 || openLobbies > 0 || registryKeys > 0;
+}
+
+function isKvEmpty(counts) {
+  if (!counts) return true;
+  return !hasLeftoverSandboxData(counts);
+}
+
+function defaultScenarioId() {
+  return loopbackSandboxDefaultsOn() ? "B" : "A";
+}
+
+function toggleStatusLabel(on) {
+  return on ? "ON" : "OFF";
 }
 
 async function sandboxFetch(path, opts = {}) {
@@ -175,11 +201,12 @@ function panelHtml(personas = [], mySteamId = "") {
     })
     .join("");
   const scenarioOpts = SCENARIOS.map((s) => {
-    const sel = (readLs(LS_SCENARIO) || "A") === s.id ? " selected" : "";
+    const sel = (readLs(LS_SCENARIO) || defaultScenarioId()) === s.id ? " selected" : "";
     return `<option value="${s.id}"${sel}>${esc(s.label)}</option>`;
   }).join("");
 
   const c = sandboxCounts || {};
+  const kvEmpty = isKvEmpty(c);
   const leftover = hasLeftoverSandboxData(c);
   const showSandbox = shouldShowSandboxLobbies(mySteamId);
   const includeDemo = shouldIncludeDemoUsers(mySteamId);
@@ -196,10 +223,13 @@ function panelHtml(personas = [], mySteamId = "") {
         <button type="button" class="coop-sandbox-close" id="coop-sandbox-close" aria-label="Collapse">×</button>
       </header>
       <div class="coop-sandbox-body" id="coop-sandbox-body">
-        ${leftover ? `
+        ${kvEmpty ? `
+        <div class="coop-sandbox-empty" role="status">
+          <strong>No sandbox data</strong> — click <em>Seed scenario B</em> below to load 3 demo lobbies.
+        </div>` : leftover ? `
         <div class="coop-sandbox-warn" role="status">
-          <strong>Sandbox data loaded</strong> — preview KV has leftover seeded lobbies or personas.
-          Use <em>Reset sandbox</em> for a clean board, or enable the toggles below to show demo rows.
+          <strong>Sandbox data loaded</strong> — ${Number(c.openLobbiesCount ?? c.sandboxLobbiesCount ?? 0)} open lobbies in KV.
+          Use <em>Reset sandbox</em> for a clean board.
         </div>` : ""}
         <p class="coop-sandbox-row"><span>Environment</span><code>${esc(envLabel())}</code></p>
         <p class="coop-sandbox-row"><span>Viewer</span><code>${esc(viewerLabel)}</code></p>
@@ -207,6 +237,10 @@ function panelHtml(personas = [], mySteamId = "") {
         <p class="coop-sandbox-row"><span>API base</span><code>${esc(bootCtx?.api ?? "")}</code></p>
         <p class="coop-sandbox-row"><span>Sandbox</span><code>${isCoopSandboxEnabled() ? "on" : "off"}</code></p>
         <hr class="coop-sandbox-hr" />
+        <div class="coop-sandbox-toggle-status">
+          <p class="coop-sandbox-row"><span>Show sandbox lobbies</span><code class="coop-sandbox-state${showSandbox ? " is-on" : " is-off"}">${toggleStatusLabel(showSandbox)}</code></p>
+          <p class="coop-sandbox-row"><span>Include demo users</span><code class="coop-sandbox-state${includeDemo ? " is-on" : " is-off"}">${toggleStatusLabel(includeDemo)}</code></p>
+        </div>
         <label class="coop-sandbox-check">
           <input type="checkbox" id="coop-sandbox-show-lobbies"${showSandbox ? " checked" : ""} />
           Show sandbox lobbies on board
@@ -222,7 +256,7 @@ function panelHtml(personas = [], mySteamId = "") {
         <label class="coop-sandbox-label">Seed scenario
           <select id="coop-sandbox-scenario" class="coop-sandbox-select">${scenarioOpts}</select>
         </label>
-        <p class="coop-sandbox-hint">Scenarios seed only when you click <strong>Seed scenario</strong> — never on page load.</p>
+        <p class="coop-sandbox-hint">Scenarios seed only when you click a seed button — never on page load.</p>
         <div class="coop-sandbox-counts" id="coop-sandbox-counts">
           <p class="coop-sandbox-row"><span>Scenario</span><code>${esc(String(c.scenario || readLs(LS_SCENARIO) || "—"))}</code></p>
           <p class="coop-sandbox-row"><span>Open lobbies</span><code>${esc(String(c.openLobbiesCount ?? "—"))}</code></p>
@@ -230,9 +264,10 @@ function panelHtml(personas = [], mySteamId = "") {
           <p class="coop-sandbox-row"><span>Looking</span><code>${esc(String(c.playersLookingCount ?? "—"))}</code></p>
         </div>
         <div class="coop-sandbox-actions">
-          <button type="button" class="btn-ghost btn-xs" id="coop-sandbox-seed">Seed scenario</button>
+          <button type="button" class="btn-primary btn-xs coop-sandbox-seed-b" id="coop-sandbox-seed-b">Seed scenario B</button>
+          <button type="button" class="btn-ghost btn-xs" id="coop-sandbox-seed">Seed selected</button>
           <button type="button" class="btn-ghost btn-xs" id="coop-sandbox-reset">Reset sandbox</button>
-          <button type="button" class="btn-primary btn-xs" id="coop-sandbox-act-as">Switch persona</button>
+          <button type="button" class="btn-ghost btn-xs" id="coop-sandbox-act-as">Switch persona</button>
         </div>
       </div>
     </div>`;
@@ -258,25 +293,61 @@ async function refreshSandboxCounts() {
         <p class="coop-sandbox-row"><span>Sandbox lobbies</span><code>${esc(String(c.sandboxLobbiesCount ?? "—"))}</code></p>
         <p class="coop-sandbox-row"><span>Looking</span><code>${esc(String(c.playersLookingCount ?? "—"))}</code></p>`;
     }
-    const $warn = document.querySelector(".coop-sandbox-warn");
-    const leftover = hasLeftoverSandboxData(sandboxCounts);
-    if (leftover && !$warn) {
-      const $body = document.getElementById("coop-sandbox-body");
-      if ($body) {
-        const div = document.createElement("div");
-        div.className = "coop-sandbox-warn";
-        div.setAttribute("role", "status");
-        div.innerHTML = `
-          <strong>Sandbox data loaded</strong> — preview KV has leftover seeded lobbies or personas.
-          Use <em>Reset sandbox</em> for a clean board, or enable the toggles below to show demo rows.`;
-        $body.insertBefore(div, $body.firstChild);
-      }
-    } else if (!leftover && $warn) {
-      $warn.remove();
-    }
+    syncSandboxBanner();
   } catch {
     sandboxCounts = null;
   }
+}
+
+function syncSandboxBanner() {
+  const $body = document.getElementById("coop-sandbox-body");
+  if (!$body) return;
+  const $empty = $body.querySelector(".coop-sandbox-empty");
+  const $warn = $body.querySelector(".coop-sandbox-warn");
+  const kvEmpty = isKvEmpty(sandboxCounts);
+  const leftover = hasLeftoverSandboxData(sandboxCounts);
+
+  if (kvEmpty) {
+    if (!$empty) {
+      const div = document.createElement("div");
+      div.className = "coop-sandbox-empty";
+      div.setAttribute("role", "status");
+      div.innerHTML = `
+        <strong>No sandbox data</strong> — click <em>Seed scenario B</em> below to load 3 demo lobbies.`;
+      $body.insertBefore(div, $body.firstChild);
+    }
+    $warn?.remove();
+  } else if (leftover) {
+    $empty?.remove();
+    const openN = Number(sandboxCounts?.openLobbiesCount ?? sandboxCounts?.sandboxLobbiesCount ?? 0);
+    if (!$warn) {
+      const div = document.createElement("div");
+      div.className = "coop-sandbox-warn";
+      div.setAttribute("role", "status");
+      $body.insertBefore(div, $body.firstChild);
+    }
+    const banner = $body.querySelector(".coop-sandbox-warn");
+    if (banner) {
+      banner.innerHTML = `
+        <strong>Sandbox data loaded</strong> — ${openN} open lobbies in KV.
+        Use <em>Reset sandbox</em> for a clean board.`;
+    }
+  } else {
+    $empty?.remove();
+    $warn?.remove();
+  }
+}
+
+function syncToggleStatusLabels() {
+  const mySteamId = bootCtx?.session?.steamID || "";
+  const showOn = shouldShowSandboxLobbies(mySteamId);
+  const demoOn = shouldIncludeDemoUsers(mySteamId);
+  document.querySelectorAll(".coop-sandbox-toggle-status .coop-sandbox-state").forEach((el, i) => {
+    const on = i === 0 ? showOn : demoOn;
+    el.textContent = toggleStatusLabel(on);
+    el.classList.toggle("is-on", on);
+    el.classList.toggle("is-off", !on);
+  });
 }
 
 async function actAsPersona(steamId) {
@@ -303,11 +374,16 @@ async function actAsPersona(steamId) {
   window.location.reload();
 }
 
-async function seedScenario() {
-  const scenario = document.getElementById("coop-sandbox-scenario")?.value || "A";
+async function seedScenario(scenarioOverride) {
+  const scenario =
+    scenarioOverride ||
+    document.getElementById("coop-sandbox-scenario")?.value ||
+    defaultScenarioId();
   const hostSteamId = document.getElementById("coop-sandbox-persona")?.value;
   writeLs(LS_SCENARIO, scenario);
   writeLs(LS_SANDBOX, "1");
+  const $scenario = document.getElementById("coop-sandbox-scenario");
+  if ($scenario) $scenario.value = scenario;
   await sandboxFetch("/_debug/coop-sandbox/seed", {
     method: "POST",
     body: { scenario, hostSteamId },
@@ -335,8 +411,10 @@ async function resetSandbox() {
 
 function wirePanel(mySteamId = "") {
   document.getElementById("coop-sandbox-toggle")?.addEventListener("click", () => {
+    ensureLoopbackSandboxDefaults();
     const $p = document.getElementById("coop-sandbox-panel");
     if ($p) $p.hidden = !$p.hidden;
+    if ($p && !$p.hidden) syncToggleStatusLabels();
   });
   document.getElementById("coop-sandbox-close")?.addEventListener("click", () => {
     const $p = document.getElementById("coop-sandbox-panel");
@@ -346,6 +424,9 @@ function wirePanel(mySteamId = "") {
     const sid = document.getElementById("coop-sandbox-persona")?.value;
     if (sid) void actAsPersona(sid).catch((e) => bootCtx?.deps?.toast?.(e.message));
   });
+  document.getElementById("coop-sandbox-seed-b")?.addEventListener("click", () => {
+    void seedScenario("B").catch((e) => bootCtx?.deps?.toast?.(e.message));
+  });
   document.getElementById("coop-sandbox-seed")?.addEventListener("click", () => {
     void seedScenario().catch((e) => bootCtx?.deps?.toast?.(e.message));
   });
@@ -354,10 +435,12 @@ function wirePanel(mySteamId = "") {
   });
   document.getElementById("coop-sandbox-show-lobbies")?.addEventListener("change", (e) => {
     setShowSandboxLobbies(!!e.target.checked);
+    syncToggleStatusLabels();
     bootCtx?.onReseed?.();
   });
   document.getElementById("coop-sandbox-include-demo")?.addEventListener("change", (e) => {
     setIncludeDemoUsers(!!e.target.checked);
+    syncToggleStatusLabels();
     bootCtx?.onReseed?.();
   });
 }
@@ -365,8 +448,10 @@ function wirePanel(mySteamId = "") {
 /** Open the floating panel (mounts first if needed). */
 export function openCoopSandboxPanel(ctx) {
   ensureCoopSandboxMounted(ctx);
+  ensureLoopbackSandboxDefaults();
   const $p = document.getElementById("coop-sandbox-panel");
   if ($p) $p.hidden = false;
+  syncToggleStatusLabels();
   document.getElementById("coop-sandbox-toggle")?.scrollIntoView({ block: "nearest" });
 }
 
@@ -378,6 +463,7 @@ export function ensureCoopSandboxMounted(ctx) {
 export function mountCoopSandbox(ctx) {
   if (!isCoopSandboxEnabled()) return;
   bootCtx = ctx || bootCtx || { api: "/api", deps: {} };
+  ensureLoopbackSandboxDefaults();
   const mySteamId = bootCtx?.session?.steamID || "";
   if (panelMounted) {
     void refreshSandboxCounts();
