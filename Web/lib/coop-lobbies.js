@@ -29,6 +29,17 @@ const GAME_CONFIG = Object.freeze({
   maxAscension: 10,
 });
 
+function lobbyMembers(lobby) {
+  return lobby?.acceptedMemberSteamIds ?? lobby?.memberSteamIds ?? [];
+}
+function lobbySizeOf(lobby) {
+  const n = lobby?.lobbySize;
+  return n === 2 || n === 3 || n === 4 ? n : 2;
+}
+function openSeats(lobby) {
+  return Math.max(0, lobbySizeOf(lobby) - lobbyMembers(lobby).length);
+}
+
 const STATE_POLL_MS = 15_000;
 const STATE_POLL_HIDDEN_MS = 60_000;
 const HEARTBEAT_MS = 30_000;
@@ -453,6 +464,23 @@ function renderActivityCard(state) {
   const outgoingInvites = state.outgoingInvites || [];
   const outgoingJoinReqs = (state.outgoingJoinRequests || []).filter((r) => r.status === "pending");
 
+  // 0) Party Room — highest priority
+  if (state.party && state.party.status === "active") {
+    const pid = state.party.partyId;
+    $section.innerHTML = `
+      <article class="coop-active-card coop-active-card--paired">
+        <div class="coop-active-meta">
+          <span class="coop-active-eyebrow">Party Room</span>
+          <h3 class="coop-active-title">Your party is open</h3>
+          <p class="coop-active-sub">Use the Party Room for STS2 handoff checklists and member status.</p>
+        </div>
+        <div class="coop-active-actions">
+          <a class="btn-primary btn-xs" href="/party/${esc(pid)}">Open Party Room</a>
+        </div>
+      </article>`;
+    return;
+  }
+
   // 1) Paired (active pairing) — highest priority
   if (session && session.status === "active") {
     const partnerSid = (session.playerSteamIds || []).find((sid) => sid !== me?.steamId);
@@ -477,17 +505,18 @@ function renderActivityCard(state) {
 
   // 2) Hosting a posted run
   if (lobby && lobby.hostSteamId === me?.steamId && lobby.status !== "closed") {
-    const memberCount = lobby.memberSteamIds?.length || 1;
+    const memberCount = lobbyMembers(lobby).length || 1;
+    const cap = lobbySizeOf(lobby);
     const pendCount = incomingJoinReqs.length;
     $section.innerHTML = `
       <article class="coop-active-card coop-active-card--hosting">
         <div class="coop-active-meta">
           <span class="coop-active-eyebrow">You&rsquo;re hosting</span>
           <h3 class="coop-active-title">${esc(lobby.title)}</h3>
-          <p class="coop-active-sub">${memberCount}/2 · ${
+          <p class="coop-active-sub">${memberCount}/${cap} · ${
             pendCount > 0
               ? `<strong>${pendCount}</strong> pending request${pendCount === 1 ? "" : "s"}`
-              : "Waiting for players to request to join."
+              : "Waiting for seat requests."
           }</p>
         </div>
         <div class="coop-active-actions">
@@ -619,9 +648,9 @@ function renderIncomingJoinReq(r) {
         <img class="avatar" src="${esc(r.fromAvatarUrl || "/assets/vault-mark.svg")}" alt="" />
         <div class="coop-invite-meta">
           <strong>${esc(r.fromPersonaName || "Steam user")}</strong>
-          <span class="coop-invite-expiry">wants to join your lobby · <span data-expires="${esc(r.expiresAt)}">${esc(formatCountdown(r.expiresAt))}</span></span>
+          <span class="coop-invite-expiry">requested a seat · <span data-expires="${esc(r.expiresAt)}">${esc(formatCountdown(r.expiresAt))}</span></span>
         </div>
-        <span class="coop-invite-kind">Join request</span>
+        <span class="coop-invite-kind">Seat request</span>
       </div>
       <div class="coop-lobby-actions">
         <button class="btn-primary btn-sm" data-coop-action="accept-join" data-lobby="${esc(r.lobbyId)}" data-from="${esc(r.fromSteamId)}">Accept</button>
@@ -689,6 +718,8 @@ function renderLobbies(state) {
 
   const allLobbies = state.openLobbies || [];
   $count.textContent = String(allLobbies.length);
+  const $filterBar = document.getElementById("coop-lobby-filter-bar");
+  if ($filterBar) $filterBar.hidden = allLobbies.length === 0;
 
   if (allLobbies.length === 0) {
     $list.innerHTML = renderEmptyLobbies();
@@ -766,7 +797,7 @@ function renderEmptyLobbies() {
     <div class="coop-empty-card coop-empty-card--openruns">
       <div class="coop-empty-card-text">
         <h4 class="coop-empty-title">No open run lobbies yet</h4>
-        <p class="coop-empty-body">Post the first run lobby so players can request to join, then pair up and add each other on Steam.</p>
+        <p class="coop-empty-body">Post the first run so players can request a seat, then open your Party Room and add each other on Steam.</p>
         <div class="coop-empty-actions">
           <button class="btn-primary btn-sm" type="button" data-coop-action="open-create-lobby">+ Post a Run</button>
           <button class="btn-ghost btn-sm" type="button" data-coop-action="quick-match">⚡ Quick Match</button>
@@ -894,10 +925,13 @@ function clearLobbyFilters() {
 
 function renderLobbyCard(lobby, mySid, pendingByLobby, state, compact = false) {
   const isMine = lobby.hostSteamId === mySid;
-  const isMember = (lobby.memberSteamIds || []).includes(mySid);
+  const members = lobbyMembers(lobby);
+  const isMember = members.includes(mySid);
   const pendingReq = pendingByLobby.get(lobby.lobbyId);
-  const isFull = (lobby.memberSteamIds?.length || 0) >= 2 || lobby.status === "full";
+  const seatsOpen = openSeats(lobby);
+  const isFull = seatsOpen <= 0 || lobby.status === "full";
   const isPaired = !!(state.session && state.session.status === "active");
+  const cap = lobbySizeOf(lobby);
   const cardClass = [
     "coop-lobby-card",
     isMine ? "coop-lobby-card--mine" : "",
@@ -910,7 +944,8 @@ function renderLobbyCard(lobby, mySid, pendingByLobby, state, compact = false) {
     `<span class="coop-badge coop-badge--goal">${esc(goalLabel(lobby.goal))}</span>`,
     `<span class="coop-badge coop-badge--asc">${esc(ascensionLabel(lobby.ascensionMin, lobby.ascensionMax))}</span>`,
     lobby.voicePreference ? `<span class="coop-badge coop-badge--voice">${esc(voiceLabel(lobby.voicePreference))}</span>` : "",
-    `<span class="coop-badge coop-badge--players">${(lobby.memberSteamIds?.length || 0)}/2</span>`,
+    `<span class="coop-badge coop-badge--players">${members.length}/${cap}</span>`,
+    seatsOpen > 0 ? `<span class="coop-badge coop-badge--need">Need +${seatsOpen}</span>` : "",
     lobby.discordHandle ? `<span class="coop-badge coop-badge--discord">Discord</span>` : "",
   ].filter(Boolean).join("");
 
@@ -924,11 +959,11 @@ function renderLobbyCard(lobby, mySid, pendingByLobby, state, compact = false) {
   } else if (isPaired) {
     action = `<span class="coop-badge">Paired</span>`;
   } else if (pendingReq) {
-    action = `<button class="btn-ghost btn-sm" data-coop-action="cancel-join" data-lobby="${esc(lobby.lobbyId)}">Cancel request</button>`;
+    action = `<button class="btn-ghost btn-sm" data-coop-action="cancel-join" data-lobby="${esc(lobby.lobbyId)}">Cancel seat request</button>`;
   } else if (isFull) {
     action = `<button class="btn-ghost btn-sm" disabled>Full</button>`;
   } else {
-    action = `<button class="btn-primary btn-sm" data-coop-action="request-join" data-id="${esc(lobby.lobbyId)}">Request join</button>`;
+    action = `<button class="btn-primary btn-sm" data-coop-action="request-join" data-id="${esc(lobby.lobbyId)}">Request Seat</button>`;
   }
 
   return `
@@ -1172,7 +1207,7 @@ function wireFilterBar() {
         <button type="button" class="coop-chip" data-coop-filter="goal" data-value="any">Any run</button>
         <button type="button" class="coop-chip" data-coop-filter="goal" data-value="casual">Casual</button>
         <button type="button" class="coop-chip" data-coop-filter="goal" data-value="climb">Climb</button>
-        <button type="button" class="coop-chip" data-coop-filter="goal" data-value="high">High Asc</button>
+        <button type="button" class="coop-chip" data-coop-filter="goal" data-value="a20">High Asc</button>
         <button type="button" class="coop-chip" data-coop-filter="goal" data-value="heart">Heart</button>
         <button type="button" class="coop-chip" data-coop-filter="goal" data-value="daily">Daily</button>
       </div>
@@ -1467,6 +1502,9 @@ function openEditLobbyModal(lobbyId) {
     if (lobby.ascensionMax != null) $form.elements["ascensionMax"].value = lobby.ascensionMax;
     if (lobby.discordHandle) $form.elements["discordHandle"].value = lobby.discordHandle;
     if (lobby.note) $form.elements["note"].value = lobby.note;
+    if ($form.elements["lobbySize"]) {
+      $form.elements["lobbySize"].value = String(lobbySizeOf(lobby));
+    }
   }
   document.getElementById("coop-modal-lobby-title").textContent = "Edit Posted Run";
   document.getElementById("coop-lobby-save").textContent = "Save changes";
@@ -1499,9 +1537,12 @@ function wireLobbyForm() {
       showFormError("coop-modal-lobby", `Ascension goes up to A${GAME_CONFIG.maxAscension} in ${GAME_CONFIG.game}.`);
       return;
     }
+    const sizeRaw = parseInt(String(fd.get("lobbySize") || "4"), 10);
+    const lobbySize = sizeRaw === 2 || sizeRaw === 3 || sizeRaw === 4 ? sizeRaw : 4;
     const body = {
       title,
       goal: String(fd.get("goal") || "any"),
+      lobbySize,
       ascensionMin: ascMin,
       ascensionMax: ascMax,
       voicePreference: String(fd.get("voicePreference") || "") || undefined,
@@ -1541,7 +1582,7 @@ function renderLobbyPreviewFromForm() {
     `<span class="coop-badge coop-badge--goal">${esc(goalLabel(goal))}</span>`,
     `<span class="coop-badge coop-badge--asc">${esc(ascensionLabel(ascMin, ascMax))}</span>`,
     voice ? `<span class="coop-badge coop-badge--voice">${esc(voiceLabel(voice))}</span>` : "",
-    `<span class="coop-badge coop-badge--players">1/2</span>`,
+    `<span class="coop-badge coop-badge--players">1/${esc(String(fd.get("lobbySize") || "4"))}</span>`,
     discord ? `<span class="coop-badge coop-badge--discord">Discord</span>` : "",
   ].filter(Boolean).join("");
   $preview.innerHTML = `
@@ -1560,17 +1601,59 @@ function renderLobbyPreviewFromForm() {
 let pendingQuickMatchSid = null;
 
 function openQuickMatchModal() {
+  const lobbies = (lastState?.openLobbies || []).filter((l) => l.status === "open" && openSeats(l) > 0);
+  const me = lastState?.presence;
+  let topLobby = null;
+  if (lobbies.length > 0 && me) {
+    const scored = [...lobbies].sort((a, b) => relevanceScore(b, me) - relevanceScore(a, me));
+    topLobby = scored[0];
+  }
   const recs = lastState?.recommendedMatches || [];
-  const top = recs[0];
+  const top = topLobby ? null : recs[0];
   const $body = document.getElementById("coop-quickmatch-body");
   const $sub = document.getElementById("coop-quickmatch-sub");
   const $send = document.getElementById("coop-quickmatch-send");
   const $err = document.getElementById("coop-quickmatch-error");
   if (!$body || !$sub || !$send) return;
   $err.hidden = true; $err.textContent = "";
+  $send.onclick = null;
+  $send.textContent = "Send Invite";
+  if (topLobby) {
+    pendingQuickMatchSid = null;
+    $sub.textContent = `Best open run: ${topLobby.title}`;
+    const seats = openSeats(topLobby);
+    $body.innerHTML = `
+      <article class="coop-quickmatch-card">
+        <h4 class="coop-rec-name">${esc(topLobby.title)}</h4>
+        <p class="coop-lobby-host">Hosted by ${esc(topLobby.hostPersonaName || "Steam user")}</p>
+        <div class="coop-badge-row">
+          <span class="coop-badge coop-badge--players">${lobbyMembers(topLobby).length}/${lobbySizeOf(topLobby)}</span>
+          <span class="coop-badge coop-badge--need">Need +${seats}</span>
+        </div>
+      </article>`;
+    $send.hidden = false;
+    $send.textContent = "Request Seat";
+    $send.onclick = async () => {
+      if ($send.classList.contains("is-busy")) return;
+      setBusy($send, true);
+      const r = await jsonFetch(`/coop/lobbies/${topLobby.lobbyId}/request`, { body: {} });
+      setBusy($send, false);
+      if (!r.ok) {
+        const $err = document.getElementById("coop-quickmatch-error");
+        if ($err) { $err.textContent = r.message || "Couldn't request a seat."; $err.hidden = false; }
+        return;
+      }
+      bootCtx.deps?.toast?.("Seat request sent.");
+      closeModal("coop-modal-quickmatch");
+      await refreshState({ force: true });
+    };
+    openModal("coop-modal-quickmatch", { focus: false });
+    return;
+  }
+
   if (!top) {
     pendingQuickMatchSid = null;
-    $sub.textContent = "No compatible players are looking right now.";
+    $sub.textContent = "No compatible runs or players right now.";
     $body.innerHTML = `
       <div class="coop-quickmatch-empty">
         <h4 class="coop-empty-title">No match found yet</h4>
@@ -1694,14 +1777,31 @@ function wireDelegatedClicks() {
         await doAction(key, btn, () => jsonFetch(`/coop/lobbies/${btn.dataset.id}/close`, { body: {} }), "Posted run closed.");
         return;
       case "request-join":
-        await doAction(key, btn, () => jsonFetch(`/coop/lobbies/${btn.dataset.id}/request`, { body: {} }), "Request sent.");
+        await doAction(key, btn, () => jsonFetch(`/coop/lobbies/${btn.dataset.id}/request`, { body: {} }), "Seat request sent.");
         return;
       case "cancel-join":
         await doAction(key, btn, () => jsonFetch(`/coop/lobbies/${btn.dataset.lobby}/cancel-request`, { body: {} }), "Request cancelled.");
         return;
-      case "accept-join":
-        await doAction(key, btn, () => jsonFetch(`/coop/lobbies/${btn.dataset.lobby}/accept`, { body: { fromSteamId: btn.dataset.from } }), "Paired!");
+      case "accept-join": {
+        const acceptKey = key;
+        if (pendingActions.has(acceptKey)) return;
+        pendingActions.add(acceptKey);
+        btn.classList.add("is-busy");
+        const r = await jsonFetch(`/coop/lobbies/${btn.dataset.lobby}/accept`, {
+          body: { fromSteamId: btn.dataset.from },
+        });
+        btn.classList.remove("is-busy");
+        pendingActions.delete(acceptKey);
+        if (!r.ok) {
+          bootCtx.deps?.toast?.(r.message || "Couldn't accept seat request.");
+          return;
+        }
+        bootCtx.deps?.toast?.("Seat accepted — opening Party Room.");
+        const pid = r.partyId || r.party?.partyId;
+        if (pid) window.location.assign(`/party/${pid}`);
+        else await refreshState({ force: true });
         return;
+      }
       case "decline-join":
         await doAction(key, btn, () => jsonFetch(`/coop/lobbies/${btn.dataset.lobby}/decline`, { body: { fromSteamId: btn.dataset.from } }), "Request declined.");
         return;

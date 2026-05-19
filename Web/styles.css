@@ -13466,3 +13466,68 @@ body.coop-lobby-beta-off [data-tab="coop"] .coop-page {
   .victory-dismiss { padding: 11px 28px; }
 }
 
+/* Party Room (/party/:partyId) */
+.coop-party-surface {
+  margin-bottom: 12px;
+}
+.coop-party-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.coop-party-title {
+  margin: 4px 0 6px;
+  font-size: 1.25rem;
+}
+.coop-party-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+@media (max-width: 800px) {
+  .coop-party-grid { grid-template-columns: 1fr; }
+}
+.coop-party-panel {
+  background: var(--card, #1a1a22);
+  border: 1px solid var(--border, rgba(255,255,255,.08));
+  border-radius: 12px;
+  padding: 14px 16px;
+}
+.coop-party-checklist {
+  margin: 8px 0 10px;
+  padding-left: 1.2rem;
+  color: var(--muted, #9aa0a6);
+  font-size: 0.92rem;
+}
+.coop-party-members {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 10px 0;
+}
+.coop-party-member {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.coop-party-member-meta {
+  flex: 1;
+  min-width: 120px;
+}
+.coop-party-status-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+.coop-party-end {
+  margin-top: 8px;
+}
+.coop-badge--need {
+  border-color: rgba(120, 200, 255, 0.35);
+  color: #9ed4ff;
+}
+

@@ -759,6 +759,10 @@
                lives in the slim header above, so the bar doesn't
                repeat it. Designed to stay under ~70px on desktop.
           ============================================================ -->
+          <section class="coop-party-surface" id="coop-party-surface" data-coop-mode="beta" hidden aria-label="Party Room">
+            <div id="coop-party-root" class="coop-party-root"></div>
+          </section>
+
           <section class="coop-bar" data-coop-mode="beta" aria-label="Co-op activity and quick actions">
             <div class="coop-bar-stats" aria-label="Co-op activity right now">
               <div class="coop-bar-stat">
@@ -1633,7 +1637,7 @@
                 <option value="any">Any run</option>
                 <option value="casual">Casual</option>
                 <option value="climb">Climb</option>
-                <option value="high">High Ascension</option>
+                <option value="a20">High Ascension</option>
                 <option value="heart">Heart attempt</option>
                 <option value="teaching">Teaching</option>
                 <option value="learning">Learning</option>
@@ -1684,7 +1688,7 @@
         <button class="modal-close" type="button" data-coop-modal-close aria-label="Close">×</button>
       </header>
       <div class="modal-body coop-modal-body">
-        <p class="modal-sub">Post the kind of run you want to play. Other players can request to join, then you can accept and add each other on Steam.</p>
+        <p class="modal-sub">Post the kind of run you want to play. Other players can request a seat; when you accept, everyone opens the Party Room to coordinate on Steam and STS2.</p>
         <form id="coop-lobby-form" class="coop-form" novalidate>
           <label class="coop-pref-field coop-pref-field--wide">
             <span class="field-label">Run title (80 chars)</span>
@@ -1697,12 +1701,20 @@
                 <option value="any">Any run</option>
                 <option value="casual">Casual</option>
                 <option value="climb">Climb</option>
-                <option value="high">High Ascension</option>
+                <option value="a20">High Ascension</option>
                 <option value="heart">Heart attempt</option>
                 <option value="teaching">Teaching</option>
                 <option value="learning">Learning</option>
                 <option value="daily">Daily</option>
                 <option value="experimental">Experimental</option>
+              </select>
+            </label>
+            <label class="coop-pref-field">
+              <span class="field-label">Lobby size</span>
+              <select name="lobbySize">
+                <option value="2">2 players</option>
+                <option value="3">3 players</option>
+                <option value="4" selected>4 players</option>
               </select>
             </label>
             <label class="coop-pref-field">
