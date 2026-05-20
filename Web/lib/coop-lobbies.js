@@ -1337,7 +1337,8 @@ function wireFilterBar() {
         <button type="button" class="coop-chip" data-coop-filter="voice" data-value="no">No Voice</button>
       </div>
       <button type="button" class="coop-filter-clear" id="coop-filter-clear" hidden>Clear</button>
-    </div>;
+    </div>
+  `;
 
   // Inject between the board header and the list
   const $header = $section.querySelector(".coop-board-head");
