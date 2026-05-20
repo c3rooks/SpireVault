@@ -71,7 +71,7 @@ const STS2_APP_ID = "2868840";
  * on an old client — instruct hard refresh. If it DOES match, the
  * bug is real and we can stop chasing cache ghosts.
  */
-const VAULT_BUILD = "v177-2026-05-19-boot-resilience";
+const VAULT_BUILD = "v178-2026-05-19-session-failfast";
 
 // Feature flag — set to `true` only on local dev when iterating on the
 // Run Companion Overlay. Production stays false until the feature is
@@ -1489,6 +1489,9 @@ let isDemoMode = false;
 //      on next page load. This is the case our resilience fix unblocked.
 //   5. Cookie says definitive 401 → wipe localStorage (token genuinely dead).
 //   6. No cookie + no localStorage → guest.
+try {
+  if (!session) setStatus("offline", "Browsing as guest");
+} catch { /* DOM not ready */ }
 (async () => {
   const hadLocalSession = !!session;
   try {
@@ -1566,6 +1569,9 @@ let isDemoMode = false;
   } catch {
     /* offline, timeout, or proxy down — keep localStorage */
     if (session) sessionCookieMissing = true;
+  }
+  if (!session) {
+    try { setStatus("offline", "Browsing as guest"); } catch {}
   }
   boot();
 })();
@@ -1887,6 +1893,24 @@ async function refreshPublicCount() {
 // =========================================================================
 async function boot() {
   let markedConnecting = false;
+  const bootWatchdog = setTimeout(() => {
+    try {
+      const $dot = document.getElementById("status-dot");
+      if ($dot?.dataset.state !== "connecting") return;
+      if (!session) {
+        setStatus("offline", "Browsing as guest — sign in for co-op");
+        return;
+      }
+      if (!sessionCookieVerified) {
+        session = null;
+        try { localStorage.removeItem(STORAGE_SESSION); } catch {}
+        setStatus("offline", "Sign in to continue");
+        try { wireGuestCoop(); } catch {}
+        return;
+      }
+      clearConnectingIfStuck(true);
+    } catch {}
+  }, 3000);
   try {
   // Always show the app shell. The signed-out hero is gone; the only thing
   // a visitor sees is the real product — pre-populated with demo data
@@ -2080,30 +2104,7 @@ async function boot() {
     // co-op page (Status / Active Session / Open Lobbies / Recommended).
     // The legacy roster `#feed` keeps rendering via `renderFeed()` below;
     // the new module owns everything above it on the Co-op tab.
-    try {
-      CoopLobbies.mountCoopLobbies({
-        api: API_BASE,
-        session,
-        deps: {
-          toast: (msg) => { if (msg) toast(msg); },
-          openInviteModal: (sid, name) => openInviteModal(sid, name),
-          onAuthFailure: () => {
-            const giveUp = recordAuthFailureAndShouldGiveUp();
-            if (giveUp) clearSessionAndReload();
-          },
-          onStateRefresh: () => {
-            // After every successful state refresh, also pump the legacy
-            // feed + inbox so the bottom-of-page "Active players" section
-            // and the global invite banner stay current without the
-            // user having to wait for the slower 30s legacy poll.
-            void pullFeed();
-            void pullInbox();
-          },
-        },
-      });
-    } catch (err) {
-      console.warn("coop lobbies mount failed", err);
-    }
+    // Co-op lobby module mounts lazily on first Co-op tab visit (ensureCoopLobbiesMounted).
     try {
       if (window.__VAULT_PARTY_ID) {
         PartyRoom.mountPartyRoom({
@@ -2349,7 +2350,11 @@ async function boot() {
   // Load preset message catalog (auth-only — only signed-in users send invites).
   if (session) {
     try {
-      await InviteAPI.loadMessageCatalog(API_BASE);
+      await promiseWithTimeout(
+        InviteAPI.loadMessageCatalog(API_BASE),
+        5000,
+        "loadMessageCatalog"
+      );
       populateInviteOptions();
     } catch (e) {
       console.warn("could not load invite messages", e);
@@ -2642,6 +2647,7 @@ async function boot() {
     if (session) setStatus("trouble", "Trouble starting — try refreshing");
     try { paintInitialTabShell(); } catch {}
   } finally {
+    clearTimeout(bootWatchdog);
     clearConnectingIfStuck(markedConnecting);
   }
 }
@@ -2890,6 +2896,8 @@ function switchTab(tab) {
   // the same hook so a user who hasn't visited Co-op yet sees it
   // the first time they land here after this deploy.
   if (tab === "coop") {
+    if (session) ensureCoopLobbiesMounted();
+    try { CoopLobbies.setCoopTabActive?.(); } catch {}
     try { renderCoopBetaHeaderControls(); } catch {}
     try { renderCoopDiscoveryBanner(); } catch {}
     if (isCoopSandboxEnabled()) {
@@ -3477,6 +3485,34 @@ function showPrivateModeNotice() {
 // =========================================================================
 // Co-op form (your status card)
 // =========================================================================
+
+let coopLobbiesMounted = false;
+function ensureCoopLobbiesMounted() {
+  if (coopLobbiesMounted || !session) return;
+  coopLobbiesMounted = true;
+  try {
+    CoopLobbies.mountCoopLobbies({
+      api: API_BASE,
+      session,
+      deps: {
+        toast: (msg) => { if (msg) toast(msg); },
+        openInviteModal: (sid, name) => openInviteModal(sid, name),
+        onAuthFailure: () => {
+          const giveUp = recordAuthFailureAndShouldGiveUp();
+          if (giveUp) clearSessionAndReload();
+        },
+        onStateRefresh: () => {
+          void pullFeed();
+          void pullInbox();
+        },
+      },
+    });
+  } catch (err) {
+    coopLobbiesMounted = false;
+    console.warn("coop lobbies mount failed", err);
+  }
+}
+
 function wireCoopForm() {
   document.querySelectorAll('input[name="status"]').forEach((el) =>
     el.addEventListener("change", () => {
@@ -3646,11 +3682,21 @@ async function fetchWithTimeout(url, init = {}, ms = PUSH_TIMEOUT_MS) {
 }
 
 function clearConnectingIfStuck(wasConnecting) {
-  if (!wasConnecting || !session) return;
   const $dot = document.getElementById("status-dot");
-  if ($dot?.dataset.state === "connecting") {
-    setStatus("trouble", "Trouble reaching server, retrying…");
+  if ($dot?.dataset.state !== "connecting") return;
+  if (!wasConnecting) {
+    if (!session) setStatus("offline", "Browsing as guest");
+    return;
   }
+  if (!session) {
+    setStatus("offline", "Browsing as guest");
+    return;
+  }
+  if (!sessionCookieVerified) {
+    setStatus("offline", "Sign in to continue");
+    return;
+  }
+  setStatus("trouble", "Trouble reaching server, retrying…");
 }
 
 /** Paint stats/co-op shells before IDB + cloud hydrate finish so
