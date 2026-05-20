@@ -8618,6 +8618,22 @@ html.prefer-compact-density .h-stat-num { font-size: 18px; }
 }
 .private-mode-text { flex: 1; min-width: 0; }
 .private-mode-text strong { color: var(--text-1); margin-right: 4px; }
+.session-expired-notice .session-expired-link {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 10px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 196, 86, 0.45);
+  background: rgba(255, 196, 86, 0.12);
+  color: var(--text-1);
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+}
+.session-expired-notice button.session-expired-link {
+  font: inherit;
+}
 .private-mode-close {
   width: 26px; height: 26px;
   border-radius: 6px;

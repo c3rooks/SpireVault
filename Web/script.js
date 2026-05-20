@@ -71,7 +71,7 @@ const STS2_APP_ID = "2868840";
  * on an old client — instruct hard refresh. If it DOES match, the
  * bug is real and we can stop chasing cache ghosts.
  */
-const VAULT_BUILD = "v176-2026-05-19-coop-lobby-polish";
+const VAULT_BUILD = "v177-2026-05-19-boot-resilience";
 
 // Feature flag — set to `true` only on local dev when iterating on the
 // Run Companion Overlay. Production stays false until the feature is
@@ -1253,6 +1253,11 @@ function bossImageSrcset(slug) {
 // every other site in the file still treats it as the single source of
 // truth for "is there a logged-in user right now."
 let session = readSession();
+// Set during `/api/_session` rehydration. When localStorage still has a
+// blob but the HttpOnly cookie is dead (common on Safari after ITP), API
+// calls 401 or hang — surface a re-auth banner instead of a blank shell.
+let sessionCookieVerified = false;
+let sessionCookieMissing = false;
 let parsedRuns = [];          // current normalized history runs (in memory)
 // Live "you're currently in an STS2 game" snapshot. Populated by
 // commitParsedRuns when an ingest discovers a save file with run shape
@@ -1485,6 +1490,7 @@ let isDemoMode = false;
 //   5. Cookie says definitive 401 → wipe localStorage (token genuinely dead).
 //   6. No cookie + no localStorage → guest.
 (async () => {
+  const hadLocalSession = !!session;
   try {
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), 2800);
@@ -1496,6 +1502,8 @@ let isDemoMode = false;
     });
     clearTimeout(t);
     if (r.ok) {
+      sessionCookieVerified = true;
+      sessionCookieMissing = false;
       const j = await r.json();
       const sid = j?.steamID || "";
       const sidOk =
@@ -1539,6 +1547,8 @@ let isDemoMode = false;
       // don't keep banging on the proxy with a dead bearer for the
       // rest of the session. The proxy already cleared the cookie.
       session = null;
+      sessionCookieVerified = false;
+      sessionCookieMissing = false;
       try { localStorage.removeItem(STORAGE_SESSION); } catch {}
     } else if (r.status === 503) {
       // Transient upstream failure (KV blip, network hiccup,
@@ -1547,9 +1557,16 @@ let isDemoMode = false;
       // having a moment. We'll retry on the next request that
       // actually needs auth.
       console.info("[Vault] /api/_session transient, retaining local session");
+      if (hadLocalSession && session) sessionCookieMissing = true;
+    } else if (hadLocalSession && session) {
+      // Unexpected non-OK (404, 502, …) — keep local blob but treat as unverified.
+      sessionCookieMissing = true;
     }
     // r.status 404 / other unexpected — leave session as-is, fall through.
-  } catch { /* offline, timeout, or proxy down — keep localStorage */ }
+  } catch {
+    /* offline, timeout, or proxy down — keep localStorage */
+    if (session) sessionCookieMissing = true;
+  }
   boot();
 })();
 
@@ -1869,6 +1886,8 @@ async function refreshPublicCount() {
 // Stats UI is universal; only the Co-op tab differs based on session.
 // =========================================================================
 async function boot() {
+  let markedConnecting = false;
+  try {
   // Always show the app shell. The signed-out hero is gone; the only thing
   // a visitor sees is the real product — pre-populated with demo data
   // until they drop their own history.json.
@@ -1910,9 +1929,15 @@ async function boot() {
     const $classicTier = document.getElementById("classic-me-tier");
     if ($classicTier) $classicTier.textContent = tierText;
     setStatus("connecting", "Connecting…");
+    markedConnecting = true;
     // Paint the profile dock at boot so the user sees their status pill
     // immediately, before the first heartbeat round-trip lands.
     renderProfileDock();
+    // Kick presence immediately — boot still has slow awaits (invite
+    // catalog, IDB history) before the main heartbeat block; without this
+    // the footer can sit on "Connecting…" for seconds or forever if IDB hangs.
+    schedulePush(0);
+    if (sessionCookieMissing) showSessionExpiredBanner();
   } else {
     // Guest sidebar pill: invite to sign in instead of the persona block.
     const $mePill = document.getElementById("me-pill");
@@ -2024,6 +2049,8 @@ async function boot() {
   // ranks highest because a fresh native sidebar click is more recent
   // intent than the URL the host opened the WebView with.
   switchTab(hostQueuedTab || initialTab || lastTab || (session ? "coop" : "overview"));
+  // Never leave #app-content empty while slow boot awaits (IDB, cloud) run.
+  paintInitialTabShell();
 
   // Wire the "notify me when this ships" forms inside news posts —
   // the markup is static and ships in index.html, but the click
@@ -2365,8 +2392,11 @@ async function boot() {
   // intermediate frame is the bug the screenshot caught.)
   let hasLinkedSaves = false;
   try {
-    hasLinkedSaves = !!(await HistoryStore.loadDirectoryHandle())
-                  || !!(await HistoryStore.loadHandle());
+    hasLinkedSaves = !!(await promiseWithTimeout(
+      HistoryStore.loadDirectoryHandle(), 8000, "loadDirectoryHandle"
+    )) || !!(await promiseWithTimeout(
+      HistoryStore.loadHandle(), 8000, "loadHandle"
+    ));
   } catch (e) {
     console.warn("loadDirectoryHandle/loadHandle failed at boot", e);
   }
@@ -2380,7 +2410,7 @@ async function boot() {
   // data" bug class.
   let cached = null;
   try {
-    cached = await HistoryStore.loadHistory();
+    cached = await promiseWithTimeout(HistoryStore.loadHistory(), 8000, "loadHistory");
   } catch (e) {
     console.warn("could not load cached history", e);
   }
@@ -2498,7 +2528,7 @@ async function boot() {
       }
     }, 60_000);
 
-    await Promise.all([pullFeed(), pullInbox(), pullOutbox()]);
+    await bootPullInitial();
   } else {
     // Guests still see the live presence count update on the Co-op tab.
     void refreshGuestRoster();
@@ -2606,6 +2636,13 @@ async function boot() {
         navigator.sendBeacon && navigator.sendBeacon(`${API_BASE}/presence`, blob);
       } catch {}
     });
+  }
+  } catch (err) {
+    console.error("[Vault] boot failed", err);
+    if (session) setStatus("trouble", "Trouble starting — try refreshing");
+    try { paintInitialTabShell(); } catch {}
+  } finally {
+    clearConnectingIfStuck(markedConnecting);
   }
 }
 
@@ -2865,7 +2902,10 @@ function switchTab(tab) {
       } catch { /* non-fatal */ }
     }
   }
-  renderActiveTab();
+  try { renderActiveTab(); } catch (e) {
+    console.warn("renderActiveTab failed", e);
+    try { paintInitialTabShell(); } catch {}
+  }
 }
 
 /**
@@ -3569,7 +3609,7 @@ function mapStatusToLegacy(s) {
 function readMyForm() {
   const raw = (document.querySelector('input[name="status"]:checked') || {}).value || "looking";
   const status = mapStatusToLegacy(raw);
-  const discordHandle = (document.getElementById("me-discord").value || "").trim();
+  const discordHandle = (document.getElementById("me-discord")?.value || "").trim();
 
   return {
     status,
@@ -3581,6 +3621,98 @@ function readMyForm() {
 function schedulePush(delay = 600) {
   clearTimeout(pushTimer);
   pushTimer = setTimeout(() => pushNow(false), delay);
+}
+
+const PUSH_TIMEOUT_MS = 8_000;
+
+/** Race any promise against a timeout — used for IDB reads at boot so a
+ *  hung IndexedDB open can't block the UI forever. */
+function promiseWithTimeout(promise, ms, label = "operation") {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
+async function fetchWithTimeout(url, init = {}, ms = PUSH_TIMEOUT_MS) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), ms);
+  try {
+    return await fetch(url, { ...init, signal: ctrl.signal });
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+function clearConnectingIfStuck(wasConnecting) {
+  if (!wasConnecting || !session) return;
+  const $dot = document.getElementById("status-dot");
+  if ($dot?.dataset.state === "connecting") {
+    setStatus("trouble", "Trouble reaching server, retrying…");
+  }
+}
+
+/** Paint stats/co-op shells before IDB + cloud hydrate finish so
+ *  #app-content is never an empty panel during boot. */
+function paintInitialTabShell() {
+  if (TABS_WITH_DATA.includes(activeTab)) {
+    if (session?.steamID && parsedRuns.length === 0 && activeTab === "overview") {
+      showBootSkeleton();
+    } else if (parsedRuns.length === 0) {
+      try { renderStatsTab(activeTab); } catch (e) { console.warn("early stats tab paint failed", e); }
+    }
+  }
+  if (activeTab === "coop" && session) {
+    try {
+      renderClassicCoopMirror([], [], { inGame: 0, looking: 0, activeNow: 0 });
+    } catch (e) { console.warn("early coop mirror paint failed", e); }
+  }
+}
+
+async function bootPullInitial() {
+  try {
+    await promiseWithTimeout(
+      Promise.all([pullFeed(), pullInbox(), pullOutbox()]),
+      PUSH_TIMEOUT_MS,
+      "bootPullInitial"
+    );
+  } catch (e) {
+    console.warn("initial feed/inbox pull timed out or failed", e);
+    setStatus("trouble", "Trouble reaching server, retrying…");
+  }
+}
+
+let sessionExpiredBannerShown = false;
+function showSessionExpiredBanner() {
+  if (sessionExpiredBannerShown) return;
+  sessionExpiredBannerShown = true;
+  const $host = document.getElementById("app-content");
+  if (!$host) return;
+  const isLocalDev = /^(localhost|127\.0\.0\.1)$/.test(location.hostname);
+  const personaSlug = (session?.personaName || "c3rooks")
+    .replace(/[^\w-]+/g, "")
+    .toLowerCase() || "c3rooks";
+  const devLoginHref = isLocalDev
+    ? `/api/_dev-login?as=${encodeURIComponent(personaSlug)}`
+    : null;
+  const div = document.createElement("div");
+  div.className = "private-mode-notice session-expired-notice";
+  div.setAttribute("role", "alert");
+  div.innerHTML = `
+    <span class="private-mode-icon" aria-hidden="true">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
+    </span>
+    <span class="private-mode-text">
+      <strong>Session expired — sign in again.</strong>
+      Your browser lost the sign-in cookie; co-op and cloud sync won't work until you re-authenticate.
+      ${devLoginHref
+        ? `<a class="session-expired-link" href="${esc(devLoginHref)}">Dev sign-in</a>`
+        : `<button type="button" class="session-expired-link" data-action="signin-cta">Sign in with Steam</button>`}
+    </span>
+    <button type="button" class="private-mode-close" aria-label="Dismiss">&times;</button>`;
+  $host.insertBefore(div, $host.firstChild);
+  div.querySelector(".private-mode-close")?.addEventListener("click", () => div.remove());
 }
 
 /**
@@ -3711,6 +3843,7 @@ setInterval(() => {
 }, 60_000);
 
 async function pushNow(silent) {
+  if (!session?.steamID) return;
   const body = readMyForm();
   saveDraft(body);
   // Reflect the new status in the bottom profile dock immediately so
@@ -3720,7 +3853,7 @@ async function pushNow(silent) {
   refreshProfilePopoverIfOpen();
   if (!silent) showPushingPill(true);
   try {
-    const resp = await fetch(`${API_BASE}/presence`, {
+    const resp = await fetchWithTimeout(`${API_BASE}/presence`, {
       method: "POST",
       credentials: "include",
       headers: {
@@ -3731,8 +3864,10 @@ async function pushNow(silent) {
         status: body.status,
         discordHandle: body.discordHandle,
       }),
-    });
+    }, PUSH_TIMEOUT_MS);
     if (resp.status === 401) {
+      sessionCookieMissing = true;
+      showSessionExpiredBanner();
       // Don't immediately nuke the session. Many transient causes (KV blip,
       // network corruption, brief worker hiccup) return 401. Only give up
       // after AUTH_FAIL_THRESHOLD consecutive 401s inside a short window.
@@ -3765,8 +3900,9 @@ async function pushNow(silent) {
     }
     setStatus(resp.ok ? "online" : "trouble", resp.ok ? "Live on the feed" : "Trouble reaching server");
   } catch (e) {
-    console.warn("presence push error", e);
-    setStatus("trouble", "Trouble reaching server");
+    const timedOut = e?.name === "AbortError";
+    console.warn(timedOut ? "presence push timed out" : "presence push error", e);
+    setStatus("trouble", timedOut ? "Trouble reaching server, retrying…" : "Trouble reaching server");
   } finally {
     if (!silent) setTimeout(() => showPushingPill(false), 400);
   }
