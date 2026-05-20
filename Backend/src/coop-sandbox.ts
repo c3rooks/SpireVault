@@ -23,6 +23,7 @@ import type {
   RunLobby,
   RunLobbySize,
   VoicePreference,
+  VoicePreset,
 } from "./coop-types";
 import { normalizeRunLobby } from "./coop-lobby-utils";
 
@@ -244,6 +245,9 @@ async function seedLobby(
     ascensionMin?: number;
     ascensionMax?: number;
     voicePreference?: VoicePreference;
+    approvalRequired?: boolean;
+    voicePreset?: VoicePreset;
+    voiceChannelUrl?: string;
     note?: string;
     acceptedMemberSteamIds: string[];
     pendingSeatRequestSteamIds?: string[];
@@ -266,6 +270,9 @@ async function seedLobby(
     ascensionMin: opts.ascensionMin,
     ascensionMax: opts.ascensionMax,
     voicePreference: opts.voicePreference,
+    approvalRequired: opts.approvalRequired === true,
+    voicePreset: opts.voicePreset ?? "any",
+    voiceChannelUrl: opts.voiceChannelUrl,
     note: opts.note,
     status: opts.status ?? "open",
     acceptedMemberSteamIds: opts.acceptedMemberSteamIds,
@@ -431,6 +438,8 @@ export async function seedCoopSandboxScenario(
         ascensionMin: 8,
         ascensionMax: 10,
         voicePreference: "optional",
+        voicePreset: "lfg1",
+        approvalRequired: false,
         note: "Trying to get a clean Heart run.",
         acceptedMemberSteamIds: [mako.steamId],
       });

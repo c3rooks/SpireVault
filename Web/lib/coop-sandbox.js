@@ -276,8 +276,8 @@ function panelHtml(personas = [], mySteamId = "") {
           <button type="button" class="btn-ghost btn-xs" id="coop-sandbox-act-as">Switch persona</button>
         </div>
         <div class="coop-sandbox-actions coop-sandbox-actions--party">
-          <button type="button" class="btn-primary btn-xs" id="coop-sandbox-party-host">Open Party Room (host)</button>
-          <button type="button" class="btn-ghost btn-xs" id="coop-sandbox-party-joiner">Open Party Room (joiner)</button>
+          <button type="button" class="btn-primary btn-xs" id="coop-sandbox-party-host">Open Party Hub (host)</button>
+          <button type="button" class="btn-ghost btn-xs" id="coop-sandbox-party-joiner">Open Party Hub (joiner)</button>
         </div>
       </div>
     </div>`;

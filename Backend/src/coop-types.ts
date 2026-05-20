@@ -64,6 +64,17 @@ export const VOICE_PREFERENCES: readonly VoicePreference[] = [
   "optional",
 ];
 
+/** Discord LFG voice preset on a run room (Co-op Lobby Beta reset). */
+export type VoicePreset = "none" | "any" | "lfg1" | "lfg_duo3" | "custom";
+
+export const VOICE_PRESETS: readonly VoicePreset[] = [
+  "none",
+  "any",
+  "lfg1",
+  "lfg_duo3",
+  "custom",
+];
+
 /**
  * Live presence row. Stored at `coop:presence:<steamId>`, refreshed on
  * every heartbeat. `expiresAt` is what gates "stale" handling at read
@@ -135,6 +146,10 @@ export interface RunLobby {
   ascensionMin?: number;
   ascensionMax?: number;
   voicePreference?: VoicePreference;
+  /** When true, joiners use Request Seat; default false = open Join Seat. */
+  approvalRequired?: boolean;
+  voicePreset?: VoicePreset;
+  voiceChannelUrl?: string;
   preferredCharacters?: string[];
   note?: string;
   discordHandle?: string;

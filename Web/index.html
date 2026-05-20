@@ -31,7 +31,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Playfair+Display:wght@700;900&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/styles.css?v=137" />
+  <link rel="stylesheet" href="/styles.css?v=138" />
 
   <!-- Google tag (gtag.js) — Spire Vault GA4 stream G-09LEQ247HN.
        Loaded async so it never blocks the critical rendering path; the
@@ -759,7 +759,7 @@
                lives in the slim header above, so the bar doesn't
                repeat it. Designed to stay under ~70px on desktop.
           ============================================================ -->
-          <section class="coop-party-surface" id="coop-party-surface" data-coop-mode="beta" hidden aria-label="Party Room">
+          <section class="coop-party-surface" id="coop-party-surface" data-coop-mode="beta" hidden aria-label="Party Hub">
             <div id="coop-party-root" class="coop-party-root"></div>
           </section>
 
@@ -767,7 +767,7 @@
             <div class="coop-bar-stats" aria-label="Co-op activity right now">
               <div class="coop-bar-stat">
                 <span class="coop-bar-stat-num" id="coop-stat-lobbies">0</span>
-                <span class="coop-bar-stat-label">Open Lobbies</span>
+                <span class="coop-bar-stat-label">Open Rooms</span>
               </div>
               <span class="coop-bar-divider" aria-hidden="true"></span>
               <div class="coop-bar-stat">
@@ -781,7 +781,7 @@
               </div>
             </div>
             <div class="coop-bar-cta-row">
-              <button class="btn-primary btn-sm" type="button" data-coop-action="open-create-lobby">+ Post a Run</button>
+              <button class="btn-primary btn-sm" type="button" data-coop-action="open-create-lobby">+ Host a Room</button>
               <button class="btn-ghost btn-sm" type="button" data-coop-action="quick-match">⚡ Quick Match</button>
               <button class="coop-link-btn" type="button" data-coop-action="open-intent">Run Preferences</button>
             </div>
@@ -829,13 +829,13 @@
                 <header class="coop-board-head">
                   <div class="coop-board-head-text">
                     <h2 class="coop-section-title" id="coop-lobbies-title">
-                      Open Run Lobbies
+                      Open Rooms
                       <span class="count-pill" id="coop-lobbies-count">0</span>
                     </h2>
-                    <p class="coop-section-sub">Posted run lobbies other players are looking to fill. Pair up here, then add each other on Steam.</p>
+                    <p class="coop-section-sub">Browse open STS2 rooms, claim a seat, then coordinate in Party Hub before Steam.</p>
                   </div>
                   <div class="coop-board-head-actions">
-                    <button class="btn-primary btn-sm" type="button" data-coop-action="open-create-lobby">+ Post a Run</button>
+                    <button class="btn-primary btn-sm" type="button" data-coop-action="open-create-lobby">+ Host a Room</button>
                   </div>
                 </header>
                 <div class="coop-lobbies-list" id="coop-lobbies-list">
@@ -1687,11 +1687,11 @@
   <div class="modal-backdrop coop-modal-backdrop" id="coop-modal-lobby" hidden role="dialog" aria-modal="true" aria-labelledby="coop-modal-lobby-title">
     <div class="modal coop-modal coop-modal--lobby">
       <header class="modal-head">
-        <h2 id="coop-modal-lobby-title">Post a Run</h2>
+        <h2 id="coop-modal-lobby-title">Host a Room</h2>
         <button class="modal-close" type="button" data-coop-modal-close aria-label="Close">×</button>
       </header>
       <div class="modal-body coop-modal-body">
-        <p class="modal-sub">Post the kind of run you want to play. Other players can request a seat; when you accept, everyone opens the Party Room to coordinate on Steam and STS2.</p>
+        <p class="modal-sub">Post the STS2 room you want to play. By default players can Join Seat instantly; enable approval if you want to review requests first.</p>
         <form id="coop-lobby-form" class="coop-form" novalidate>
           <label class="coop-pref-field coop-pref-field--wide">
             <span class="field-label">Run title (80 chars)</span>

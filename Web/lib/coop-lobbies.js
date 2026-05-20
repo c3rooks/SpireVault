@@ -1,4 +1,4 @@
-// coop-lobbies.js — v21 (Co-op Lobby Beta UX state machine)
+// coop-lobbies.js — v22 (Co-op Lobby Beta — open join + Party Hub)
 // =========================================================================
 // Drives the Co-op Lobby Beta surface:
 //   A. Compact command bar with 3 stats + CTAs (Post a Run, Quick Match,
@@ -10,8 +10,8 @@
 //      also visible in Classic Co-op).
 //
 // User-facing wording is the only canonical vocabulary:
-//   Post a Run         — primary CTA
-//   Open Run Lobbies   — the board users browse + join
+//   Host a Room        — primary CTA (modal)
+//   Open Rooms         — the board users browse + join
 //   Best Matches       — sorted recommendations
 //   Run Preferences    — settings modal (NEVER "intent")
 //   Pairing            — what you're in after accept (NEVER "session")
@@ -32,9 +32,9 @@ import {
   filterOpenLobbiesForViewer,
   filterRecommendationsForViewer,
   isSandboxSteamId,
-} from "./coop-sandbox.js?v=4";
+} from "./coop-sandbox.js?v=5";
 
-export { ensureCoopSandboxMounted, isCoopSandboxEnabled } from "./coop-sandbox.js?v=4";
+export { ensureCoopSandboxMounted, isCoopSandboxEnabled } from "./coop-sandbox.js?v=5";
 
 const GAME_CONFIG = Object.freeze({
   game: "Slay the Spire 2",
@@ -52,7 +52,40 @@ function lobbyMembers(lobby) {
 }
 function lobbySizeOf(lobby) {
   const n = lobby?.lobbySize;
-  return n === 2 || n === 3 || n === 4 ? n : 2;
+  return n === 2 || n === 3 || n === 4 ? n : 4;
+}
+
+function lobbyApprovalRequired(lobby) {
+  return lobby?.approvalRequired === true;
+}
+
+const VOICE_PRESET_LABELS = {
+  none: "No voice",
+  any: "Any voice",
+  lfg1: "LFG 1",
+  lfg_duo3: "LFG Duo 3",
+  custom: "Custom link",
+};
+
+function voicePresetDisplay(lobby) {
+  const preset = lobby?.voicePreset || "any";
+  return VOICE_PRESET_LABELS[preset] || preset;
+}
+
+const ROOM_JOIN_BASE = "https://spirevault.app/coop?room=";
+
+function buildDiscordLfgPost(lobby) {
+  const members = lobbyMembers(lobby);
+  const cap = lobbySizeOf(lobby);
+  const need = openSeats(lobby);
+  const voiceLabel = voicePresetDisplay(lobby);
+  const voiceUrl = lobby.voiceChannelUrl ? ` ${lobby.voiceChannelUrl}` : "";
+  return [
+    `STS2 ${lobbyModeLabel(lobby)} · ${goalLabel(lobby.goal)} · ${ascensionLabel(lobby.ascensionMin, lobby.ascensionMax)} · ${members.length}/${cap} · Need +${need}`,
+    `Host: ${lobby.hostPersonaName || "Host"}`,
+    `Voice: ${voiceLabel}${voiceUrl}`,
+    `Join on SpireVault: ${ROOM_JOIN_BASE}${lobby.lobbyId}`,
+  ].join("\n");
 }
 function openSeats(lobby) {
   return Math.max(0, lobbySizeOf(lobby) - lobbyMembers(lobby).length);
@@ -448,6 +481,7 @@ function render(state) {
   renderLobbies(state, ux);
   renderRecommendations(state, ux);
   refreshSandboxFromState(state);
+  applyRoomDeepLink();
 
   const $count = document.getElementById("online-count");
   if ($count) {
@@ -534,8 +568,32 @@ function applySectionVisibility(state, ux) {
     "in_run",
     "away",
     "incoming_request",
+    "hosting_lobby",
   ]).has(ux.state);
   if ($recs) $recs.hidden = hideRecs;
+
+  const $invites = document.getElementById("coop-invites-section");
+  if ($invites && ux.state === "in_party") $invites.hidden = true;
+
+  const $feed = document.getElementById("feed");
+  const $feedToggle = document.getElementById("coop-feed-toggle");
+  if ($feed && $feedToggle && !["idle", "browsing"].includes(ux.state)) {
+    $feed.hidden = true;
+    $feedToggle.setAttribute("aria-expanded", "false");
+    $feedToggle.textContent = "Show all";
+  }
+}
+
+function applyRoomDeepLink() {
+  try {
+    const roomId = new URLSearchParams(window.location.search).get("room");
+    if (!roomId || !/^[0-9a-f]{32}$/i.test(roomId)) return;
+    const card = document.querySelector(`[data-lobby-id="${roomId}"]`);
+    if (!card) return;
+    card.scrollIntoView({ behavior: "smooth", block: "center" });
+    card.classList.add("coop-lobby-card--highlight");
+    setTimeout(() => card.classList.remove("coop-lobby-card--highlight"), 3200);
+  } catch {}
 }
 
 function renderPendingJoinReqInline(r, state) {
@@ -595,7 +653,7 @@ function renderPrimaryState(state, ux) {
             <p class="coop-primary-sub">Pick your character in-game. Open Party Room for the handoff checklist.</p>
           </div>
           <div class="coop-primary-actions">
-            <a class="btn-primary btn-sm" href="/party/${esc(party.partyId)}">Open Party Room</a>
+            <a class="btn-primary btn-sm" href="/party/${esc(party.partyId)}">Open Party Hub</a>
           </div>
         </article>`;
       return;
@@ -614,7 +672,7 @@ function renderPrimaryState(state, ux) {
             <p class="coop-primary-sub">${filled}/${cap} seats · ${esc(statusLine)}</p>
           </div>
           <div class="coop-primary-actions">
-            <a class="btn-primary btn-sm" href="/party/${esc(party.partyId)}">Open Party Room</a>
+            <a class="btn-primary btn-sm" href="/party/${esc(party.partyId)}">Open Party Hub</a>
             <button class="btn-ghost btn-sm" type="button" data-coop-action="leave-party" data-id="${esc(party.partyId)}">Leave Party</button>
           </div>
         </article>`;
@@ -655,21 +713,23 @@ function renderPrimaryState(state, ux) {
           </div>`
         : "";
       const partyBtn = lobby.partyId
-        ? `<a class="btn-primary btn-sm" href="/party/${esc(lobby.partyId)}">Open Party Room</a>`
-        : `<span class="coop-primary-hint muted small">Party Room opens after you accept a seat request.</span>`;
+        ? `<a class="btn-primary btn-sm" href="/party/${esc(lobby.partyId)}">Open Party Hub</a>`
+        : "";
+      const discordBtn = `<button type="button" class="btn-ghost btn-sm" data-coop-action="copy-discord-lfg" data-id="${esc(lobby.lobbyId)}">Copy Discord LFG Post</button>`;
       $mount.innerHTML = `
         <article class="coop-primary-card coop-primary-card--hosting">
           <div class="coop-primary-meta">
-            <span class="coop-primary-eyebrow">Your run lobby is open</span>
+            <span class="coop-primary-eyebrow">Your room is open</span>
             <h2 class="coop-primary-title">${esc(lobby.title)}</h2>
             <p class="coop-primary-sub">${memberCount}/${cap} seats filled · Need +${need}</p>
           </div>
           ${renderLobbySeatRow(lobby)}
           ${pendingHtml}
           <div class="coop-primary-actions">
-            <button class="btn-ghost btn-sm" type="button" data-coop-action="open-edit-lobby" data-id="${esc(lobby.lobbyId)}">Manage</button>
             ${partyBtn}
-            <button class="btn-ghost btn-sm" type="button" data-coop-action="close-lobby" data-id="${esc(lobby.lobbyId)}">Close</button>
+            ${discordBtn}
+            <button class="btn-ghost btn-sm" type="button" data-coop-action="open-edit-lobby" data-id="${esc(lobby.lobbyId)}">Manage</button>
+            <button class="btn-ghost btn-sm" type="button" data-coop-action="close-lobby" data-id="${esc(lobby.lobbyId)}">Close Room</button>
           </div>
         </article>`;
       return;
@@ -699,11 +759,11 @@ function renderPrimaryState(state, ux) {
           <div class="coop-primary-meta coop-primary-hero">
             <span class="coop-primary-eyebrow">Find a co-op run</span>
             <h2 class="coop-primary-title">Ready to find a run?</h2>
-            <p class="coop-primary-sub">Quick match, post your run, or browse open lobbies below.</p>
+            <p class="coop-primary-sub">Quick Match, host a room, or browse Open Rooms below.</p>
           </div>
           <div class="coop-primary-actions">
             <button class="btn-primary btn-sm" type="button" data-coop-action="quick-match">Find Me a Group</button>
-            <button class="btn-ghost btn-sm" type="button" data-coop-action="open-create-lobby">Post a Run</button>
+            <button class="btn-ghost btn-sm" type="button" data-coop-action="open-create-lobby">Host a Room</button>
             <button class="btn-ghost btn-sm" type="button" data-coop-action="browse-lobbies">Browse Lobbies</button>
           </div>
         </article>`;
@@ -1061,10 +1121,10 @@ function renderEmptyLobbies() {
   return `
     <div class="coop-empty-card coop-empty-card--openruns">
       <div class="coop-empty-card-text">
-        <h4 class="coop-empty-title">No open run lobbies yet</h4>
-        <p class="coop-empty-body">Post the first run so players can request a seat, then open your Party Room and add each other on Steam.</p>
+        <h4 class="coop-empty-title">No open rooms yet</h4>
+        <p class="coop-empty-body">Host the first room so players can Join Seat, then open Party Hub to coordinate on Steam.</p>
         <div class="coop-empty-actions">
-          <button class="btn-primary btn-sm" type="button" data-coop-action="open-create-lobby">+ Post a Run</button>
+          <button class="btn-primary btn-sm" type="button" data-coop-action="open-create-lobby">+ Host a Room</button>
           <button class="btn-ghost btn-sm" type="button" data-coop-action="quick-match">⚡ Quick Match</button>
         </div>
         <div class="coop-empty-examples">
@@ -1210,22 +1270,22 @@ function renderLobbyCard(lobby, mySid, pendingByLobby, state, compact = false) {
     `<span class="coop-badge coop-badge--mode">${esc(lobbyModeLabel(lobby))}</span>`,
     `<span class="coop-badge coop-badge--goal">${esc(goalLabel(lobby.goal))}</span>`,
     `<span class="coop-badge coop-badge--asc">${esc(ascensionLabel(lobby.ascensionMin, lobby.ascensionMax))}</span>`,
-    lobby.voicePreference ? `<span class="coop-badge coop-badge--voice">${esc(voiceLabel(lobby.voicePreference))}</span>` : "",
-    lobby.discordHandle ? `<span class="coop-badge coop-badge--discord">Discord</span>` : "",
+    `<span class="coop-badge coop-badge--voice">${esc(voicePresetDisplay(lobby))}</span>`,
   ].filter(Boolean).join("");
 
   let action = "";
   if (isMine) {
     const partyBtn = lobby.partyId
-      ? `<a class="btn-primary btn-sm" href="/party/${esc(lobby.partyId)}">Open Party Room</a>`
+      ? `<a class="btn-primary btn-sm" href="/party/${esc(lobby.partyId)}">Party Hub</a>`
       : "";
     action = `
       ${partyBtn}
+      <button class="btn-ghost btn-sm" data-coop-action="copy-discord-lfg" data-id="${esc(lobby.lobbyId)}">Copy Discord LFG Post</button>
       <button class="btn-ghost btn-sm" data-coop-action="open-edit-lobby" data-id="${esc(lobby.lobbyId)}">Manage</button>
-      <button class="btn-ghost btn-sm" data-coop-action="close-lobby" data-id="${esc(lobby.lobbyId)}">Close</button>`;
+      <button class="btn-ghost btn-sm" data-coop-action="close-lobby" data-id="${esc(lobby.lobbyId)}">Close Room</button>`;
   } else if (isMember) {
     const partyBtn = lobby.partyId
-      ? `<a class="btn-primary btn-sm" href="/party/${esc(lobby.partyId)}">Open Party Room</a>`
+      ? `<a class="btn-primary btn-sm" href="/party/${esc(lobby.partyId)}">Party Hub</a>`
       : "";
     action = `${partyBtn}<span class="coop-badge coop-badge--players">You&rsquo;re in</span>`;
   } else if (isPaired) {
@@ -1236,8 +1296,10 @@ function renderLobbyCard(lobby, mySid, pendingByLobby, state, compact = false) {
       <button class="btn-ghost btn-sm" data-coop-action="cancel-join" data-lobby="${esc(lobby.lobbyId)}">Cancel</button>`;
   } else if (isFull) {
     action = `<button class="btn-ghost btn-sm" disabled>Full</button>`;
-  } else {
+  } else if (lobbyApprovalRequired(lobby)) {
     action = `<button class="btn-primary btn-sm" data-coop-action="request-join" data-id="${esc(lobby.lobbyId)}">Request Seat</button>`;
+  } else {
+    action = `<button class="btn-primary btn-sm" data-coop-action="join-seat" data-id="${esc(lobby.lobbyId)}">Join Seat</button>`;
   }
 
   return `
@@ -1245,7 +1307,7 @@ function renderLobbyCard(lobby, mySid, pendingByLobby, state, compact = false) {
       <div class="coop-lobby-card-head">
         <img class="avatar" src="${esc(lobby.hostAvatarUrl || "/assets/vault-mark.svg")}" alt="" />
         <div class="coop-lobby-card-title">
-          <h4>${isMine ? `<span class="coop-lobby-pin">Your Run Lobby</span> ` : pendingReq ? `<span class="coop-lobby-pin coop-lobby-pin--requested">Requested</span> ` : ""}${esc(lobby.title)}</h4>
+          <h4>${isMine ? `<span class="coop-lobby-pin">Your Room</span> ` : pendingReq ? `<span class="coop-lobby-pin coop-lobby-pin--requested">Requested</span> ` : ""}${esc(lobby.title)}</h4>
           <span class="coop-lobby-host">Hosted by <strong>${esc(lobby.hostPersonaName || "Steam user")}</strong></span>
         </div>
         <div class="coop-lobby-card-meta">${statusBadge}</div>
@@ -1812,8 +1874,8 @@ function openCreateLobbyModal() {
     if (p.ascensionMax != null) $form.elements["ascensionMax"].value = p.ascensionMax;
     if (p.discordHandle) $form.elements["discordHandle"].value = p.discordHandle;
   }
-  document.getElementById("coop-modal-lobby-title").textContent = "Post a Run";
-  document.getElementById("coop-lobby-save").textContent = "Post Run";
+  document.getElementById("coop-modal-lobby-title").textContent = "Host a Room";
+  document.getElementById("coop-lobby-save").textContent = "Host Room";
   renderLobbyPreviewFromForm();
   openModal("coop-modal-lobby");
 }
@@ -2101,6 +2163,34 @@ function wireDelegatedClicks() {
       case "close-lobby":
         await doAction(key, btn, () => jsonFetch(`/coop/lobbies/${btn.dataset.id}/close`, { body: {} }), "Posted run closed.");
         return;
+      case "join-seat": {
+        if (pendingActions.has(key)) return;
+        pendingActions.add(key);
+        btn.classList.add("is-busy");
+        const jr = await jsonFetch(`/coop/lobbies/${btn.dataset.id}/join-seat`, { body: {} });
+        btn.classList.remove("is-busy");
+        pendingActions.delete(key);
+        if (!jr.ok) {
+          bootCtx.deps?.toast?.(jr.message || "Couldn't join this room.");
+          return;
+        }
+        bootCtx.deps?.toast?.("You're in — opening Party Hub.");
+        const joinPid = jr.partyId || jr.party?.partyId;
+        if (joinPid) window.location.assign(`/party/${joinPid}`);
+        else await refreshState({ force: true });
+        return;
+      }
+      case "copy-discord-lfg": {
+        const lobby = findLobbyById(lastState, btn.dataset.id);
+        if (!lobby) {
+          bootCtx.deps?.toast?.("Room not found.");
+          return;
+        }
+        const text = buildDiscordLfgPost(lobby);
+        try { await navigator.clipboard.writeText(text); } catch {}
+        bootCtx.deps?.toast?.("Discord LFG post copied.");
+        return;
+      }
       case "request-join":
         await doAction(key, btn, () => jsonFetch(`/coop/lobbies/${btn.dataset.id}/request`, { body: {} }), "Seat request sent.");
         return;
@@ -2121,7 +2211,7 @@ function wireDelegatedClicks() {
           bootCtx.deps?.toast?.(r.message || "Couldn't accept seat request.");
           return;
         }
-        bootCtx.deps?.toast?.("Seat accepted — opening Party Room.");
+        bootCtx.deps?.toast?.("Seat accepted — opening Party Hub.");
         const pid = r.partyId || r.party?.partyId;
         if (pid) window.location.assign(`/party/${pid}`);
         else await refreshState({ force: true });

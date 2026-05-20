@@ -1,14 +1,6 @@
-// party-room.js — web Party Room at /party/:partyId
+// party-room.js — Party Hub at /party/:partyId
 
-import { isSandboxSteamId } from "./coop-sandbox.js?v=4";
-
-const STATUS_LABELS = {
-  joined: "Joined",
-  ready: "Ready",
-  character_select: "Character Select",
-  in_game: "In Game",
-  left: "Left",
-};
+import { isSandboxSteamId } from "./coop-sandbox.js?v=5";
 
 const HOST_STEPS = [
   "Open STS2 Multiplayer.",
@@ -16,7 +8,7 @@ const HOST_STEPS = [
   "Pick Standard, Daily, or Custom.",
   "Choose your character.",
   "Click Invite.",
-  "Add/invite party members through Steam if needed.",
+  "Add party members through Steam if needed.",
   "Mark In Game when the run starts.",
 ];
 
@@ -32,6 +24,7 @@ const JOINER_STEPS = [
 let bootCtx = null;
 let partyId = null;
 let pollTimer = null;
+let lastParty = null;
 
 export function mountPartyRoom(ctx, id) {
   bootCtx = ctx;
@@ -77,7 +70,7 @@ async function jsonFetch(path, opts = {}) {
   let data;
   try { data = await resp.json(); } catch { data = null; }
   if (!resp.ok) {
-    return { ok: false, message: data?.message || `HTTP ${resp.status}` };
+    return { ok: false, status: resp.status, message: data?.message || `HTTP ${resp.status}` };
   }
   return { ok: true, ...data };
 }
@@ -92,10 +85,27 @@ function schedulePoll() {
 async function refreshParty() {
   const r = await jsonFetch(`/coop/parties/${partyId}`);
   if (!r.ok) {
-    renderPartyError(r.message || "Party Room not found.");
+    if (r.status === 404 || /closed the room|not found/i.test(r.message || "")) {
+      renderPartyClosed(r.message);
+      return;
+    }
+    renderPartyError(r.message || "Could not load Party Hub.");
     return;
   }
+  lastParty = r.party;
   renderParty(r.party);
+}
+
+function renderPartyClosed(msg) {
+  const $root = document.getElementById("coop-party-root");
+  if (!$root) return;
+  const body = /closed/i.test(msg || "") ? "Host closed the room." : esc(msg);
+  $root.innerHTML = `
+    <div class="coop-empty-card">
+      <h4 class="coop-empty-title">Party ended</h4>
+      <p class="coop-empty-body">${body}</p>
+      <a class="btn-primary btn-sm" href="/coop">Back to Co-op</a>
+    </div>`;
 }
 
 function renderPartyError(msg) {
@@ -103,7 +113,7 @@ function renderPartyError(msg) {
   if (!$root) return;
   $root.innerHTML = `
     <div class="coop-empty-card">
-      <h4 class="coop-empty-title">Party Room unavailable</h4>
+      <h4 class="coop-empty-title">Party Hub</h4>
       <p class="coop-empty-body">${esc(msg)}</p>
       <a class="btn-primary btn-sm" href="/coop">Back to Co-op</a>
     </div>`;
@@ -117,7 +127,7 @@ function memberStatusLabel(m) {
     in_game: "In Game",
     left: "Left",
   };
-  return map[m.status] || STATUS_LABELS[m.status] || m.status;
+  return map[m.status] || m.status;
 }
 
 function renderPartySlots(party) {
@@ -139,16 +149,20 @@ function renderPartySlots(party) {
 function renderParty(party) {
   const $root = document.getElementById("coop-party-root");
   if (!$root) return;
-  const me = bootCtx?.session?.steamId;
+  const me = bootCtx?.session?.steamId || bootCtx?.session?.steamID;
   const isHost = party.hostSteamId === me;
   const myMember = party.members.find((m) => m.steamId === me);
   const activeMembers = party.members.filter((m) => m.status !== "left");
   const steps = isHost ? HOST_STEPS : JOINER_STEPS;
   const stepsHtml = steps.map((s, i) => `<li>${i + 1}. ${esc(s)}</li>`).join("");
+  const nextTitle = isHost ? "Host the game in STS2" : "Join through Steam";
+  const cap = party.lobbySize || 4;
+  const filled = activeMembers.length;
 
   const memberHtml = activeMembers.map((m) => {
     const isMe = m.steamId === me;
     const sandbox = isSandboxSteamId(m.steamId);
+    const copyLabel = m.steamId === party.hostSteamId ? "Copy Host Steam Profile" : "Copy Player Steam Profile";
     return `
       <article class="coop-party-member${isMe ? " coop-party-member--me" : ""}">
         <img class="avatar" src="${esc(m.avatarUrl || "/assets/vault-mark.svg")}" alt="" />
@@ -156,36 +170,44 @@ function renderParty(party) {
           <strong>${esc(m.personaName || "Steam user")}${isMe ? " (you)" : ""}</strong>
           <span class="coop-badge">${esc(memberStatusLabel(m))}</span>
         </div>
-        <button type="button" class="btn-ghost btn-xs" data-party-action="copy-steam" data-sid="${esc(m.steamId)}" data-sandbox="${sandbox ? "1" : "0"}">Copy Steam Profile</button>
+        <button type="button" class="btn-ghost btn-xs" data-party-action="copy-steam" data-sid="${esc(m.steamId)}" data-sandbox="${sandbox ? "1" : "0"}">${copyLabel}</button>
       </article>`;
   }).join("");
 
   $root.innerHTML = `
     <header class="coop-party-head">
       <div>
-        <span class="eyebrow">Party Room</span>
+        <span class="eyebrow">Party Hub</span>
         <h2 class="coop-party-title">You&rsquo;re in the party</h2>
-        <p class="coop-party-sub">SpireVault found the party. STS2 still uses Steam for the actual invite.</p>
+        <p class="coop-party-sub">SpireVault found the group. STS2 still uses Steam for the actual invite.</p>
       </div>
       <a class="btn-ghost btn-sm" href="/coop">Back to Co-op</a>
     </header>
-    <div class="coop-party-grid">
-      <section class="coop-party-panel coop-party-panel--steps">
-        <h3 class="coop-party-panel-title">${isHost ? "Host the game in STS2" : "Join through Steam"}</h3>
-        <ol class="coop-party-checklist">${stepsHtml}</ol>
-        <p class="coop-party-help muted small">If STS2 says &ldquo;No friends currently playing multiplayer,&rdquo; add the host on Steam first. Then refresh after the host reaches character select.</p>
-      </section>
+    <div class="coop-party-grid coop-party-grid--hub">
       <section class="coop-party-panel">
-        <h3 class="coop-party-panel-title">Party slots</h3>
+        <h3 class="coop-party-panel-title">Party</h3>
+        <p class="muted small">${filled}/${cap} seats filled</p>
         ${renderPartySlots(party)}
-        <h3 class="coop-party-panel-title" style="margin-top:14px">Members</h3>
         <div class="coop-party-members">${memberHtml}</div>
+      </section>
+      <section class="coop-party-panel coop-party-panel--steps">
+        <h3 class="coop-party-panel-title">Next step</h3>
+        <p class="coop-party-next">${esc(nextTitle)}</p>
+        <h3 class="coop-party-panel-title" style="margin-top:14px">Checklist</h3>
+        <ol class="coop-party-checklist">${stepsHtml}</ol>
+        <details class="coop-party-help">
+          <summary>STS2 friends help</summary>
+          <p class="muted small">If STS2 says &ldquo;No friends currently playing multiplayer,&rdquo; add the host on Steam first. Then refresh after the host reaches character select.</p>
+        </details>
+      </section>
+      <section class="coop-party-panel coop-party-panel--actions">
+        <h3 class="coop-party-panel-title">Actions</h3>
         ${myMember ? `
         <div class="coop-party-status-row" role="group" aria-label="Your status">
           <button type="button" class="btn-ghost btn-sm" data-party-status="ready">I&rsquo;m Ready</button>
-          <button type="button" class="btn-ghost btn-sm" data-party-status="character_select">I&rsquo;m on Character Select</button>
-          <button type="button" class="btn-ghost btn-sm" data-party-status="joined">I&rsquo;m Waiting for Invite</button>
-          <button type="button" class="btn-ghost btn-sm" data-party-status="in_game">I&rsquo;m In Game</button>
+          <button type="button" class="btn-ghost btn-sm" data-party-status="character_select">On Character Select</button>
+          <button type="button" class="btn-ghost btn-sm" data-party-status="joined">Waiting for Invite</button>
+          <button type="button" class="btn-ghost btn-sm" data-party-status="in_game">In Game</button>
           <button type="button" class="btn-ghost btn-sm" data-party-action="leave">Leave Party</button>
         </div>` : ""}
         ${isHost ? `<button type="button" class="btn-ghost btn-sm coop-party-end" data-party-action="end">End Party</button>` : ""}

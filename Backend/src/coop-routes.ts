@@ -20,6 +20,7 @@ import {
   endParty,
   endSession,
   heartbeatPresence,
+  joinLobbySeat,
   leaveParty,
   readPartyForUser,
   updatePartyMemberStatus,
@@ -171,7 +172,7 @@ export async function handleCoopRoute(
 
   // Per-lobby routes
   const lobbyMatch = pathname.match(
-    /^\/coop\/lobbies\/([0-9a-f]{32})(?:\/(close|request|accept|decline|cancel-request))?$/,
+    /^\/coop\/lobbies\/([0-9a-f]{32})(?:\/(close|request|join-seat|accept|decline|cancel-request))?$/,
   );
   if (lobbyMatch) {
     const auth = await requireSession(req, env);
@@ -200,6 +201,16 @@ export async function handleCoopRoute(
       const r = await requestToJoinLobby(env, auth.steamID, lobbyId);
       if (!r.ok) return errResp(r.status, r.error, r.message);
       return json({ ok: true, request: r.value });
+    }
+    if (subroute === "join-seat" && method === "POST") {
+      const r = await joinLobbySeat(env, auth.steamID, lobbyId);
+      if (!r.ok) return errResp(r.status, r.error, r.message);
+      return json({
+        ok: true,
+        lobby: r.value.lobby,
+        party: r.value.party,
+        partyId: r.value.partyId,
+      });
     }
     if (subroute === "cancel-request" && method === "POST") {
       const r = await cancelJoinRequest(env, auth.steamID, lobbyId);
@@ -297,7 +308,7 @@ export async function handleCoopRoute(
     if (auth instanceof Response) return auth;
     const party = await readParty(env, partyGetMatch[1]!);
     if (!party || party.status !== "active") {
-      return errResp(404, "not_found", "Party Room not found.");
+      return errResp(404, "not_found", "Party not found — the host may have closed the room.");
     }
     const member = party.members.find((m) => m.steamId === auth.steamID);
     if (!member || member.status === "left") {

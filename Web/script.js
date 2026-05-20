@@ -17,9 +17,9 @@ import * as Stats from "/lib/stats-engine.js?v=4";
 import * as HistoryStore from "/lib/history-store.js?v=8";
 import * as InviteAPI from "/lib/invites.js?v=4";
 import * as HighlightsAPI from "/lib/highlights.js?v=1";
-import * as CoopLobbies from "/lib/coop-lobbies.js?v=21";
-import { isCoopSandboxEnabled, openCoopSandboxPanel } from "/lib/coop-sandbox.js?v=4";
-import * as PartyRoom from "/lib/party-room.js?v=2";
+import * as CoopLobbies from "/lib/coop-lobbies.js?v=22";
+import { isCoopSandboxEnabled, openCoopSandboxPanel } from "/lib/coop-sandbox.js?v=5";
+import * as PartyRoom from "/lib/party-room.js?v=3";
 import * as AscInfo from "/lib/ascension-info.js?v=1";
 import * as CharInfo from "/lib/character-info.js?v=1";
 import * as RelicInfo from "/lib/relic-info.js?v=1";
@@ -2132,7 +2132,7 @@ async function boot() {
     const partyMatch = path.match(/^\/party\/([0-9a-f]{32})$/i);
     if (partyMatch) window.__VAULT_PARTY_ID = partyMatch[1];
     if (path === "/overlay") initialTab = "overlay";
-    else if (partyMatch) initialTab = "coop";
+    else if (path === "/coop" || partyMatch) initialTab = "coop";
     else if (qsTab && known.has(qsTab)) initialTab = qsTab;
   } catch {}
   const lastTab = localStorage.getItem(STORAGE_LAST_TAB);

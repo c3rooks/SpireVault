@@ -33,6 +33,8 @@ export function normalizeRunLobby(lobby: RunLobby): RunLobby {
     pendingSeatRequestSteamIds: pending,
     memberSteamIds: accepted,
     pendingJoinRequestSteamIds: pending,
+    approvalRequired: lobby.approvalRequired === true,
+    voicePreset: lobby.voicePreset ?? "any",
   };
 }
 

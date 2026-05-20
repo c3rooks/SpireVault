@@ -12052,6 +12052,12 @@ html.is-desktop-host .empty-state-cta-upload {
   transform: translateY(-1px);
   box-shadow: 0 14px 28px -18px rgba(212,175,55,0.35);
 }
+.coop-lobby-card--highlight {
+  outline: 2px solid rgba(212, 175, 55, 0.75);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 4px rgba(212, 175, 55, 0.15);
+}
+
 .coop-lobby-card--mine {
   border-color: rgba(212,175,55,0.55);
   background: linear-gradient(180deg, rgba(212,175,55,0.06), var(--card));
