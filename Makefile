@@ -11,7 +11,7 @@
 #                             redeploy the site, commit, and push.
 #   make smoke                Hit the live worker's public endpoints.
 
-.PHONY: app dmg site web worker screenshots-live smoke
+.PHONY: app dmg site web worker screenshots-live smoke dev-local dev-local-stop
 
 app:
 	$(MAKE) -C VaultApp run
@@ -38,3 +38,10 @@ smoke:
 	@echo "→ /presence  (live feed)"
 	@curl -fsS https://vault-coop.coreycrooks.workers.dev/presence | head -c 600
 	@echo
+
+
+dev-local:
+	./scripts/dev-local.sh
+
+dev-local-stop:
+	./scripts/dev-local-stop.sh
