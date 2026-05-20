@@ -17,7 +17,7 @@ import * as Stats from "/lib/stats-engine.js?v=4";
 import * as HistoryStore from "/lib/history-store.js?v=8";
 import * as InviteAPI from "/lib/invites.js?v=4";
 import * as HighlightsAPI from "/lib/highlights.js?v=1";
-import * as CoopLobbies from "/lib/coop-lobbies.js?v=20";
+import * as CoopLobbies from "/lib/coop-lobbies.js?v=21";
 import { isCoopSandboxEnabled, openCoopSandboxPanel } from "/lib/coop-sandbox.js?v=4";
 import * as PartyRoom from "/lib/party-room.js?v=2";
 import * as AscInfo from "/lib/ascension-info.js?v=1";
@@ -99,27 +99,7 @@ function isLocalDevHost() {
 function vaultDevBootStep(step) {
   if (!isLocalDevHost()) return;
   try {
-    let bar = document.getElementById("vault-dev-boot-banner");
-    if (!bar) {
-      bar = document.createElement("div");
-      bar.id = "vault-dev-boot-banner";
-      bar.setAttribute("role", "status");
-      Object.assign(bar.style, {
-        position: "fixed",
-        top: "0",
-        left: "0",
-        right: "0",
-        zIndex: "99999",
-        padding: "6px 12px",
-        font: "600 12px/1.3 ui-monospace, monospace",
-        color: "#fff",
-        background: "#b91c1c",
-        textAlign: "center",
-        pointerEvents: "none",
-      });
-      document.body.prepend(bar);
-    }
-    bar.textContent = `BOOT: ${step}`;
+    document.getElementById("vault-dev-boot-banner")?.remove();
   } catch { /* never block boot */ }
 }
 
