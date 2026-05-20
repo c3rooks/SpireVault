@@ -11714,6 +11714,102 @@ html.is-desktop-host .empty-state-cta-upload {
 .coop-active-card--hosting .coop-active-eyebrow { color: var(--gold); }
 .coop-active-card--joined .coop-active-eyebrow  { color: var(--gold); }
 
+/* Primary UX state panel — dominant next step in main column */
+.coop-primary-state-mount { margin-bottom: 12px; }
+.coop-primary-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 18px;
+  border-radius: 12px;
+  border: 1px solid var(--border-strong);
+  background: linear-gradient(180deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0.02) 100%);
+  box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset;
+}
+.coop-primary-meta { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.coop-primary-eyebrow {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.coop-primary-title {
+  font-family: inherit;
+  font-size: 18px;
+  font-weight: 800;
+  margin: 0;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+}
+.coop-primary-sub {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--text-2);
+  line-height: 1.45;
+}
+.coop-primary-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.coop-primary-card--idle    { border-left: 3px solid var(--border-strong); }
+.coop-primary-card--hosting { border-left: 3px solid rgba(212,175,55,0.65); }
+.coop-primary-card--requested { border-left: 3px solid rgba(212,175,55,0.5); }
+.coop-primary-card--party,
+.coop-primary-card--sts2,
+.coop-primary-card--paired  { border-left: 3px solid rgba(109,217,124,0.65); }
+.coop-primary-card--run     { border-left: 3px solid rgba(109,217,124,0.45); }
+.coop-primary-card--away    { border-left: 3px solid var(--border-strong); opacity: 0.92; }
+.coop-primary-card--hosting .coop-primary-eyebrow,
+.coop-primary-card--requested .coop-primary-eyebrow { color: var(--gold); }
+.coop-primary-card--party .coop-primary-eyebrow,
+.coop-primary-card--sts2 .coop-primary-eyebrow,
+.coop-primary-card--paired .coop-primary-eyebrow { color: var(--win); }
+.coop-primary-pending {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 4px;
+  border-top: 1px solid var(--border-strong);
+}
+.coop-primary-pending-label {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.coop-primary-pending-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(212,175,55,0.06);
+  border: 1px solid rgba(212,175,55,0.2);
+}
+.coop-primary-pending-row .avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  flex-shrink: 0;
+}
+.coop-primary-pending-meta { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.coop-primary-hint { display: inline-block; }
+.coop-lobby-pin {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--gold);
+  margin-right: 4px;
+}
+.coop-lobby-pin--requested { color: var(--text-2); }
+
 /* How-it-works — collapsed by default */
 .coop-side-howto { padding: 0; }
 .coop-howto-toggle {
