@@ -1,0 +1,1623 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>STS2 Co-op Party Finder — UX Prototype</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400;14..32,500;14..32,600;14..32,700;14..32,800&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg:            #0b090f;
+      --bg-raised:     #100e17;
+      --surface:       #161320;
+      --surface-2:     #1c1929;
+      --border:        rgba(255,255,255,0.065);
+      --border-soft:   rgba(255,255,255,0.04);
+      --border-strong: rgba(255,255,255,0.11);
+
+      --orange:        #ef7030;
+      --orange-dim:    rgba(239,112,48,0.10);
+      --orange-glow:   rgba(239,112,48,0.28);
+
+      --blue:          #6ab6ff;
+      --blue-dim:      rgba(106,182,255,0.10);
+      --blue-border:   rgba(106,182,255,0.22);
+
+      --gold:          #d4a53c;
+      --gold-dim:      rgba(212,165,60,0.10);
+      --gold-border:   rgba(212,165,60,0.28);
+
+      --green:         #52c48a;
+      --green-dim:     rgba(82,196,138,0.10);
+
+      --text:          #eee9e1;
+      --text-2:        #9b9399;
+      --text-3:        #60596a;
+
+      --r-lg:  18px;
+      --r-md:  12px;
+      --r-sm:  8px;
+      --r-pill: 999px;
+
+      --shadow-card: 0 2px 16px rgba(0,0,0,0.35), 0 1px 0 rgba(255,255,255,0.03) inset;
+      --shadow-btn:  0 2px 12px var(--orange-glow);
+
+      --max: 1080px;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      min-height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 15px;
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    [hidden] { display: none !important; }
+
+    /* ambient glow — subtle, warm */
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 0;
+      background:
+        radial-gradient(ellipse 60% 40% at 50% -5%, rgba(239,112,48,0.07) 0%, transparent 65%),
+        radial-gradient(ellipse 35% 25% at 85% 10%, rgba(106,182,255,0.04) 0%, transparent 55%);
+    }
+
+    /* ─── Proto guard ──────────────────────────────── */
+    .proto-guard {
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      display: grid;
+      place-items: center;
+      padding: 32px;
+      background: #07060b;
+      text-align: center;
+    }
+    .proto-guard h1 { font-size: 1.2rem; margin-bottom: 8px; }
+    .proto-guard p  { color: var(--text-2); max-width: 400px; }
+    .proto-guard code { color: var(--orange); font-size: 0.9em; }
+
+    /* ─── App shell ────────────────────────────────── */
+    .app {
+      position: relative;
+      z-index: 1;
+      max-width: var(--max);
+      margin: 0 auto;
+      padding: 16px 24px 80px;
+    }
+
+    /* ─── Dev banner ───────────────────────────────── */
+    .proto-banner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 28px;
+      padding: 8px 14px;
+      border-radius: var(--r-sm);
+      background: rgba(239,112,48,0.06);
+      border: 1px solid rgba(239,112,48,0.13);
+      font-size: 12px;
+      color: var(--text-3);
+    }
+    .proto-banner strong { color: var(--orange); font-weight: 600; }
+    .proto-state-tag {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--text-3);
+      padding: 3px 8px;
+      border-radius: 5px;
+      background: rgba(0,0,0,0.4);
+    }
+
+    /* ─── Typography ───────────────────────────────── */
+    .page-title {
+      font-size: clamp(1.7rem, 3.5vw, 2.1rem);
+      font-weight: 800;
+      letter-spacing: -0.04em;
+      line-height: 1.12;
+      margin-bottom: 10px;
+    }
+
+    .page-sub {
+      font-size: 1rem;
+      color: var(--text-2);
+      line-height: 1.6;
+      max-width: 38em;
+      margin-bottom: 20px;
+    }
+
+    .section-eyebrow {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--text-3);
+      margin-bottom: 4px;
+    }
+
+    /* ─── Flow strip ───────────────────────────────── */
+    .flow-strip {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px 2px;
+      flex-wrap: wrap;
+      margin-bottom: 24px;
+      padding: 8px 14px;
+      border-radius: var(--r-sm);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      font-size: 12.5px;
+      font-weight: 600;
+      color: var(--text-2);
+    }
+    .flow-strip .fs-step { color: var(--text); }
+    .flow-strip .fs-arrow { color: var(--text-3); font-weight: 400; margin: 0 3px; }
+
+    /* ─── Buttons ──────────────────────────────────── */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 10px 20px;
+      border-radius: var(--r-sm);
+      font: 600 14px/1 'Inter', sans-serif;
+      cursor: pointer;
+      border: 1px solid transparent;
+      transition: filter .15s, box-shadow .15s, border-color .15s, color .15s;
+      white-space: nowrap;
+      text-decoration: none;
+    }
+    .btn:active { filter: brightness(0.93); }
+
+    .btn-primary {
+      background: var(--orange);
+      color: #fff;
+      border-color: rgba(255,160,90,0.25);
+      box-shadow: var(--shadow-btn);
+    }
+    .btn-primary:hover { filter: brightness(1.06); box-shadow: 0 4px 20px var(--orange-glow); }
+
+    .btn-secondary {
+      background: var(--surface-2);
+      color: var(--text);
+      border-color: var(--border-strong);
+    }
+    .btn-secondary:hover { border-color: rgba(239,112,48,0.3); color: var(--orange); }
+
+    .btn-ghost {
+      background: transparent;
+      color: var(--text-2);
+      border-color: var(--border-strong);
+    }
+    .btn-ghost:hover { color: var(--text); border-color: var(--border-strong); }
+
+    .btn-sm   { padding: 8px 16px; font-size: 13px; }
+    .btn-xs   { padding: 6px 12px; font-size: 12px; }
+
+    .btn-link {
+      background: none;
+      border: none;
+      padding: 0;
+      font: 500 13px/1 'Inter', sans-serif;
+      color: var(--text-3);
+      text-decoration: underline;
+      text-underline-offset: 3px;
+      cursor: pointer;
+    }
+    .btn-link:hover { color: var(--text-2); }
+
+    .back-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      background: none;
+      border: none;
+      font: 14px/1 'Inter', sans-serif;
+      color: var(--text-3);
+      cursor: pointer;
+      margin-top: 4px;
+      transition: color .15s;
+    }
+    .back-link:hover { color: var(--text-2); }
+
+    /* ─── Hero actions ─────────────────────────────── */
+    .hero-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-bottom: 36px;
+    }
+
+    /* ─── Recommended panel ────────────────────────── */
+    .rec-panel {
+      margin-bottom: 32px;
+      padding: 24px;
+      border-radius: var(--r-lg);
+      background: linear-gradient(160deg, rgba(239,112,48,0.08) 0%, rgba(239,112,48,0.03) 50%, transparent 100%),
+                  var(--surface);
+      border: 1px solid rgba(239,112,48,0.2);
+      box-shadow: var(--shadow-card);
+    }
+
+    .rec-panel__head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+    }
+
+    .rec-label {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--orange);
+      margin-bottom: 6px;
+    }
+
+    .rec-panel__title {
+      font-size: 1.25rem;
+      font-weight: 800;
+      letter-spacing: -0.025em;
+      margin-bottom: 4px;
+    }
+
+    .rec-panel__meta {
+      font-size: 13.5px;
+      color: var(--text-2);
+    }
+
+    .rec-panel__body {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      flex-wrap: wrap;
+      justify-content: space-between;
+    }
+
+    .rec-seats {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .rec-action {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+
+    .rec-action .rec-hint {
+      font-size: 12px;
+      color: var(--text-3);
+    }
+
+    /* ─── Section header row ───────────────────────── */
+    .section-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 12px;
+      flex-wrap: wrap;
+    }
+
+    .section-head__left { display: flex; flex-direction: column; gap: 1px; }
+
+    .section-head__title {
+      font-size: 1rem;
+      font-weight: 700;
+      letter-spacing: -0.015em;
+    }
+
+    .section-head__sub {
+      font-size: 13px;
+      color: var(--text-3);
+    }
+
+    .section-head__tools {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .search-box {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      padding: 8px 12px;
+      border-radius: var(--r-sm);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      font-size: 13px;
+      color: var(--text-3);
+      width: 200px;
+    }
+    .search-box svg { flex-shrink: 0; opacity: 0.4; }
+
+    /* ─── Party list ───────────────────────────────── */
+    .party-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    /* ─── Party row ────────────────────────────────── */
+    .party-row {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--r-lg);
+      box-shadow: var(--shadow-card);
+      transition: border-color .2s, box-shadow .2s;
+      overflow: hidden;
+    }
+
+    .party-row:hover {
+      border-color: var(--border-strong);
+      box-shadow: 0 4px 24px rgba(0,0,0,0.45);
+    }
+
+    .party-row__main {
+      display: grid;
+      grid-template-columns: minmax(220px, 1.1fr) minmax(200px, 1fr) auto;
+      gap: 16px 20px;
+      padding: 18px 20px 16px;
+      align-items: center;
+    }
+
+    /* left zone */
+    .prow-title {
+      font-size: 1.05rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      margin-bottom: 3px;
+    }
+
+    .prow-meta {
+      font-size: 13px;
+      color: var(--text-2);
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 3px 0;
+      margin-bottom: 8px;
+    }
+
+    .prow-meta-dot {
+      margin: 0 5px;
+      color: var(--text-3);
+    }
+
+    /* center zone — seat chips */
+    .prow-seats {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+
+    /* right zone */
+    .prow-action {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 8px;
+      min-width: 130px;
+    }
+
+    .prow-fill-info {
+      text-align: right;
+    }
+
+    .prow-fill-need {
+      font-size: 18px;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      line-height: 1;
+      color: var(--text);
+    }
+
+    .prow-fill-count {
+      font-size: 12px;
+      color: var(--text-3);
+      margin-top: 1px;
+    }
+
+    .prow-cta {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 5px;
+    }
+
+    /* ─── Seat chips ───────────────────────────────── */
+    .seat-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 5px 10px 5px 5px;
+      border-radius: var(--r-pill);
+      border: 1px solid var(--border);
+      background: var(--surface-2);
+      font-size: 12.5px;
+      font-weight: 600;
+      color: var(--text);
+      white-space: nowrap;
+    }
+
+    .seat-chip--host {
+      background: var(--gold-dim);
+      border-color: var(--gold-border);
+    }
+
+    .seat-chip--member {
+      background: rgba(106,182,255,0.06);
+      border-color: rgba(106,182,255,0.15);
+    }
+
+    .seat-chip--open {
+      background: transparent;
+      border-color: var(--border-soft);
+      color: var(--text-3);
+      font-weight: 500;
+      padding: 5px 10px;
+    }
+
+    .seat-chip--you {
+      background: var(--orange-dim);
+      border-color: rgba(239,112,48,0.3);
+      color: var(--orange);
+    }
+
+    .seat-avatar {
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      font-size: 9px;
+      font-weight: 800;
+      flex-shrink: 0;
+      line-height: 1;
+    }
+
+    .seat-chip--host .seat-avatar {
+      background: linear-gradient(145deg, var(--gold), #b88c2a);
+      color: #1a0e00;
+    }
+
+    .seat-chip--member .seat-avatar {
+      background: linear-gradient(145deg, #5a4f7a, #3d3558);
+      color: var(--text);
+    }
+
+    .seat-chip--you .seat-avatar {
+      background: linear-gradient(145deg, var(--orange), #d45a18);
+      color: #fff;
+    }
+
+    /* ─── Voice badge (inline) ─────────────────────── */
+    .voice-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 3px 9px;
+      border-radius: var(--r-pill);
+      font-size: 11.5px;
+      font-weight: 600;
+    }
+
+    .voice-chip--lfg {
+      background: var(--blue-dim);
+      color: var(--blue);
+      border: 1px solid var(--blue-border);
+    }
+
+    .voice-chip--none {
+      background: transparent;
+      color: var(--text-3);
+      border: 1px solid var(--border);
+    }
+
+    .voice-chip--flex {
+      background: var(--gold-dim);
+      color: var(--gold);
+      border: 1px solid var(--gold-border);
+    }
+
+    /* voice dot */
+    .voice-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: currentColor;
+      opacity: 0.8;
+      flex-shrink: 0;
+    }
+
+    /* ─── Row footer (subtle after-steps) ──────────── */
+    .party-row__footer {
+      padding: 8px 20px 10px;
+      font-size: 11.5px;
+      color: var(--text-3);
+      border-top: 1px solid var(--border-soft);
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 4px;
+    }
+
+    .party-row__footer .footer-label {
+      font-weight: 600;
+      color: var(--text-2);
+      margin-right: 4px;
+    }
+
+    .party-row__footer .footer-arrow { color: var(--text-3); margin: 0 2px; }
+
+    /* ─── Hub screen ───────────────────────────────── */
+    .hub-top {
+      margin-bottom: 20px;
+    }
+
+    .hub-summary {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px 16px;
+      padding: 14px 18px;
+      border-radius: var(--r-md);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      margin-bottom: 16px;
+      box-shadow: var(--shadow-card);
+    }
+
+    .hub-summary__title {
+      font-size: 1rem;
+      font-weight: 700;
+      letter-spacing: -0.015em;
+      margin-right: auto;
+    }
+
+    .hub-summary__chip {
+      font-size: 13px;
+      color: var(--text-2);
+    }
+
+    .hub-summary__chip strong { color: var(--text); font-weight: 600; }
+
+    /* roster pills row */
+    .roster-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 24px;
+    }
+
+    .roster-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 14px 8px 7px;
+      border-radius: var(--r-pill);
+      border: 1px solid var(--border);
+      background: var(--surface);
+      font-size: 14px;
+      font-weight: 600;
+    }
+
+    .roster-pill--host {
+      background: var(--gold-dim);
+      border-color: var(--gold-border);
+    }
+
+    .roster-pill--you {
+      background: var(--orange-dim);
+      border-color: rgba(239,112,48,0.3);
+    }
+
+    .roster-pill--open {
+      color: var(--text-3);
+      font-weight: 500;
+      background: transparent;
+      border-color: var(--border-soft);
+      padding: 8px 14px;
+    }
+
+    .roster-pill .pill-avatar {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      font-size: 10px;
+      font-weight: 800;
+      flex-shrink: 0;
+    }
+
+    .roster-pill--host .pill-avatar {
+      background: linear-gradient(145deg, var(--gold), #b88c2a);
+      color: #1a0e00;
+    }
+
+    .roster-pill--you .pill-avatar {
+      background: linear-gradient(145deg, var(--orange), #c94e12);
+      color: #fff;
+    }
+
+    .roster-pill .pill-tag {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-3);
+      margin-left: 1px;
+    }
+
+    .roster-pill--host .pill-tag { color: var(--gold); }
+    .roster-pill--you .pill-tag  { color: var(--orange); }
+
+    /* ─── Hub two-column ───────────────────────────── */
+    .hub-cols {
+      display: grid;
+      grid-template-columns: 1.7fr 1fr;
+      gap: 20px;
+      margin-bottom: 24px;
+      align-items: start;
+    }
+
+    /* steps card */
+    .steps-card {
+      padding: 22px;
+      border-radius: var(--r-lg);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow-card);
+    }
+
+    .steps-card__heading {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--text-3);
+      margin-bottom: 18px;
+    }
+
+    .step-row {
+      display: grid;
+      grid-template-columns: 34px 1fr auto;
+      gap: 12px 14px;
+      align-items: center;
+      padding: 14px 0;
+      border-bottom: 1px solid var(--border-soft);
+    }
+
+    .step-row:first-of-type { padding-top: 0; }
+    .step-row:last-of-type  { border-bottom: none; padding-bottom: 0; }
+
+    .step-num {
+      width: 34px;
+      height: 34px;
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      background: var(--orange-dim);
+      border: 1px solid rgba(239,112,48,0.2);
+      color: var(--orange);
+      font-size: 13px;
+      font-weight: 800;
+      flex-shrink: 0;
+    }
+
+    .step-row.done .step-num {
+      background: var(--green-dim);
+      border-color: rgba(82,196,138,0.3);
+      color: var(--green);
+    }
+
+    .step-label {
+      font-size: 15px;
+      font-weight: 700;
+      margin-bottom: 2px;
+    }
+
+    .step-desc {
+      font-size: 12.5px;
+      color: var(--text-3);
+    }
+
+    /* status card */
+    .status-card {
+      padding: 20px;
+      border-radius: var(--r-lg);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow-card);
+    }
+
+    .status-card__heading {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--text-3);
+      margin-bottom: 14px;
+    }
+
+    .status-member {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 9px 0;
+      border-bottom: 1px solid var(--border-soft);
+    }
+
+    .status-member:last-child { border-bottom: none; }
+
+    .status-member__avatar {
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      font-size: 10px;
+      font-weight: 800;
+      flex-shrink: 0;
+    }
+
+    .status-member__avatar--host {
+      background: linear-gradient(145deg, var(--gold), #b88c2a);
+      color: #1a0e00;
+    }
+
+    .status-member__avatar--you {
+      background: linear-gradient(145deg, var(--orange), #c94e12);
+      color: #fff;
+    }
+
+    .status-member__avatar--open {
+      background: var(--surface-2);
+      border: 1px dashed rgba(255,255,255,0.1);
+      color: var(--text-3);
+    }
+
+    .status-member__name {
+      font-size: 14px;
+      font-weight: 600;
+      flex: 1;
+    }
+
+    .status-member__tag {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-3);
+    }
+
+    .status-member--open .status-member__name { color: var(--text-3); font-weight: 400; }
+
+    .status-divider {
+      margin: 14px 0 12px;
+      border: none;
+      border-top: 1px solid var(--border-soft);
+    }
+
+    .status-info-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 12.5px;
+      padding: 4px 0;
+    }
+
+    .status-info-row .sir-label { color: var(--text-3); }
+    .status-info-row .sir-val   { color: var(--text-2); font-weight: 600; }
+    .status-info-row .sir-val--blue { color: var(--blue); }
+    .status-info-row .sir-val--waiting { color: var(--gold); }
+
+    /* ─── Hub actions ──────────────────────────────── */
+    .hub-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-bottom: 20px;
+      align-items: center;
+    }
+
+    /* ─── Host share card ──────────────────────────── */
+    .host-share {
+      margin-bottom: 20px;
+      padding: 22px;
+      border-radius: var(--r-lg);
+      background: linear-gradient(160deg, var(--gold-dim) 0%, rgba(239,112,48,0.04) 100%),
+                  var(--surface);
+      border: 1px solid rgba(212,165,60,0.2);
+      box-shadow: var(--shadow-card);
+    }
+
+    .host-share h2 {
+      font-size: 1.1rem;
+      font-weight: 800;
+      margin-bottom: 4px;
+    }
+
+    .host-share p {
+      font-size: 13.5px;
+      color: var(--text-2);
+      margin-bottom: 16px;
+    }
+
+    /* ─── Checklist ────────────────────────────────── */
+    .checklist {
+      padding: 20px;
+      border-radius: var(--r-lg);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      margin-bottom: 20px;
+    }
+
+    .checklist h3 {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--text-3);
+      margin-bottom: 14px;
+    }
+
+    .checklist ol {
+      padding-left: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 9px;
+    }
+
+    .checklist li {
+      font-size: 13.5px;
+      color: var(--text-2);
+      line-height: 1.5;
+    }
+
+    .checklist li strong { color: var(--text); }
+
+    /* ─── Role toggle ──────────────────────────────── */
+    .role-toggle {
+      display: inline-flex;
+      padding: 3px;
+      border-radius: var(--r-sm);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      margin-bottom: 20px;
+    }
+
+    .role-toggle button {
+      padding: 7px 15px;
+      border: none;
+      border-radius: 6px;
+      background: transparent;
+      color: var(--text-3);
+      font: 600 12.5px/1 'Inter', sans-serif;
+      cursor: pointer;
+      transition: background .15s, color .15s;
+    }
+
+    .role-toggle button.active {
+      background: var(--orange);
+      color: #fff;
+    }
+
+    .role-toggle button:not(.active):hover { color: var(--text-2); }
+
+    /* ─── Toast ────────────────────────────────────── */
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%) translateY(60px);
+      padding: 11px 20px;
+      border-radius: var(--r-sm);
+      background: var(--surface-2);
+      color: var(--text);
+      font-size: 13.5px;
+      font-weight: 600;
+      box-shadow: 0 8px 40px rgba(0,0,0,0.6), 0 1px 0 rgba(255,255,255,0.06) inset;
+      border: 1px solid var(--border-strong);
+      opacity: 0;
+      transition: transform .25s cubic-bezier(.34,1.4,.64,1), opacity .2s;
+      z-index: 999;
+      pointer-events: none;
+      white-space: nowrap;
+    }
+
+    .toast.show {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+
+    /* ─── Fade ─────────────────────────────────────── */
+    .fade-in { animation: fadeUp .28s ease; }
+
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(10px); }
+      to   { opacity: 1; transform: none; }
+    }
+
+    /* ─── Responsive ───────────────────────────────── */
+    @media (max-width: 860px) {
+      .party-row__main {
+        grid-template-columns: 1fr;
+        gap: 12px;
+      }
+      .prow-action {
+        flex-direction: row;
+        align-items: center;
+        justify-content: space-between;
+        min-width: 0;
+        width: 100%;
+      }
+      .prow-cta { flex-direction: row; align-items: center; }
+      .hub-cols { grid-template-columns: 1fr; }
+    }
+
+    @media (max-width: 560px) {
+      .app { padding-left: 16px; padding-right: 16px; }
+      .rec-panel { padding: 18px; }
+      .party-row__main { padding: 16px; }
+    }
+  </style>
+</head>
+<body>
+
+  <div id="proto-guard" class="proto-guard" hidden>
+    <div>
+      <h1>Local development only</h1>
+      <p>This prototype is not available in production. Open it via <strong>127.0.0.1</strong> or <strong>localhost</strong> under <code>/dev/coop-ux-prototype</code>.</p>
+    </div>
+  </div>
+
+  <div id="app" class="app" hidden>
+
+    <div class="proto-banner">
+      <span><strong>STS2 Co-op Party Finder</strong> — static prototype · mock data only</span>
+      <span class="proto-state-tag" id="state-pill">browse</span>
+    </div>
+
+    <!-- ══════════════════════════════════════════════
+         BROWSE SCREEN
+    ══════════════════════════════════════════════ -->
+    <section id="screen-browse" hidden>
+
+      <header style="margin-bottom: 28px;">
+        <h1 class="page-title">Find a co-op party.</h1>
+        <p class="page-sub">See who needs players, join a room, and get into STS2 without scrolling LFG chat.</p>
+        <div class="flow-strip" aria-label="How it works">
+          <span class="fs-step">Join Room</span>
+          <span class="fs-arrow">→</span>
+          <span class="fs-step">Join Voice</span>
+          <span class="fs-arrow">→</span>
+          <span class="fs-step">Start STS2</span>
+        </div>
+        <div class="hero-actions">
+          <button type="button" class="btn btn-primary" id="quick-join">Quick Match</button>
+          <button type="button" class="btn btn-ghost" data-mock="Host a Room">Host a Room</button>
+        </div>
+      </header>
+
+      <!-- Recommended panel -->
+      <div class="rec-panel" id="rec-panel">
+        <div class="section-eyebrow" style="margin-bottom: 14px;">Recommended now</div>
+        <div class="rec-panel__head">
+          <div>
+            <div class="rec-panel__title" id="rec-title">A10 Heart Attempt</div>
+            <div class="rec-panel__meta" id="rec-meta"></div>
+          </div>
+        </div>
+        <div class="rec-panel__body">
+          <div class="rec-seats" id="rec-seats"></div>
+          <div class="rec-action">
+            <button type="button" class="btn btn-primary btn-sm" id="rec-join">Join Room</button>
+            <button type="button" class="btn-link" data-mock="View details">View details</button>
+            <span class="rec-hint">Best match based on your run preferences.</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Live parties -->
+      <div class="section-head">
+        <div class="section-head__left">
+          <div class="section-head__title">Live Parties</div>
+          <div class="section-head__sub">Open STS2 groups looking for players now.</div>
+        </div>
+        <div class="section-head__tools">
+          <div class="search-box" role="search">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+            Search parties
+          </div>
+          <button type="button" class="btn btn-ghost btn-xs" data-mock="Filter">Filter</button>
+          <button type="button" class="btn btn-ghost btn-xs" data-mock="Sort">Sort</button>
+        </div>
+      </div>
+
+      <div class="party-list" id="party-list"></div>
+
+    </section>
+
+    <!-- ══════════════════════════════════════════════
+         PARTY HUB SCREEN
+    ══════════════════════════════════════════════ -->
+    <section id="screen-hub" hidden>
+
+      <div class="hub-top" id="hub-header-block"></div>
+      <div class="hub-summary" id="hub-summary"></div>
+      <div class="roster-row" id="hub-roster"></div>
+
+      <!-- Joiner view -->
+      <div id="joiner-panel">
+        <div class="hub-cols">
+
+          <!-- Steps -->
+          <div class="steps-card">
+            <div class="steps-card__heading">Get into the run</div>
+
+            <div class="step-row" id="step-voice">
+              <div class="step-num">1</div>
+              <div>
+                <div class="step-label">Join voice</div>
+                <div class="step-desc" id="step-voice-desc"></div>
+              </div>
+              <button type="button" class="btn btn-primary btn-sm" id="btn-join-voice" data-mock="">Join LFG 1</button>
+            </div>
+
+            <div class="step-row">
+              <div class="step-num">2</div>
+              <div>
+                <div class="step-label">Add host on Steam</div>
+                <div class="step-desc">Copy the host profile and send a friend request.</div>
+              </div>
+              <button type="button" class="btn btn-secondary btn-sm" id="btn-copy-steam" data-mock="Copy Host Steam">Copy Steam</button>
+            </div>
+
+            <div class="step-row">
+              <div class="step-num">3</div>
+              <div>
+                <div class="step-label">Start STS2</div>
+                <div class="step-desc">Multiplayer → Join → Refresh if needed.</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Party status -->
+          <div class="status-card" id="status-card"></div>
+
+        </div>
+
+        <div class="hub-actions">
+          <button type="button" class="btn btn-primary btn-sm" data-mock="I'm Ready">I'm Ready</button>
+          <button type="button" class="btn btn-secondary btn-sm" data-mock="I'm In Game">I'm In Game</button>
+          <button type="button" class="btn btn-ghost btn-sm" id="btn-leave">Leave Party</button>
+        </div>
+      </div>
+
+      <!-- Host view -->
+      <div id="host-panel" hidden>
+        <div class="host-share">
+          <h2>Share your party</h2>
+          <p>Copy the Discord LFG post and drop it in your server so players can claim a seat.</p>
+          <button type="button" class="btn btn-primary btn-sm" id="btn-copy-discord">Copy Discord LFG Post</button>
+        </div>
+
+        <div class="checklist">
+          <h3>Host checklist</h3>
+          <ol>
+            <li><strong>Paste Discord LFG post</strong> — drop it in your STS2 LFG channel</li>
+            <li><strong>Join voice</strong> — be in LFG 1 before players arrive</li>
+            <li><strong>Open STS2</strong> — Multiplayer → Host → choose mode</li>
+            <li><strong>Accept Steam friend requests</strong> — joiners will add you</li>
+            <li><strong>Mark Character Select</strong> once everyone is in voice</li>
+            <li><strong>Mark In Game</strong> once the run has started</li>
+          </ol>
+        </div>
+
+        <div class="hub-actions">
+          <button type="button" class="btn btn-primary btn-sm" id="btn-copy-discord-2">Copy Discord LFG Post</button>
+          <button type="button" class="btn btn-secondary btn-sm" data-mock="I'm on Character Select">Character Select</button>
+          <button type="button" class="btn btn-secondary btn-sm" data-mock="I'm In Game">I'm In Game</button>
+          <button type="button" class="btn btn-ghost btn-sm" data-mock="Close Party">Close Party</button>
+          <button type="button" class="btn btn-ghost btn-sm" id="btn-leave-host">Leave</button>
+        </div>
+      </div>
+
+      <!-- Role toggle + back -->
+      <div style="display:flex; align-items:center; gap: 16px; flex-wrap: wrap; margin-top: 4px;">
+        <div class="role-toggle" role="tablist" aria-label="Preview role">
+          <button type="button" id="toggle-joiner" class="active" role="tab" aria-selected="true">View as Joiner</button>
+          <button type="button" id="toggle-host"   role="tab" aria-selected="false">View as Host</button>
+        </div>
+        <button type="button" class="back-link" id="back-to-browse">← Back to Open Parties</button>
+      </div>
+
+    </section>
+  </div>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <script>
+  (function () {
+    "use strict";
+
+    /* ── Guard: local only ──────────────────────────── */
+    var HOST = location.hostname;
+    var PATH_OK = /\/dev\//i.test(location.pathname) || /coop-ux-prototype/i.test(location.pathname);
+    var LOCAL_OK = HOST === "localhost" || HOST === "127.0.0.1" || HOST === "::1" || HOST.endsWith(".localhost");
+
+    var $guard = document.getElementById("proto-guard");
+    var $app   = document.getElementById("app");
+
+    if (!LOCAL_OK || !PATH_OK) { $guard.hidden = false; return; }
+    $guard.hidden = true;
+    $app.hidden   = false;
+
+    /* ── Mock data ──────────────────────────────────── */
+    var DISCORD_POST =
+      "Looking for STS2 co-op — A10 Heart Attempt\n" +
+      "Standard · A8–A10 · 2/4 filled · need 2 more\n" +
+      "Voice: LFG 1\n\n" +
+      "Claim a seat:\nhttps://spirevault.app/coop?room=demo-room";
+
+    var YOU = "c3rooks";
+
+    var ROOMS = [
+      {
+        id: "r1",
+        title: "A10 Heart Attempt",
+        host: "Mako",
+        mode: "Standard",
+        range: "A8–A10",
+        goal: "Heart Attempt",
+        voiceType: "lfg",
+        voiceLabel: "LFG 1",
+        voiceChannel: "LFG 1",
+        filled: 1,
+        size: 4,
+        note: "Trying to get a clean Heart run — know the boss patterns.",
+        members: ["Mako"],
+      },
+      {
+        id: "r2",
+        title: "Daily Score Push",
+        host: "SpireSage",
+        mode: "Daily",
+        range: "Any ascension",
+        goal: "Daily climb",
+        voiceType: "none",
+        voiceLabel: "No voice",
+        voiceChannel: null,
+        filled: 2,
+        size: 4,
+        note: "Chill daily run — score optional, just finish the climb.",
+        members: ["SpireSage", "Rune"],
+      },
+      {
+        id: "r3",
+        title: "Learning Run",
+        host: "QuietDefect",
+        mode: "Standard",
+        range: "A0–A3",
+        goal: "Learning",
+        voiceType: "flex",
+        voiceLabel: "Voice flexible",
+        voiceChannel: null,
+        filled: 1,
+        size: 4,
+        note: "Newer players welcome — we'll explain relics and paths.",
+        members: ["QuietDefect"],
+      },
+    ];
+
+    /* ── State ──────────────────────────────────────── */
+    var state      = "browse";
+    var partyRole  = "joiner";
+    var joinedRoom = ROOMS[0];
+    var toastTimer;
+
+    var $statePill  = document.getElementById("state-pill");
+    var $browse     = document.getElementById("screen-browse");
+    var $hub        = document.getElementById("screen-hub");
+    var $partyList  = document.getElementById("party-list");
+    var $toast      = document.getElementById("toast");
+
+    /* ── Helpers ────────────────────────────────────── */
+    function esc(s) {
+      var d = document.createElement("div");
+      d.textContent = s;
+      return d.innerHTML;
+    }
+
+    function initials(name) {
+      if (!name || name === "Open") return "·";
+      var words = name.trim().split(/\s+/);
+      if (words.length >= 2) return (words[0][0] + words[1][0]).toUpperCase();
+      return name.slice(0, 2).toUpperCase();
+    }
+
+    function need(room, filledOverride) {
+      var f = filledOverride != null ? filledOverride : room.filled;
+      return Math.max(0, room.size - f);
+    }
+
+    function showToast(msg, ms) {
+      clearTimeout(toastTimer);
+      $toast.textContent = msg;
+      $toast.classList.add("show");
+      toastTimer = setTimeout(function () { $toast.classList.remove("show"); }, ms || 2200);
+    }
+
+    /* ── Voice chip HTML ────────────────────────────── */
+    function voiceChipHtml(room) {
+      var cls = "voice-chip";
+      if      (room.voiceType === "lfg")  cls += " voice-chip--lfg";
+      else if (room.voiceType === "none") cls += " voice-chip--none";
+      else                                cls += " voice-chip--flex";
+      var icon = room.voiceType === "none" ? "" : '<span class="voice-dot" aria-hidden="true"></span>';
+      return '<span class="' + cls + '">' + icon + esc(room.voiceLabel) + '</span>';
+    }
+
+    /* ── Seat chip HTML (list view) ─────────────────── */
+    function seatChipHtml(name, isHost, isOpen) {
+      if (isOpen) {
+        return '<span class="seat-chip seat-chip--open">Open</span>';
+      }
+      var cls = "seat-chip " + (isHost ? "seat-chip--host" : "seat-chip--member");
+      return (
+        '<span class="' + cls + '">' +
+        '<span class="seat-avatar" aria-hidden="true">' + esc(initials(name)) + '</span>' +
+        esc(name) +
+        '</span>'
+      );
+    }
+
+    /* ── After-joining footer text ──────────────────── */
+    function footerHtml(room) {
+      var parts = ['<span class="footer-label">After joining:</span>'];
+      if (room.voiceType === "lfg" && room.voiceChannel) {
+        parts.push('Join ' + esc(room.voiceChannel));
+        parts.push('<span class="footer-arrow">→</span>');
+      } else if (room.voiceType === "flex") {
+        parts.push('Join voice (optional)');
+        parts.push('<span class="footer-arrow">→</span>');
+      }
+      parts.push('Add host on Steam');
+      parts.push('<span class="footer-arrow">→</span>');
+      parts.push('Start STS2');
+      return parts.join(" ");
+    }
+
+    /* ── Render recommended panel ───────────────────── */
+    function renderRec() {
+      var room = ROOMS[0];
+      document.getElementById("rec-meta").innerHTML =
+        esc(room.host) + " is hosting" +
+        ' <span style="color:var(--text-3);margin:0 5px">·</span>' +
+        esc(room.mode) +
+        ' <span style="color:var(--text-3);margin:0 5px">·</span>' +
+        esc(room.range) +
+        ' <span style="color:var(--text-3);margin:0 5px">·</span>' +
+        esc(room.goal) +
+        '&nbsp;&nbsp;' + voiceChipHtml(room) +
+        ' <span style="color:var(--text-3);margin:0 6px">·</span>' +
+        '<span style="font-size:13px;color:var(--text-3)">' + room.filled + '/' + room.size + ' filled · Need ' + need(room) + '</span>';
+
+      var seats = "";
+      for (var i = 0; i < room.size; i++) {
+        var m = room.members[i];
+        var isHost = i === 0;
+        seats += seatChipHtml(m || null, isHost, !m);
+      }
+      document.getElementById("rec-seats").innerHTML = seats;
+
+      document.getElementById("rec-join").addEventListener("click", function () {
+        joinedRoom = room;
+        goToHub();
+      });
+    }
+
+    /* ── Render party list ──────────────────────────── */
+    function renderParties() {
+      $partyList.innerHTML = ROOMS.map(function (room) {
+        var n = need(room);
+        var seats = "";
+        for (var i = 0; i < room.size; i++) {
+          var m = room.members[i];
+          seats += seatChipHtml(m || null, i === 0, !m);
+        }
+
+        return (
+          '<article class="party-row" data-room-id="' + esc(room.id) + '">' +
+          '<div class="party-row__main">' +
+
+          /* LEFT: info */
+          '<div class="prow-left">' +
+          '<h3 class="prow-title">' + esc(room.title) + '</h3>' +
+          '<div class="prow-meta">' +
+            '<span>' + esc(room.host) + ' is hosting</span>' +
+            '<span class="prow-meta-dot">·</span>' +
+            '<span>' + esc(room.mode) + '</span>' +
+            '<span class="prow-meta-dot">·</span>' +
+            '<span>' + esc(room.range) + '</span>' +
+            '<span class="prow-meta-dot">·</span>' +
+            '<span>' + esc(room.goal) + '</span>' +
+          '</div>' +
+          voiceChipHtml(room) +
+          '</div>' +
+
+          /* CENTER: seats */
+          '<div class="prow-seats">' + seats + '</div>' +
+
+          /* RIGHT: action */
+          '<div class="prow-action">' +
+          '<div class="prow-fill-info">' +
+            '<div class="prow-fill-need">Need ' + n + '</div>' +
+            '<div class="prow-fill-count">' + room.filled + ' / ' + room.size + ' filled</div>' +
+          '</div>' +
+          '<div class="prow-cta">' +
+            '<button type="button" class="btn btn-primary btn-sm" data-action="join" data-room-id="' + esc(room.id) + '">Join Room</button>' +
+            '<button type="button" class="btn-link" data-mock="Details: ' + esc(room.title) + '">Details</button>' +
+          '</div>' +
+          '</div>' +
+
+          '</div>' +
+          /* footer */
+          '<div class="party-row__footer">' + footerHtml(room) + '</div>' +
+          '</article>'
+        );
+      }).join("");
+
+      $partyList.querySelectorAll("[data-action=join]").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          var id = btn.getAttribute("data-room-id");
+          joinedRoom = ROOMS.find(function (r) { return r.id === id; }) || ROOMS[0];
+          goToHub();
+        });
+      });
+
+      wireMockButtons($partyList);
+    }
+
+    /* ── Hub ────────────────────────────────────────── */
+    function goToHub() {
+      showToast("You're in — follow the steps below");
+      setState("party_hub");
+    }
+
+    function setState(next) {
+      state = next;
+      $browse.hidden = next !== "browse";
+      $hub.hidden    = next.indexOf("party_hub") !== 0;
+      if (next === "party_hub_host")   partyRole = "host";
+      if (next === "party_hub_joiner") partyRole = "joiner";
+      $statePill.textContent = next;
+      if (next.indexOf("party_hub") === 0) renderHub();
+    }
+
+    function hubMembers(isHost) {
+      var list = [];
+      /* existing members (skip host if isHost — shown as You) */
+      joinedRoom.members.forEach(function (name, idx) {
+        var isHostSeat = idx === 0;
+        list.push({
+          name: name,
+          tag: isHostSeat ? "Host" : "Joined",
+          host: isHostSeat,
+          you: false,
+          open: false,
+        });
+      });
+      /* add "You" */
+      list.push({ name: YOU, tag: isHost ? "Joined" : "You", host: false, you: !isHost, open: false });
+      /* pad with open */
+      while (list.length < joinedRoom.size) {
+        list.push({ name: "Open Seat", tag: "", host: false, you: false, open: true });
+      }
+      return list.slice(0, joinedRoom.size);
+    }
+
+    function renderHub() {
+      var isHost = partyRole === "host";
+      var filled = joinedRoom.filled + 1;
+      var n      = need(joinedRoom, filled);
+
+      /* header */
+      document.getElementById("hub-header-block").innerHTML = isHost
+        ? '<h1 class="page-title" style="margin-bottom:8px">Your party is live.</h1>' +
+          '<p class="page-sub">Share the room, host STS2, and bring players in.</p>'
+        : '<h1 class="page-title" style="margin-bottom:8px">You\'re in ' + esc(joinedRoom.host) + '\'s party.</h1>' +
+          '<p class="page-sub">Follow the steps below and get into STS2.</p>';
+
+      /* summary bar */
+      document.getElementById("hub-summary").innerHTML =
+        '<span class="hub-summary__title">' + esc(joinedRoom.title) + '</span>' +
+        '<span class="hub-summary__chip">' + esc(joinedRoom.mode) + ' · ' + esc(joinedRoom.range) + '</span>' +
+        '<span class="hub-summary__chip"><strong>' + filled + '/' + joinedRoom.size + '</strong> filled · Need ' + n + '</span>' +
+        '<span class="hub-summary__chip">' + voiceChipHtml(joinedRoom) + '</span>';
+
+      /* roster row */
+      var members = hubMembers(isHost);
+      document.getElementById("hub-roster").innerHTML = members.map(function (m) {
+        if (m.open) {
+          return '<span class="roster-pill roster-pill--open">Open Seat</span>';
+        }
+        var cls = "roster-pill" + (m.host ? " roster-pill--host" : m.you ? " roster-pill--you" : "");
+        var avatarCls = "pill-avatar " + (m.host ? "status-member__avatar--host" : m.you ? "status-member__avatar--you" : "status-member__avatar--open");
+        // fix: re-use seat avatar classes for member
+        var avBg = m.host
+          ? "background:linear-gradient(145deg,var(--gold),#b88c2a);color:#1a0e00"
+          : m.you
+            ? "background:linear-gradient(145deg,var(--orange),#c94e12);color:#fff"
+            : "background:var(--surface-2);color:var(--text)";
+        return (
+          '<span class="' + cls + '">' +
+          '<span class="pill-avatar" style="width:28px;height:28px;border-radius:50%;display:grid;place-items:center;font-size:10px;font-weight:800;flex-shrink:0;' + avBg + '" aria-hidden="true">' + esc(initials(m.name)) + '</span>' +
+          esc(m.name) +
+          (m.tag ? '<span class="pill-tag">' + esc(m.tag) + '</span>' : '') +
+          '</span>'
+        );
+      }).join("");
+
+      /* steps: voice */
+      var voiceBtn  = document.getElementById("btn-join-voice");
+      var voiceDesc = document.getElementById("step-voice-desc");
+      var voiceRow  = document.getElementById("step-voice");
+
+      if (joinedRoom.voiceType === "lfg" && joinedRoom.voiceChannel) {
+        voiceBtn.textContent = "Join " + joinedRoom.voiceChannel;
+        voiceBtn.removeAttribute("hidden");
+        voiceBtn.setAttribute("data-mock", "Join " + joinedRoom.voiceChannel);
+        voiceDesc.textContent = "Hop in the voice channel before launching STS2.";
+        voiceRow.hidden = false;
+      } else if (joinedRoom.voiceType === "none") {
+        voiceBtn.hidden = true;
+        voiceDesc.textContent = "No voice needed — jump straight to Steam.";
+        voiceRow.hidden = false;
+      } else {
+        voiceBtn.textContent = "Join voice";
+        voiceBtn.removeAttribute("hidden");
+        voiceBtn.setAttribute("data-mock", "Join voice (optional)");
+        voiceDesc.textContent = "Voice is optional — coordinate in Discord if you prefer.";
+        voiceRow.hidden = false;
+      }
+
+      /* status card */
+      var statusHtml = '<div class="status-card__heading">Party status</div>';
+      members.forEach(function (m) {
+        var avatarStyle = m.host
+          ? "background:linear-gradient(145deg,var(--gold),#b88c2a);color:#1a0e00"
+          : m.you
+            ? "background:linear-gradient(145deg,var(--orange),#c94e12);color:#fff"
+            : "background:var(--surface-2);border:1px dashed rgba(255,255,255,0.09);color:var(--text-3)";
+        var memberCls = "status-member" + (m.open ? " status-member--open" : "");
+        statusHtml += (
+          '<div class="' + memberCls + '">' +
+          '<div class="status-member__avatar" style="width:30px;height:30px;border-radius:50%;display:grid;place-items:center;font-size:10px;font-weight:800;flex-shrink:0;' + avatarStyle + '">' +
+            (m.open ? '+' : esc(initials(m.name))) +
+          '</div>' +
+          '<div class="status-member__name">' + esc(m.name) + '</div>' +
+          (m.tag ? '<div class="status-member__tag">' + esc(m.tag) + '</div>' : '') +
+          '</div>'
+        );
+      });
+      statusHtml += '<hr class="status-divider">';
+      statusHtml += '<div class="status-info-row"><span class="sir-label">Room</span><span class="sir-val sir-val--waiting">Waiting for players</span></div>';
+      statusHtml += '<div class="status-info-row"><span class="sir-label">Voice</span><span class="sir-val sir-val--blue">' +
+        (joinedRoom.voiceType === "none" ? "No voice" : esc(joinedRoom.voiceLabel)) +
+        '</span></div>';
+      document.getElementById("status-card").innerHTML = statusHtml;
+
+      /* panels */
+      document.getElementById("joiner-panel").hidden = isHost;
+      document.getElementById("host-panel").hidden   = !isHost;
+
+      /* toggle state */
+      document.getElementById("toggle-joiner").classList.toggle("active", !isHost);
+      document.getElementById("toggle-host").classList.toggle("active", isHost);
+      document.getElementById("toggle-joiner").setAttribute("aria-selected", String(!isHost));
+      document.getElementById("toggle-host").setAttribute("aria-selected", String(isHost));
+      $statePill.textContent = isHost ? "party_hub_host" : "party_hub_joiner";
+
+      wireMockButtons(document.getElementById("screen-hub"));
+
+      $hub.classList.add("fade-in");
+      setTimeout(function () { $hub.classList.remove("fade-in"); }, 300);
+    }
+
+    /* ── Mock button handler ────────────────────────── */
+    function wireMockButtons(root) {
+      (root || document).querySelectorAll("[data-mock]").forEach(function (el) {
+        if (el._mocked) return;
+        el._mocked = true;
+        el.addEventListener("click", function () {
+          var label = el.getAttribute("data-mock");
+          if (label) showToast(label + " (mock)");
+        });
+      });
+    }
+
+    /* ── Discord copy ───────────────────────────────── */
+    function copyDiscord() {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(DISCORD_POST).catch(function () {});
+      }
+      showToast("Discord LFG post copied to clipboard");
+    }
+
+    /* ── Wire events ────────────────────────────────── */
+    document.getElementById("quick-join").addEventListener("click", function () {
+      joinedRoom = ROOMS[0];
+      goToHub();
+    });
+
+    document.getElementById("rec-join").addEventListener("click", function () {
+      joinedRoom = ROOMS[0];
+      goToHub();
+    });
+
+    document.getElementById("btn-copy-discord").addEventListener("click", copyDiscord);
+    document.getElementById("btn-copy-discord-2").addEventListener("click", copyDiscord);
+
+    document.getElementById("btn-leave").addEventListener("click", function () {
+      showToast("Left party");
+      setTimeout(function () { setState("browse"); }, 380);
+    });
+    document.getElementById("btn-leave-host").addEventListener("click", function () {
+      showToast("Party closed");
+      setTimeout(function () { setState("browse"); }, 380);
+    });
+
+    document.getElementById("toggle-joiner").addEventListener("click", function () {
+      partyRole = "joiner";
+      setState("party_hub_joiner");
+    });
+    document.getElementById("toggle-host").addEventListener("click", function () {
+      partyRole = "host";
+      setState("party_hub_host");
+    });
+
+    document.getElementById("back-to-browse").addEventListener("click", function () {
+      partyRole = "joiner";
+      setState("browse");
+    });
+
+    /* ── Boot ───────────────────────────────────────── */
+    wireMockButtons(document);
+    renderRec();
+    renderParties();
+    setState("browse");
+
+  })();
+  </script>
+</body>
+</html>
