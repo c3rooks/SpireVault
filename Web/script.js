@@ -71,7 +71,57 @@ const STS2_APP_ID = "2868840";
  * on an old client — instruct hard refresh. If it DOES match, the
  * bug is real and we can stop chasing cache ghosts.
  */
-const VAULT_BUILD = "v178-2026-05-19-session-failfast";
+const VAULT_BUILD = "v179-2026-05-19-localhost-boot-fast";
+
+/** True on wrangler pages dev / local loopback — not production hostnames. */
+function isLocalDevHost() {
+  try {
+    const h = window.location.hostname;
+    if (
+      h === "localhost" ||
+      h === "127.0.0.1" ||
+      h === "::1" ||
+      h.endsWith(".localhost")
+    ) {
+      return true;
+    }
+    return (
+      window.location.protocol === "http:" &&
+      (window.location.port === "8788" ||
+        window.location.port === "8080" ||
+        window.location.port === "3000")
+    );
+  } catch {
+    return false;
+  }
+}
+
+function vaultDevBootStep(step) {
+  if (!isLocalDevHost()) return;
+  try {
+    let bar = document.getElementById("vault-dev-boot-banner");
+    if (!bar) {
+      bar = document.createElement("div");
+      bar.id = "vault-dev-boot-banner";
+      bar.setAttribute("role", "status");
+      Object.assign(bar.style, {
+        position: "fixed",
+        top: "0",
+        left: "0",
+        right: "0",
+        zIndex: "99999",
+        padding: "6px 12px",
+        font: "600 12px/1.3 ui-monospace, monospace",
+        color: "#fff",
+        background: "#b91c1c",
+        textAlign: "center",
+        pointerEvents: "none",
+      });
+      document.body.prepend(bar);
+    }
+    bar.textContent = `BOOT: ${step}`;
+  } catch { /* never block boot */ }
+}
 
 // Feature flag — set to `true` only on local dev when iterating on the
 // Run Companion Overlay. Production stays false until the feature is
@@ -1489,14 +1539,48 @@ let isDemoMode = false;
 //      on next page load. This is the case our resilience fix unblocked.
 //   5. Cookie says definitive 401 → wipe localStorage (token genuinely dead).
 //   6. No cookie + no localStorage → guest.
-try {
-  if (!session) setStatus("offline", "Browsing as guest");
-} catch { /* DOM not ready */ }
-(async () => {
+let bootShellCommitted = false;
+
+/** First paint in under 100ms on localhost — never wait for /api/_session or IDB. */
+function bootShellFirstPaint() {
+  if (bootShellCommitted) return;
+  bootShellCommitted = true;
+  vaultDevBootStep("shell");
+  try {
+    const $publicTopbar = document.getElementById("topbar-public");
+    const $publicMain = document.getElementById("main-public");
+    if ($publicTopbar) $publicTopbar.hidden = true;
+    if ($publicMain) $publicMain.hidden = true;
+    const $shell = document.getElementById("app-shell");
+    if ($shell) $shell.hidden = false;
+
+    if (!session) {
+      setStatus("offline", "Browsing as guest");
+    } else if (isLocalDevHost()) {
+      setStatus("online", "Ready (local)");
+    }
+
+    let tab = "overview";
+    try {
+      const last = localStorage.getItem(STORAGE_LAST_TAB);
+      if (session && last && new Set(KNOWN_TABS).has(last)) tab = last;
+    } catch { /* private mode */ }
+    switchTab(tab);
+    paintInitialTabShell();
+    if (!session) {
+      try { wireGuestCoop(); } catch { /* panel may not exist yet */ }
+    }
+  } catch (e) {
+    console.error("[Vault] bootShellFirstPaint failed", e);
+  }
+}
+
+async function rehydrateSessionFromCookie() {
   const hadLocalSession = !!session;
+  const timeoutMs = isLocalDevHost() ? 500 : 2800;
   try {
     const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), 2800);
+    const t = setTimeout(() => ctrl.abort(), timeoutMs);
     const r = await fetch("/api/_session", {
       method: "GET",
       credentials: "include",
@@ -1513,14 +1597,6 @@ try {
         /^\d{17}$/.test(sid) ||
         (isCoopSandboxEnabled() && /^local-[a-z0-9_-]+$/i.test(sid));
       if (j && sidOk) {
-        // Cookie session is valid. Decide how to merge with whatever
-        // localStorage already had:
-        //   - Same Steam ID + has a real bearer? Keep the localStorage
-        //     bearer (some legacy code paths still hit the worker
-        //     directly with the raw token). Refresh persona/avatar.
-        //   - Different Steam ID? User signed in to a different
-        //     account in another tab — cookie wins, replace.
-        //   - No localStorage? Hydrate fresh from the cookie response.
         const sameSteam = !!session && session.steamID === j.steamID;
         const hasRealBearer = !!session?.sessionToken && session.sessionToken !== "__cookie__";
         if (sameSteam && hasRealBearer) {
@@ -1542,37 +1618,57 @@ try {
         }
         try {
           localStorage.setItem(STORAGE_SESSION, JSON.stringify(session));
-        } catch { /* private mode etc. — cookie still wins */ }
+        } catch { /* private mode */ }
       }
     } else if (r.status === 401) {
-      // Cookie path returned a definitive 401 (the proxy explicitly
-      // tells us "this token is dead"). Wipe localStorage so we
-      // don't keep banging on the proxy with a dead bearer for the
-      // rest of the session. The proxy already cleared the cookie.
       session = null;
       sessionCookieVerified = false;
       sessionCookieMissing = false;
       try { localStorage.removeItem(STORAGE_SESSION); } catch {}
+      if (isLocalDevHost()) {
+        try {
+          bootShellCommitted = false;
+          bootShellFirstPaint();
+        } catch { /* ignore */ }
+      }
     } else if (r.status === 503) {
-      // Transient upstream failure (KV blip, network hiccup,
-      // Cloudflare colo restart). Keep whatever localStorage had
-      // — the user is probably still signed in, the worker is just
-      // having a moment. We'll retry on the next request that
-      // actually needs auth.
       console.info("[Vault] /api/_session transient, retaining local session");
       if (hadLocalSession && session) sessionCookieMissing = true;
     } else if (hadLocalSession && session) {
-      // Unexpected non-OK (404, 502, …) — keep local blob but treat as unverified.
       sessionCookieMissing = true;
     }
-    // r.status 404 / other unexpected — leave session as-is, fall through.
   } catch {
-    /* offline, timeout, or proxy down — keep localStorage */
     if (session) sessionCookieMissing = true;
   }
   if (!session) {
     try { setStatus("offline", "Browsing as guest"); } catch {}
+  } else if (isLocalDevHost() && sessionCookieVerified) {
+    try { setStatus("online", "Ready (local)"); } catch {}
   }
+}
+
+try {
+  if (!session) setStatus("offline", "Browsing as guest");
+  else if (isLocalDevHost()) setStatus("online", "Ready (local)");
+} catch { /* DOM not ready */ }
+
+if (isLocalDevHost()) {
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", () => bootShellFirstPaint(), { once: true });
+  } else {
+    queueMicrotask(() => bootShellFirstPaint());
+  }
+}
+
+(async () => {
+  if (isLocalDevHost()) {
+    void rehydrateSessionFromCookie().then(() => {
+      vaultDevBootStep("session");
+      boot();
+    });
+    return;
+  }
+  await rehydrateSessionFromCookie();
   boot();
 })();
 
@@ -1892,7 +1988,13 @@ async function refreshPublicCount() {
 // Stats UI is universal; only the Co-op tab differs based on session.
 // =========================================================================
 async function boot() {
+  vaultDevBootStep("boot");
   let markedConnecting = false;
+  const finishBootGuards = () => {
+    clearTimeout(bootWatchdog);
+    clearConnectingIfStuck(markedConnecting);
+    vaultDevBootStep("ready");
+  };
   const bootWatchdog = setTimeout(() => {
     try {
       const $dot = document.getElementById("status-dot");
@@ -1952,15 +2054,19 @@ async function boot() {
     if ($meTier) $meTier.textContent = tierText;
     const $classicTier = document.getElementById("classic-me-tier");
     if ($classicTier) $classicTier.textContent = tierText;
-    setStatus("connecting", "Connecting…");
-    markedConnecting = true;
+    if (isLocalDevHost()) {
+      setStatus("online", "Ready (local)");
+    } else {
+      setStatus("connecting", "Connecting…");
+      markedConnecting = true;
+    }
     // Paint the profile dock at boot so the user sees their status pill
     // immediately, before the first heartbeat round-trip lands.
     renderProfileDock();
     // Kick presence immediately — boot still has slow awaits (invite
     // catalog, IDB history) before the main heartbeat block; without this
     // the footer can sit on "Connecting…" for seconds or forever if IDB hangs.
-    schedulePush(0);
+    if (!isLocalDevHost() || sessionCookieVerified) schedulePush(0);
     if (sessionCookieMissing) showSessionExpiredBanner();
   } else {
     // Guest sidebar pill: invite to sign in instead of the persona block.
@@ -2347,6 +2453,9 @@ async function boot() {
   // notes) without blocking the rest of the boot sequence.
   void loadAssetManifest();
 
+  const runBootSlowPath = async () => {
+  vaultDevBootStep("slow");
+
   // Load preset message catalog (auth-only — only signed-in users send invites).
   if (session) {
     try {
@@ -2642,13 +2751,40 @@ async function boot() {
       } catch {}
     });
   }
+  }; // end runBootSlowPath
+
+  if (isLocalDevHost()) {
+    const startSlow = () => {
+      void runBootSlowPath()
+        .catch((err) => {
+          console.error("[Vault] boot slow path failed", err);
+          if (session) setStatus("trouble", "Trouble starting — try refreshing");
+          try { paintInitialTabShell(); } catch {}
+        })
+        .finally(finishBootGuards);
+    };
+    if (typeof requestIdleCallback === "function") {
+      requestIdleCallback(startSlow, { timeout: 2000 });
+    } else {
+      setTimeout(startSlow, 0);
+    }
+    return;
+  }
+
+  try {
+    await runBootSlowPath();
   } catch (err) {
     console.error("[Vault] boot failed", err);
     if (session) setStatus("trouble", "Trouble starting — try refreshing");
     try { paintInitialTabShell(); } catch {}
   } finally {
-    clearTimeout(bootWatchdog);
-    clearConnectingIfStuck(markedConnecting);
+    finishBootGuards();
+  }
+  } catch (err) {
+    console.error("[Vault] boot failed", err);
+    if (session) setStatus("trouble", "Trouble starting — try refreshing");
+    try { paintInitialTabShell(); } catch {}
+    finishBootGuards();
   }
 }
 

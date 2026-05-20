@@ -268,7 +268,7 @@
              redundant CTAs. -->
         <div class="sidebar-status-row" id="me-pill-status-row">
           <span class="status-dot" id="status-dot" aria-hidden="true"></span>
-          <span class="sidebar-status-label" id="status-label">Connecting…</span>
+          <span class="sidebar-status-label" id="status-label">Loading…</span>
           <span class="me-pill-status-pill" id="me-pill-status-pill" data-status="looking" hidden>Looking</span>
           <button class="me-pill-invites" id="me-pill-invites" type="button" hidden title="Open profile menu to respond">0</button>
         </div>
@@ -295,7 +295,7 @@
           <strong id="me-pill-name-mobile">…</strong>
         </div>
         <span class="status-dot" id="status-dot-mobile"></span>
-        <span id="status-label-mobile" class="muted-status">Connecting…</span>
+        <span id="status-label-mobile" class="muted-status">Loading…</span>
         <div class="mobile-account-action" id="mobile-account-action">
           <button class="status-signout" id="signout-btn-mobile" title="Sign out" hidden>Sign out</button>
           <button class="mobile-signin-cta" id="signin-btn-mobile" type="button" data-action="signin-cta" hidden>
@@ -1918,7 +1918,56 @@
        script before the module so it's available synchronously when
        script.js's renderActiveTab() is called for the Beta tab. Cache
        bust string is bumped alongside the script.js bust on each ship. -->
+  <!-- Localhost safety net: runs before the ES module so a stale/broken
+       script.js bundle cannot leave "Connecting…" + an empty main forever. -->
+  <script>
+  (function () {
+    var LOCAL = /^(localhost|127\.0\.0\.1|::1)$/.test(location.hostname) ||
+      (location.protocol === "http:" && /^(8788|8080|3000)$/.test(location.port || ""));
+    if (!LOCAL) return;
+    document.documentElement.classList.add("vault-local-dev");
+    function labels() {
+      return [
+        document.getElementById("status-label"),
+        document.getElementById("status-label-mobile")
+      ].filter(Boolean);
+    }
+    function setLabels(text) {
+      labels().forEach(function (el) { el.textContent = text; });
+    }
+    function unstuckMain() {
+      var main = document.getElementById("app-content");
+      if (!main) return;
+      var active = main.querySelector(".tab-panel:not([hidden])");
+      if (active && active.querySelector(".panel-body")?.textContent?.trim()) return;
+      var ov = document.querySelector('.tab-panel[data-tab="overview"]');
+      if (!ov) return;
+      document.querySelectorAll("#app-content .tab-panel").forEach(function (p) {
+        p.hidden = p !== ov;
+      });
+      var body = ov.querySelector(".panel-body");
+      if (body && !body.textContent.trim()) {
+        body.innerHTML = '<p class="muted" style="padding:1.5rem">Still loading Vault — hard-refresh (Cmd+Shift+R) or <a href="/api/_dev-login?as=c3rooks">dev sign-in</a>.</p>';
+      }
+    }
+    setTimeout(function () {
+      var stuck = labels().some(function (el) {
+        return /connecting|loading/i.test(el.textContent || "");
+      });
+      if (stuck) {
+        setLabels("Local: open /api/_dev-login?as=c3rooks");
+        unstuckMain();
+      }
+    }, 4000);
+    window.addEventListener("error", function (ev) {
+      var src = ev.filename || "";
+      if (src.indexOf("script.js") === -1 && src.indexOf("/lib/") === -1) return;
+      setLabels("Script error — hard-refresh (Cmd+Shift+R)");
+      unstuckMain();
+    });
+  })();
+  </script>
   <script src="/run-coach.js?v=2" defer></script>
-  <script src="/script.js?v=178" type="module"></script>
+  <script src="/script.js?v=179" type="module"></script>
 </body>
 </html>
