@@ -632,7 +632,7 @@ function ensurePartyFinderGlobalsScript() {
         if (!document.getElementById("pf-readyup-rt-script")) {
           const s7 = document.createElement("script");
           s7.id = "pf-readyup-rt-script";
-          s7.src = "/lib/party-finder-readyup-rt.js?v=1";
+          s7.src = "/lib/party-finder-readyup-rt.js?v=2";
           s7.async = false;
           document.head.appendChild(s7);
         }

@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  LaunchAgent for SpireVaultHelper.
+
+  Installed to ~/Library/LaunchAgents/com.spirevault.helper.plist by
+  the pkg installer (see scripts/build-helper-pkg.sh — separate
+  ticket).
+
+  Loads at login, restarts on crash, and writes stdout/stderr to
+  ~/Library/Logs/SpireVaultHelper/. Standard pattern for a
+  set-it-and-forget-it user agent.
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.spirevault.helper</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <!-- The installer rewrites this to the absolute install path
+         (e.g. /usr/local/bin/SpireVaultHelper or
+         ~/Library/Application Support/SpireVault/Helpers/SpireVaultHelper)
+         before dropping the plist into ~/Library/LaunchAgents/. -->
+    <string>__INSTALL_PATH__/SpireVaultHelper</string>
+  </array>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>KeepAlive</key>
+  <dict>
+    <!-- Restart on crash, but NOT on clean exit. The helper exits 0
+         when the opt-out flag is set, when the session token is
+         missing, or when launched with --version. We want all three
+         to stay exited until the user takes action. -->
+    <key>SuccessfulExit</key>
+    <false/>
+    <key>Crashed</key>
+    <true/>
+  </dict>
+
+  <!-- Throttle restarts. Crash-loop protection. -->
+  <key>ThrottleInterval</key>
+  <integer>30</integer>
+
+  <!-- launchd captures stdout/stderr to these paths.
+       The installer replaces __HOME__ with the user's actual home
+       directory. -->
+  <key>StandardOutPath</key>
+  <string>__HOME__/Library/Logs/SpireVaultHelper/stdout.log</string>
+  <key>StandardErrorPath</key>
+  <string>__HOME__/Library/Logs/SpireVaultHelper/stderr.log</string>
+
+  <!-- ProcessType "Background" tells the system this is a low-
+       priority, long-running background process so power-management
+       schedules CPU accordingly. -->
+  <key>ProcessType</key>
+  <string>Background</string>
+</dict>
+</plist>

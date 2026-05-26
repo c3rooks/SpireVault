@@ -28,6 +28,78 @@
   var autoAdvancedFor = new Set();
   var lastPartyByLobby = new Map();
   var pollTimers = new Map();
+  var chimeFiredFor = new Set(); // partyIds we've already chimed for
+
+  // ─── All-ready chime ─────────────────────────────────────────────────
+  // Tiny 3-tone glissando using WebAudio. No external audio assets.
+  // Opt-out flag lives in localStorage["pf.readyup.chime.v1"] = "off".
+  // Honors prefers-reduced-motion as a proxy for "I don't want surprise
+  // audio" alongside the explicit toggle.
+
+  function chimeOptOut() {
+    try {
+      if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+        return true;
+      }
+      return window.localStorage.getItem("pf.readyup.chime.v1") === "off";
+    } catch (_) { return false; }
+  }
+
+  var _audioCtx = null;
+  function audioCtx() {
+    if (_audioCtx) return _audioCtx;
+    try {
+      var Ctx = window.AudioContext || window.webkitAudioContext;
+      if (!Ctx) return null;
+      _audioCtx = new Ctx();
+    } catch (_) {
+      _audioCtx = null;
+    }
+    return _audioCtx;
+  }
+
+  function playChime() {
+    var ctx = audioCtx();
+    if (!ctx) return;
+    // Safari sometimes leaves the context suspended; resume in the
+    // user-gesture path. The polling tick that calls this is itself
+    // bootstrapped by a click somewhere along the way.
+    try { if (ctx.state === "suspended") ctx.resume(); } catch (_) {}
+    var now = ctx.currentTime;
+    // Three-note arpeggio: E5 → G5 → B5. Short, bright, recognisably
+    // "everyone's ready" without sounding alarm-clock-aggressive.
+    var notes = [659.25, 783.99, 987.77];
+    notes.forEach(function (freq, i) {
+      var osc = ctx.createOscillator();
+      var gain = ctx.createGain();
+      osc.type = "triangle";
+      osc.frequency.setValueAtTime(freq, now + i * 0.10);
+      gain.gain.setValueAtTime(0, now + i * 0.10);
+      gain.gain.linearRampToValueAtTime(0.18, now + i * 0.10 + 0.015);
+      gain.gain.exponentialRampToValueAtTime(0.0008, now + i * 0.10 + 0.28);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(now + i * 0.10);
+      osc.stop(now + i * 0.10 + 0.30);
+    });
+  }
+
+  function maybeFireAllReadyChime(partyId, total) {
+    if (!partyId || total < 2) return;
+    if (chimeFiredFor.has(partyId)) return;
+    chimeFiredFor.add(partyId);
+    if (chimeOptOut()) return;
+    try { playChime(); } catch (_) {}
+  }
+  // Expose so the Alerts gear popover can toggle and test the chime.
+  window.__pfReadyupChime = {
+    test: function () { try { playChime(); } catch (_) {} },
+    isOff: chimeOptOut,
+    setOff: function (off) {
+      try {
+        window.localStorage.setItem("pf.readyup.chime.v1", off ? "off" : "on");
+      } catch (_) {}
+    },
+  };
 
   function getState() {
     try {
@@ -125,6 +197,22 @@
     return pill;
   }
 
+  function waitingOnLabel(liveMembers) {
+    // The member we're "waiting on" is the one with status != ready/in_game.
+    // If multiple, pick the one who joined first (oldest updatedAt) — that's
+    // typically the longest-stalling member. If only one not-ready remains,
+    // surface their name explicitly.
+    var notReady = liveMembers.filter(function (m) {
+      return m.status !== "ready" && m.status !== "in_game";
+    });
+    if (notReady.length === 0) return null;
+    if (notReady.length === 1) {
+      var name = notReady[0].personaName || "one player";
+      return "Waiting on " + name;
+    }
+    return null;
+  }
+
   function paintPill(row, pill, party) {
     if (!pill || !party) return;
     var mine = getMySteamId();
@@ -136,9 +224,19 @@
     pill.classList.toggle("is-ready", !!iAmReady);
     pill.querySelector(".pf-readyup-text").textContent = iAmReady ? "Ready ✓" : "Ready up";
     var countEl = pill.querySelector(".pf-readyup-count");
-    countEl.textContent = total > 0 ? (ready.length + " / " + total + " ready") : "";
+    var waiting = waitingOnLabel(liveMembers);
+    if (total === 0) {
+      countEl.textContent = "";
+    } else if (ready.length === total) {
+      countEl.textContent = ready.length + " / " + total + " ready";
+    } else if (waiting && ready.length >= 1) {
+      countEl.textContent = waiting;
+    } else {
+      countEl.textContent = ready.length + " / " + total + " ready";
+    }
     if (ready.length === total && total >= 2) {
       countEl.classList.add("is-all");
+      maybeFireAllReadyChime(party.partyId, total);
     } else {
       countEl.classList.remove("is-all");
     }

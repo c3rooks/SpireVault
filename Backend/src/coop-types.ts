@@ -206,6 +206,20 @@ export interface CoopPartyMember {
   selectedCharacter?: CoopCharacter;
   status: CoopPartyMemberStatus;
   updatedAt: string;
+  /**
+   * ISO8601 stamped each time the member's status transitions TO `ready`.
+   * Cleared (set to undefined) on any transition away from `ready`.
+   *
+   * Frontend ready-up runtime reads this to surface "Waiting on X"
+   * copy (the member with the oldest non-`ready` updatedAt is the
+   * one being waited on; the readyAt timestamps on the others let
+   * the UI sort "ready 23s ago / 8s ago" if we ever want it).
+   *
+   * Added in v0.12.0. Old members written before this field existed
+   * have it undefined — the frontend treats undefined as "not ready"
+   * which matches the legacy semantics.
+   */
+  readyAt?: string;
 }
 
 export type CoopPartyStatus = "active" | "ended";
