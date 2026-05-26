@@ -5,6 +5,105 @@ Dates in YYYY-MM-DD. The project follows [Semantic Versioning](https://semver.or
 loosely — patch bumps for fixes, minor for features, major if I ever
 break the wire format.
 
+## v0.12.0-preview — 2026-05-26
+
+Two follow-up rolls landing same-day as v0.11.0, on the same merge.
+v0.11.1's share-card HTML render (the v1 piece deferred from
+yesterday's spec), plus the first chunk of v0.12.0 — `readyAt`
+timestamping with "Waiting on X" copy, an all-ready audio chime,
+and a buildable macOS Steam Rich Presence helper.
+
+### v0.11.1 — share-card HTML render
+
+`/share/coop/<shareId>` is now a real page, not raw JSON. Cloudflare
+Pages Function at `Web/functions/share/coop/[shareId].js` fetches the
+captured card from the public worker endpoint and renders a small,
+dark-themed HTML view with proper Open Graph + Twitter Card meta
+tags. Discord / X / iMessage previews now look right when someone
+pastes a share URL.
+
+Expired or unknown shareIds render a friendly "this card has expired"
+page with a CTA back to the lobby instead of a bare 404. 15-minute
+browser cache because the card is immutable once captured.
+
+### v0.12.0 — readyAt + "Waiting on X" copy
+
+`CoopPartyMember` gains an optional `readyAt?: string`. The engine
+stamps it on the transition INTO `ready` and clears it on any
+transition out. The frontend ready-up runtime uses it to surface
+"Waiting on Embertongue" copy when exactly one member hasn't ready'd
+up — much friendlier than a bare "3 / 4 ready" count when the user
+is wondering who they're waiting on.
+
+Schema-compatible: old members written before this field existed
+have `readyAt` undefined, which the frontend treats as "not ready"
+(the legacy semantics). No client breakage.
+
+### v0.12.0 — all-ready audio chime
+
+When every live party member is `ready` and the party has at least
+two members, the frontend plays a short three-tone WebAudio chime
+(E5 → G5 → B5, triangle wave, half-second total). One-shot per
+party — the same partyId can't chime twice in a session.
+
+Honors:
+- `localStorage["pf.readyup.chime.v1"] = "off"` opts out.
+- `prefers-reduced-motion: reduce` opts out automatically (we treat
+  it as a proxy for "I don't want surprise audio" too — most users
+  who set reduced-motion also dislike unsolicited sound).
+
+Exposed as `window.__pfReadyupChime` so the Alerts gear popover can
+add a settings toggle + test button (next patch hooks the UI in).
+
+### v0.12.0 — macOS Steam Rich Presence helper (BUILDABLE)
+
+The native helper specced in v0.11.0 now exists as a buildable Swift
+package under `VaultApp/Helpers/SteamRichPresence/`. Zero external
+dependencies — pure Foundation + AppKit. **Builds cleanly on Swift
+6.3 with no warnings**. 2.7 MB stripped binary.
+
+What it does on a running Mac:
+
+- Observes `NSWorkspace` for Steam launch / terminate notifications
+  (bundle id `com.valvesoftware.steam`).
+- Polls `~/Library/Application Support/Steam/registry.vdf` once per
+  second while Steam is running for the `RunningAppID` value. App
+  id `2868840` → `in-game`. Steam running with no game → `in-menu`.
+  Steam not running → `not-running`.
+- Best-effort reads `userdata/<id>/config/localconfig.vdf` for the
+  `steam_display` token so the server can show "Currently: Floor 12
+  · A15" under the user's name in lobbies.
+- POSTs the computed state to `/coop/rich-presence/ingest` on every
+  change AND on a 60s heartbeat while in-game (120s idle).
+- Reads the SpireVault session token from the user's keychain
+  (`service: com.spirevault.session`). Falls back to a plaintext
+  file at `~/Library/Application Support/SpireVault/session-token`
+  that the Vault.app drops on first-run, then self-seals into the
+  keychain.
+- Watches `~/Library/Application Support/SpireVault/helper-disabled`
+  every 60s; exits cleanly the moment it appears (Vault.app's
+  settings panel toggles this).
+
+LaunchAgent plist (`Resources/com.spirevault.helper.plist`) covers
+RunAtLoad + crash-only KeepAlive + 30s throttle. The installer pkg
+(`scripts/build-helper-pkg.sh` — separate ticket) rewrites
+`__INSTALL_PATH__` and `__HOME__` placeholders and drops the plist
+into `~/Library/LaunchAgents/`.
+
+What's NOT in this preview ship:
+
+- The `scripts/build-helper-pkg.sh` installer that produces the
+  signed-and-notarised pkg. Targeted for v0.12.1.
+- Windows and Linux equivalents (`VaultApp/Windows/SpireVaultHelper/`
+  + a `systemd --user` unit). Targeted for v0.12.0 final.
+- Vault.app's settings panel toggle for the opt-out flag. Targeted
+  for v0.12.0 final.
+
+What v0.12.0-preview means: **the macOS binary works today**. You
+can `cd VaultApp/Helpers/SteamRichPresence && swift build -c release`
+and run `.build/arm64-apple-macosx/release/SpireVaultHelper`. The
+endpoint it talks to (`/coop/rich-presence/ingest`) shipped in v0.11.0.
+
 ## v0.11.0 — 2026-05-26
 
 Five co-op features land in one release. The thesis from the v0.10.0

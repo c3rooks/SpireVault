@@ -1545,6 +1545,15 @@ export async function updatePartyMemberStatus(
     member.selectedCharacter = nextSelected;
   }
   member.updatedAt = new Date().toISOString();
+  // v0.12.0: stamp readyAt on the transition INTO `ready`, clear it
+  // on any transition out. Keeps the timestamp meaningful (frontend
+  // can render "Embertongue ready 12s ago" or "Waiting on Hollow")
+  // without needing to consult the engine's prior state.
+  if (status === "ready" && prevStatus !== "ready") {
+    member.readyAt = member.updatedAt;
+  } else if (status !== "ready" && member.readyAt) {
+    member.readyAt = undefined;
+  }
   party.updatedAt = member.updatedAt;
   await writeParty(env, party);
   // First transition into `in_game` for this member counts as one party
