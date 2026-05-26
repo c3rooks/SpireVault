@@ -27,6 +27,8 @@ import {
   lobbyIsFull,
   normalizeRunLobby,
 } from "./coop-lobby-utils";
+import { appendCoopHistory } from "./coop-reputation";
+import { extractDailyTag, recordDailyJoin } from "./coop-daily";
 import {
   COOP_INVITE_TTL_S,
   COOP_JOIN_REQUEST_TTL_S,
@@ -658,6 +660,14 @@ export async function updateLobby(
   lobby.updatedAt = new Date(now).toISOString();
   lobby.expiresAt = new Date(now + COOP_LOBBY_TTL_S * 1000).toISOString();
   await writeLobby(env, lobby);
+  // Best-effort reputation log; never blocks or fails the host.
+  void appendCoopHistory(env, hostSteamId, "hosted_lobby", { lobbyId: lobby.lobbyId });
+  // If the host tagged the lobby note with `[daily=YYYY-MM-DD]`, count
+  // them as joining today's daily co-op challenge.
+  const dailyDate = extractDailyTag(lobby.note);
+  if (dailyDate) {
+    void recordDailyJoin(env, dailyDate, hostSteamId);
+  }
   return ok(lobby);
 }
 
@@ -1529,6 +1539,7 @@ export async function updatePartyMemberStatus(
     }
   }
 
+  const prevStatus = member.status;
   member.status = status as CoopPartyMemberStatus;
   if (selectedCharacter !== undefined) {
     member.selectedCharacter = nextSelected;
@@ -1536,6 +1547,15 @@ export async function updatePartyMemberStatus(
   member.updatedAt = new Date().toISOString();
   party.updatedAt = member.updatedAt;
   await writeParty(env, party);
+  // First transition into `in_game` for this member counts as one party
+  // attempt for reputation purposes. Re-entries (in_game → character_select
+  // → in_game) don't double-count.
+  if (status === "in_game" && prevStatus !== "in_game") {
+    void appendCoopHistory(env, callerSteamId, "started_party_run", {
+      partyId,
+      lobbyId: party.lobbyId,
+    });
+  }
   return ok(party);
 }
 
@@ -1548,10 +1568,21 @@ export async function leaveParty(
   if (!party) return ok({ left: false });
   const member = party.members.find((m) => m.steamId === callerSteamId);
   if (!member) return ok({ left: false });
+  const wasInGame = member.status === "in_game";
   member.status = "left";
   member.updatedAt = new Date().toISOString();
   party.updatedAt = member.updatedAt;
   await writeParty(env, party);
+  // Leaving the party WHILE in_game is the abandon signal. Leaving from
+  // joined / ready / character_select counts as a clean drop and is NOT
+  // logged. We intentionally don't auto-charge abandon on party TTL expiry
+  // — too many false positives (laptop sleeps, network hiccups).
+  if (wasInGame) {
+    void appendCoopHistory(env, callerSteamId, "abandoned_party", {
+      partyId,
+      lobbyId: party.lobbyId,
+    });
+  }
 
   const lobby = await readLobby(env, party.lobbyId);
   if (lobby && lobby.status === "open") {
@@ -1587,6 +1618,23 @@ export async function endParty(
   party.status = "ended";
   party.updatedAt = new Date().toISOString();
   await writeParty(env, party);
+  // Reputation: host always counts as completed; members count only if
+  // they were in_game at end-time (the host called "end" while you were
+  // playing → you actually played that run).
+  void appendCoopHistory(env, party.hostSteamId, "completed_party_role", {
+    partyId,
+    lobbyId: party.lobbyId,
+    role: "host",
+  });
+  for (const m of party.members) {
+    if (m.steamId !== party.hostSteamId && m.status === "in_game") {
+      void appendCoopHistory(env, m.steamId, "completed_party_role", {
+        partyId,
+        lobbyId: party.lobbyId,
+        role: "member",
+      });
+    }
+  }
   for (const m of party.members) {
     await setPresenceField(env, m.steamId, {
       currentPartyId: undefined,
@@ -1616,6 +1664,17 @@ export async function endSession(
   session.status = "ended";
   session.endedAt = new Date().toISOString();
   await writeSession(env, session);
+
+  // Reputation: a session that ended cleanly counts as completed for
+  // every player. Sessions only get into "active" via an accepted invite,
+  // so the lifecycle here is "agreed → ended cleanly," which is exactly
+  // the trust signal we want.
+  for (const sid of session.playerSteamIds) {
+    void appendCoopHistory(env, sid, "completed_session", {
+      sessionId,
+      ...(session.lobbyId ? { lobbyId: session.lobbyId } : {}),
+    });
+  }
 
   for (const sid of session.playerSteamIds) {
     const partyId = await getActivePartyIdForUser(env, sid);

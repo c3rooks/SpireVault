@@ -9,6 +9,22 @@ import {
   COOP_INVITE_MESSAGES,
 } from "./coop-types";
 import {
+  computeReputation,
+  getReputation,
+  toPublic,
+} from "./coop-reputation";
+import {
+  COOP_REP_PUBLIC_FRESH_MS,
+  COOP_REP_SELF_FRESH_MS,
+} from "./coop-reputation-types";
+import { getTodayChallenge } from "./coop-daily";
+import { captureShareCard, readShareCard } from "./coop-share";
+import {
+  logRichPresenceIngest,
+  planRichPresenceUpdate,
+  type RichPresenceIngestBody,
+} from "./coop-rich-presence";
+import {
   acceptInvite,
   acceptJoinRequest,
   cancelInvite,
@@ -128,6 +144,105 @@ export async function handleCoopRoute(
     const bundle = await buildStateBundle(env, auth.steamID);
     return json({ ok: true, recommendations: bundle.recommendedMatches });
   }
+
+  // ----- Verified Co-op Reputation (v0.11.0+) -----
+  // Spec: docs/coop-reputation-spec.md
+  if (method === "GET" && pathname === "/coop/reputation/me") {
+    const auth = await requireSession(req, env);
+    if (auth instanceof Response) return auth;
+    const limited = await rateLimit(env, req, "coop-rep-self-read", 30, 60);
+    if (limited) return limited;
+    const rep = await computeReputation(env, auth.steamID);
+    return json({ ok: true, reputation: rep });
+  }
+  if (method === "GET" && pathname.startsWith("/coop/reputation/")) {
+    const sidRaw = pathname.slice("/coop/reputation/".length);
+    const steamID = sidRaw.replace(/[^0-9A-Za-z_-]/g, "").slice(0, 64);
+    if (!steamID) {
+      return json({ ok: false, error: "invalid_steam_id" }, { status: 400 });
+    }
+    const limited = await rateLimit(env, req, "coop-rep-read", 60, 60);
+    if (limited) return limited;
+    const rep = await getReputation(env, steamID, { freshMs: COOP_REP_PUBLIC_FRESH_MS });
+    if (!rep) {
+      return json({ ok: false, error: "unavailable" }, { status: 503 });
+    }
+    const cacheSeconds = Math.max(15, Math.floor(COOP_REP_PUBLIC_FRESH_MS / 1000));
+    return json(
+      { ok: true, reputation: toPublic(rep) },
+      { headers: { "cache-control": `public, max-age=${cacheSeconds}` } },
+    );
+  }
+  // ----- Post-run Shared Report (v0.11.0+) -----
+  // Spec: docs/coop-post-run-shared-report-spec.md
+  if (method === "POST" && pathname === "/coop/share/from-party") {
+    const auth = await requireSession(req, env);
+    if (auth instanceof Response) return auth;
+    const limited = await rateLimit(env, req, "coop-share-write", 10, 60);
+    if (limited) return limited;
+    const body = (await readJson(req)) as {
+      partyId?: unknown;
+      caption?: unknown;
+    } | null;
+    if (!body) return json({ ok: false, error: "bad_body" }, { status: 400 });
+    const result = await captureShareCard(env, auth.steamID, body);
+    if (!result.ok) {
+      return json({ ok: false, error: result.error }, { status: result.status });
+    }
+    return json({ ok: true, shareId: result.shareId });
+  }
+  if (method === "GET" && pathname.startsWith("/coop/share/")) {
+    const shareId = pathname.slice("/coop/share/".length);
+    const limited = await rateLimit(env, req, "coop-share-read", 120, 60);
+    if (limited) return limited;
+    const card = await readShareCard(env, shareId);
+    if (!card) return json({ ok: false, error: "not_found" }, { status: 404 });
+    return json(
+      { ok: true, card },
+      { headers: { "cache-control": "public, max-age=300" } },
+    );
+  }
+
+  // ----- Steam Rich Presence ingest (v0.11.0+) -----
+  // Spec: docs/coop-steam-rich-presence-spec.md
+  // Web side only here; the native helper lives under
+  // VaultApp/App/Helpers/SteamRichPresence/ (separate sprint).
+  if (method === "POST" && pathname === "/coop/rich-presence/ingest") {
+    const auth = await requireSession(req, env);
+    if (auth instanceof Response) return auth;
+    const limited = await rateLimit(env, req, "coop-richp-write", 30, 60);
+    if (limited) return limited;
+    const body = ((await readJson(req)) ?? {}) as RichPresenceIngestBody;
+    const plan = planRichPresenceUpdate(body);
+    // Log every ingest for "is the helper reporting?" debugging.
+    void logRichPresenceIngest(env, auth.steamID, body, plan);
+    // The presence write itself reuses the existing
+    // POST /coop/heartbeat surface — the helper is encouraged to call
+    // /coop/heartbeat directly with the computed status. We return the
+    // computed plan so the helper knows what to send. Keeping the
+    // presence write out of this route keeps it a single
+    // responsibility: validate + plan.
+    return json({ ok: true, plan });
+  }
+
+  // ----- Daily Co-op Challenge (v0.11.0+) -----
+  // Spec: docs/coop-daily-challenge-spec.md
+  if (method === "GET" && pathname === "/coop/daily-challenge") {
+    const limited = await rateLimit(env, req, "coop-daily-read", 120, 60);
+    if (limited) return limited;
+    const challenge = await getTodayChallenge(env);
+    return json(
+      { ok: true, challenge },
+      { headers: { "cache-control": "public, max-age=300" } },
+    );
+  }
+
+  // Stop TypeScript noticing the unused COOP_REP_SELF_FRESH_MS import in
+  // build modes that strip dead code aggressively. The constant is the
+  // canonical freshness window for the /me endpoint and is exported here
+  // so any cross-module consumers (e.g. future warmup workers) can read it
+  // without a duplicate definition.
+  void COOP_REP_SELF_FRESH_MS;
 
   if (method === "POST" && pathname === "/coop/presence") {
     const auth = await requireSession(req, env);

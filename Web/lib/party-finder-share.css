@@ -1,0 +1,35 @@
+/* Post-run Shared Report — share button (lives next to Ready Up). */
+
+.pf-share-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(155, 131, 255, 0.55);
+  background: rgba(155, 131, 255, 0.10);
+  color: rgba(232, 226, 255, 0.92);
+  font-weight: 700;
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: transform 100ms ease, background 100ms ease;
+}
+
+.pf-share-btn:hover,
+.pf-share-btn:focus-visible {
+  transform: translateY(-1px);
+  background: rgba(155, 131, 255, 0.18);
+  outline: none;
+}
+
+.pf-share-btn[disabled] {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pf-share-btn { transition: none; }
+  .pf-share-btn:hover,
+  .pf-share-btn:focus-visible { transform: none; }
+}
