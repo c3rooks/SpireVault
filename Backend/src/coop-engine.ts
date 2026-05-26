@@ -1,9 +1,11 @@
 import type { Env } from "./types";
 import {
+  COOP_CHARACTERS,
   COOP_GOALS,
   COOP_INVITE_MESSAGES,
   COOP_PRESENCE_STATUSES,
   VOICE_PREFERENCES,
+  type CoopCharacter,
   type CoopGoal,
   type CoopInvite,
   type CoopPresence,
@@ -161,14 +163,29 @@ function sanitizeVoiceChannelUrl(raw: unknown): string | undefined {
   }
 }
 
-export function sanitizePreferredCharacters(raw: unknown): string[] | undefined {
+export function sanitizePreferredCharacters(raw: unknown): CoopCharacter[] | undefined {
   if (!Array.isArray(raw)) return undefined;
+  const valid = new Set(COOP_CHARACTERS as readonly string[]);
+  const seen = new Set<string>();
   const cleaned = raw
     .filter((x) => typeof x === "string")
-    .map((s) => sanitizeText(s, 32))
-    .filter((s) => s.length > 0);
+    .map((s) => sanitizeText(s, 32).toLowerCase())
+    .filter((s): s is CoopCharacter => valid.has(s))
+    .filter((s) => {
+      if (seen.has(s)) return false;
+      seen.add(s);
+      return true;
+    });
   if (cleaned.length === 0) return undefined;
   return cleaned.slice(0, MAX_PREFERRED_CHARS);
+}
+
+function sanitizeSelectedCharacter(raw: unknown): CoopCharacter | undefined {
+  if (typeof raw !== "string") return undefined;
+  const s = sanitizeText(raw, 32).toLowerCase();
+  return (COOP_CHARACTERS as readonly string[]).includes(s)
+    ? (s as CoopCharacter)
+    : undefined;
 }
 
 export function sanitizeAscensionRange(
@@ -267,8 +284,9 @@ export async function upsertPresenceV2(
     : prev?.voicePreference;
 
   const preferredCharacters =
-    sanitizePreferredCharacters(body.preferredCharacters) ??
-    prev?.preferredCharacters;
+    body.preferredCharacters !== undefined
+      ? sanitizePreferredCharacters(body.preferredCharacters)
+      : prev?.preferredCharacters;
 
   const next: CoopPresence = {
     steamId,
@@ -730,6 +748,7 @@ export async function requestToJoinLobby(
   env: Env,
   fromSteamId: string,
   lobbyId: string,
+  body: { selectedCharacter?: unknown } = {},
 ): Promise<CoopResult<JoinRequest>> {
   const lobby = await readLobby(env, lobbyId);
   if (!lobby) return err(404, "not_found", "This lobby expired.");
@@ -785,6 +804,17 @@ export async function requestToJoinLobby(
     return err(429, "too_many_requests", "Too many pending join requests.");
   }
 
+  const selectedCharacter = sanitizeSelectedCharacter(body.selectedCharacter);
+  if (body.selectedCharacter !== undefined && !selectedCharacter) {
+    return err(400, "invalid_character", "Pick a valid character.");
+  }
+  if (
+    selectedCharacter &&
+    (await isCharacterClaimedForLobby(env, lobby, fromSteamId, selectedCharacter))
+  ) {
+    return err(409, "character_claimed", "That character is already claimed.");
+  }
+
   const fromProfile = await profileFor(env, fromSteamId);
   const now = Date.now();
   const req: JoinRequest = {
@@ -792,6 +822,7 @@ export async function requestToJoinLobby(
     lobbyId,
     fromSteamId,
     toHostSteamId: lobby.hostSteamId,
+    selectedCharacter,
     status: "pending",
     createdAt: new Date(now).toISOString(),
     expiresAt: new Date(now + COOP_JOIN_REQUEST_TTL_S * 1000).toISOString(),
@@ -821,6 +852,7 @@ export async function joinLobbySeat(
   env: Env,
   fromSteamId: string,
   lobbyId: string,
+  body: { selectedCharacter?: unknown } = {},
 ): Promise<CoopResult<{ lobby: RunLobby; party: CoopParty; partyId: string }>> {
   const lobby = await readLobby(env, lobbyId);
   if (!lobby) return err(404, "not_found", "This room expired.");
@@ -867,6 +899,17 @@ export async function joinLobbySeat(
     return err(429, "decline_cooldown", "Give them a moment before trying again.");
   }
 
+  const joinerCharacter = sanitizeSelectedCharacter(body.selectedCharacter);
+  if (body.selectedCharacter !== undefined && !joinerCharacter) {
+    return err(400, "invalid_character", "Pick a valid character.");
+  }
+  if (
+    joinerCharacter &&
+    (await isCharacterClaimedForLobby(env, lobby, fromSteamId, joinerCharacter))
+  ) {
+    return err(409, "character_claimed", "That character is already claimed.");
+  }
+
   const accepted = Array.from(
     new Set([...(norm.acceptedMemberSteamIds ?? [lobby.hostSteamId]), fromSteamId]),
   );
@@ -877,7 +920,9 @@ export async function joinLobbySeat(
   );
   lobby.pendingJoinRequestSteamIds = lobby.pendingSeatRequestSteamIds;
 
-  const party = await ensurePartyForLobby(env, lobby, fromSteamId);
+  const selectedBySid = new Map<string, CoopCharacter>();
+  if (joinerCharacter) selectedBySid.set(fromSteamId, joinerCharacter);
+  const party = await ensurePartyForLobby(env, lobby, fromSteamId, selectedBySid);
   lobby.partyId = party.partyId;
   lobby.status = lobbyIsFull(lobby) ? "full" : "open";
   lobby.updatedAt = new Date().toISOString();
@@ -1023,6 +1068,14 @@ export async function acceptJoinRequest(
     }
   }
   if (!targetId) return err(404, "request_not_found", "That request expired.");
+  const reqBlob = await readJoinRequest(env, targetId);
+  const requestedCharacter = reqBlob?.selectedCharacter;
+  if (
+    requestedCharacter &&
+    (await isCharacterClaimedForLobby(env, lobby, requesterSteamId, requestedCharacter))
+  ) {
+    return err(409, "character_claimed", "That character is already claimed.");
+  }
 
   // Promote requester into accepted seats
   const accepted = Array.from(
@@ -1031,7 +1084,9 @@ export async function acceptJoinRequest(
   lobby.acceptedMemberSteamIds = accepted;
   lobby.memberSteamIds = accepted;
 
-  const party = await ensurePartyForLobby(env, lobby, requesterSteamId);
+  const selectedBySid = new Map<string, CoopCharacter>();
+  if (reqBlob?.selectedCharacter) selectedBySid.set(requesterSteamId, reqBlob.selectedCharacter);
+  const party = await ensurePartyForLobby(env, lobby, requesterSteamId, selectedBySid);
   lobby.partyId = party.partyId;
 
   // Mint pairing session when at least two players (STS2 co-op minimum)
@@ -1041,7 +1096,6 @@ export async function acceptJoinRequest(
   }
 
   // Mark the request accepted, drop it from indexes
-  const reqBlob = await readJoinRequest(env, targetId);
   if (reqBlob) {
     reqBlob.status = "accepted";
     await writeJoinRequest(env, reqBlob);
@@ -1324,21 +1378,51 @@ async function memberRowFor(
   env: Env,
   steamId: string,
   status: CoopPartyMemberStatus = "joined",
+  selectedCharacter?: CoopCharacter,
 ): Promise<CoopPartyMember> {
   const profile = await profileFor(env, steamId);
   return {
     steamId,
     personaName: profile.personaName,
     avatarUrl: profile.avatarUrl,
+    selectedCharacter,
     status,
     updatedAt: new Date().toISOString(),
   };
+}
+
+function hostCharacterForLobby(lobby: RunLobby): CoopCharacter | undefined {
+  const [first] = normalizeRunLobby(lobby).preferredCharacters ?? [];
+  return sanitizeSelectedCharacter(first);
+}
+
+async function isCharacterClaimedForLobby(
+  env: Env,
+  lobby: RunLobby,
+  steamId: string,
+  selectedCharacter: CoopCharacter,
+): Promise<boolean> {
+  const hostCharacter = hostCharacterForLobby(lobby);
+  if (hostCharacter === selectedCharacter && steamId !== lobby.hostSteamId) {
+    return true;
+  }
+  const partyId = lobby.partyId ?? (await getPartyIdForLobby(env, lobby.lobbyId));
+  if (!partyId) return false;
+  const party = await readParty(env, partyId);
+  if (!party || party.status !== "active") return false;
+  return party.members.some(
+    (m) =>
+      m.steamId !== steamId &&
+      m.status !== "left" &&
+      m.selectedCharacter === selectedCharacter,
+  );
 }
 
 async function ensurePartyForLobby(
   env: Env,
   lobby: RunLobby,
   newestMemberSteamId: string,
+  selectedBySid: Map<string, CoopCharacter> = new Map(),
 ): Promise<CoopParty> {
   const norm = normalizeRunLobby(lobby);
   const existingId =
@@ -1351,9 +1435,15 @@ async function ensurePartyForLobby(
     const existing = await readParty(env, existingId);
     if (existing && existing.status === "active") {
       const ids = new Set(existing.members.map((m) => m.steamId));
+      const hostCharacter = hostCharacterForLobby(lobby);
       for (const sid of norm.acceptedMemberSteamIds ?? []) {
         if (!ids.has(sid)) {
-          existing.members.push(await memberRowFor(env, sid));
+          const selected = selectedBySid.get(sid) || (sid === lobby.hostSteamId ? hostCharacter : undefined);
+          existing.members.push(await memberRowFor(env, sid, "joined", selected));
+        } else {
+          const member = existing.members.find((m) => m.steamId === sid);
+          const selected = selectedBySid.get(sid) || (sid === lobby.hostSteamId ? hostCharacter : undefined);
+          if (member && selected && !member.selectedCharacter) member.selectedCharacter = selected;
         }
       }
       existing.updatedAt = nowIso;
@@ -1364,10 +1454,12 @@ async function ensurePartyForLobby(
   }
 
   const members: CoopPartyMember[] = [];
+  const hostCharacter = hostCharacterForLobby(lobby);
   for (const sid of norm.acceptedMemberSteamIds ?? []) {
     const st: CoopPartyMemberStatus =
       sid === newestMemberSteamId ? "joined" : "joined";
-    members.push(await memberRowFor(env, sid, st));
+    const selected = selectedBySid.get(sid) || (sid === lobby.hostSteamId ? hostCharacter : undefined);
+    members.push(await memberRowFor(env, sid, st, selected));
   }
 
   const party: CoopParty = {
@@ -1401,6 +1493,7 @@ export async function updatePartyMemberStatus(
   callerSteamId: string,
   partyId: string,
   status: unknown,
+  selectedCharacter?: unknown,
 ): Promise<CoopResult<CoopParty>> {
   if (
     typeof status !== "string" ||
@@ -1416,7 +1509,30 @@ export async function updatePartyMemberStatus(
   if (!member) {
     return err(403, "not_participant", "You're not in this Party Room.");
   }
+
+  let nextSelected: CoopCharacter | undefined;
+  if (selectedCharacter !== undefined) {
+    nextSelected = sanitizeSelectedCharacter(selectedCharacter);
+    if (selectedCharacter !== "" && selectedCharacter !== null && !nextSelected) {
+      return err(400, "invalid_character", "Pick a valid character.");
+    }
+    if (
+      nextSelected &&
+      party.members.some(
+        (m) =>
+          m.steamId !== callerSteamId &&
+          m.status !== "left" &&
+          m.selectedCharacter === nextSelected,
+      )
+    ) {
+      return err(409, "character_claimed", "That character is already claimed.");
+    }
+  }
+
   member.status = status as CoopPartyMemberStatus;
+  if (selectedCharacter !== undefined) {
+    member.selectedCharacter = nextSelected;
+  }
   member.updatedAt = new Date().toISOString();
   party.updatedAt = member.updatedAt;
   await writeParty(env, party);

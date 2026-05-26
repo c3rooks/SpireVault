@@ -167,6 +167,7 @@ export function recommendMatches(ctx: ScoringContext, limit = 8): RecommendedMat
     ascensionMax: s.presence.ascensionMax,
     goal: s.presence.goal,
     voicePreference: s.presence.voicePreference,
+    preferredCharacters: s.presence.preferredCharacters,
     note: s.presence.note,
     lastHeartbeatAt: s.presence.lastHeartbeatAt,
     label: s.label,

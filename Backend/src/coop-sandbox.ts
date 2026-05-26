@@ -248,6 +248,7 @@ async function seedLobby(
     approvalRequired?: boolean;
     voicePreset?: VoicePreset;
     voiceChannelUrl?: string;
+    preferredCharacters?: RunLobby["preferredCharacters"];
     note?: string;
     acceptedMemberSteamIds: string[];
     pendingSeatRequestSteamIds?: string[];
@@ -273,6 +274,7 @@ async function seedLobby(
     approvalRequired: opts.approvalRequired === true,
     voicePreset: opts.voicePreset ?? "any",
     voiceChannelUrl: opts.voiceChannelUrl,
+    preferredCharacters: opts.preferredCharacters,
     note: opts.note,
     status: opts.status ?? "open",
     acceptedMemberSteamIds: opts.acceptedMemberSteamIds,
@@ -304,6 +306,7 @@ async function seedJoinRequest(
   env: Env,
   lobby: RunLobby,
   from: SandboxPersona,
+  selectedCharacter?: JoinRequest["selectedCharacter"],
 ): Promise<JoinRequest> {
   const now = Date.now();
   const req: JoinRequest = {
@@ -311,6 +314,7 @@ async function seedJoinRequest(
     lobbyId: lobby.lobbyId,
     fromSteamId: from.steamId,
     toHostSteamId: lobby.hostSteamId,
+    selectedCharacter,
     status: "pending",
     createdAt: nowIso(),
     expiresAt: new Date(now + COOP_JOIN_REQUEST_TTL_S * 1000).toISOString(),
@@ -339,7 +343,11 @@ async function seedJoinRequest(
 async function seedParty(
   env: Env,
   lobby: RunLobby,
-  members: Array<{ persona: SandboxPersona; status?: CoopPartyMember["status"] }>,
+  members: Array<{
+    persona: SandboxPersona;
+    status?: CoopPartyMember["status"];
+    selectedCharacter?: CoopPartyMember["selectedCharacter"];
+  }>,
 ): Promise<CoopParty> {
   const now = Date.now();
   const iso = nowIso();
@@ -348,10 +356,11 @@ async function seedParty(
     lobbyId: lobby.lobbyId,
     hostSteamId: lobby.hostSteamId,
     lobbySize: (lobby.lobbySize ?? 4) as RunLobbySize,
-    members: members.map(({ persona, status }) => ({
+    members: members.map(({ persona, status, selectedCharacter }) => ({
       steamId: persona.steamId,
       personaName: persona.name,
       avatarUrl: persona.avatarUrl ?? "/assets/vault-mark.svg",
+      selectedCharacter,
       status: status ?? "joined",
       updatedAt: iso,
     })),
@@ -440,6 +449,7 @@ export async function seedCoopSandboxScenario(
         voicePreference: "optional",
         voicePreset: "lfg1",
         approvalRequired: false,
+        preferredCharacters: ["defect"],
         note: "Trying to get a clean Heart run.",
         acceptedMemberSteamIds: [mako.steamId],
       });
@@ -452,6 +462,7 @@ export async function seedCoopSandboxScenario(
         ascensionMin: 0,
         ascensionMax: 10,
         voicePreference: "no",
+        preferredCharacters: ["silent"],
         note: "Daily run, chill pace.",
         acceptedMemberSteamIds: [boble.steamId, weird.steamId],
       });
@@ -464,6 +475,7 @@ export async function seedCoopSandboxScenario(
         ascensionMin: 0,
         ascensionMax: 3,
         voicePreference: "optional",
+        preferredCharacters: ["necrobinder"],
         note: "Testing weird modifiers.",
         acceptedMemberSteamIds: [mega.steamId],
       });
@@ -490,7 +502,7 @@ export async function seedCoopSandboxScenario(
         lobbySize: 4,
         acceptedMemberSteamIds: [hostPersona.steamId],
       });
-      await seedJoinRequest(env, lobby, personaById("local-boble")!);
+      await seedJoinRequest(env, lobby, personaById("local-boble")!, "silent");
       break;
     }
     case "E": {
@@ -505,8 +517,8 @@ export async function seedCoopSandboxScenario(
         status: "open",
       });
       await seedParty(env, lobby, [
-        { persona: hostPersona },
-        { persona: boble },
+        { persona: hostPersona, selectedCharacter: "ironclad" },
+        { persona: boble, selectedCharacter: "silent" },
       ]);
       break;
     }
@@ -540,8 +552,8 @@ export async function seedCoopSandboxScenario(
         status: "open",
       });
       await seedParty(env, lobby, [
-        { persona: hostPersona, status: "in_game" },
-        { persona: boble, status: "in_game" },
+        { persona: hostPersona, status: "in_game", selectedCharacter: "ironclad" },
+        { persona: boble, status: "in_game", selectedCharacter: "silent" },
       ]);
       break;
     }

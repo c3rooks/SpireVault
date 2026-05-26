@@ -75,6 +75,21 @@ export const VOICE_PRESETS: readonly VoicePreset[] = [
   "custom",
 ];
 
+export type CoopCharacter =
+  | "ironclad"
+  | "silent"
+  | "defect"
+  | "regent"
+  | "necrobinder";
+
+export const COOP_CHARACTERS: readonly CoopCharacter[] = [
+  "ironclad",
+  "silent",
+  "defect",
+  "regent",
+  "necrobinder",
+];
+
 /**
  * Live presence row. Stored at `coop:presence:<steamId>`, refreshed on
  * every heartbeat. `expiresAt` is what gates "stale" handling at read
@@ -93,7 +108,7 @@ export interface CoopPresence {
   ascensionMax?: number;
   goal?: CoopGoal;
   voicePreference?: VoicePreference;
-  preferredCharacters?: string[];
+  preferredCharacters?: CoopCharacter[];
   /** Active lobby (the one the user is hosting OR is a member of). */
   currentLobbyId?: string;
   /** Active session — set when paired. */
@@ -150,7 +165,7 @@ export interface RunLobby {
   approvalRequired?: boolean;
   voicePreset?: VoicePreset;
   voiceChannelUrl?: string;
-  preferredCharacters?: string[];
+  preferredCharacters?: CoopCharacter[];
   note?: string;
   discordHandle?: string;
   status: RunLobbyStatus;
@@ -188,6 +203,7 @@ export interface CoopPartyMember {
   steamId: string;
   personaName?: string;
   avatarUrl?: string;
+  selectedCharacter?: CoopCharacter;
   status: CoopPartyMemberStatus;
   updatedAt: string;
 }
@@ -256,6 +272,7 @@ export interface JoinRequest {
   lobbyId: string;
   fromSteamId: string;
   toHostSteamId: string;
+  selectedCharacter?: CoopCharacter;
   status: JoinRequestStatus;
   createdAt: string;
   expiresAt: string;
@@ -294,6 +311,7 @@ export interface RecommendedMatch {
   ascensionMax?: number;
   goal?: CoopGoal;
   voicePreference?: VoicePreference;
+  preferredCharacters?: CoopCharacter[];
   note?: string;
   lastHeartbeatAt: string;
   label: MatchLabel;
@@ -331,6 +349,18 @@ export interface CoopStateBundle {
   /** Active rows currently paired — true total. */
   pairedNowCount?: number;
   serverTime: string;
+  /**
+   * Optional feature flags echoed by the server. The web client reads
+   * `flags.coopLobbyBetaKill` / `flags.coopLobbyBeta` to support a
+   * server-side rollback of the new lobby surface without a deploy:
+   * setting `COOP_LOBBY_BETA_KILL=1` in the Worker env emits
+   * `coopLobbyBetaKill: true` here, and the client downgrades to
+   * Classic on the next render. See coop-lobby-product-reset.md.
+   */
+  flags?: {
+    coopLobbyBeta?: boolean;
+    coopLobbyBetaKill?: boolean;
+  };
 }
 
 /**

@@ -5,6 +5,156 @@ Dates in YYYY-MM-DD. The project follows [Semantic Versioning](https://semver.or
 loosely — patch bumps for fixes, minor for features, major if I ever
 break the wire format.
 
+## v0.10.0 — 2026-05-26
+
+The Co-op Lobby is the default surface now. Four months of "Beta" tab
+toggles end here. Classic Co-op (the live roster) is still one click
+away under "Switch to Classic Co-op" in the header — it just isn't
+what you land on anymore. The whole point of this release is making
+SpireVault do three things the STS2 Discord literally cannot do, so a
+co-op tool has a reason to be open at all.
+
+**Live-updating Discord LFG posts.** When you host a room with a
+planned start, "Copy Discord LFG Post" now embeds Discord's native
+`<t:UNIX:R>` (relative) and `<t:UNIX:t>` (local time) timestamp tags.
+Paste the post into your channel, Discord renders it as "Starts in 28
+minutes," and re-renders it as "Starts in 23 minutes" five minutes
+later — no edits, no re-posts, no bot. Each viewer sees their own
+local time on the second tag. The post-copy toast tells the user
+straight up: "Discord LFG post copied — it'll live-update in your
+channel." Implemented in `Web/lib/coop-lobbies.js` and
+`Web/lib/party-room.js`. The encoded planned-start lives in the
+lobby `note` field as a `[start=ISO]` prefix and survives the
+backend `sanitizeText` pass intact (covered by
+`/tmp/pf-sanitizer-roundtrip-test.mjs`).
+
+**Synced GO moment.** Hosts pick now / 15m / 30m / 1h / when-full at
+host time. Everyone in the lobby ticks the same countdown badge in
+real time, driven by a single 1s loop in
+`Web/lib/party-finder-startsoon-rt.js`. At T-60s, opted-in users get a
+Web Audio chime + browser notification (gated behind a single Alerts
+gear next to the Quiet Match toggle — green dot when either is
+active). At T-0 the row pulses green and reveals a "Launch Steam now"
+CTA; the host gets a one-tap "⚡ Start now" pill if they want to
+fast-forward the countdown. Steam deep-link has a fallback: if the
+`steam://` URL doesn't get consumed within 800ms (Steam not
+installed), a "Don't have Steam? Open the store →" link reveals
+itself underneath. Same pattern Discord and Slack use for their deep
+links.
+
+**Campfire Log is real now.** It used to be a static ribbon that
+rendered fake numbers. v0.10.0 ties it to actual local data:
+
+- `pf.runHistory.v1` — every party you join gets logged with character,
+  outcome, ascension floor, planned-start ISO, teammates list.
+- `pf.playedWith.v1` — derived friends roster with count + last-seen
+  per Steam ID. Surfaces in the My Co-op modal, sorted by recency.
+- `pf.heartsGiven.v1` — heart-give state per Steam ID with a 24-hour
+  cool-down. One heart per teammate per day, so it stays meaningful.
+- XP curve: `+10` party joined, `+15` completed, `+25` heart-run goal
+  hit, `+5` heart sent. Level thresholds in
+  `Web/lib/party-finder-scene.js` — Spirewalker → Embertongue → Heart
+  Walker → Spire-Climber → Ascended → Eternal. The bar inside the
+  Rank tile fills smoothly as XP accumulates.
+- Cross-tab sync: a `BroadcastChannel("pf-coop-log")` channel
+  announces history / friends / hearts changes; tabs that don't
+  support `BroadcastChannel` fall back to a `storage` event listener.
+  A heart sent in tab A updates tab B inside ~250ms.
+- "Steam User" persona fallback: if Steam returns the literal placeholder
+  "Steam User," the log displays the rank instead. No "Steam User
+  hosted 14 parties" copy in the wild.
+
+**Quiet match (renamed from Quiet mode).** Single toggle next to the
+hero CTAs that biases matchmaking toward voice-optional rooms.
+Renamed because "Sound" and "Notifications" already meant different
+things and overloading "Quiet" was confusing. Three mic states are
+now consistent across the app: "Mic preferred," "Mic optional,"
+"Quiet — no mic."
+
+**One Alerts gear instead of two floating toggles.** The old
+`pf-alerts-bar` is gone. A ⚙️ gear next to Quiet match opens a
+popover with both Sound chime and Browser notification toggles in one
+place. Green dot lights up on the gear when either is on, so the
+closed state still tells you what you've enabled. Fixes "I have to
+hunt for the toggle" and "the floating bar overlaps the lobby list on
+narrow viewports." Code in `Web/lib/party-finder-startsoon-rt.js`,
+styles in `Web/lib/party-finder-startsoon.css`.
+
+**Live Parties auto-sort by urgency.** Composite tier sort in
+`Web/lib/party-finder.js`:
+
+```
+Tier 1: planned start ≤ 15 min  (sorted by start time ascending)
+Tier 2: planned start 15–60 min (sorted by start time ascending)
+Tier 3: everything else         (sorted by fit score, then recency)
+```
+
+So if you want to play *right now*, the imminent rooms are the first
+thing on the page.
+
+**Pagination + viewport-aware ticking.** Live Parties caps at 25 rows
+with a "Show 25 more" footer (resets on prefs change). The 1-second
+countdown loop now runs through an `IntersectionObserver` that marks
+each row `data-pf-visible` — countdowns only re-render for rows
+actually on screen, plus the user's own row even when scrolled off.
+Rooms default to visible until the observer reports otherwise so
+headless tests stay deterministic. Tested at simulated 200 visible
+rooms; main-thread cost stays under 4ms per tick.
+
+**Beta default + reconnecting banner.** The lobby ships default-on,
+which means it needs a bail-out without a deploy. Three layers:
+
+1. Per-browser, no auth: `?beta=off` persists an opt-out for that
+   browser; `?beta=kill` sets a per-browser kill flag; `?beta=on`
+   clears both. Query string is stripped on load so links stay clean.
+2. Server-pushed: the Cloudflare Worker reads
+   `COOP_LOBBY_BETA_KILL=1` from env (and `COOP_LOBBY_BETA_ENABLED=0`)
+   and emits `flags.coopLobbyBetaKill: true` in `/coop/state`. Every
+   connected client downgrades to Classic on the next poll (≤15s
+   focused, ≤60s hidden). No deploy.
+3. Code-level: `ENABLE_COOP_LOBBY_BETA = false` in `Web/script.js`
+   plus a redeploy. Hides the toggle entirely.
+
+If `/coop/state` fails twice in a row, a yellow "Reconnecting..."
+banner appears at the top of the lobby. After five fails it flips red
+with "Can't reach the server. Your stats may be stale." A "Retry now"
+button forces a refresh. No more silently-stale UI.
+
+**Note budget UI.** The host modal's note field shows live remaining
+characters, dynamically reduced when a planned start is selected
+(`[start=ISO]` prefix reserves ~29 chars from the 160-char backend
+budget). Counter goes amber at ≤12 left, red at <0, and the input's
+`maxlength` enforces the same cap so the post never gets silently
+truncated server-side.
+
+**Accessibility / cross-browser.** Added `role="status" aria-live="polite"`
+to the Starting Soon stat tile so screen readers announce the urgency
+flip. `prefers-reduced-motion: reduce` disables the GO pulse, the tab
+title flash, the network-banner pulse, and the Starting Soon tile
+pulse — information stays in color and text. Safari `AudioContext`
+unlock now happens synchronously inside the Sound-toggle click
+handler (Safari rejects async unlocks). `Notification.requestPermission`
+handles both promise-form and callback-form return values for older
+Firefox / Safari.
+
+**What's not in this release.** Verified co-op reputation (real
+ascensions cleared, real Heart kills, completion rate, host
+reliability score) is the next sprint and the actual lock-in feature —
+2–3 weeks, mostly backend. Steam Rich Presence integration is right
+behind it (a small desktop helper that flips your status to "looking"
+when STS2 is open). Synced ready-up + auto-advance, Daily Co-op
+Challenge, and Post-run shared report are sequenced after that. None
+of those land in v0.10.0.
+
+**Versioning.**
+
+- Web companion / lobby surface bumped to v0.10.0.
+- Backend `/coop/state` schema added optional `flags` object —
+  unauth'd clients still see `flags: undefined`, so old desktop
+  builds keep working.
+- Marketing site (`Site/index.html`) co-op section + feature card
+  rewritten for the new default. News post 007 added.
+
 ## v0.9.9 — 2026-05-10
 
 Run Coach overlay perf + UX pass: instant tracker chips, global

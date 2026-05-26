@@ -1,0 +1,514 @@
+/* party-finder-lobby-bar.css — Lobby presence bar + activity ticker
+ * ============================================================================
+ * Injected as a separate sheet by party-finder-globals.js. Adds the
+ * top-of-page live presence bar (online counts + activity ticker), the
+ * Live Parties header de-duplication, the row pulse + hover lift, and
+ * the empty-state unified hero.
+ *
+ * Domain lock: STS2 only (Ironclad / Silent / Defect / Necrobinder /
+ * Regent). Ascension caps at A10. No assumptions made beyond what the
+ * server-provided counts and feed rows carry.
+ * ============================================================================
+ */
+
+.pf-lobby-bar {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px 18px;
+  padding: 12px 18px;
+  margin: 0 0 var(--pf-gap-section);
+  border-radius: 16px;
+  background:
+    radial-gradient(120% 60% at 0% 0%, rgba(52, 211, 153, 0.08), transparent 55%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.01));
+  border: 1px solid var(--pf-stroke);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.04) inset,
+    0 12px 30px -22px rgba(0, 0, 0, 0.5);
+}
+
+.pf-lobby-bar-stats {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.pf-lobby-stat {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--pf-text);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.pf-lobby-stat strong {
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  font-size: 14px;
+  letter-spacing: -0.01em;
+}
+
+.pf-lobby-stat-muted {
+  color: var(--pf-muted);
+  font-weight: 500;
+}
+
+.pf-presence-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--pf-ok);
+  box-shadow: 0 0 0 3px rgba(52, 211, 153, 0.18);
+  animation: pf-presence-pulse 2s ease-in-out infinite;
+  flex: 0 0 8px;
+}
+
+.pf-presence-dot--warn {
+  background: var(--pf-warn);
+  box-shadow: 0 0 0 3px rgba(251, 191, 36, 0.18);
+  animation-duration: 2.4s;
+}
+
+.pf-presence-dot--info {
+  background: var(--pf-info);
+  box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.18);
+  animation-duration: 2.8s;
+}
+
+@keyframes pf-presence-pulse {
+  0%, 100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 3px rgba(52, 211, 153, 0.18);
+  }
+  50% {
+    transform: scale(1.15);
+    box-shadow: 0 0 0 5px rgba(52, 211, 153, 0.04);
+  }
+}
+
+.pf-ticker {
+  flex: 1 1 280px;
+  min-width: 240px;
+  position: relative;
+  overflow: hidden;
+  height: 22px;
+  mask-image: linear-gradient(90deg, transparent 0, #000 24px, #000 calc(100% - 24px), transparent 100%);
+  -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 24px, #000 calc(100% - 24px), transparent 100%);
+}
+
+.pf-ticker-track {
+  position: absolute;
+  top: 0;
+  left: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  gap: 28px;
+  white-space: nowrap;
+  animation: pf-ticker-scroll 40s linear infinite;
+  will-change: transform;
+}
+
+.pf-ticker-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--pf-text);
+}
+
+.pf-ticker-item-when {
+  color: var(--pf-muted);
+  font-variant-numeric: tabular-nums;
+  font-size: 11.5px;
+}
+
+.pf-ticker-item-verb {
+  color: var(--pf-muted);
+}
+
+.pf-ticker-item-tag {
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--pf-fill);
+  border: 1px solid var(--pf-stroke);
+  color: var(--pf-muted);
+}
+
+.pf-ticker-item-tag--host {
+  color: var(--pf-warn);
+  background: var(--pf-warn-soft);
+  border-color: rgba(251, 191, 36, 0.28);
+}
+
+.pf-ticker-item-tag--join {
+  color: var(--pf-ok);
+  background: var(--pf-ok-soft);
+  border-color: rgba(52, 211, 153, 0.28);
+}
+
+.pf-ticker-item-tag--look {
+  color: var(--pf-info);
+  background: var(--pf-info-soft);
+  border-color: rgba(96, 165, 250, 0.28);
+}
+
+@keyframes pf-ticker-scroll {
+  0%   { transform: translate3d(0, 0, 0); }
+  100% { transform: translate3d(-100%, 0, 0); }
+}
+
+.pf-ticker:hover .pf-ticker-track {
+  animation-play-state: paused;
+}
+
+.pf-ticker--idle .pf-ticker-track {
+  animation: none;
+  left: 0;
+  padding-left: 0;
+}
+
+.pf-ticker-idle {
+  font-size: 12px;
+  color: var(--pf-muted);
+  font-style: italic;
+}
+
+.pf-live .pf-section-actions {
+  display: none;
+}
+
+/* Live Parties empty state: drop the redundant button cluster + the
+ * footer dot-list since the Best Party hero above already owns the
+ * "Host a Room" primary CTA. Keeps the empty zone calm, not noisy. */
+#pf-live-empty .pf-empty-actions { display: none; }
+#pf-live-empty .pf-empty-list    { display: none; }
+#pf-live-empty {
+  text-align: center;
+  padding: 28px 18px 24px;
+  border: 1px dashed var(--pf-stroke);
+  border-radius: var(--pf-radius-card);
+  background: rgba(255, 255, 255, 0.012);
+}
+#pf-live-empty h4 {
+  margin: 0 0 4px;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--pf-text);
+}
+#pf-live-empty p {
+  margin: 0;
+  font-size: 13px;
+  color: var(--pf-muted);
+}
+
+/* When the page has a Best Party hero (or its empty hero) above AND the
+ * Live Parties block is also empty, the second empty block reads as
+ * pure redundancy. Hide it. Falls back gracefully when :has() is
+ * unsupported — the block just stays visible (and clean). */
+#pf-best:has(#pf-best-card .pf-empty) + #pf-live .pf-live-list:has(#pf-live-empty) #pf-live-empty {
+  display: none;
+}
+#pf-best:has(#pf-best-card .pf-empty) + #pf-live .pf-section-head .pf-section-sub {
+  opacity: 0.7;
+}
+
+.pf-live-row .pf-host-strip-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pf-live-row .pf-live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--pf-ok);
+  box-shadow: 0 0 0 3px rgba(52, 211, 153, 0.16);
+  animation: pf-presence-pulse 2.4s ease-in-out infinite;
+  flex: 0 0 7px;
+}
+
+.pf-live-row {
+  transition:
+    transform 0.18s ease,
+    border-color 0.18s ease,
+    box-shadow 0.18s ease,
+    background 0.18s ease;
+}
+
+.pf-live-row:hover {
+  transform: translateY(-1px);
+  border-color: var(--pf-stroke-strong);
+  background: rgba(255, 255, 255, 0.025);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.03) inset,
+    0 14px 30px -20px rgba(0, 0, 0, 0.6);
+}
+
+@media (max-width: 768px) {
+  .pf-lobby-bar { padding: 10px 14px; gap: 10px 14px; }
+  .pf-lobby-stat { font-size: 12px; }
+  .pf-lobby-stat strong { font-size: 13px; }
+  .pf-ticker { flex-basis: 100%; }
+}
+
+/* ── Live Parties row character art (kills the right-side whitespace
+ *  and gives every row a face). Injected by party-finder-globals.js.
+ *  Three columns: art / meta / actions. Mobile collapses to art on
+ *  top, meta middle, actions bottom. */
+.pf-live-row.pf-live-row--has-art {
+  display: grid;
+  grid-template-columns: 132px minmax(0, 1fr) 200px;
+  column-gap: 18px;
+  padding: 16px;
+  align-items: center;
+}
+.pf-live-row.pf-live-row--has-art > .pf-row-art {
+  align-self: stretch;
+}
+.pf-live-row.pf-live-row--has-art > .pf-live-meta {
+  align-self: center;
+}
+/* Keep the existing button stack from the renderer, but make sure
+ *  it never balloons to fill the 132px-tall art column. */
+.pf-live-row.pf-live-row--has-art > .pf-live-actions,
+.pf-live-row.pf-live-row--has-art > .pf-row-actions {
+  display: flex;
+  flex-direction: column;
+  align-self: center;
+  gap: 8px;
+  align-items: stretch;
+}
+.pf-live-row.pf-live-row--has-art > .pf-live-actions > .pf-btn,
+.pf-live-row.pf-live-row--has-art > .pf-row-actions > .pf-btn {
+  min-height: 0;
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+.pf-row-art {
+  position: relative;
+  border-radius: 14px;
+  overflow: hidden;
+  background:
+    radial-gradient(70% 60% at 30% 30%, rgba(255, 255, 255, 0.06), rgba(0, 0, 0, 0.45) 70%);
+  border: 1px solid var(--pf-stroke);
+  min-height: 132px;
+  align-self: stretch;
+}
+.pf-row-art-img {
+  position: absolute;
+  inset: -4% -4% 18% -4%;
+  width: 108%;
+  height: 112%;
+  object-fit: cover;
+  object-position: center top;
+  transition: transform 0.35s ease;
+}
+.pf-live-row--has-art:hover .pf-row-art-img {
+  transform: scale(1.04);
+}
+.pf-row-art-tag {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  padding: 5px 8px;
+  text-align: center;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.45), rgba(0, 0, 0, 0.85));
+  color: rgba(255, 255, 255, 0.92);
+}
+.pf-row-art-any {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 800;
+  color: rgba(255, 255, 255, 0.55);
+  letter-spacing: 0.06em;
+  line-height: 1.3;
+  text-transform: uppercase;
+}
+.pf-row-art-any span {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.10em;
+  color: rgba(255, 255, 255, 0.40);
+}
+
+/* ── Status badges on Live Parties rows ─────────────────────────────
+ *  NEW (just hosted), Filling fast (one seat left), Go now (already
+ *  partly full but seats open). Reads like an arcade tag, not data. */
+.pf-row-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-start;
+  margin: 0 0 8px;
+  padding: 3px 9px;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+  border-radius: 999px;
+  border: 1px solid var(--pf-stroke);
+  background: var(--pf-fill);
+  color: var(--pf-text);
+}
+.pf-row-badge-dot {
+  width: 6px; height: 6px;
+  border-radius: 999px;
+  background: currentColor;
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.05);
+  animation: pf-presence-pulse 2.2s ease-in-out infinite;
+  flex: 0 0 6px;
+}
+.pf-row-badge--new {
+  color: var(--pf-info);
+  background: var(--pf-info-soft);
+  border-color: rgba(96, 165, 250, 0.35);
+}
+.pf-row-badge--filling {
+  color: var(--pf-warn);
+  background: var(--pf-warn-soft);
+  border-color: rgba(251, 191, 36, 0.40);
+}
+.pf-row-badge--go {
+  color: var(--pf-ok);
+  background: var(--pf-ok-soft);
+  border-color: rgba(52, 211, 153, 0.40);
+}
+
+/* ── Live preview roster carousel (empty character slot teaser) ────
+ *  Shows the 5 STS2 heroes cycling through, each fading in for ~2.4s
+ *  on a 12s loop. Replaces the dead "Pick a character on step 2"
+ *  label with a moving teaser so the empty preview still reads as
+ *  game UI, not an empty box. */
+.pf-host-side-roster {
+  position: absolute; inset: 0;
+  border-radius: 14px;
+  overflow: hidden;
+  background: radial-gradient(80% 60% at 30% 30%, rgba(255, 255, 255, 0.05), rgba(0, 0, 0, 0.45) 70%);
+}
+.pf-host-side-roster-img {
+  position: absolute;
+  inset: -4% -4% 16% -4%;
+  width: 108%;
+  height: 112%;
+  object-fit: cover;
+  object-position: center top;
+  opacity: 0;
+  filter: brightness(0.45) saturate(0.6);
+  animation: pf-roster-cycle 12s ease-in-out infinite;
+}
+.pf-host-side-roster-img[data-pf-roster-i="0"] { animation-delay: 0s;    }
+.pf-host-side-roster-img[data-pf-roster-i="1"] { animation-delay: 2.4s;  }
+.pf-host-side-roster-img[data-pf-roster-i="2"] { animation-delay: 4.8s;  }
+.pf-host-side-roster-img[data-pf-roster-i="3"] { animation-delay: 7.2s;  }
+.pf-host-side-roster-img[data-pf-roster-i="4"] { animation-delay: 9.6s;  }
+@keyframes pf-roster-cycle {
+  0%, 18%   { opacity: 0; transform: scale(1.04); }
+  3%, 16%   { opacity: 0.7; }
+  20%, 100% { opacity: 0; transform: scale(1.0); }
+}
+.pf-host-side-roster-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.92);
+  background:
+    radial-gradient(60% 40% at 50% 50%, rgba(0, 0, 0, 0.35), transparent 70%),
+    linear-gradient(180deg, rgba(0, 0, 0, 0.10), rgba(0, 0, 0, 0.40));
+  pointer-events: none;
+}
+.pf-host-side-roster-eyebrow {
+  font-size: 9.5px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.55);
+  font-weight: 700;
+}
+.pf-host-side-roster-title {
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: -0.005em;
+}
+.pf-host-side-roster-dots {
+  display: inline-flex;
+  gap: 6px;
+  margin-top: 2px;
+}
+.pf-host-side-roster-dots span {
+  width: 5px; height: 5px; border-radius: 999px;
+  background: rgba(255, 255, 255, 0.22);
+  animation: pf-roster-dot 12s ease-in-out infinite;
+}
+.pf-host-side-roster-dots span:nth-child(1) { animation-delay: 0s;    }
+.pf-host-side-roster-dots span:nth-child(2) { animation-delay: 2.4s;  }
+.pf-host-side-roster-dots span:nth-child(3) { animation-delay: 4.8s;  }
+.pf-host-side-roster-dots span:nth-child(4) { animation-delay: 7.2s;  }
+.pf-host-side-roster-dots span:nth-child(5) { animation-delay: 9.6s;  }
+@keyframes pf-roster-dot {
+  0%, 18%   { background: rgba(255, 255, 255, 0.22); transform: scale(1); }
+  3%, 16%   { background: var(--pf-accent);          transform: scale(1.4); }
+  20%, 100% { background: rgba(255, 255, 255, 0.22); transform: scale(1); }
+}
+
+/* ── Live count flash (micro-celebration when a stat ticks up) ────── */
+.pf-lobby-stat strong {
+  transition: color 0.45s ease, transform 0.45s ease;
+}
+.pf-lobby-stat strong.pf-flash {
+  color: var(--pf-ok);
+  transform: scale(1.1);
+}
+
+@media (max-width: 768px) {
+  .pf-live-row.pf-live-row--has-art {
+    grid-template-columns: 1fr;
+    grid-template-rows: 132px auto auto;
+    column-gap: 0;
+    row-gap: 12px;
+    padding: 12px;
+  }
+  .pf-row-art {
+    min-height: 132px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pf-host-side-roster-img,
+  .pf-host-side-roster-dots span,
+  .pf-row-badge-dot {
+    animation: none;
+  }
+  .pf-host-side-roster-img[data-pf-roster-i="0"] { opacity: 0.6; }
+  .pf-lobby-stat strong { transition: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pf-presence-dot,
+  .pf-live-row .pf-live-dot { animation: none; }
+  .pf-ticker-track { animation: none; }
+}

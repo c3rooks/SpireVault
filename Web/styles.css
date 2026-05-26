@@ -8933,6 +8933,144 @@ html.prefer-compact-density .h-stat-num { font-size: 18px; }
 }
 
 /* =========================================================================
+ * No-FSA refresh nudge — surfaces on Safari/Firefox (no File System
+ * Access API) when the user returns to the tab after probably playing
+ * a run in STS2. One-click CTA opens the file picker so they don't
+ * have to dig through the panel-head Refresh dropdown.
+ *
+ * Floats bottom-center so it doesn't fight the sidebar persona pill
+ * or the top auto-refresh banner. Dismiss arrow on the right keeps it
+ * polite — a single click makes it go away for 5 minutes per the
+ * NUDGE_THROTTLE_MS in script.js.
+ * ========================================================================= */
+.vault-no-fsa-nudge {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  z-index: 96;
+  transform: translateX(-50%);
+  max-width: min(520px, calc(100vw - 32px));
+  border: 1px solid color-mix(in srgb, var(--accent) 50%, transparent);
+  border-radius: 14px;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--accent) 18%, var(--surface) 82%),
+    color-mix(in srgb, var(--accent) 6%, var(--surface) 94%)
+  );
+  color: var(--text);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.45);
+  animation: vault-no-fsa-nudge-in 280ms cubic-bezier(0.2, 0.85, 0.3, 1.05) both;
+}
+.vault-no-fsa-nudge-body {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+}
+.vault-no-fsa-nudge-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--accent) 32%, transparent);
+  color: var(--accent);
+  font-size: 18px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.vault-no-fsa-nudge-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 13px;
+  line-height: 1.4;
+}
+.vault-no-fsa-nudge-text strong {
+  color: var(--text);
+  font-weight: 600;
+}
+.vault-no-fsa-nudge-sub {
+  color: var(--muted);
+  font-size: 12px;
+}
+.vault-no-fsa-nudge-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.vault-no-fsa-nudge-go {
+  appearance: none;
+  border: 0;
+  border-radius: 8px;
+  padding: 8px 14px;
+  font: inherit;
+  font-weight: 600;
+  font-size: 13px;
+  background: var(--accent);
+  color: var(--bg);
+  cursor: pointer;
+  transition: filter 120ms ease, transform 120ms ease;
+  white-space: nowrap;
+}
+.vault-no-fsa-nudge-go:hover { filter: brightness(1.08); }
+.vault-no-fsa-nudge-go:active { transform: translateY(1px); }
+.vault-no-fsa-nudge-go:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.vault-no-fsa-nudge-dismiss {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 22px;
+  line-height: 1;
+  width: 30px;
+  height: 30px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+.vault-no-fsa-nudge-dismiss:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+}
+.vault-no-fsa-nudge-dismiss:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+@keyframes vault-no-fsa-nudge-in {
+  from { opacity: 0; transform: translate(-50%, 10px); }
+  to   { opacity: 1; transform: translate(-50%, 0); }
+}
+@media (max-width: 540px) {
+  .vault-no-fsa-nudge {
+    bottom: 12px;
+    max-width: calc(100vw - 16px);
+  }
+  .vault-no-fsa-nudge-body {
+    grid-template-columns: auto 1fr;
+    grid-template-rows: auto auto;
+    gap: 8px 10px;
+    padding: 11px 12px;
+  }
+  .vault-no-fsa-nudge-actions {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    justify-content: flex-end;
+  }
+  .vault-no-fsa-nudge-go {
+    flex: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .vault-no-fsa-nudge { animation: none; }
+}
+
+/* =========================================================================
  * Import recovery banner — surfaces when an interactive import lands
  * with suspiciously few runs (signal that the user picked a wrong
  * subfolder). Top-of-content position so it can't be missed. Red-ish
@@ -11322,7 +11460,7 @@ html.is-desktop-host .empty-state-cta-upload {
      .coop-section       generic section header + content
      .coop-feed-section  Players Looking Now — visible in BOTH Classic + Beta
      .coop-side-card     sidebar status / activity / howto cards
-     .coop-modal         Run Preferences · Post a Run · Quick Match
+     .coop-modal         Run Preferences · Host a Room · Quick Match
 
    Beta toggle:
      body.coop-lobby-beta-on   → new lobby UI visible
@@ -12146,6 +12284,11 @@ html.is-desktop-host .empty-state-cta-upload {
   color: var(--silent);
   background: rgba(155,131,255,0.08);
 }
+.coop-badge--character {
+  border-color: rgba(255,160,92,0.48);
+  color: var(--accent-hi);
+  background: rgba(255,107,26,0.08);
+}
 .coop-badge--players {
   border-color: rgba(109,217,124,0.5);
   color: var(--win);
@@ -12574,12 +12717,13 @@ html.is-desktop-host .empty-state-cta-upload {
    harmless in case stale CSS is still cached on a client. */
 .coop-lobby-card--ghost { display: none !important; }
 
-/* ── Modals (Run Preferences / Post a Run / Quick Match) ──────────── */
+/* ── Modals (Run Preferences / Host a Room / Quick Match) ─────────── */
 .coop-modal {
   max-width: 540px;
 }
 .coop-modal--lobby { max-width: 600px; }
 .coop-modal--quickmatch { max-width: 460px; }
+.coop-modal--character { max-width: 620px; }
 .coop-modal-body { padding: 22px 24px 24px; }
 
 .coop-form {
@@ -12635,6 +12779,199 @@ html.is-desktop-host .empty-state-cta-upload {
   outline: none;
   border-color: var(--gold);
   box-shadow: 0 0 0 3px rgba(212,175,55,0.18);
+}
+
+.coop-character-picker {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+.coop-character-picker legend {
+  padding: 0;
+  margin: 0 0 8px;
+}
+.coop-character-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(74px, 1fr));
+  gap: 8px;
+}
+.coop-character-choice {
+  position: relative;
+  min-width: 0;
+  min-height: 96px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 5px;
+  padding: 8px 6px 7px;
+  border-radius: 8px;
+  border: 1px solid var(--border-strong);
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.045), rgba(255,255,255,0.015)),
+    rgba(0,0,0,0.16);
+  cursor: pointer;
+  overflow: hidden;
+  transition: border-color 0.14s ease, background 0.14s ease, transform 0.12s ease, opacity 0.14s ease;
+}
+.coop-character-choice:hover {
+  transform: translateY(-1px);
+  border-color: rgba(212,175,55,0.52);
+}
+.coop-character-choice input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+.coop-character-choice img {
+  width: min(62px, 88%);
+  height: 58px;
+  object-fit: contain;
+  object-position: center bottom;
+  filter: drop-shadow(0 7px 10px rgba(0,0,0,0.45));
+}
+.coop-character-choice::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  border: 2px solid transparent;
+  pointer-events: none;
+}
+.coop-character-choice:has(input:checked) {
+  border-color: rgba(255,160,92,0.75);
+  background:
+    radial-gradient(80% 70% at 50% 10%, rgba(255,107,26,0.18), transparent 65%),
+    linear-gradient(180deg, rgba(212,175,55,0.09), rgba(255,255,255,0.02)),
+    rgba(0,0,0,0.20);
+}
+.coop-character-choice:has(input:checked)::after {
+  border-color: rgba(255,160,92,0.38);
+}
+.coop-character-choice:has(input:disabled),
+.coop-character-choice.is-disabled {
+  opacity: 0.38;
+  cursor: not-allowed;
+  filter: grayscale(0.65);
+}
+.coop-character-choice:has(input:disabled):hover,
+.coop-character-choice.is-disabled:hover {
+  transform: none;
+  border-color: var(--border-strong);
+}
+.coop-character-choice--any {
+  justify-content: center;
+  background:
+    radial-gradient(90% 70% at 50% 15%, rgba(109,217,124,0.10), transparent 70%),
+    rgba(0,0,0,0.16);
+}
+.coop-character-any-mark {
+  width: 48px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 1px dashed rgba(109,217,124,0.42);
+  color: var(--win);
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+.coop-character-name {
+  width: 100%;
+  display: block;
+  color: var(--text-2);
+  font-size: 10.5px;
+  font-weight: 800;
+  line-height: 1.15;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+.coop-character-choice:has(input:checked) .coop-character-name {
+  color: var(--text);
+}
+.coop-character-room-summary {
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(212,175,55,0.25);
+  background: rgba(212,175,55,0.055);
+}
+.coop-character-room-title {
+  margin: 0 0 3px;
+  font-size: 13.5px;
+  font-weight: 800;
+  color: var(--text);
+}
+.coop-character-room-meta {
+  margin: 0;
+  color: var(--text-2);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.coop-character-strip {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(36px, 1fr));
+  gap: 6px;
+  align-items: stretch;
+}
+.coop-character-strip-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.coop-character-strip-label {
+  color: var(--text-3);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+.coop-character-token {
+  min-width: 0;
+  height: 50px;
+  border-radius: 8px;
+  border: 1px solid rgba(255,255,255,0.085);
+  background: rgba(0,0,0,0.18);
+  display: grid;
+  place-items: end center;
+  padding: 4px 3px 0;
+  overflow: hidden;
+  position: relative;
+}
+.coop-character-token img {
+  width: 40px;
+  height: 46px;
+  object-fit: contain;
+  object-position: center bottom;
+  filter: drop-shadow(0 7px 9px rgba(0,0,0,0.45));
+}
+.coop-character-token.is-selected {
+  border-color: rgba(255,160,92,0.62);
+  background: rgba(255,107,26,0.105);
+}
+.coop-character-token.is-muted {
+  opacity: 0.3;
+  filter: grayscale(0.85);
+}
+.coop-character-token.is-occupied {
+  opacity: 0.42;
+  filter: grayscale(0.75);
+}
+.coop-character-token-label {
+  position: absolute;
+  left: 3px;
+  right: 3px;
+  bottom: 3px;
+  text-align: center;
+  font-size: 8.5px;
+  font-weight: 900;
+  line-height: 1;
+  color: var(--text);
+  text-shadow: 0 1px 5px rgba(0,0,0,0.9);
 }
 .coop-form-preview {
   margin-top: 6px;
@@ -12743,6 +13080,9 @@ html.is-desktop-host .empty-state-cta-upload {
   .coop-lobbies-list,
   .coop-recs-list,
   .coop-invites-list { grid-template-columns: 1fr; }
+  .coop-character-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .coop-character-choice { min-height: 92px; }
+  .coop-character-strip { grid-template-columns: repeat(5, minmax(34px, 1fr)); }
   .coop-form-grid { grid-template-columns: 1fr; }
   .coop-modal-body { padding: 18px 18px 22px; }
   .coop-empty-card--openruns { min-height: 0; padding: 18px 4px; }
@@ -13186,6 +13526,20 @@ body.coop-lobby-beta-off [data-tab="coop"] .coop-page {
   font-size: 10px;
   padding: 1px 6px;
 }
+.coop-lobby-card--compact .coop-character-strip-label {
+  display: none;
+}
+.coop-lobby-card--compact .coop-character-token {
+  height: 34px;
+  border-radius: 7px;
+}
+.coop-lobby-card--compact .coop-character-token img {
+  width: 30px;
+  height: 32px;
+}
+.coop-lobby-card--compact .coop-character-token-label {
+  display: none;
+}
 
 /* Mobile overrides for filter bar */
 @media (max-width: 720px) {
@@ -13512,29 +13866,26 @@ body.coop-lobby-beta-off [data-tab="coop"] .coop-page {
   outline-offset: 3px;
 }
 
-/* Progress drain bar — now lives inside the card as a hairline at the
-   bottom edge instead of a screen-wide bar, because the card is a
-   toast and the rest of the page is interactive behind it. */
-.victory-progress {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 2px;
-  background: rgba(255, 255, 255, 0.06);
-  overflow: hidden;
+/* Decor fade — after CELEBRATION_DECOR_MS in script.js (7s) the JS
+   adds `.victory-decor-faded` to the overlay. That fades the confetti,
+   edge flash, and trophy out smoothly without touching the card itself
+   (the user-controlled element). The card stays put until the user
+   clicks Continue / Esc / clicks outside — they were losing the run
+   details to an auto-dismiss they didn't ask for.
+
+   Transition rather than animation so the fade is interruptible —
+   if the user clicks Continue mid-fade, the regular exit animation
+   takes over cleanly. */
+.victory-decor-faded .victory-confetti-canvas,
+.victory-decor-faded .victory-flash {
+  opacity: 0;
+  transition: opacity 1200ms cubic-bezier(0.4, 0, 0.6, 1);
+  pointer-events: none;
 }
-.victory-progress-fill {
-  height: 100%;
-  background: linear-gradient(90deg,
-    color-mix(in srgb, var(--char-color, #d4af37) 40%, transparent),
-    color-mix(in srgb, var(--char-color, #d4af37) 90%, white));
-  transform-origin: left;
-  animation: victory-drain 7s linear both;
-}
-@keyframes victory-drain {
-  from { transform: scaleX(1); }
-  to   { transform: scaleX(0); }
+.victory-decor-faded .victory-trophy {
+  opacity: 0.35;
+  transform: scale(0.9);
+  transition: opacity 900ms ease, transform 900ms cubic-bezier(0.4, 0, 0.6, 1);
 }
 
 /* Exit — confetti fades out, card slides down, edge flash drops. */
@@ -13552,21 +13903,26 @@ body.coop-lobby-beta-off [data-tab="coop"] .coop-page {
   to { opacity: 0; }
 }
 
-/* Reduced motion — keep the announcement, drop the animation. */
+/* Reduced motion — keep the announcement, drop the animation. The
+   decor fade is also disabled so the trophy doesn't dim out (which
+   could read as the card being "stale" rather than a celebration). */
 @media (prefers-reduced-motion: reduce) {
   .victory-card,
   .victory-trophy,
   .victory-streak,
   .victory-dismiss,
-  .victory-flash,
-  .victory-progress-fill {
+  .victory-flash {
     animation: none !important;
     opacity: 1 !important;
     transform: translateX(-50%) !important;
   }
   .victory-confetti-canvas,
   .victory-flash { display: none; }
-  .victory-progress { display: none; }
+  .victory-decor-faded .victory-trophy,
+  .victory-decor-faded .victory-flash,
+  .victory-decor-faded .victory-confetti-canvas {
+    transition: none;
+  }
 }
 
 /* Mobile */
@@ -13630,16 +13986,95 @@ body.coop-lobby-beta-off [data-tab="coop"] .coop-page {
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
+  padding: 8px;
+  border-radius: 8px;
+  background: rgba(0,0,0,0.16);
 }
 .coop-party-member-meta {
   flex: 1;
   min-width: 120px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.coop-party-member-character {
+  width: 42px;
+  height: 46px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: end center;
+  border-radius: 8px;
+  border: 1px solid rgba(255,160,92,0.42);
+  background: rgba(255,107,26,0.08);
+  overflow: hidden;
+}
+.coop-party-member-character img {
+  width: 38px;
+  height: 44px;
+  object-fit: contain;
+  object-position: center bottom;
+  filter: drop-shadow(0 7px 9px rgba(0,0,0,0.45));
+}
+.coop-party-member-character--unset {
+  place-items: center;
+  border-style: dashed;
+  border-color: rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.025);
+  color: var(--text-3);
+  font-weight: 900;
 }
 .coop-party-status-row {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
   margin-top: 10px;
+}
+.coop-party-action-label {
+  margin: 12px 0 6px;
+  color: var(--text-3);
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.coop-party-action-label:first-of-type { margin-top: 0; }
+.coop-party-character-actions {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 6px;
+}
+.coop-party-character-btn {
+  min-width: 0;
+  height: 76px;
+  padding: 5px 4px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 3px;
+  border-radius: 8px;
+  border: 1px solid var(--border-strong);
+  background: rgba(0,0,0,0.18);
+  color: var(--text-2);
+  font-size: 9.5px;
+  font-weight: 800;
+}
+.coop-party-character-btn img {
+  width: 40px;
+  height: 45px;
+  object-fit: contain;
+  object-position: center bottom;
+  filter: drop-shadow(0 7px 9px rgba(0,0,0,0.45));
+}
+.coop-party-character-btn.is-active {
+  color: var(--text);
+  border-color: rgba(255,160,92,0.7);
+  background: rgba(255,107,26,0.12);
+}
+.coop-party-character-btn.is-disabled {
+  opacity: 0.34;
+  filter: grayscale(0.8);
+  cursor: not-allowed;
 }
 .coop-party-end {
   margin-top: 8px;
@@ -13740,15 +14175,75 @@ body.coop-lobby-beta-off [data-tab="coop"] .coop-page {
   margin: 0 0 8px;
   padding: 0;
   display: grid;
-  gap: 4px;
+  grid-template-columns: repeat(auto-fit, minmax(148px, 1fr));
+  gap: 8px;
 }
 .coop-party-slot {
+  min-width: 0;
   font-size: 13px;
   color: var(--text-2);
 }
 .coop-party-slot--empty {
   opacity: 0.55;
-  font-style: italic;
+}
+.coop-party-character-slot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border-radius: 8px;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(0,0,0,0.16);
+}
+.coop-party-character-slot--unset {
+  border-style: dashed;
+}
+.coop-party-character-art {
+  width: 38px;
+  height: 42px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: end center;
+  border-radius: 8px;
+  border: 1px solid rgba(255,160,92,0.38);
+  background: rgba(255,107,26,0.08);
+  overflow: hidden;
+}
+.coop-party-character-art img {
+  width: 36px;
+  height: 40px;
+  object-fit: contain;
+  object-position: center bottom;
+  filter: drop-shadow(0 7px 9px rgba(0,0,0,0.45));
+}
+.coop-party-character-art span {
+  place-self: center;
+  color: var(--text-3);
+  font-weight: 900;
+}
+.coop-party-character-art--empty {
+  border-style: dashed;
+  border-color: rgba(255,255,255,0.12);
+  background: transparent;
+}
+.coop-party-slot-meta {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.coop-party-slot-meta strong,
+.coop-party-slot-meta small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.coop-party-slot-meta strong {
+  color: var(--text);
+  font-size: 12.5px;
+}
+.coop-party-slot-meta small {
+  color: var(--text-3);
+  font-size: 10.5px;
 }
 .coop-party-panel--steps .coop-party-checklist {
   margin: 0 0 10px;
@@ -13918,4 +14413,3 @@ body.coop-lobby-beta-off [data-tab="coop"] .coop-page {
   font-weight: 500;
   color: #ffc880;
 }
-

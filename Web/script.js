@@ -17,9 +17,9 @@ import * as Stats from "/lib/stats-engine.js?v=4";
 import * as HistoryStore from "/lib/history-store.js?v=8";
 import * as InviteAPI from "/lib/invites.js?v=4";
 import * as HighlightsAPI from "/lib/highlights.js?v=1";
-import * as CoopLobbies from "/lib/coop-lobbies.js?v=22";
+import * as CoopLobbies from "/lib/coop-lobbies.js?v=23";
 import { isCoopSandboxEnabled, openCoopSandboxPanel } from "/lib/coop-sandbox.js?v=5";
-import * as PartyRoom from "/lib/party-room.js?v=3";
+import * as PartyRoom from "/lib/party-room.js?v=4";
 import * as AscInfo from "/lib/ascension-info.js?v=1";
 import * as CharInfo from "/lib/character-info.js?v=1";
 import * as RelicInfo from "/lib/relic-info.js?v=1";
@@ -71,7 +71,7 @@ const STS2_APP_ID = "2868840";
  * on an old client — instruct hard refresh. If it DOES match, the
  * bug is real and we can stop chasing cache ghosts.
  */
-const VAULT_BUILD = "v179-2026-05-19-localhost-boot-fast";
+const VAULT_BUILD = "v183-2026-05-23-run-history-autopoll-and-victory";
 
 /** True on wrangler pages dev / local loopback — not production hostnames. */
 function isLocalDevHost() {
@@ -132,18 +132,104 @@ const OVERLAY_NAV_VISIBLE = false;
 //  Per-user opt-in is stored in localStorage under
 //  `spirevault.coopLobbyBeta` and reflected as a `<body>` class so
 //  CSS can swap surfaces without re-rendering JS.
+//
+//  DEFAULT NOTE — the new Co-op Lobby is now the default surface
+//  for everyone. The legacy Classic Co-op is preserved as an
+//  opt-out: users who explicitly clicked "Switch back to Classic
+//  Co-op" have the `off` value persisted and keep their choice.
+//  Anyone else (new accounts, returning users, anon visitors) gets
+//  the new lobby on first paint. Tests still set the key to "on"
+//  explicitly so fixtures remain deterministic.
 // ─────────────────────────────────────────────────────────────────────
-const ENABLE_COOP_LOBBY_BETA = true;
-const COOP_LOBBY_BETA_KEY    = "spirevault.coopLobbyBeta";
+const ENABLE_COOP_LOBBY_BETA      = true;
+const COOP_LOBBY_BETA_KEY         = "spirevault.coopLobbyBeta";
+// Emergency kill-switch keys. Any of these (in priority order) flips
+// the entire Beta surface back to Classic for the user, with no code
+// deploy:
+//
+//   1. `?beta=off` query string  → persists "off" to localStorage and
+//      strips the query so refresh works clean.
+//   2. `?beta=kill` query string → sets the kill localStorage key,
+//      which wins over a user's "on" choice. Clear with `?beta=on`.
+//   3. localStorage `spirevault.coopLobbyBeta.kill` = "1"
+//      (set manually or by a future server response handler).
+//   4. `window.__VAULT_COOP_BETA_KILL` set by inline server-rendered
+//      script (Cloudflare can inject this into index.html via a
+//      transform if we ever need a server-controlled freeze without
+//      touching the API).
+//
+// The kill state is checked on EVERY isCoopLobbyBetaEnabled() call
+// so a server-pushed flag (via a periodic /coop/state poll, see
+// applyServerBetaFlag below) takes effect within one poll cycle.
+const COOP_LOBBY_BETA_KILL_KEY    = "spirevault.coopLobbyBeta.kill";
+
+function isCoopLobbyBetaKilled() {
+  if (!ENABLE_COOP_LOBBY_BETA) return true;
+  try { if (window.__VAULT_COOP_BETA_KILL === true) return true; } catch {}
+  try { if (localStorage.getItem(COOP_LOBBY_BETA_KILL_KEY) === "1") return true; } catch {}
+  return false;
+}
 
 function isCoopLobbyBetaEnabled() {
-  if (!ENABLE_COOP_LOBBY_BETA) return false;
+  if (isCoopLobbyBetaKilled()) return false;
   try {
-    return localStorage.getItem(COOP_LOBBY_BETA_KEY) === "on";
+    // Default ON. Only the explicit "off" opt-out (set when the
+    // user clicks "Switch back to Classic Co-op") downgrades.
+    return localStorage.getItem(COOP_LOBBY_BETA_KEY) !== "off";
   } catch {
-    return false;
+    return true;
   }
 }
+
+// URL-override entry point. Called once during boot. Lets us flip a
+// single user back to Classic instantly via a shareable link without
+// requiring a deploy:
+//   /coop?beta=off  → opt out
+//   /coop?beta=on   → opt back in (also clears any kill flag)
+//   /coop?beta=kill → kill switch ON (forces Classic)
+// We strip the query after applying so the URL stays clean on share.
+function applyBetaUrlOverride() {
+  try {
+    const url = new URL(window.location.href);
+    const v = (url.searchParams.get("beta") || "").toLowerCase();
+    if (!v) return;
+    if (v === "off")  { try { localStorage.setItem(COOP_LOBBY_BETA_KEY, "off"); } catch {} }
+    if (v === "on")   {
+      try { localStorage.setItem(COOP_LOBBY_BETA_KEY, "on"); } catch {}
+      try { localStorage.removeItem(COOP_LOBBY_BETA_KILL_KEY); } catch {}
+    }
+    if (v === "kill") { try { localStorage.setItem(COOP_LOBBY_BETA_KILL_KEY, "1"); } catch {} }
+    url.searchParams.delete("beta");
+    const cleanUrl = url.pathname + (url.searchParams.toString() ? `?${url.searchParams}` : "") + url.hash;
+    window.history.replaceState({}, "", cleanUrl);
+  } catch { /* best-effort */ }
+}
+applyBetaUrlOverride();
+
+// Honor a server-pushed kill signal. Any /coop/state response shape
+// `{ flags: { coopLobbyBetaKill: true } }` (or `?.flags?.coopLobbyBeta
+// === false`) flips users to Classic without a code deploy. Wired
+// into the existing state poll path in coop-lobbies.js when that
+// module mounts; this helper is just the side-effect application.
+function applyServerBetaFlag(state) {
+  try {
+    const flags = state && state.flags;
+    if (!flags) return;
+    if (flags.coopLobbyBetaKill === true || flags.coopLobbyBeta === false) {
+      try { localStorage.setItem(COOP_LOBBY_BETA_KILL_KEY, "1"); } catch {}
+      // If the user is currently on the Beta surface, downgrade
+      // visibly. Reload guarantees the next paint is Classic.
+      if (document.body && document.body.classList.contains("coop-lobby-beta-on")) {
+        try { window.location.reload(); } catch {}
+      }
+    } else if (flags.coopLobbyBetaKill === false || flags.coopLobbyBeta === true) {
+      // Server has explicitly cleared the kill — let the user back in
+      // (their existing on/off choice still applies).
+      try { localStorage.removeItem(COOP_LOBBY_BETA_KILL_KEY); } catch {}
+    }
+  } catch { /* best-effort */ }
+}
+window.__VAULT_COOP_BETA_APPLY_SERVER_FLAG = applyServerBetaFlag;
 
 function setCoopLobbyBetaEnabled(on) {
   try { localStorage.setItem(COOP_LOBBY_BETA_KEY, on ? "on" : "off"); }
@@ -263,13 +349,16 @@ function renderCoopBetaHeaderControls() {
     titleBox.appendChild($row);
   }
   if (isCoopLobbyBetaEnabled()) {
+    // Default surface — keep the link discreet. Two-tone, no
+    // preamble, because most users won't ever need it.
     $row.innerHTML =
-      '<span class="coop-beta-action-text">You\u2019re using the Co-op Lobby Beta.</span> ' +
-      '<button type="button" class="coop-link-btn coop-beta-switch" data-coop-beta="off">Switch back to Classic Co-op</button>';
+      '<button type="button" class="coop-link-btn coop-beta-switch" data-coop-beta="off">Prefer the old layout? Switch to Classic Co-op</button>';
   } else {
+    // Opt-out state — show the player what they're on and how to
+    // get back to the modern lobby.
     $row.innerHTML =
-      '<span class="coop-beta-action-text">Classic Co-op.</span> ' +
-      '<button type="button" class="coop-link-btn coop-beta-switch" data-coop-beta="on">Try the Co-op Lobby Beta</button>';
+      '<span class="coop-beta-action-text">You\u2019re on Classic Co-op.</span> ' +
+      '<button type="button" class="coop-link-btn coop-beta-switch" data-coop-beta="on">Switch to the new Co-op Lobby</button>';
   }
 }
 
@@ -308,13 +397,16 @@ function dismissCoopBetaDiscovery() {
 }
 
 function renderCoopDiscoveryBanner() {
+  // The new Co-op Lobby is now the default surface — the discovery
+  // banner ("Try the Beta") no longer makes sense for anyone. Users
+  // who actively switched back to Classic chose that explicitly and
+  // shouldn't be nagged. Users on the new lobby don't need a banner
+  // because they're already there. Banner stays hidden in every
+  // state; the HTML element is kept in case we want to revive it for
+  // a different announcement later.
   const $banner = document.getElementById("coop-discovery-banner");
   if (!$banner) return;
-  const shouldShow =
-    ENABLE_COOP_LOBBY_BETA &&
-    !isCoopLobbyBetaEnabled() &&
-    !isCoopBetaDiscoveryDismissed();
-  $banner.hidden = !shouldShow;
+  $banner.hidden = true;
 }
 
 // Delegated handler for the banner's two buttons + the × close.
@@ -641,6 +733,15 @@ const STORAGE_OVERLAY_STATE = "vault.web.overlay.v1";
 const STORAGE_DIR_FP        = "vault.web.history.dir-fp.v2";
 /** Display name of the linked save folder ("SlayTheSpire2", "history", …) — survives reloads so the "Linked" pill paints instantly. */
 const STORAGE_LINKED_NAME   = "vault.web.history.linked-name";
+/** Epoch-ms of the last successful disk read (any source: folder picker,
+ *  drag-drop, single-file picker, auto-refresh tick). Used by the
+ *  Safari/Firefox "Refresh from disk?" nudge to decide if it's been
+ *  long enough since the last import to be worth nagging the user.
+ *  Skipped on Chromium because auto-refresh handles freshness there. */
+const STORAGE_LAST_IMPORT_AT = "vault.web.history.last-import-at";
+/** Epoch-ms of the last time we showed the no-FSA refresh nudge so we
+ *  don't spam it on every visibility flicker. */
+const STORAGE_LAST_NUDGE_AT  = "vault.web.history.last-nudge-at";
 
 // Companion options for the Overview page's animated persona picker.
 // Declared up here (not next to renderCompanion()) because boot() runs
@@ -2683,7 +2784,15 @@ async function boot() {
       void refreshGuestRoster();
     }
     if (activeTab === "highlights") pullHighlights();
-    void autoReloadHistoryIfPermitted({ silent: true });
+    // Coming back from another window (almost certainly STS2): force a
+    // full re-read by bypassing the fingerprint cache. The cache exists
+    // to keep the background loop cheap, not to filter user-driven
+    // refreshes — alt-tabbing back IS a "tell me what's new" signal.
+    void autoReloadHistoryIfPermitted({ silent: true, bypassFingerprint: true });
+    // Safari/Firefox path: no auto-poll runs on those browsers, so the
+    // nudge banner is the only signal the user has that fresh runs may
+    // be on disk. Tick it on every focus.
+    void maybeOfferNoFSARefresh({ reason: "visibility" });
   });
 
   // Phone-breakpoint re-render. Charts emit a different viewBox on
@@ -2713,7 +2822,9 @@ async function boot() {
     } else {
       void refreshGuestRoster();
     }
-    void autoReloadHistoryIfPermitted({ silent: true });
+    // Same "fresh window, fresh read" reasoning as visibilitychange.
+    void autoReloadHistoryIfPermitted({ silent: true, bypassFingerprint: true });
+    void maybeOfferNoFSARefresh({ reason: "pageshow" });
   });
 
   // Auth-only: tell the server we're going away so the roster decays.
@@ -7395,7 +7506,21 @@ async function reloadSavedHistoryInteractive() {
 // history.json) for new runs. 30s balances "feels live" vs. disk churn.
 // Was 60s — bumped down because users completing a run want their stats
 // refreshed *fast*, not "in the next minute".
-const HISTORY_REREAD_INTERVAL_MS = 30_000;
+// How often the background loop re-reads the linked save folder (or
+// rollup file) for new runs while the user is mid-session in STS2.
+//
+// Was 60s → 30s → now 8s. A user with a 2-win streak in Silent A3
+// alt-tabbed back to the browser and his fresh victory was nowhere on
+// the Overview — he had to manually re-pick the folder. With STS2
+// fsync'ing the new `.run` file the moment a run ends, an 8s poll
+// drops the worst-case lag from "Continue" in-game to "live on the
+// page" to a single heartbeat.
+//
+// Cost: the FSA walk + fingerprint compare is local disk and a few
+// hundred stat() calls — measured <12ms on the same Mac running STS2
+// — so 8s vs 30s is no measurable battery hit. Safari/Firefox don't
+// run this loop at all (no FSA), so the change is Chromium-only.
+const HISTORY_REREAD_INTERVAL_MS = 8_000;
 let historyRereadTimer = null;
 
 /**
@@ -7670,7 +7795,14 @@ function startHistoryAutoRefresh() {
   const canFSA =
     HistoryStore.supportsFSA() || typeof window.showDirectoryPicker === "function";
   if (!canFSA) {
+    // Safari / Firefox: no File System Access API → we cannot poll the
+    // disk between user gestures. The "stale runs" CTA in
+    // maybeOfferNoFSARefresh() picks up the slack.
     publishAutoRefreshState({ phase: "off" });
+    // Schedule the first nudge eligibility check on boot. The handler
+    // is idempotent and self-throttling, so it's safe to call from
+    // multiple places.
+    void maybeOfferNoFSARefresh({ reason: "boot" });
     return;
   }
   // Snapshot the linked target name so the pill can display it.
@@ -7678,8 +7810,113 @@ function startHistoryAutoRefresh() {
   wireAutoRefreshUI();
   if (historyRereadTimer) return;
   historyRereadTimer = setInterval(() => {
-    void autoReloadHistoryIfPermitted({ silent: true });
+    // Bypass the fingerprint cache when we don't currently have an
+    // in-progress run on screen. This catches the race window where
+    // STS2 momentarily deletes `current_run.save` (e.g. mid run-end
+    // rename into `history/<ts>.run`) and our last commit nulled out
+    // `currentRun`. Without bypass, the directory fingerprint can lock
+    // us into "no live run" until something else changes on disk —
+    // which for a player mid-fight can be a long time.
+    void autoReloadHistoryIfPermitted({
+      silent: true,
+      bypassFingerprint: !currentRun,
+    });
   }, HISTORY_REREAD_INTERVAL_MS);
+}
+
+/**
+ * Safari / Firefox refresh nudge.
+ *
+ * These browsers have no File System Access API, so once the user has
+ * imported their saves there's no way for the page to silently re-read
+ * the disk on a timer. The result was a real user-reported failure
+ * mode: a player completes a run, alt-tabs back to the browser, and
+ * the fresh win is nowhere on the Overview — they have to manually
+ * re-pick the folder every single time.
+ *
+ * This function decides whether to show a polite, dismissible banner
+ * that says "Fresh runs may be on disk — tap to re-import" with a
+ * one-click button that opens the file picker.
+ *
+ * Suppression rules (in priority order):
+ *   1. If the browser DOES support FSA → never show. The background
+ *      loop handles freshness, this banner would be pure noise.
+ *   2. If the user has never successfully imported → never show. They
+ *      haven't picked a folder yet; the empty-state already prompts
+ *      them.
+ *   3. If less than NUDGE_FRESHNESS_MS has passed since the last
+ *      import → never show. Stats are still likely current.
+ *   4. If less than NUDGE_THROTTLE_MS has passed since the last
+ *      nudge → never show. Nagging on every focus is worse than
+ *      missing one update.
+ *   5. If a nudge banner is already on screen → never show. Don't
+ *      stack.
+ *
+ * @param {object} opts
+ * @param {"boot"|"visibility"|"pageshow"} opts.reason — diagnostic
+ *     hint for analytics; does not change behavior.
+ */
+const NUDGE_FRESHNESS_MS = 90 * 1000;   // 90s: long enough that a
+                                         // run could have ended on disk
+const NUDGE_THROTTLE_MS  = 5 * 60 * 1000; // 5 min: hard floor between
+                                          // consecutive nudges
+async function maybeOfferNoFSARefresh({ reason = "unknown" } = {}) {
+  if (HistoryStore.supportsFSA() || typeof window.showDirectoryPicker === "function") {
+    return;
+  }
+  let lastImportAt = 0;
+  let lastNudgeAt = 0;
+  try {
+    lastImportAt = Number(localStorage.getItem(STORAGE_LAST_IMPORT_AT)) || 0;
+    lastNudgeAt = Number(localStorage.getItem(STORAGE_LAST_NUDGE_AT)) || 0;
+  } catch { /* private mode — fall through, just won't throttle as well */ }
+  if (!lastImportAt) return;
+  const now = Date.now();
+  if (now - lastImportAt < NUDGE_FRESHNESS_MS) return;
+  if (now - lastNudgeAt < NUDGE_THROTTLE_MS) return;
+  if (document.getElementById("vault-no-fsa-nudge")) return;
+
+  try { localStorage.setItem(STORAGE_LAST_NUDGE_AT, String(now)); }
+  catch { /* private mode */ }
+  vaultGtagEvent("no_fsa_nudge_shown", { reason, since_import_s: Math.round((now - lastImportAt) / 1000) });
+
+  const banner = document.createElement("div");
+  banner.id = "vault-no-fsa-nudge";
+  banner.className = "vault-no-fsa-nudge";
+  banner.setAttribute("role", "status");
+  banner.innerHTML = `
+    <div class="vault-no-fsa-nudge-body">
+      <span class="vault-no-fsa-nudge-icon" aria-hidden="true">↻</span>
+      <div class="vault-no-fsa-nudge-text">
+        <strong>Fresh runs may be on disk.</strong>
+        <span class="vault-no-fsa-nudge-sub">Safari can't auto-refresh — tap to pull the latest from your STS2 folder.</span>
+      </div>
+      <div class="vault-no-fsa-nudge-actions">
+        <button type="button" class="vault-no-fsa-nudge-go" data-action="no-fsa-refresh">Refresh now</button>
+        <button type="button" class="vault-no-fsa-nudge-dismiss" data-action="dismiss-no-fsa" aria-label="Dismiss">×</button>
+      </div>
+    </div>`;
+  document.body.appendChild(banner);
+
+  // One global dismisser. Use { once: true } so we don't accumulate
+  // dangling listeners across multiple nudges in the same session.
+  banner.addEventListener("click", (e) => {
+    const target = e.target instanceof Element ? e.target : null;
+    if (!target) return;
+    if (target.closest('[data-action="dismiss-no-fsa"]')) {
+      e.preventDefault();
+      vaultGtagEvent("no_fsa_nudge_dismissed", { reason });
+      banner.remove();
+      return;
+    }
+    if (target.closest('[data-action="no-fsa-refresh"]')) {
+      e.preventDefault();
+      vaultGtagEvent("no_fsa_nudge_accepted", { reason });
+      banner.remove();
+      try { scanForHistory(); }
+      catch (err) { console.warn("[Vault] no-FSA nudge picker failed", err); }
+    }
+  });
 }
 
 /**
@@ -7994,6 +8231,12 @@ async function commitParsedRuns(runs, sourceName, { silent, fileCount = 1 }) {
   const newWins = completedRuns.filter((r) => !previousIds.has(r.id) && r.won === true);
   // Real data has arrived — flip out of demo mode so the banner disappears.
   isDemoMode = false;
+
+  // Stamp "last successful disk read" so the Safari/Firefox nudge
+  // (the only refresh signal available on no-FSA browsers) knows when
+  // it's been long enough to bother the user with a re-import CTA.
+  try { localStorage.setItem(STORAGE_LAST_IMPORT_AT, String(Date.now())); }
+  catch { /* private mode */ }
 
   // Beacon the successful import. This is THE event the path bug should
   // have been caught by — without it, "user saw stats" had zero signal
@@ -11163,6 +11406,13 @@ function showVictoryCelebration(run, streakCount) {
   overlay.setAttribute("role", "dialog");
   overlay.setAttribute("aria-label", "Victory");
   overlay.style.setProperty("--char-color", meta.color);
+  // Note: no `.victory-progress` element anymore. The bar implied an
+  // auto-dismiss countdown — but a real user reported a finished run
+  // disappearing before they got to read it, and asked us to keep the
+  // card up until they explicitly click Continue. The confetti and
+  // trophy still fade after CELEBRATION_DECOR_MS via the CSS
+  // `.victory-decor-faded` class, so the moment still feels punchy
+  // without trapping the user inside a perpetual overlay.
   overlay.innerHTML = `
     <div class="victory-flash" aria-hidden="true"></div>
     <div class="victory-confetti-canvas" aria-hidden="true"></div>
@@ -11173,9 +11423,6 @@ function showVictoryCelebration(run, streakCount) {
       ${floorStr ? `<p class="victory-floor">${esc(floorStr)}</p>` : ""}
       ${streakHtml}
       <button type="button" class="victory-dismiss" id="victory-dismiss">Continue</button>
-      <div class="victory-progress" role="progressbar" aria-label="Auto-closes in 7 seconds" aria-valuenow="100">
-        <div class="victory-progress-fill"></div>
-      </div>
     </div>`;
   document.body.appendChild(overlay);
 
@@ -11190,15 +11437,25 @@ function showVictoryCelebration(run, streakCount) {
     setTimeout(() => overlay.remove(), 450);
   };
 
-  // Slightly longer auto-close because the card is non-blocking now —
-  // user can keep scrolling stats behind it. 7s is plenty.
-  const timer = setTimeout(dismiss, 7000);
+  // Decor fade timer — fires once, cannot be cancelled by the user.
+  // After this, the confetti, flash, and trophy quietly fade out so
+  // the screen stops looking like a parade. The CARD itself stays put
+  // until the user clicks Continue / Esc / outside.
+  //
+  // Rationale: previously the whole overlay auto-dismissed after 7s
+  // and a user reading their run details would lose the card before
+  // they finished. Splitting the timer (decor → 7s, card → user) keeps
+  // the celebratory burst while respecting their pace.
+  const CELEBRATION_DECOR_MS = 7000;
+  setTimeout(() => {
+    if (!dismissed) overlay.classList.add("victory-decor-faded");
+  }, CELEBRATION_DECOR_MS);
 
-  document.getElementById("victory-dismiss")?.addEventListener("click", () => { clearTimeout(timer); dismiss(); });
+  document.getElementById("victory-dismiss")?.addEventListener("click", dismiss);
 
-  overlay.addEventListener("click", (e) => { if (e.target === overlay) { clearTimeout(timer); dismiss(); } });
+  overlay.addEventListener("click", (e) => { if (e.target === overlay) dismiss(); });
 
-  const onKey = (e) => { if (e.key === "Escape") { clearTimeout(timer); dismiss(); document.removeEventListener("keydown", onKey); } };
+  const onKey = (e) => { if (e.key === "Escape") { dismiss(); document.removeEventListener("keydown", onKey); } };
   document.addEventListener("keydown", onKey);
 
   setTimeout(() => document.getElementById("victory-dismiss")?.focus({ preventScroll: true }), 100);

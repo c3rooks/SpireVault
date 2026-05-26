@@ -26,6 +26,16 @@ STS_APP_ID = "2868840"
 # Pages preview hosts stay listed so QA on preview URLs keeps working.
 ALLOWED_RETURN_HOSTS = "spirevault.app,vault-web-e90.pages.dev,vault-site-3ki.pages.dev"
 
+# Co-op Lobby Beta server-side kill switch.
+#   COOP_LOBBY_BETA_KILL = "1"        → forces every client back to Classic
+#   COOP_LOBBY_BETA_ENABLED = "0"     → same effect via the explicit flag
+#   COOP_LOBBY_BETA_ENABLED = "1"     → server-confirms Beta is live (default)
+# Flip with `wrangler secret put COOP_LOBBY_BETA_KILL` and the next poll
+# (≤15s for visible tabs, ≤60s for hidden) flips users without a deploy.
+# Removing the var entirely also removes the flag from /coop/state, which
+# leaves user choice (per-browser localStorage) intact.
+COOP_LOBBY_BETA_ENABLED = "1"
+
 # Local-dev environment override. Activated by running
 #   `npx wrangler dev --env localdev`
 # which flips on the `_debug/*` test routes used by

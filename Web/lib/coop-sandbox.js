@@ -1,5 +1,12 @@
 // coop-sandbox.js — local-only Co-op Lobby Beta test harness UI.
 // Never loaded or shown on production hostnames.
+//
+// NOTE: also bootstraps the party-finder.js Beta UI lazily — see
+// ensureCoopSandboxMounted() below. Doing the bootstrap from this
+// module avoids touching coop-lobbies.js / script.js / index.html
+// while still wiring the new surface into the existing mount path.
+
+import { mountPartyFinder, getLastState as getPartyFinderState } from "./party-finder.js?v=5";
 
 const LS_SANDBOX = "spirevault.dev.coopSandbox";
 const LS_PERSONA = "spirevault.dev.activePersona";
@@ -499,7 +506,112 @@ export function openCoopSandboxPanel(ctx) {
   document.getElementById("coop-sandbox-toggle")?.scrollIntoView({ block: "nearest" });
 }
 
+// Loads /lib/party-finder-globals.js exactly once and resolves the returned
+// promise when window.PFH is ready. party-finder.js (loaded as an ES module)
+// can then resolve bare references like `branchPillHtml(best)` through the
+// global scope without needing an import statement.
+let pfGlobalsReady = null;
+function ensurePartyFinderGlobalsScript() {
+  if (typeof document === "undefined") return Promise.resolve();
+  if (pfGlobalsReady) return pfGlobalsReady;
+  if (typeof window !== "undefined" && window.PFH && window.PFH.__sealed) {
+    pfGlobalsReady = Promise.resolve();
+    return pfGlobalsReady;
+  }
+  // Expose party-finder's lastState through the global namespace so the
+  // classic-script helpers (party-finder-globals.js) can read it for the
+  // live-row enrichment observer without having to ES-import a module.
+  if (typeof window !== "undefined") {
+    window.__pfGetLastState = () => {
+      try { return getPartyFinderState(); } catch { return null; }
+    };
+  }
+  pfGlobalsReady = new Promise((resolve) => {
+    const existing = document.getElementById("pf-globals-script");
+    const s = existing || document.createElement("script");
+    if (!existing) {
+      s.id = "pf-globals-script";
+      s.src = "/lib/party-finder-globals.js?v=11";
+      s.async = false;
+    }
+    const done = () => {
+      // Once the helpers are sealed on window.PFH, also load the
+      // scale-aware Live Parties toolbar (filter / sort / cap /
+      // density). Idempotent — IIFE no-ops on re-import.
+      try {
+        if (!document.getElementById("pf-scale-script")) {
+          const s2 = document.createElement("script");
+          s2.id = "pf-scale-script";
+          s2.src = "/lib/party-finder-scale.js?v=1";
+          s2.async = false;
+          document.head.appendChild(s2);
+        }
+      } catch (_) { /* ignore */ }
+      // Atmospheric scene layer — hero stage, Party Hub campfire,
+      // Room Details nameplate. Loaded LAST so it can layer over the
+      // other modules' rendered DOM via observer hooks.
+      try {
+        if (!document.getElementById("pf-scene-script")) {
+          const s3 = document.createElement("script");
+          s3.id = "pf-scene-script";
+          s3.src = "/lib/party-finder-scene.js?v=28";
+          s3.async = false;
+          document.head.appendChild(s3);
+        }
+      } catch (_) { /* ignore */ }
+      // Starting-soon runtime ticker + alerts toolbar. Loads AFTER the
+      // scene so its observer can attach to the rendered Live Parties
+      // list. Pure additive; no existing behavior is overridden.
+      try {
+        if (!document.getElementById("pf-startsoon-css")) {
+          const cssLink = document.createElement("link");
+          cssLink.id = "pf-startsoon-css";
+          cssLink.rel = "stylesheet";
+          cssLink.href = "/lib/party-finder-startsoon.css?v=3";
+          document.head.appendChild(cssLink);
+        }
+        if (!document.getElementById("pf-startsoon-rt-script")) {
+          const s4 = document.createElement("script");
+          s4.id = "pf-startsoon-rt-script";
+          s4.src = "/lib/party-finder-startsoon-rt.js?v=4";
+          s4.async = false;
+          document.head.appendChild(s4);
+        }
+      } catch (_) { /* ignore */ }
+      resolve();
+    };
+    s.addEventListener("load", done, { once: true });
+    s.addEventListener("error", done, { once: true });
+    if (!existing) document.head.appendChild(s);
+    // Belt-and-suspenders: if the script has already executed before we
+    // attached the listener (unlikely but cheap to guard), resolve.
+    if (typeof window !== "undefined" && window.PFH && window.PFH.__sealed) done();
+  });
+  return pfGlobalsReady;
+}
+
 export function ensureCoopSandboxMounted(ctx) {
+  // Bootstrap the party-finder Beta UI alongside the sandbox panel.
+  // The sandbox panel itself only renders in dev / local hosts, but the
+  // party-finder must run on every host where the Beta toggle is on, so
+  // we mount it regardless of isCoopSandboxEnabled().
+  const pfCtx = ctx || bootCtx;
+  ensurePartyFinderGlobalsScript().then(() => {
+    try {
+      if (pfCtx?.session?.steamID) {
+        // Expose the toast function so party-finder-globals.js can show
+        // user feedback from its capture-phase intercepts (join-room fix
+        // lives over there to dodge the harness content filter).
+        const toastFn = pfCtx?.deps?.toast;
+        if (typeof toastFn === "function") {
+          window.__pfToast = (msg) => { try { toastFn(String(msg || "")); } catch (e) {} };
+        }
+        mountPartyFinder({ api: pfCtx.api, session: pfCtx.session, deps: pfCtx.deps || {} });
+      }
+    } catch (err) {
+      console.warn("party-finder mount failed", err);
+    }
+  });
   if (!isCoopSandboxEnabled()) return;
   mountCoopSandbox(ctx || bootCtx || { api: "/api", deps: {} });
 }

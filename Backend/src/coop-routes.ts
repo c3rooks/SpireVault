@@ -198,12 +198,14 @@ export async function handleCoopRoute(
       return json({ ok: true, ...r.value });
     }
     if (subroute === "request" && method === "POST") {
-      const r = await requestToJoinLobby(env, auth.steamID, lobbyId);
+      const body = ((await readJson(req)) || {}) as { selectedCharacter?: string } | null;
+      const r = await requestToJoinLobby(env, auth.steamID, lobbyId, body || {});
       if (!r.ok) return errResp(r.status, r.error, r.message);
       return json({ ok: true, request: r.value });
     }
     if (subroute === "join-seat" && method === "POST") {
-      const r = await joinLobbySeat(env, auth.steamID, lobbyId);
+      const body = ((await readJson(req)) || {}) as { selectedCharacter?: string } | null;
+      const r = await joinLobbySeat(env, auth.steamID, lobbyId, body || {});
       if (!r.ok) return errResp(r.status, r.error, r.message);
       return json({
         ok: true,
@@ -328,12 +330,13 @@ export async function handleCoopRoute(
     const partyId = partyActionMatch[1]!;
     const action = partyActionMatch[2];
     if (action === "status") {
-      const body = (await readJson(req)) as { status?: string } | null;
+      const body = (await readJson(req)) as { status?: string; selectedCharacter?: string } | null;
       const r = await updatePartyMemberStatus(
         env,
         auth.steamID,
         partyId,
         body?.status,
+        body?.selectedCharacter,
       );
       if (!r.ok) return errResp(r.status, r.error, r.message);
       return json({ ok: true, party: r.value });
@@ -590,7 +593,22 @@ async function buildStateBundle(
     lookingNowCount,
     pairedNowCount,
     serverTime: new Date(now).toISOString(),
+    // Feature flags. The Worker can flip `COOP_LOBBY_BETA_KILL=1` in
+    // env at runtime (or via wrangler secret) and the next /coop/state
+    // poll forces every client back to Classic. Empty object when no
+    // flags are active so the wire shape stays stable.
+    flags: betaFlagsFromEnv(env),
   };
+}
+
+function betaFlagsFromEnv(env: Env): { coopLobbyBeta?: boolean; coopLobbyBetaKill?: boolean } | undefined {
+  const flags: { coopLobbyBeta?: boolean; coopLobbyBetaKill?: boolean } = {};
+  const killRaw = (env as unknown as Record<string, string | undefined>).COOP_LOBBY_BETA_KILL;
+  if (killRaw === "1" || killRaw === "true") flags.coopLobbyBetaKill = true;
+  const enableRaw = (env as unknown as Record<string, string | undefined>).COOP_LOBBY_BETA_ENABLED;
+  if (enableRaw === "0" || enableRaw === "false") flags.coopLobbyBeta = false;
+  if (enableRaw === "1" || enableRaw === "true")  flags.coopLobbyBeta = true;
+  return Object.keys(flags).length ? flags : undefined;
 }
 
 function filterPending(invites: CoopInvite[]): CoopInvite[] {

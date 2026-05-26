@@ -1,0 +1,294 @@
+/* party-finder-scale.css
+ * =====================================================================
+ * Visual layer for the scale-aware Live Parties experience.
+ * Loaded dynamically by party-finder-scale.js.
+ *
+ * Three density modes are toggled on #pf-live-list by JS:
+ *   .pf-live-list--cozy     (default, < 12 visible rooms)
+ *   .pf-live-list--compact  (12-30 rooms — tighter cards)
+ *   .pf-live-list--dense    (30+ rooms — single-line rows)
+ *
+ * Rows that fail filters get .pf-row-hidden, rows that exceed the
+ * visible cap get .pf-row-collapsed. CSS order is set inline so we
+ * never fight party-finder.js's render order.
+ * ===================================================================== */
+
+/* ── Toolbar ───────────────────────────────────────────────────────── */
+.pf-live-toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 6px 0 14px;
+  padding: 14px 16px 12px;
+  border-radius: var(--pf-radius-card, 14px);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.015));
+  border: 1px solid var(--pf-stroke);
+  position: sticky;
+  top: 8px;
+  z-index: 4;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+.pf-live-toolbar-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.pf-live-toolbar-row--top { gap: 12px; }
+.pf-live-toolbar-row--chips { gap: 6px; }
+.pf-live-toolbar-row--meta {
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--pf-text-soft);
+}
+
+.pf-live-search {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  flex: 1 1 280px;
+  min-width: 200px;
+  border-radius: 999px;
+  background: var(--pf-fill);
+  border: 1px solid var(--pf-stroke);
+  color: var(--pf-text-soft);
+  transition: border-color .15s ease, background .15s ease;
+}
+.pf-live-search:focus-within {
+  border-color: var(--pf-accent);
+  background: var(--pf-fill-strong);
+  color: var(--pf-text);
+}
+.pf-live-search input {
+  flex: 1;
+  background: transparent;
+  border: 0;
+  outline: 0;
+  font: inherit;
+  color: var(--pf-text);
+  min-width: 0;
+}
+.pf-live-search input::placeholder { color: var(--pf-text-faint); }
+
+.pf-live-sort {
+  display: inline-flex;
+  padding: 3px;
+  border-radius: 999px;
+  background: var(--pf-fill);
+  border: 1px solid var(--pf-stroke);
+  flex: 0 0 auto;
+}
+.pf-live-sort-btn {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--pf-text-soft);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 7px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background .15s ease, color .15s ease;
+}
+.pf-live-sort-btn:hover { color: var(--pf-text); }
+.pf-live-sort-btn.is-active {
+  background: var(--pf-accent);
+  color: #1a1410;
+  box-shadow: 0 4px 14px -8px rgba(245, 166, 35, 0.5);
+}
+
+.pf-live-chip {
+  appearance: none;
+  border: 1px solid var(--pf-stroke);
+  background: var(--pf-fill);
+  color: var(--pf-text-soft);
+  padding: 6px 12px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background .15s ease, color .15s ease, border-color .15s ease, transform .15s ease;
+}
+.pf-live-chip:hover { color: var(--pf-text); border-color: var(--pf-stroke-strong); }
+.pf-live-chip.is-active {
+  background: rgba(96, 165, 250, 0.18);
+  color: #cbe2ff;
+  border-color: rgba(96, 165, 250, 0.45);
+  box-shadow: 0 4px 14px -8px rgba(96, 165, 250, 0.5);
+  transform: translateY(-1px);
+}
+
+.pf-live-count { font-weight: 700; color: var(--pf-text); }
+.pf-live-clear {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--pf-accent);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+  transition: background .15s ease;
+}
+.pf-live-clear:hover { background: rgba(245, 166, 35, 0.10); }
+
+/* ── Hidden + collapsed rows ───────────────────────────────────────── */
+.pf-row-hidden,
+.pf-row-collapsed {
+  display: none !important;
+}
+
+/* ── Density: COMPACT (12-30 visible) ──────────────────────────────── */
+.pf-live-list--compact .pf-live-row.pf-live-row--has-art {
+  grid-template-columns: 88px minmax(0, 1fr) 168px;
+  column-gap: 14px;
+  padding: 12px;
+}
+.pf-live-list--compact .pf-row-art { min-height: 88px; }
+.pf-live-list--compact .pf-live-row .pf-attrs { gap: 5px; }
+.pf-live-list--compact .pf-live-row .pf-fit-pill,
+.pf-live-list--compact .pf-live-row .pf-attrs > * { font-size: 11px; padding: 3px 8px; }
+.pf-live-list--compact .pf-live-row .pf-host-strip { font-size: 12px; }
+.pf-live-list--compact .pf-live-row .pf-slot { width: 36px; height: 36px; }
+.pf-live-list--compact .pf-live-row .pf-slot-tag { font-size: 8.5px; }
+.pf-live-list--compact .pf-row-badge { margin-bottom: 6px; padding: 2px 8px; font-size: 9.5px; }
+.pf-live-list--compact .pf-live-row > .pf-live-actions > .pf-btn { padding: 8px 10px; font-size: 13px; }
+
+/* ── Density: DENSE (30+ visible) ─────────────────────────────────── */
+.pf-live-list--dense .pf-live-row.pf-live-row--has-art {
+  grid-template-columns: 56px minmax(0, 1fr) 132px;
+  column-gap: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+}
+.pf-live-list--dense .pf-row-art {
+  min-height: 56px;
+  border-radius: 10px;
+}
+.pf-live-list--dense .pf-row-art-tag {
+  font-size: 8.5px;
+  padding: 3px 4px;
+  letter-spacing: 0.06em;
+}
+.pf-live-list--dense .pf-live-row .pf-host-strip,
+.pf-live-list--dense .pf-live-row .pf-party-line,
+.pf-live-list--dense .pf-live-row .pf-section-sub,
+.pf-live-list--dense .pf-live-row > .pf-live-meta > .pf-attrs:nth-of-type(2) {
+  display: none;
+}
+.pf-live-list--dense .pf-live-row .pf-live-titlerow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.pf-live-list--dense .pf-live-row .pf-live-title {
+  font-size: 14px;
+  margin: 0;
+}
+.pf-live-list--dense .pf-live-row .pf-attrs > * { font-size: 10.5px; padding: 2px 7px; }
+.pf-live-list--dense .pf-live-row .pf-row-badge { font-size: 9px; padding: 2px 7px; margin: 0; }
+.pf-live-list--dense .pf-live-row > .pf-live-actions {
+  flex-direction: row;
+  gap: 6px;
+}
+.pf-live-list--dense .pf-live-row > .pf-live-actions > .pf-btn--ghost { display: none; }
+.pf-live-list--dense .pf-live-row > .pf-live-actions > .pf-btn--primary {
+  flex: 1;
+  padding: 8px 14px;
+  font-size: 13px;
+}
+
+/* Hide the slot strip in dense mode — pills + Join carry the info */
+.pf-live-list--dense .pf-live-row .pf-slot-strip { display: none; }
+
+/* ── "Show all N rooms" reveal button ──────────────────────────────── */
+.pf-live-more {
+  display: block;
+  margin: 10px auto 0;
+  appearance: none;
+  border: 1px dashed var(--pf-stroke-strong);
+  background: var(--pf-fill);
+  color: var(--pf-text);
+  font: inherit;
+  font-weight: 700;
+  font-size: 13px;
+  padding: 12px 20px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background .15s ease, border-color .15s ease, transform .15s ease;
+}
+.pf-live-more:hover {
+  background: var(--pf-fill-strong);
+  border-color: var(--pf-accent);
+  color: var(--pf-accent);
+  transform: translateY(-1px);
+}
+
+/* ── No-match block ────────────────────────────────────────────────── */
+.pf-live-empty-filter {
+  margin: 8px 0 0;
+  padding: 22px 18px;
+  text-align: center;
+  border-radius: var(--pf-radius-card, 14px);
+  border: 1px dashed var(--pf-stroke-strong);
+  background:
+    radial-gradient(80% 40% at 50% 0%, rgba(96, 165, 250, 0.06), transparent 70%),
+    var(--pf-fill);
+}
+.pf-live-empty-filter-title {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--pf-text);
+  margin-bottom: 4px;
+}
+.pf-live-empty-filter-sub {
+  font-size: 12.5px;
+  color: var(--pf-text-soft);
+  margin-bottom: 12px;
+}
+
+/* ── Mobile ────────────────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  .pf-live-toolbar { padding: 12px; gap: 8px; position: static; }
+  .pf-live-toolbar-row--top { flex-direction: column; align-items: stretch; }
+  .pf-live-search { flex: 1 1 100%; }
+  .pf-live-sort { width: 100%; justify-content: stretch; flex-wrap: wrap; }
+  .pf-live-sort-btn { flex: 1 1 calc(50% - 6px); padding: 8px 10px; }
+  .pf-live-toolbar-row--chips {
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    padding-bottom: 4px;
+    margin: 0 -12px;
+    padding-left: 12px;
+    padding-right: 12px;
+    scroll-snap-type: x proximity;
+  }
+  .pf-live-toolbar-row--chips::-webkit-scrollbar { display: none; }
+  .pf-live-chip { white-space: nowrap; flex: 0 0 auto; scroll-snap-align: start; }
+  .pf-live-list--compact .pf-live-row.pf-live-row--has-art,
+  .pf-live-list--dense .pf-live-row.pf-live-row--has-art {
+    grid-template-columns: 1fr;
+    grid-template-rows: 88px auto auto;
+    column-gap: 0;
+    row-gap: 10px;
+  }
+  .pf-live-list--dense .pf-live-row > .pf-live-actions { flex-direction: column; }
+  .pf-live-list--dense .pf-live-row > .pf-live-actions > .pf-btn--ghost { display: inline-flex; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pf-live-chip,
+  .pf-live-sort-btn,
+  .pf-live-more {
+    transition: none;
+  }
+  .pf-live-chip.is-active { transform: none; }
+}
