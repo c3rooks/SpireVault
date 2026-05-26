@@ -1,0 +1,2194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>Co-op Party Finder — SpireVault</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400;14..32,500;14..32,600;14..32,700;14..32,800&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg:            #0b090f;
+      --bg-raised:     #100e17;
+      --surface:       #161320;
+      --surface-2:     #1d1a28;
+      --surface-3:     #23203a;
+      --sidebar-bg:    #0d0b14;
+      --sidebar-w:     220px;
+
+      --border:        rgba(255,255,255,0.065);
+      --border-soft:   rgba(255,255,255,0.038);
+      --border-strong: rgba(255,255,255,0.11);
+
+      --orange:        #ef7030;
+      --orange-dim:    rgba(239,112,48,0.10);
+      --orange-glow:   rgba(239,112,48,0.26);
+      --orange-border: rgba(239,112,48,0.22);
+
+      --blue:          #6ab6ff;
+      --blue-dim:      rgba(106,182,255,0.10);
+      --blue-border:   rgba(106,182,255,0.22);
+
+      --gold:          #d4a53c;
+      --gold-dim:      rgba(212,165,60,0.10);
+      --gold-border:   rgba(212,165,60,0.28);
+
+      --green:         #52c48a;
+      --green-dim:     rgba(82,196,138,0.10);
+      --green-border:  rgba(82,196,138,0.25);
+
+      --text:          #ede8e0;
+      --text-2:        #9b9399;
+      --text-3:        #5e576a;
+
+      --r-lg:   16px;
+      --r-md:   10px;
+      --r-sm:   7px;
+      --r-pill: 999px;
+
+      --shadow-card: 0 2px 18px rgba(0,0,0,0.38), 0 1px 0 rgba(255,255,255,0.025) inset;
+      --shadow-btn:  0 2px 14px var(--orange-glow);
+
+      --page-max: 900px;
+      --page-pad: 28px;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { height: 100%; }
+
+    body {
+      min-height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 15px;
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    [hidden] { display: none !important; }
+
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 0;
+      background:
+        radial-gradient(ellipse 60% 40% at 50% -8%, rgba(239,112,48,0.06) 0%, transparent 65%),
+        radial-gradient(ellipse 30% 25% at 88% 5%, rgba(106,182,255,0.03) 0%, transparent 55%);
+    }
+
+    /* ── Proto guard ─────────────────────────────── */
+    .proto-guard {
+      position: fixed; inset: 0; z-index: 9999;
+      display: grid; place-items: center; padding: 32px;
+      background: #07060b; text-align: center;
+    }
+    .proto-guard h1 { font-size: 1.2rem; margin-bottom: 8px; }
+    .proto-guard p  { color: var(--text-2); max-width: 400px; }
+    .proto-guard code { color: var(--orange); }
+
+    /* ── App shell ───────────────────────────────── */
+    .app-shell {
+      position: relative; z-index: 1;
+      display: flex; min-height: 100dvh;
+    }
+
+    /* ── Sidebar ─────────────────────────────────── */
+    .sidebar {
+      width: var(--sidebar-w);
+      flex-shrink: 0;
+      background: var(--sidebar-bg);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      position: sticky;
+      top: 0;
+      height: 100dvh;
+      overflow: hidden;
+    }
+
+    .sidebar-brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 18px 16px 14px;
+      border-bottom: 1px solid var(--border-soft);
+    }
+
+    .sidebar-logo {
+      width: 28px; height: 28px;
+      border-radius: 7px;
+      background: linear-gradient(145deg, var(--orange), #c95520);
+      display: grid; place-items: center;
+      flex-shrink: 0;
+      font-size: 11px; font-weight: 800; color: #fff; letter-spacing: -0.02em;
+    }
+
+    .sidebar-brand-name {
+      font-size: 13.5px; font-weight: 700;
+      color: var(--text); letter-spacing: -0.02em;
+    }
+
+    .sidebar-brand-game {
+      font-size: 10px; font-weight: 500; color: var(--text-3);
+    }
+
+    .sidebar-nav {
+      flex: 1;
+      padding: 10px 8px;
+      display: flex; flex-direction: column; gap: 1px;
+    }
+
+    .sidebar-item {
+      display: flex; align-items: center; gap: 9px;
+      padding: 9px 10px;
+      border-radius: var(--r-sm);
+      font-size: 13px; font-weight: 500;
+      color: var(--text-3);
+      cursor: pointer; text-decoration: none;
+      border: none; background: none; width: 100%; text-align: left;
+      transition: color .14s, background .14s;
+    }
+    .sidebar-item:hover { color: var(--text-2); background: rgba(255,255,255,0.038); }
+    .sidebar-item.active { color: var(--text); background: rgba(239,112,48,0.10); font-weight: 600; }
+    .sidebar-item.active .si-icon { color: var(--orange); opacity: 1; }
+
+    .si-icon { width: 16px; flex-shrink: 0; opacity: 0.6; }
+
+    .sidebar-sep { height: 1px; background: var(--border-soft); margin: 7px 2px; }
+
+    /* ── Mobile top bar ──────────────────────────── */
+    .mobile-top {
+      display: none;
+      align-items: center; gap: 10px;
+      padding: 13px 18px;
+      background: var(--sidebar-bg);
+      border-bottom: 1px solid var(--border);
+      position: sticky; top: 0; z-index: 10;
+    }
+    .mobile-top-logo {
+      width: 26px; height: 26px; border-radius: 7px;
+      background: linear-gradient(145deg, var(--orange), #c95520);
+      display: grid; place-items: center;
+      font-size: 11px; font-weight: 800; color: #fff;
+    }
+    .mobile-top-name { font-size: 14px; font-weight: 700; color: var(--text); }
+    .mobile-top-badge {
+      margin-left: auto; font-size: 11px; font-weight: 600;
+      color: var(--orange);
+      background: var(--orange-dim); border: 1px solid var(--orange-border);
+      padding: 3px 9px; border-radius: var(--r-pill);
+    }
+
+    /* ── Main content ────────────────────────────── */
+    .main-content { flex: 1; min-width: 0; overflow-x: hidden; }
+
+    .page {
+      max-width: var(--page-max);
+      margin: 0 auto;
+      padding: 24px var(--page-pad) 80px;
+    }
+
+    /* ── Dev banner ──────────────────────────────── */
+    .dev-banner {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 8px; flex-wrap: wrap;
+      margin-bottom: 26px;
+      padding: 7px 13px;
+      border-radius: var(--r-sm);
+      background: rgba(239,112,48,0.05);
+      border: 1px solid rgba(239,112,48,0.11);
+      font-size: 12px; color: var(--text-3);
+    }
+    .dev-banner strong { color: var(--orange); font-weight: 600; }
+    .dev-state {
+      font-size: 10px; font-weight: 700; letter-spacing: 0.08em;
+      text-transform: uppercase; padding: 3px 8px;
+      border-radius: 5px; background: rgba(0,0,0,0.4); color: var(--text-3);
+    }
+
+    /* ── Typography ──────────────────────────────── */
+    .page-title {
+      font-size: clamp(1.55rem, 3vw, 2rem);
+      font-weight: 800; letter-spacing: -0.04em; line-height: 1.1;
+      margin-bottom: 10px;
+    }
+    .page-sub {
+      font-size: 14.5px; color: var(--text-2); line-height: 1.6;
+      max-width: 44em; margin-bottom: 20px;
+    }
+
+    /* ── Flow strip ──────────────────────────────── */
+    .flow-strip {
+      display: inline-flex; align-items: center; gap: 2px;
+      flex-wrap: wrap; margin-bottom: 20px;
+      padding: 7px 12px;
+      border-radius: var(--r-sm);
+      background: var(--surface); border: 1px solid var(--border);
+      font-size: 12px; font-weight: 600; color: var(--text-2);
+    }
+    .fs-step { color: var(--text); }
+    .fs-arrow { color: var(--text-3); font-weight: 400; margin: 0 4px; }
+
+    /* ── Buttons ─────────────────────────────────── */
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center;
+      gap: 6px; padding: 10px 20px;
+      border-radius: var(--r-sm);
+      font: 600 14px/1 'Inter', sans-serif;
+      cursor: pointer; border: 1px solid transparent;
+      transition: filter .13s, box-shadow .13s, border-color .13s, color .13s;
+      white-space: nowrap; text-decoration: none;
+    }
+    .btn:active { filter: brightness(0.91); }
+
+    .btn-primary {
+      background: var(--orange); color: #fff;
+      border-color: rgba(255,155,80,0.18);
+      box-shadow: var(--shadow-btn);
+    }
+    .btn-primary:hover { filter: brightness(1.07); }
+
+    .btn-secondary {
+      background: var(--surface-2); color: var(--text);
+      border-color: var(--border-strong);
+    }
+    .btn-secondary:hover { border-color: var(--orange-border); }
+
+    .btn-ghost {
+      background: transparent; color: var(--text-2);
+      border-color: var(--border-strong);
+    }
+    .btn-ghost:hover { color: var(--text); }
+
+    .btn-sm { padding: 8px 16px; font-size: 13px; }
+    .btn-xs { padding: 6px 12px; font-size: 12px; }
+
+    .btn-text {
+      background: none; border: none; padding: 0;
+      font: 500 13px/1 'Inter', sans-serif;
+      color: var(--text-3); text-decoration: underline;
+      text-underline-offset: 3px; cursor: pointer;
+    }
+    .btn-text:hover { color: var(--text-2); }
+
+    .back-btn {
+      display: inline-flex; align-items: center; gap: 5px;
+      background: none; border: none;
+      font: 13.5px/1 'Inter', sans-serif;
+      color: var(--text-3); cursor: pointer;
+      transition: color .13s;
+    }
+    .back-btn:hover { color: var(--text-2); }
+
+    /* ── Hero actions ────────────────────────────── */
+    .hero-actions {
+      display: flex; align-items: center;
+      gap: 10px; flex-wrap: wrap; margin-bottom: 30px;
+    }
+
+    /* ── Recommended now ─────────────────────────── */
+    .rec-panel {
+      margin-bottom: 26px; padding: 20px 22px;
+      border-radius: var(--r-lg);
+      background:
+        linear-gradient(155deg, rgba(239,112,48,0.07) 0%, rgba(239,112,48,0.02) 50%, transparent 100%),
+        var(--surface);
+      border: 1px solid var(--orange-border);
+      box-shadow: var(--shadow-card);
+    }
+
+    .rec-eyebrow {
+      font-size: 10px; font-weight: 700;
+      letter-spacing: 0.1em; text-transform: uppercase;
+      color: var(--orange); margin-bottom: 10px;
+    }
+
+    .rec-body {
+      display: flex; align-items: flex-start;
+      gap: 16px 20px; flex-wrap: wrap;
+      justify-content: space-between;
+    }
+
+    .rec-info { flex: 1; min-width: 0; }
+
+    .rec-title {
+      font-size: 1.12rem; font-weight: 800;
+      letter-spacing: -0.025em; margin-bottom: 5px;
+    }
+
+    .rec-meta {
+      font-size: 12.5px; color: var(--text-2);
+      display: flex; flex-wrap: wrap; align-items: center;
+      gap: 0 2px; margin-bottom: 10px;
+    }
+    .rec-dot { color: var(--text-3); margin: 0 5px; }
+
+    .rec-seats { display: flex; flex-wrap: wrap; gap: 5px; }
+
+    .rec-cta {
+      display: flex; flex-direction: column;
+      align-items: flex-end; gap: 7px; flex-shrink: 0;
+    }
+    .rec-hint { font-size: 11.5px; color: var(--text-3); text-align: right; }
+
+    /* ── Section header ──────────────────────────── */
+    .section-head {
+      display: flex; align-items: flex-end;
+      justify-content: space-between;
+      gap: 12px; margin-bottom: 11px; flex-wrap: wrap;
+    }
+    .sh-left { display: flex; flex-direction: column; gap: 1px; }
+    .sh-title { font-size: 14.5px; font-weight: 700; letter-spacing: -0.015em; }
+    .sh-sub { font-size: 12px; color: var(--text-3); margin-top: 1px; }
+    .sh-tools { display: flex; align-items: center; gap: 7px; }
+
+    .search-box {
+      display: flex; align-items: center; gap: 7px;
+      padding: 7px 11px;
+      border-radius: var(--r-sm);
+      background: var(--surface); border: 1px solid var(--border);
+      font-size: 12.5px; color: var(--text-3);
+      width: 180px; cursor: text;
+    }
+    .search-box svg { flex-shrink: 0; opacity: 0.38; }
+
+    /* ── Party list ──────────────────────────────── */
+    .party-list { display: flex; flex-direction: column; gap: 8px; }
+
+    /* ── Party row ───────────────────────────────── */
+    .party-row {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--r-lg);
+      box-shadow: var(--shadow-card);
+      overflow: hidden;
+      transition: border-color .18s, background .18s, box-shadow .18s;
+    }
+    .party-row:hover {
+      border-color: var(--border-strong);
+      background: var(--bg-raised);
+      box-shadow: 0 6px 28px rgba(0,0,0,0.46), 0 1px 0 rgba(255,255,255,0.028) inset;
+    }
+
+    .party-row-main {
+      display: flex; align-items: center;
+      gap: 16px 20px; padding: 16px 20px;
+    }
+
+    .pr-info { flex: 1; min-width: 0; }
+
+    .pr-title {
+      font-size: 14.5px; font-weight: 700;
+      letter-spacing: -0.018em; margin-bottom: 3px;
+    }
+
+    .pr-meta {
+      font-size: 12.5px; color: var(--text-2);
+      display: flex; flex-wrap: wrap; align-items: center;
+      gap: 0 2px; margin-bottom: 8px;
+    }
+    .pr-dot { color: var(--text-3); margin: 0 4px; }
+
+    .pr-seats { display: flex; flex-wrap: wrap; gap: 5px; }
+
+    .pr-action {
+      display: flex; flex-direction: column;
+      align-items: flex-end; gap: 6px; flex-shrink: 0;
+    }
+
+    .pr-need {
+      font-size: 12px; color: var(--text-3);
+      text-align: right; white-space: nowrap;
+    }
+    .pr-need strong {
+      display: block; font-size: 15px; font-weight: 800;
+      color: var(--text); letter-spacing: -0.02em;
+    }
+
+    .pr-cta {
+      display: flex; flex-direction: column;
+      align-items: flex-end; gap: 5px;
+    }
+
+    .party-row-footer {
+      padding: 7px 20px 9px;
+      font-size: 11.5px; color: var(--text-3);
+      border-top: 1px solid var(--border-soft);
+      display: flex; align-items: center; flex-wrap: wrap; gap: 3px;
+    }
+    .rf-label { font-weight: 600; color: var(--text-2); margin-right: 4px; }
+    .rf-arrow { color: var(--text-3); margin: 0 3px; }
+
+    /* ── Seat chips ──────────────────────────────── */
+    .seat-chip {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 4px 9px 4px 4px;
+      border-radius: var(--r-pill);
+      border: 1px solid var(--border);
+      background: var(--surface-2);
+      font-size: 12px; font-weight: 600; color: var(--text);
+      white-space: nowrap;
+    }
+    .seat-chip--host   { background: var(--gold-dim);           border-color: var(--gold-border); }
+    .seat-chip--member { background: rgba(106,182,255,0.07);    border-color: rgba(106,182,255,0.16); }
+    .seat-chip--open   {
+      background: transparent; border-style: dashed;
+      border-color: var(--border-soft);
+      color: var(--text-3); font-weight: 400; padding: 4px 9px;
+    }
+    .seat-chip--you    { background: var(--orange-dim); border-color: var(--orange-border); color: var(--orange); }
+
+    .seat-av {
+      width: 22px; height: 22px; border-radius: 50%;
+      display: grid; place-items: center;
+      font-size: 8px; font-weight: 800; flex-shrink: 0; line-height: 1;
+    }
+    .seat-chip--host .seat-av   { background: linear-gradient(145deg,var(--gold),#aa7a22); color: #120900; }
+    .seat-chip--member .seat-av { background: linear-gradient(145deg,#5a4f7a,#3d3460); color: #ccc; }
+    .seat-chip--you .seat-av    { background: linear-gradient(145deg,var(--orange),#c84d16); color: #fff; }
+
+    /* ── Voice chip ──────────────────────────────── */
+    .voice-chip {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 3px 8px; border-radius: var(--r-pill);
+      font-size: 11px; font-weight: 600;
+    }
+    .voice-chip--lfg  { background: var(--blue-dim);  color: var(--blue);  border: 1px solid var(--blue-border); }
+    .voice-chip--none { background: transparent;       color: var(--text-3); border: 1px solid var(--border); }
+    .voice-chip--flex { background: var(--gold-dim);  color: var(--gold);  border: 1px solid var(--gold-border); }
+    .voice-dot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
+
+    /* ── Hub screen ──────────────────────────────── */
+    .hub-header { margin-bottom: 20px; }
+
+    .hub-bar {
+      display: flex; flex-wrap: wrap;
+      align-items: center; gap: 8px 16px;
+      padding: 12px 18px;
+      border-radius: var(--r-md);
+      background: var(--surface); border: 1px solid var(--border);
+      margin-bottom: 14px; box-shadow: var(--shadow-card);
+    }
+    .hb-title { font-size: 14px; font-weight: 700; letter-spacing: -0.015em; margin-right: auto; }
+    .hb-chip  { font-size: 12.5px; color: var(--text-2); }
+    .hb-chip strong { color: var(--text); font-weight: 600; }
+
+    /* ── Roster row ──────────────────────────────── */
+    .roster-row { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 20px; }
+
+    .roster-pill {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 7px 13px 7px 6px;
+      border-radius: var(--r-pill);
+      border: 1px solid var(--border);
+      background: var(--surface);
+      font-size: 13.5px; font-weight: 600;
+    }
+    .roster-pill--host { background: var(--gold-dim);    border-color: var(--gold-border); }
+    .roster-pill--you  { background: var(--orange-dim);  border-color: var(--orange-border); }
+    .roster-pill--open {
+      color: var(--text-3); font-weight: 400;
+      background: transparent; border-style: dashed;
+      border-color: var(--border-soft); padding: 7px 13px;
+    }
+
+    .pill-av {
+      width: 26px; height: 26px; border-radius: 50%;
+      display: grid; place-items: center;
+      font-size: 9.5px; font-weight: 800; flex-shrink: 0;
+    }
+    .roster-pill--host .pill-av { background: linear-gradient(145deg,var(--gold),#aa7a22); color: #120900; }
+    .roster-pill--you  .pill-av { background: linear-gradient(145deg,var(--orange),#c84d16); color: #fff; }
+
+    .pill-tag {
+      font-size: 9.5px; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-3); margin-left: 1px;
+    }
+    .roster-pill--host .pill-tag { color: var(--gold); }
+    .roster-pill--you  .pill-tag { color: var(--orange); }
+
+    /* ── Hub two-col ─────────────────────────────── */
+    .hub-cols {
+      display: grid; grid-template-columns: 1.65fr 1fr;
+      gap: 16px; margin-bottom: 18px; align-items: start;
+    }
+
+    /* ── Steps card ──────────────────────────────── */
+    .steps-card {
+      padding: 22px;
+      border-radius: var(--r-lg);
+      background: var(--surface); border: 1px solid var(--border);
+      box-shadow: var(--shadow-card);
+    }
+    .steps-heading {
+      font-size: 10px; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.1em;
+      color: var(--text-3); margin-bottom: 16px;
+    }
+
+    .step-row {
+      display: flex; align-items: flex-start; gap: 14px;
+      padding: 12px 0;
+      border-bottom: 1px solid var(--border-soft);
+    }
+    .step-row:last-of-type { border-bottom: none; padding-bottom: 0; }
+    .step-row:first-of-type { padding-top: 0; }
+
+    .step-row--primary {
+      padding: 14px 14px;
+      margin: -2px -2px 12px;
+      border-radius: 10px;
+      background: rgba(239,112,48,0.055);
+      border: 1px solid rgba(239,112,48,0.13) !important;
+    }
+
+    .step-num {
+      width: 34px; height: 34px; flex-shrink: 0;
+      display: grid; place-items: center; border-radius: 50%;
+      background: var(--orange-dim);
+      border: 1px solid rgba(239,112,48,0.18);
+      color: var(--orange);
+      font-size: 13px; font-weight: 800;
+    }
+    .step-row--primary .step-num {
+      width: 38px; height: 38px;
+      background: var(--orange); color: #fff;
+      border: none; font-size: 15px;
+    }
+    .step-num--done { background: var(--green-dim); border-color: var(--green-border); color: var(--green); }
+
+    .step-body {
+      flex: 1; min-width: 0;
+      display: flex; align-items: center;
+      gap: 10px; flex-wrap: wrap;
+    }
+    .step-text { flex: 1; min-width: 0; }
+
+    .step-label {
+      font-size: 14px; font-weight: 700;
+      letter-spacing: -0.01em; margin-bottom: 2px;
+    }
+    .step-row--primary .step-label { font-size: 15px; }
+
+    .step-desc { font-size: 12px; color: var(--text-3); }
+
+    .step-help {
+      margin-top: 12px; padding-top: 12px;
+      border-top: 1px solid var(--border-soft);
+    }
+    .step-help summary {
+      font-size: 11.5px; font-weight: 600; color: var(--text-3);
+      cursor: pointer; list-style: none;
+      display: flex; align-items: center; gap: 6px;
+    }
+    .step-help summary::-webkit-details-marker { display: none; }
+    .step-help summary:hover { color: var(--text-2); }
+    .step-help-icon {
+      width: 16px; height: 16px; border-radius: 50%;
+      border: 1px solid currentColor;
+      display: grid; place-items: center;
+      font-size: 9px; font-weight: 800; flex-shrink: 0;
+    }
+    .step-help-body {
+      font-size: 12px; color: var(--text-3);
+      line-height: 1.55; margin-top: 8px; padding-left: 22px;
+    }
+
+    /* ── Status card ─────────────────────────────── */
+    .status-card {
+      padding: 18px 20px;
+      border-radius: var(--r-lg);
+      background: var(--surface); border: 1px solid var(--border);
+      box-shadow: var(--shadow-card);
+    }
+    .sc-heading {
+      font-size: 10px; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.1em;
+      color: var(--text-3); margin-bottom: 14px;
+    }
+
+    .sc-member {
+      display: flex; align-items: center; gap: 10px;
+      padding: 8px 0; border-bottom: 1px solid var(--border-soft);
+    }
+    .sc-member:last-child { border-bottom: none; }
+
+    .sc-av {
+      width: 30px; height: 30px; border-radius: 50%;
+      display: grid; place-items: center;
+      font-size: 9.5px; font-weight: 800; flex-shrink: 0;
+    }
+    .sc-av--host   { background: linear-gradient(145deg,var(--gold),#aa7a22); color: #120900; }
+    .sc-av--you    { background: linear-gradient(145deg,var(--orange),#c84d16); color: #fff; }
+    .sc-av--member { background: linear-gradient(145deg,#5a4f7a,#3d3460); color: #ccc; }
+    .sc-av--open   { background: var(--surface-2); border: 1px dashed rgba(255,255,255,0.09); color: var(--text-3); }
+
+    .sc-name { font-size: 13.5px; font-weight: 600; flex: 1; }
+    .sc-name--open { color: var(--text-3); font-weight: 400; }
+    .sc-tag  {
+      font-size: 10px; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-3);
+    }
+
+    .sc-divider { margin: 12px 0 10px; border: none; border-top: 1px solid var(--border-soft); }
+
+    .sc-info-row {
+      display: flex; align-items: center; justify-content: space-between;
+      font-size: 12px; padding: 3px 0;
+    }
+    .sc-label { color: var(--text-3); }
+    .sc-val   { color: var(--text-2); font-weight: 600; }
+    .sc-val--blue    { color: var(--blue); }
+    .sc-val--waiting { color: var(--gold); }
+
+    /* ── Hub actions ─────────────────────────────── */
+    .hub-actions {
+      display: flex; flex-wrap: wrap;
+      gap: 8px; margin-bottom: 18px; align-items: center;
+    }
+
+    /* ── Host share card ─────────────────────────── */
+    .host-share {
+      margin-bottom: 16px; padding: 22px;
+      border-radius: var(--r-lg);
+      background:
+        linear-gradient(155deg, var(--gold-dim) 0%, rgba(239,112,48,0.03) 100%),
+        var(--surface);
+      border: 1px solid rgba(212,165,60,0.22);
+      box-shadow: var(--shadow-card);
+    }
+    .host-share h2 {
+      font-size: 1.05rem; font-weight: 800;
+      letter-spacing: -0.02em; margin-bottom: 3px;
+    }
+    .host-share p { font-size: 13px; color: var(--text-2); margin-bottom: 14px; }
+
+    .discord-preview {
+      margin-bottom: 16px;
+      padding: 12px 14px;
+      border-radius: var(--r-sm);
+      background: rgba(0,0,0,0.32);
+      border: 1px solid rgba(255,255,255,0.06);
+      font-size: 12px;
+      font-family: 'Inter', ui-monospace, monospace;
+      color: var(--text-2);
+      white-space: pre;
+      line-height: 1.65;
+      overflow-x: auto;
+    }
+
+    /* ── Checklist ───────────────────────────────── */
+    .checklist {
+      padding: 20px; border-radius: var(--r-lg);
+      background: var(--surface); border: 1px solid var(--border);
+      margin-bottom: 16px;
+    }
+    .checklist h3 {
+      font-size: 10px; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.1em;
+      color: var(--text-3); margin-bottom: 13px;
+    }
+    .checklist ol {
+      padding-left: 18px; display: flex; flex-direction: column; gap: 8px;
+    }
+    .checklist li { font-size: 13px; color: var(--text-2); line-height: 1.5; }
+    .checklist li strong { color: var(--text); }
+
+    /* ── Role toggle ─────────────────────────────── */
+    .role-toggle {
+      display: inline-flex; padding: 3px;
+      border-radius: var(--r-sm);
+      background: var(--surface); border: 1px solid var(--border);
+      margin-bottom: 16px;
+    }
+    .role-toggle button {
+      padding: 7px 14px; border: none; border-radius: 5px;
+      background: transparent; color: var(--text-3);
+      font: 600 12px/1 'Inter', sans-serif; cursor: pointer;
+      transition: background .13s, color .13s;
+    }
+    .role-toggle button.active { background: var(--orange); color: #fff; }
+    .role-toggle button:not(.active):hover { color: var(--text-2); }
+
+    /* ── Toast ───────────────────────────────────── */
+    .toast {
+      position: fixed; bottom: 24px; left: 50%;
+      transform: translateX(-50%) translateY(60px);
+      padding: 10px 20px;
+      border-radius: var(--r-sm);
+      background: var(--surface-3); color: var(--text);
+      font-size: 13.5px; font-weight: 600;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.6), 0 1px 0 rgba(255,255,255,0.06) inset;
+      border: 1px solid var(--border-strong);
+      opacity: 0;
+      transition: transform .22s cubic-bezier(.34,1.4,.64,1), opacity .18s;
+      z-index: 999; pointer-events: none; white-space: nowrap;
+    }
+    .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+    .fade-in { animation: fadeUp .22s ease; }
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(8px); }
+      to   { opacity: 1; transform: none; }
+    }
+
+    /* ── Button: done/confirmed state ───────────── */
+    .btn--done {
+      background: var(--green-dim) !important;
+      border-color: var(--green-border) !important;
+      color: var(--green) !important;
+      box-shadow: none !important;
+      cursor: default;
+    }
+    .btn:disabled:not(.btn--done) {
+      opacity: 0.38; cursor: not-allowed;
+    }
+
+    /* ── Per-player status badge ─────────────────── */
+    .sc-status {
+      font-size: 10.5px; font-weight: 700;
+      padding: 2px 7px; border-radius: var(--r-pill);
+      white-space: nowrap; flex-shrink: 0; letter-spacing: 0.02em;
+    }
+    .sc-status--idle    { color: var(--text-3); border: 1px solid var(--border); }
+    .sc-status--voice   { background: var(--blue-dim);  color: var(--blue);  border: 1px solid var(--blue-border); }
+    .sc-status--steam   { background: var(--blue-dim);  color: var(--blue);  border: 1px solid var(--blue-border); }
+    .sc-status--ready   { background: var(--green-dim); color: var(--green); border: 1px solid var(--green-border); }
+    .sc-status--host    { background: var(--gold-dim);  color: var(--gold);  border: 1px solid var(--gold-border); }
+    .sc-status--ingame  { background: var(--green-dim); color: var(--green); border: 1px solid var(--green-border); }
+
+    /* ── Status card counters ────────────────────── */
+    .sc-counter { display: flex; align-items: center; justify-content: space-between; padding: 3px 0; }
+    .sc-counter-label { font-size: 12px; color: var(--text-3); }
+    .sc-counter-val   { font-size: 12px; font-weight: 700; color: var(--text-2); }
+    .sc-counter-val--ready  { color: var(--green); }
+    .sc-counter-val--active { color: var(--gold); }
+
+    /* ── Step row states ─────────────────────────── */
+    .step-row--done .step-label { color: var(--text-3); }
+    .step-row--done .step-desc  { color: var(--text-3); opacity: 0.55; }
+    .step-row--waiting {
+      padding: 12px 14px; margin: -2px -2px 10px;
+      border-radius: 10px;
+      background: rgba(212,165,60,0.04);
+      border: 1px solid rgba(212,165,60,0.12) !important;
+    }
+    .step-row--waiting .step-label { color: var(--gold); }
+
+    /* ── Hub message (closed / expired) ─────────── */
+    .hub-message {
+      padding: 52px 32px; text-align: center;
+      border-radius: var(--r-lg);
+      background: var(--surface); border: 1px solid var(--border);
+      box-shadow: var(--shadow-card);
+      margin-bottom: 18px;
+    }
+    .hub-message-icon { font-size: 2.2rem; margin-bottom: 14px; }
+    .hub-message h2 {
+      font-size: 1.05rem; font-weight: 800;
+      letter-spacing: -0.025em; margin-bottom: 8px;
+    }
+    .hub-message p {
+      font-size: 14px; color: var(--text-2);
+      max-width: 360px; margin: 0 auto 22px; line-height: 1.6;
+    }
+    .hub-message-actions { display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap; }
+
+    /* ── Freshness indicators (browse) ───────────── */
+    .prf-online { display: inline-flex; align-items: center; gap: 4px; color: var(--green); font-weight: 600; }
+    .prf-dot    { width: 5px; height: 5px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
+    .prf-time   { color: var(--text-3); }
+
+    /* ── Full-room badge ─────────────────────────── */
+    .pr-full-badge {
+      padding: 3px 9px; border-radius: var(--r-pill);
+      background: rgba(255,255,255,0.04); border: 1px solid var(--border);
+      font-size: 11px; font-weight: 700; color: var(--text-3);
+      letter-spacing: 0.03em;
+    }
+
+    /* ── Demo controls ───────────────────────────── */
+    .demo-controls {
+      margin-top: 36px; padding: 16px 18px;
+      border-radius: var(--r-md);
+      border: 1px dashed rgba(255,255,255,0.07);
+      background: rgba(0,0,0,0.18);
+    }
+    .demo-controls-title {
+      font-size: 10px; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.1em;
+      color: var(--text-3); margin-bottom: 10px;
+    }
+    .demo-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+    .demo-chip {
+      padding: 5px 12px; border-radius: var(--r-pill);
+      background: transparent; border: 1px solid var(--border);
+      font: 600 11.5px/1 'Inter', sans-serif;
+      color: var(--text-3); cursor: pointer;
+      transition: border-color .13s, color .13s, background .13s;
+    }
+    .demo-chip:hover { color: var(--text-2); border-color: var(--border-strong); }
+    .demo-chip.active { color: var(--orange); border-color: var(--orange-border); background: var(--orange-dim); }
+
+    /* ── Details modal ───────────────────────────── */
+    .modal-backdrop {
+      position: fixed; inset: 0; z-index: 800;
+      background: rgba(0,0,0,0.65);
+      display: flex; align-items: center; justify-content: center;
+      padding: 20px;
+    }
+    .modal-panel {
+      background: var(--surface);
+      border: 1px solid var(--border-strong);
+      border-radius: var(--r-lg);
+      box-shadow: 0 24px 80px rgba(0,0,0,0.7), 0 1px 0 rgba(255,255,255,0.04) inset;
+      max-width: 520px; width: 100%;
+      max-height: 88vh; overflow-y: auto;
+      padding: 26px;
+    }
+    .modal-title {
+      font-size: 1.05rem; font-weight: 800;
+      letter-spacing: -0.025em; margin-bottom: 5px;
+    }
+    .modal-subtitle { font-size: 13px; color: var(--text-3); margin-bottom: 18px; }
+    .modal-detail-row {
+      display: flex; justify-content: space-between; align-items: flex-start;
+      gap: 12px; padding: 7px 0;
+      border-bottom: 1px solid var(--border-soft);
+      font-size: 13.5px;
+    }
+    .modal-detail-row:last-of-type { border-bottom: none; }
+    .modal-detail-label { color: var(--text-3); white-space: nowrap; flex-shrink: 0; }
+    .modal-detail-val   { color: var(--text-2); font-weight: 500; text-align: right; }
+    .modal-steps {
+      margin: 18px 0 0; padding: 16px 18px;
+      border-radius: var(--r-md);
+      background: var(--surface-2); border: 1px solid var(--border);
+    }
+    .modal-steps h4 {
+      font-size: 10px; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.1em;
+      color: var(--text-3); margin-bottom: 11px;
+    }
+    .modal-steps ol {
+      padding-left: 18px; display: flex; flex-direction: column; gap: 6px;
+    }
+    .modal-steps li { font-size: 13px; color: var(--text-2); line-height: 1.5; }
+    .modal-steps li strong { color: var(--text); }
+    .modal-actions {
+      display: flex; gap: 10px; justify-content: flex-end;
+      margin-top: 20px; padding-top: 18px;
+      border-top: 1px solid var(--border-soft);
+    }
+
+    /* ── Status card: char sub-line ──────────────── */
+    .sc-member-info { flex: 1; min-width: 0; }
+    .sc-char { font-size: 11.5px; color: var(--text-3); margin-top: 1px; }
+
+    /* ── Party row: freshness ────────────────────── */
+    .pr-fresh {
+      display: flex; align-items: center; gap: 6px;
+      font-size: 11.5px; margin-bottom: 4px;
+    }
+    .prf-sep { color: var(--text-3); }
+
+    /* ── Party row: full state ───────────────────── */
+    .party-row--full { opacity: 0.72; }
+    .party-row--full:hover { opacity: 0.85; }
+
+    /* ══════════════════════════════════════════════
+       PARTY TICKET
+    ══════════════════════════════════════════════ */
+    .ticket-list { display: flex; flex-direction: column; gap: 10px; }
+
+    .ticket {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--r-lg);
+      box-shadow: var(--shadow-card);
+      overflow: hidden;
+      transition: border-color .18s, box-shadow .18s;
+    }
+    .ticket:hover {
+      border-color: var(--border-strong);
+      box-shadow: 0 6px 28px rgba(0,0,0,0.42), 0 1px 0 rgba(255,255,255,0.025) inset;
+    }
+    .ticket--full { opacity: 0.58; }
+
+    .ticket-main {
+      display: grid;
+      grid-template-columns: 1fr 148px 110px;
+      align-items: start;
+    }
+
+    /* Left: info */
+    .ticket-info { padding: 20px 20px 20px 22px; }
+
+    .ticket-title {
+      font-size: 15px; font-weight: 800;
+      letter-spacing: -0.025em; margin-bottom: 4px; line-height: 1.25;
+    }
+    .ticket-host { font-size: 13px; color: var(--text-2); margin-bottom: 8px; }
+
+    .ticket-voice {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 3px 10px; border-radius: var(--r-pill);
+      font-size: 12px; font-weight: 700; margin-bottom: 8px;
+    }
+    .ticket-voice--lfg  { background: var(--blue-dim);  color: var(--blue);  border: 1px solid var(--blue-border); }
+    .ticket-voice--none { background: transparent;       color: var(--text-3); border: 1px solid var(--border); }
+    .ticket-voice--flex { background: var(--gold-dim);  color: var(--gold);  border: 1px solid var(--gold-border); }
+    .tv-dot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
+
+    .ticket-run  { font-size: 12px; color: var(--text-3); line-height: 1.55; }
+    .ticket-note { font-size: 11.5px; color: var(--text-3); margin-top: 6px; font-style: italic; opacity: 0.65; }
+
+    /* Center: seat slots */
+    .ticket-seats {
+      padding: 18px 14px;
+      border-left: 1px solid var(--border-soft);
+      border-right: 1px solid var(--border-soft);
+      display: flex; flex-direction: column; gap: 5px;
+    }
+    .seat-slot {
+      padding: 6px 10px; border-radius: var(--r-sm);
+      display: flex; flex-direction: column; align-items: center;
+      text-align: center; min-width: 0;
+    }
+    .seat-slot--host   { background: var(--gold-dim);              border: 1px solid var(--gold-border); }
+    .seat-slot--member { background: rgba(106,182,255,0.07);       border: 1px solid rgba(106,182,255,0.14); }
+    .seat-slot--you    { background: var(--orange-dim);            border: 1px solid var(--orange-border); }
+    .seat-slot--open   { background: transparent;                  border: 1px dashed rgba(255,255,255,0.07); }
+
+    .slot-name {
+      font-size: 12.5px; font-weight: 700; color: var(--text);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 110px;
+    }
+    .seat-slot--open   .slot-name { color: var(--text-3); font-weight: 400; }
+    .slot-tag {
+      font-size: 9px; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.07em; color: var(--text-3); margin-top: 1px;
+    }
+    .seat-slot--host   .slot-tag { color: var(--gold); }
+    .seat-slot--you    .slot-tag { color: var(--orange); }
+    .seat-slot--member .slot-tag { color: rgba(106,182,255,0.7); }
+
+    /* Right: CTA */
+    .ticket-cta {
+      padding: 18px 22px 18px 16px;
+      display: flex; flex-direction: column; align-items: flex-end; gap: 10px;
+    }
+    .ticket-need-big {
+      font-size: 28px; font-weight: 800;
+      letter-spacing: -0.05em; color: var(--text); line-height: 1;
+    }
+    .ticket-need-sub { font-size: 11px; color: var(--text-3); text-align: right; margin-top: 1px; }
+    .ticket-btns { display: flex; flex-direction: column; gap: 5px; width: 100%; }
+    .ticket-btns .btn { width: 100%; justify-content: center; }
+    .ticket-full-badge {
+      padding: 5px 12px; border-radius: var(--r-pill);
+      background: rgba(255,255,255,0.05); border: 1px solid var(--border);
+      font-size: 11px; font-weight: 700; color: var(--text-3);
+    }
+
+    /* Next-step strip */
+    .ticket-strip {
+      border-top: 1px solid var(--border-soft);
+      padding: 8px 22px;
+      background: rgba(0,0,0,0.16);
+      font-size: 12px;
+      display: flex; align-items: center; flex-wrap: wrap; gap: 2px;
+    }
+    .ticket-strip-label { font-weight: 700; color: var(--text-2); margin-right: 6px; flex-shrink: 0; }
+    .ticket-strip-step  { color: var(--text-2); }
+    .ticket-strip-arrow { color: var(--text-3); margin: 0 4px; }
+
+    /* ── How it works helper strip ───────────────── */
+    .how-strip {
+      display: inline-flex; align-items: flex-start; gap: 10px;
+      padding: 10px 14px; margin-bottom: 22px;
+      border-radius: var(--r-sm);
+      background: var(--surface); border: 1px solid var(--border-soft);
+      font-size: 12.5px; color: var(--text-3);
+      max-width: 100%;
+    }
+    .how-strip-label {
+      font-weight: 700; color: var(--text-2); white-space: nowrap; flex-shrink: 0;
+    }
+    .how-strip-steps { display: flex; align-items: center; flex-wrap: wrap; gap: 2px; }
+    .how-step { color: var(--text-2); font-weight: 500; }
+    .how-arrow { color: var(--text-3); margin: 0 3px; font-weight: 400; }
+    .how-note { margin-top: 5px; font-size: 11.5px; color: var(--text-3); line-height: 1.5; }
+
+    /* ── Responsive additions ────────────────────── */
+    @media (max-width: 680px) {
+      .modal-panel { padding: 20px 18px; }
+      .modal-actions { flex-direction: column; }
+      .modal-actions .btn { width: 100%; justify-content: center; }
+      .hub-message { padding: 36px 20px; }
+      .pr-fresh { font-size: 11px; }
+      .how-strip { flex-direction: column; gap: 5px; }
+    }
+
+    /* ══════════════════════════════════════════════
+       RESPONSIVE
+    ══════════════════════════════════════════════ */
+
+    /* Tablet: icon-only sidebar */
+    @media (max-width: 1000px) {
+      :root { --sidebar-w: 54px; }
+      .sidebar-brand { justify-content: center; padding: 16px 0; }
+      .sidebar-brand-name,
+      .sidebar-brand-game { display: none; }
+      .sidebar-item { justify-content: center; padding: 10px; }
+      .sidebar-item span:not(.si-icon) { display: none; }
+      .si-icon { width: 18px; opacity: 0.7; }
+      .sidebar-item.active .si-icon { opacity: 1; }
+    }
+
+    /* Mobile: no sidebar, show top bar */
+    @media (max-width: 680px) {
+      :root { --page-pad: 16px; }
+
+      .sidebar { display: none; }
+      .mobile-top { display: flex; }
+
+      .page-title { font-size: 1.45rem; }
+      .page-sub   { font-size: 14px; }
+
+      /* hero actions stack full-width */
+      .hero-actions { flex-direction: column; align-items: stretch; }
+      .hero-actions .btn { width: 100%; justify-content: center; }
+
+      /* rec panel */
+      .rec-panel { padding: 16px 18px; }
+      .rec-body  { flex-direction: column; align-items: stretch; }
+      .rec-cta   { align-items: stretch; flex-direction: row; flex-wrap: wrap; }
+      .rec-cta .btn { flex: 1; min-width: 0; justify-content: center; }
+      .rec-hint  { display: none; }
+
+      /* section head */
+      .section-head { flex-direction: column; align-items: flex-start; gap: 8px; }
+      .sh-tools { width: 100%; }
+      .search-box { flex: 1; width: auto; }
+
+      /* party rows go vertical */
+      .party-row-main { flex-direction: column; align-items: stretch; gap: 10px; }
+
+      /* party tickets go single-column on mobile */
+      .ticket-main { grid-template-columns: 1fr; }
+      .ticket-info { padding-bottom: 0; }
+      .ticket-seats {
+        flex-direction: row; flex-wrap: wrap; gap: 5px;
+        border-left: none; border-right: none;
+        border-top: 1px solid var(--border-soft);
+        border-bottom: 1px solid var(--border-soft);
+        padding: 12px 22px;
+      }
+      .seat-slot { flex-direction: row; gap: 7px; align-items: center; }
+      .slot-tag  { margin-top: 0; }
+      .ticket-cta {
+        flex-direction: row; align-items: center; justify-content: space-between;
+        padding: 14px 22px; border-top: none;
+      }
+      .ticket-btns { flex-direction: row; width: auto; }
+      .ticket-btns .btn { width: auto; }
+      .ticket-need-big { font-size: 22px; }
+      .pr-action {
+        flex-direction: row; align-items: center;
+        justify-content: space-between; gap: 10px;
+      }
+      .pr-cta { flex-direction: row; align-items: center; }
+      .pr-cta .btn { flex: 1; justify-content: center; }
+      .pr-need { text-align: left; }
+
+      /* hub: single column */
+      .hub-cols { grid-template-columns: 1fr; gap: 14px; }
+
+      /* hub actions: 2-per-row */
+      .hub-actions { gap: 8px; }
+      .hub-actions .btn { flex: 1; min-width: calc(50% - 4px); justify-content: center; }
+      .hub-actions .btn:last-child:nth-child(odd) { flex: 0 0 auto; }
+
+      /* steps: compact */
+      .step-row--primary { margin: 0 0 12px; }
+
+      /* roster wraps tightly */
+      .roster-row { gap: 6px; }
+
+      /* discord preview horizontal scroll */
+      .discord-preview { font-size: 11px; }
+
+      /* host actions */
+      .hub-actions .btn-ghost { flex: 0 0 auto; }
+    }
+
+    @media (max-width: 380px) {
+      :root { --page-pad: 14px; }
+      .party-row-main  { padding: 14px 16px; }
+      .party-row-footer { padding: 7px 16px 9px; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Proto guard -->
+  <div id="proto-guard" class="proto-guard" hidden>
+    <div>
+      <h1>Local development only</h1>
+      <p>This prototype is not available in production. Open it via <strong>127.0.0.1</strong> or <strong>localhost</strong> under <code>/dev/coop-ux-prototype</code>.</p>
+    </div>
+  </div>
+
+  <!-- Mobile top bar -->
+  <div class="mobile-top" aria-hidden="true">
+    <div class="mobile-top-logo">SV</div>
+    <span class="mobile-top-name">SpireVault</span>
+    <span class="mobile-top-badge">Co-op</span>
+  </div>
+
+  <!-- App shell -->
+  <div class="app-shell" id="app" hidden>
+
+    <!-- Sidebar — mirrors real app nav -->
+    <nav class="sidebar" aria-label="Main navigation">
+      <div class="sidebar-brand">
+        <div class="sidebar-logo">SV</div>
+        <div>
+          <div class="sidebar-brand-name">SpireVault</div>
+          <div class="sidebar-brand-game">Slay the Spire 2</div>
+        </div>
+      </div>
+      <div class="sidebar-nav">
+        <button class="sidebar-item" data-mock="Stats">
+          <svg class="si-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2" y="2" width="16" height="16" rx="2"/><path d="M5 14l3.5-4 2.5 2.5 3-4 2 2"/></svg>
+          <span>Stats</span>
+        </button>
+        <button class="sidebar-item" data-mock="Runs">
+          <svg class="si-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M5 16V8l5-5 5 5v8"/><path d="M8 16v-4h4v4"/></svg>
+          <span>Runs</span>
+        </button>
+        <button class="sidebar-item active" aria-current="page">
+          <svg class="si-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="7" cy="8" r="2.5"/><circle cx="13" cy="8" r="2.5"/><path d="M2 17c0-2.5 2.2-4 5-4h6c2.8 0 5 1.5 5 4"/></svg>
+          <span>Co-op</span>
+        </button>
+        <div class="sidebar-sep"></div>
+        <button class="sidebar-item" data-mock="Overlay">
+          <svg class="si-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2" y="4" width="16" height="12" rx="2"/><path d="M7 9h6M7 12h4"/></svg>
+          <span>Overlay</span>
+        </button>
+        <button class="sidebar-item" data-mock="Settings">
+          <svg class="si-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="10" cy="10" r="2.8"/><path d="M10 2v2M10 16v2M2 10h2M16 10h2M4.6 4.6l1.4 1.4M14 14l1.4 1.4M4.6 15.4l1.4-1.4M14 6l1.4-1.4"/></svg>
+          <span>Settings</span>
+        </button>
+      </div>
+    </nav>
+
+    <!-- Main content -->
+    <div class="main-content">
+      <div class="page">
+
+        <div class="dev-banner">
+          <span><strong>Prototype</strong> — Co-op Party Finder · static · mock data only</span>
+          <span class="dev-state" id="state-pill">browse</span>
+        </div>
+
+        <!-- ════ BROWSE SCREEN ════ -->
+        <section id="screen-browse" hidden>
+
+          <header style="margin-bottom:24px">
+            <h1 class="page-title">Stop scrolling LFG chat.</h1>
+            <p class="page-sub" style="margin-bottom:18px">Pick an open STS2 party, join voice, and get into the run. SpireVault organizes the party — Discord handles voice, Steam handles the invite.</p>
+            <div class="hero-actions">
+              <button type="button" class="btn btn-primary btn-sm" id="quick-join">Quick Match</button>
+              <button type="button" class="btn btn-ghost btn-sm" data-mock="Host a Room">Host a Room</button>
+            </div>
+          </header>
+
+          <!-- What do you want to play? intent panel -->
+          <div class="rec-panel" id="intent-panel" style="margin-bottom:24px">
+            <div class="rec-eyebrow">What do you want to play?</div>
+            <div class="rec-body">
+              <div class="rec-info">
+                <div style="display:flex;flex-wrap:wrap;gap:6px 10px;margin-bottom:10px">
+                  <span class="seat-chip seat-chip--member" style="font-size:12px">Ironclad</span>
+                  <span class="seat-chip seat-chip--member" style="font-size:12px">A8–A10</span>
+                  <span class="seat-chip seat-chip--member" style="font-size:12px">Voice preferred</span>
+                  <span class="seat-chip seat-chip--member" style="font-size:12px">Beta branch</span>
+                  <span class="seat-chip seat-chip--member" style="font-size:12px">Heart</span>
+                </div>
+                <div style="font-size:12.5px;color:var(--text-3)">We'll highlight rooms that fit this.</div>
+              </div>
+              <div class="rec-cta">
+                <button type="button" class="btn btn-secondary btn-xs" data-mock="Update Preferences">Update Preferences</button>
+                <button type="button" class="btn btn-primary btn-xs" id="quick-join-intent">Quick Match</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Best Match -->
+          <div id="best-match-panel" style="margin-bottom:24px"></div>
+
+          <!-- Open Parties -->
+          <div class="section-head" style="margin-bottom:12px">
+            <div class="sh-left">
+              <div class="sh-title">Open Rooms</div>
+              <div class="sh-sub">Live STS2 groups with open seats.</div>
+            </div>
+            <div class="sh-tools">
+              <button type="button" class="btn btn-ghost btn-xs" data-mock="Filter by goal, ascension, voice">Filter</button>
+            </div>
+          </div>
+
+          <div class="ticket-list" id="party-list"></div>
+
+        </section>
+
+        <!-- ════ PARTY HUB SCREEN ════ -->
+        <section id="screen-hub" hidden>
+
+          <div id="hub-header" class="hub-header"></div>
+          <div id="hub-bar"    class="hub-bar"></div>
+          <div id="hub-roster" class="roster-row"></div>
+
+          <!-- Edge state message (closed / expired) -->
+          <div id="hub-message" class="hub-message" hidden></div>
+
+          <!-- Normal party panels -->
+          <div id="hub-panels">
+            <div class="hub-cols">
+              <div id="hub-main-panel"></div>
+              <div id="status-card" class="status-card"></div>
+            </div>
+            <div id="hub-action-row" class="hub-actions"></div>
+          </div>
+
+          <!-- Role toggle + back -->
+          <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-top:10px;">
+            <div class="role-toggle" role="tablist" aria-label="Preview role">
+              <button type="button" id="toggle-joiner" class="active" role="tab" aria-selected="true">Joiner view</button>
+              <button type="button" id="toggle-host"   role="tab" aria-selected="false">Host view</button>
+            </div>
+            <button type="button" class="back-btn" id="back-browse">← Back to Open Rooms</button>
+          </div>
+
+        </section>
+
+        <!-- ════ DEMO CONTROLS ════ -->
+        <div class="demo-controls" id="demo-controls" hidden>
+          <div class="demo-controls-title">Prototype Controls — edge states &amp; partner simulation</div>
+          <div class="demo-chips">
+            <button class="demo-chip" data-demo="reset">↺ Reset</button>
+            <button class="demo-chip" data-demo="advance-partner">Advance Partner →</button>
+            <button class="demo-chip" data-demo="novice">Sim: No Voice Room</button>
+            <button class="demo-chip" data-demo="closed">Sim: Host Closed</button>
+            <button class="demo-chip" data-demo="expired">Sim: Expired</button>
+            <button class="demo-chip" data-demo="ingame">Sim: Both In Game</button>
+          </div>
+        </div>
+
+      </div><!-- /.page -->
+    </div><!-- /.main-content -->
+  </div><!-- /.app-shell -->
+
+  <!-- Details modal -->
+  <div id="details-modal" class="modal-backdrop" hidden role="dialog" aria-modal="true" aria-labelledby="details-title">
+    <div class="modal-panel">
+      <div id="details-content"></div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-primary btn-sm" id="details-join">Join Room</button>
+        <button type="button" class="btn btn-ghost btn-sm" id="details-close">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <script>
+  (function () {
+    "use strict";
+
+    var HOST   = location.hostname;
+    var pathOK = /\/dev\//i.test(location.pathname) || /coop-ux-prototype/i.test(location.pathname);
+    var localOK = HOST === "localhost" || HOST === "127.0.0.1" || HOST === "::1" || HOST.endsWith(".localhost");
+
+    if (!localOK || !pathOK) {
+      document.getElementById("proto-guard").hidden = false;
+      return;
+    }
+    document.getElementById("proto-guard").hidden = true;
+    document.getElementById("app").hidden = false;
+    document.getElementById("demo-controls").hidden = false;
+
+    /* ══════════════════════════════════════════
+       MOCK DATA
+    ══════════════════════════════════════════ */
+    var YOU = "c3rooks";
+
+    var ROOMS = [
+      {
+        id: "r1", title: "A10 Heart Attempt",
+        host: "Mako", hostChar: "Defect",
+        activity: "active now", hostOnline: true,
+        branch: "Beta branch", mode: "Standard", ascension: "A8–A10", goal: "Heart Attempt",
+        voiceType: "lfg", voiceLabel: "LFG 1", voiceChannel: "LFG 1",
+        mic: "Mic preferred",
+        charFit: "Ironclad available",
+        filled: 1, size: 4,
+        members: [{ name: "Mako", char: "Defect" }],
+        note: "Trying to get a clean Heart run.",
+      },
+      {
+        id: "r2", title: "Daily Score Push",
+        host: "SpireSage", hostChar: "Silent",
+        activity: "2 min ago", hostOnline: true,
+        branch: "Main or Beta OK", mode: "Daily", ascension: "Any level", goal: "Daily climb",
+        voiceType: "none", voiceLabel: "No voice", voiceChannel: null,
+        mic: "Quiet \u2014 no mic",
+        charFit: "Flexible characters",
+        filled: 2, size: 4,
+        members: [{ name: "SpireSage", char: "Silent" }, { name: "Rune", char: "Regent" }],
+        note: "Chill daily run, score optional.",
+      },
+      {
+        id: "r3", title: "Learning Run",
+        host: "QuietDefect", hostChar: "Necrobinder",
+        activity: "active now", hostOnline: false,
+        branch: "Beta branch", mode: "Standard", ascension: "A0–A3", goal: "Learning",
+        voiceType: "lfg", voiceLabel: "LFG 6", voiceChannel: "LFG 6",
+        mic: "Mic optional",
+        charFit: "Any character welcome",
+        filled: 1, size: 4,
+        members: [{ name: "QuietDefect", char: "Necrobinder" }],
+        note: "Newer players welcome.",
+      },
+      {
+        id: "r4", title: "A10 Climb",
+        host: "Dran", hostChar: "Ironclad",
+        activity: "active now", hostOnline: true,
+        branch: "Beta branch", mode: "Standard", ascension: "A10", goal: "Climb",
+        voiceType: "lfg", voiceLabel: "LFG 3", voiceChannel: "LFG 3",
+        mic: "Mic optional",
+        charFit: "Any character welcome",
+        filled: 4, size: 4,
+        members: [
+          { name: "Dran", char: "Ironclad" }, { name: "VeilRaven", char: "Silent" },
+          { name: "Dusk", char: "Defect" },   { name: "Kira", char: "Regent" },
+        ],
+        note: "",
+      },
+    ];
+
+    /* ══════════════════════════════════════════
+       STATE
+    ══════════════════════════════════════════ */
+    var state      = "browse";
+    var partyRole  = "joiner";
+    var joinedRoom = ROOMS[0];
+    var partyState = "initial";   /* joiner: initial|voice_joined|steam_copied|ready|in_game */
+    var hostState  = "initial";   /* host:   initial|discord_copied|hosting_sts2|char_select|invites_sent|in_game */
+    var edgeState  = null;        /* null|"closed"|"expired" */
+    var detailsRoom = null;
+    var toastTimer;
+
+    var HOST_STATES  = ["initial","discord_copied","hosting_sts2","char_select","invites_sent","in_game"];
+    var PARTY_STATES = ["initial","voice_joined","steam_copied","ready","in_game"];
+
+    function hostAtLeast(s)  { return HOST_STATES.indexOf(hostState)  >= HOST_STATES.indexOf(s); }
+    function partyAtLeast(s) { return PARTY_STATES.indexOf(partyState) >= PARTY_STATES.indexOf(s); }
+
+    var $pill   = document.getElementById("state-pill");
+    var $browse = document.getElementById("screen-browse");
+    var $hub    = document.getElementById("screen-hub");
+    var $list   = document.getElementById("party-list");
+    var $toast  = document.getElementById("toast");
+
+    /* ══════════════════════════════════════════
+       HELPERS
+    ══════════════════════════════════════════ */
+    function esc(s) {
+      var d = document.createElement("div");
+      d.textContent = String(s || "");
+      return d.innerHTML;
+    }
+
+    function initials(n) {
+      if (!n) return "·";
+      var w = n.trim().split(/\s+/);
+      return w.length >= 2 ? (w[0][0] + w[1][0]).toUpperCase() : n.slice(0, 2).toUpperCase();
+    }
+
+    function openSeats(r, filledOverride) {
+      return Math.max(0, r.size - (filledOverride != null ? filledOverride : r.filled));
+    }
+
+    function showToast(msg, ms) {
+      clearTimeout(toastTimer);
+      $toast.textContent = msg;
+      $toast.classList.add("show");
+      toastTimer = setTimeout(function () { $toast.classList.remove("show"); }, ms || 2400);
+    }
+
+    function voiceChipHtml(r) {
+      var cls = "voice-chip voice-chip--" + (r.voiceType === "lfg" ? "lfg" : r.voiceType === "none" ? "none" : "flex");
+      var dot = r.voiceType !== "none" ? '<span class="voice-dot" aria-hidden="true"></span>' : "";
+      return '<span class="' + cls + '">' + dot + esc(r.voiceLabel) + '</span>';
+    }
+
+    function seatChipHtml(m, isHost) {
+      if (!m) return '<span class="seat-chip seat-chip--open">Open</span>';
+      var mod = isHost ? "host" : "member";
+      return (
+        '<span class="seat-chip seat-chip--' + mod + '">' +
+        '<span class="seat-av" aria-hidden="true">' + esc(initials(m.name)) + '</span>' +
+        esc(m.name) +
+        (m.char ? '<span style="font-size:10px;opacity:0.6;margin-left:3px">· ' + esc(m.char) + '</span>' : '') +
+        '</span>'
+      );
+    }
+
+    function discordPost(r, filled) {
+      var f = filled != null ? filled : r.filled;
+      var open = Math.max(0, r.size - f);
+      return (
+        "Looking for STS2 co-op — " + r.title + "\n" +
+        r.mode + " · " + r.ascension + " · " + f + " of " + r.size + " filled · " + open + " open seats\n" +
+        "Voice: " + r.voiceLabel + "\n\n" +
+        "Join Room:\nhttps://spirevault.app/coop?room=demo-room"
+      );
+    }
+
+    /* ══════════════════════════════════════════
+       STATUS LABEL HELPERS
+    ══════════════════════════════════════════ */
+    function joinerStatusInfo(ps) {
+      var map = {
+        "initial":      { label: "Not ready",   cls: "sc-status--idle" },
+        "voice_joined": { label: "Voice ✓",     cls: "sc-status--voice" },
+        "steam_copied": { label: "Steam added", cls: "sc-status--steam" },
+        "ready":        { label: "Ready ✓",     cls: "sc-status--ready" },
+        "in_game":      { label: "In Game ✓",   cls: "sc-status--ingame" },
+      };
+      return map[ps] || { label: ps, cls: "sc-status--idle" };
+    }
+
+    function hostStatusInfo(hs) {
+      var map = {
+        "initial":        { label: "Setting up",        cls: "sc-status--idle" },
+        "discord_copied": { label: "Shared party",      cls: "sc-status--voice" },
+        "hosting_sts2":   { label: "In STS2",           cls: "sc-status--host" },
+        "char_select":    { label: "On char select ✓",  cls: "sc-status--host" },
+        "invites_sent":   { label: "Invites sent ✓",   cls: "sc-status--ready" },
+        "in_game":        { label: "In Game ✓",         cls: "sc-status--ingame" },
+      };
+      return map[hs] || { label: hs, cls: "sc-status--idle" };
+    }
+
+    function roomStatusInfo() {
+      if (hostAtLeast("in_game"))       return { text: "In run",           cls: "sc-counter-val--ready" };
+      if (hostAtLeast("invites_sent"))  return { text: "Invites sent",     cls: "sc-counter-val--active" };
+      if (hostAtLeast("char_select"))   return { text: "Ready to invite",  cls: "sc-counter-val--active" };
+      if (hostAtLeast("hosting_sts2")) return { text: "Host in STS2",     cls: "sc-counter-val--active" };
+      return { text: "Waiting for players", cls: "" };
+    }
+
+    function hubInstruction() {
+      var isHost = (partyRole === "host");
+      if (isHost) {
+        var ti = {
+          initial:        "Your party is live.",
+          discord_copied: "Discord post shared.",
+          hosting_sts2:   "STS2 open.",
+          char_select:    "On character select.",
+          invites_sent:   "Invites sent.",
+          in_game:        "You're in game.",
+        };
+        var su = {
+          initial:        "Share the Discord post to find players.",
+          discord_copied: "Open STS2 Multiplayer → Host → pick a mode.",
+          hosting_sts2:   "Choose your character to unlock the invite step.",
+          char_select:    "Invite players through Steam — or accept their requests.",
+          invites_sent:   "Players should see you in STS2. Mark when the run starts.",
+          in_game:        "Update the party when you're done.",
+        };
+        return { title: ti[hostState] || ti.initial, sub: su[hostState] || su.initial };
+      } else {
+        var noVoice = joinedRoom.voiceType === "none";
+        if (partyState === "initial") {
+          if (noVoice) return { title: "You claimed a seat.", sub: "No voice for this room — add " + joinedRoom.host + " on Steam, then open STS2." };
+          return { title: "You claimed a seat.", sub: "You're in " + joinedRoom.host + "'s party. Join voice, add the host, and start STS2." };
+        }
+        if (partyState === "voice_joined") return { title: "Voice joined.", sub: "Now copy the host's Steam profile and send a friend request." };
+        if (partyState === "steam_copied") return { title: "Steam added.", sub: "Let " + joinedRoom.host + " know you're ready." };
+        if (partyState === "ready") {
+          if (hostAtLeast("char_select")) return { title: joinedRoom.host + " is on character select.", sub: "Open STS2 Multiplayer → Join → Refresh if needed." };
+          return { title: "You're ready.", sub: "Waiting for " + joinedRoom.host + " to reach character select." };
+        }
+        return { title: "You're in game.", sub: "Good luck on the run!" };
+      }
+    }
+
+    /* ══════════════════════════════════════════
+       BROWSE SCREEN — PARTY TICKETS
+    ══════════════════════════════════════════ */
+    function renderRec() { /* rec panel removed — tickets only */ }
+
+    function renderBestMatch() {
+      var r = ROOMS[0]; // Best match = Party 1 per spec
+      var open = openSeats(r);
+      var reasons = [
+        "Ironclad available",
+        "Beta branch",
+        "A8–A10",
+        "Voice: " + r.voiceLabel,
+        open + " open seat" + (open !== 1 ? "s" : ""),
+      ];
+      var reasonHtml = reasons.map(function (t) {
+        return '<span class="seat-chip seat-chip--host" style="font-size:11px;padding:3px 8px 3px 7px">' +
+          '<span style="color:var(--green);font-size:9px;margin-right:2px">✓</span> ' + esc(t) + '</span>';
+      }).join("");
+
+      document.getElementById("best-match-panel").innerHTML =
+        '<div class="rec-panel" style="border-color:var(--green-border)">' +
+        '<div class="rec-eyebrow" style="color:var(--green)">Best Match</div>' +
+        '<div class="rec-body">' +
+          '<div class="rec-info">' +
+            '<h3 class="rec-title">' + esc(r.title) + '</h3>' +
+            '<div class="rec-meta">' + esc(r.host) + ' is hosting<span class="rec-dot">·</span>' +
+              esc(r.mode) + '<span class="rec-dot">·</span>' + esc(r.ascension) +
+            '</div>' +
+            '<div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:8px">' + reasonHtml + '</div>' +
+          '</div>' +
+          '<div class="rec-cta">' +
+            '<button type="button" class="btn btn-primary btn-sm" data-action="join-best" data-rid="' + esc(r.id) + '">Join Room</button>' +
+            '<button type="button" class="btn-text" data-details="' + esc(r.id) + '">Details</button>' +
+          '</div>' +
+        '</div>' +
+        '</div>';
+
+      document.getElementById("best-match-panel").querySelector("[data-action=join-best]")
+        .addEventListener("click", function () {
+          joinedRoom = r; resetPartyState(); goToHub();
+        });
+      var dBtn = document.getElementById("best-match-panel").querySelector("[data-details]");
+      if (dBtn) dBtn.addEventListener("click", function () { openDetails(dBtn.getAttribute("data-details")); });
+    }
+
+    function voiceBadgeHtml(r) {
+      if (r.voiceType === "lfg") {
+        return '<div class="ticket-voice ticket-voice--lfg"><span class="tv-dot"></span>Voice: ' + esc(r.voiceLabel) + '</div>';
+      }
+      if (r.voiceType === "none") {
+        return '<div class="ticket-voice ticket-voice--none">No voice needed</div>';
+      }
+      return '<div class="ticket-voice ticket-voice--flex"><span class="tv-dot"></span>Voice flexible</div>';
+    }
+
+    function renderParties() {
+      $list.innerHTML = ROOMS.map(function (r) {
+        var open = openSeats(r);
+        var full = open === 0;
+
+        /* seat slots — center column */
+        var slotsHtml = "";
+        for (var i = 0; i < r.size; i++) {
+          var m = r.members[i];
+          if (m) {
+            var isHost = (i === 0);
+            var cls = isHost ? "seat-slot--host" : "seat-slot--member";
+            var tag = isHost ? "Host" : "Joined";
+            slotsHtml += '<div class="seat-slot ' + cls + '"><div class="slot-name">' + esc(m.name) + '</div><div class="slot-tag">' + tag + '</div></div>';
+          } else {
+            slotsHtml += '<div class="seat-slot seat-slot--open"><div class="slot-name">Open</div><div class="slot-tag">Seat</div></div>';
+          }
+        }
+
+        /* right CTA */
+        var ctaHtml = full
+          ? '<div class="ticket-full-badge">Full</div>'
+          : ('<div class="ticket-btns">' +
+              '<button type="button" class="btn btn-primary btn-sm" data-action="join" data-rid="' + esc(r.id) + '">Join Room</button>' +
+              '<button type="button" class="btn-text" data-details="' + esc(r.id) + '">Details</button>' +
+              '</div>');
+
+        /* next-step strip */
+        var stripHtml = "";
+        if (!full) {
+          var steps = [];
+          if (r.voiceType === "lfg")       steps.push("Join " + r.voiceLabel);
+          else if (r.voiceType === "flex") steps.push("Join voice (optional)");
+          steps.push("Add host on Steam");
+          steps.push("Start STS2");
+          stripHtml = '<div class="ticket-strip">' +
+            '<span class="ticket-strip-label">After joining:</span>' +
+            steps.map(function (s) { return '<span class="ticket-strip-step">' + esc(s) + '</span>'; })
+              .join('<span class="ticket-strip-arrow">→</span>') +
+            '</div>';
+        }
+
+        return (
+          '<article class="ticket' + (full ? " ticket--full" : "") + '" data-room-id="' + esc(r.id) + '">' +
+          '<div class="ticket-main">' +
+
+          /* left */
+          '<div class="ticket-info">' +
+            '<h3 class="ticket-title">' + esc(r.title) + '</h3>' +
+            '<div class="ticket-host">' + esc(r.host) + ' is hosting · ' + esc(r.hostChar) + '</div>' +
+            voiceBadgeHtml(r) +
+            '<div class="ticket-run">' + esc(r.branch) + ' · ' + esc(r.mode) + ' · ' + esc(r.ascension) + ' · ' + esc(r.goal) + '</div>' +
+            '<div class="ticket-run" style="margin-top:3px">' + esc(r.charFit) + ' · ' + esc(r.mic) + ' · ' + r.filled + ' of ' + r.size + ' filled</div>' +
+            (r.note ? '<div class="ticket-note">"' + esc(r.note) + '"</div>' : '') +
+          '</div>' +
+
+          /* center */
+          '<div class="ticket-seats">' + slotsHtml + '</div>' +
+
+          /* right */
+          '<div class="ticket-cta">' +
+            '<div>' +
+              '<div class="ticket-need-big">' + open + '</div>' +
+              '<div class="ticket-need-sub">' + open + ' open seat' + (open !== 1 ? 's' : '') + '</div>' +
+            '</div>' +
+            ctaHtml +
+          '</div>' +
+
+          '</div>' +
+          stripHtml +
+          '</article>'
+        );
+      }).join("");
+
+      $list.querySelectorAll("[data-action=join]").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          joinedRoom = ROOMS.find(function (r) { return r.id === btn.dataset.rid; }) || ROOMS[0];
+          resetPartyState();
+          goToHub();
+        });
+      });
+      $list.querySelectorAll("[data-details]").forEach(function (btn) {
+        btn.addEventListener("click", function () { openDetails(btn.getAttribute("data-details")); });
+      });
+    }
+
+    /* ══════════════════════════════════════════
+       DETAILS MODAL
+    ══════════════════════════════════════════ */
+    function openDetails(rid) {
+      detailsRoom = ROOMS.find(function (r) { return r.id === rid; }) || ROOMS[0];
+      var r = detailsRoom;
+      var open = openSeats(r);
+
+      /* Character roster for modal */
+      var charLines = [];
+      r.members.forEach(function (m, i) {
+        charLines.push(esc(m.name) + ' — ' + esc(m.char) + (i === 0 ? ' — Host' : ''));
+      });
+      for (var ci = r.members.length; ci < r.size; ci++) {
+        charLines.push('Open — Any');
+      }
+
+      var rows = [
+        ["Host",        r.host],
+        ["Status",      r.hostOnline ? "Active now" : r.activity],
+        ["Branch",      r.branch],
+        ["Mode",        r.mode],
+        ["Ascension",   r.ascension],
+        ["Goal",        r.goal],
+        ["Voice",       r.voiceLabel],
+        ["Mic",         r.mic],
+        ["Characters",  charLines.join('<br>')],
+        ["Seats",       r.filled + " of " + r.size + " filled · " + open + " open seat" + (open !== 1 ? "s" : "")],
+      ];
+      if (r.note) rows.push(["Note", r.note]);
+
+      var rowsHtml = rows.map(function (row) {
+        return '<div class="modal-detail-row"><span class="modal-detail-label">' + esc(row[0]) +
+          '</span><span class="modal-detail-val">' + row[1] + '</span></div>';
+      }).join("");
+
+      var nextVoice = r.voiceType === "none" ? "" :
+        '<li>Join <strong>' + esc(r.voiceLabel) + '</strong> voice in Discord.</li>';
+
+      document.getElementById("details-content").innerHTML =
+        '<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:var(--text-3);margin-bottom:10px">Room details</div>' +
+        '<div class="modal-title" id="details-title">' + esc(r.title) + '</div>' +
+        '<div class="modal-subtitle">' + esc(r.host) + ' is hosting · ' + esc(r.activity) + '</div>' +
+        rowsHtml +
+        '<div class="modal-steps"><h4>After joining</h4><ol>' +
+        '<li>You\'ll enter the <strong>Party Hub</strong>.</li>' +
+        nextVoice +
+        '<li>Add the host on Steam if needed.</li>' +
+        '<li>Open <strong>STS2 Multiplayer</strong>.</li>' +
+        '<li>Join or refresh when the host reaches character select.</li>' +
+        '</ol></div>';
+
+      document.getElementById("details-modal").hidden = false;
+    }
+
+    document.getElementById("details-close").addEventListener("click", function () {
+      document.getElementById("details-modal").hidden = true;
+    });
+    document.getElementById("details-join").addEventListener("click", function () {
+      document.getElementById("details-modal").hidden = true;
+      if (detailsRoom) {
+        joinedRoom = detailsRoom;
+        resetPartyState();
+        goToHub();
+      }
+    });
+    document.getElementById("details-modal").addEventListener("click", function (e) {
+      if (e.target === this) this.hidden = true;
+    });
+
+    /* ══════════════════════════════════════════
+       PARTY HUB STATE MACHINE
+    ══════════════════════════════════════════ */
+    function resetPartyState() {
+      partyState = "initial";
+      hostState  = "initial";
+      edgeState  = null;
+    }
+
+    function goToHub() {
+      showToast("Joined — follow the steps below");
+      state = "party_hub";
+      $browse.hidden = true;
+      $hub.hidden = false;
+      renderHub();
+    }
+
+    function setState(next) {
+      state = next;
+      $browse.hidden = (next !== "browse");
+      $hub.hidden    = !(next === "party_hub" || next === "party_hub_joiner" || next === "party_hub_host");
+      if (next === "party_hub_host")   partyRole = "host";
+      if (next === "party_hub_joiner") partyRole = "joiner";
+      $pill.textContent = next;
+      if (next !== "browse") renderHub();
+    }
+
+    /* ── Hub members ─────────────────────────── */
+    function hubMembers() {
+      var isHost = (partyRole === "host");
+      var list = [];
+      joinedRoom.members.forEach(function (m, i) {
+        var isMe = isHost && i === 0;
+        list.push({
+          name: isMe ? YOU : m.name,
+          char: m.char,
+          tag:  i === 0 ? (isMe ? "You · Host" : "Host") : "Joined",
+          host: i === 0,
+          you:  isMe,
+          open: false,
+        });
+      });
+      if (!isHost) {
+        list.push({ name: YOU, char: "Ironclad", tag: "You", host: false, you: true, open: false });
+      }
+      while (list.length < joinedRoom.size) {
+        list.push({ name: "", char: "", tag: "", host: false, you: false, open: true });
+      }
+      return list.slice(0, joinedRoom.size);
+    }
+
+    /* ── Main hub render ─────────────────────── */
+    function renderHub() {
+      var isHost = (partyRole === "host");
+      var filled = isHost ? joinedRoom.filled : joinedRoom.filled + 1;
+      var open   = openSeats(joinedRoom, filled);
+      var members = hubMembers();
+      var instr  = hubInstruction();
+
+      /* header */
+      document.getElementById("hub-header").innerHTML =
+        '<h1 class="page-title" style="margin-bottom:8px">' + esc(instr.title) + '</h1>' +
+        '<p class="page-sub">' + esc(instr.sub) + '</p>';
+
+      /* summary bar */
+      var rs = roomStatusInfo();
+      document.getElementById("hub-bar").innerHTML =
+        '<span class="hb-title">' + esc(joinedRoom.title) + '</span>' +
+        '<span class="hb-chip">' + esc(joinedRoom.branch) + ' · ' + esc(joinedRoom.mode) + ' · ' + esc(joinedRoom.ascension) + ' · ' + esc(joinedRoom.goal) + '</span>' +
+        '<span class="hb-chip">' + voiceChipHtml(joinedRoom) + ' · ' + esc(joinedRoom.mic) + '</span>' +
+        '<span class="hb-chip">Characters: ' + esc(joinedRoom.charFit) + '</span>' +
+        '<span class="hb-chip"><strong>' + filled + ' of ' + joinedRoom.size + '</strong> filled · ' + open + ' open seat' + (open !== 1 ? 's' : '') + '</span>' +
+        '<span class="hb-chip sc-counter-val ' + rs.cls + '">' + esc(rs.text) + '</span>';
+
+      /* roster pills */
+      document.getElementById("hub-roster").innerHTML = members.map(function (m) {
+        if (m.open) return '<span class="roster-pill roster-pill--open">Open Seat — Any</span>';
+        var cls = "roster-pill" + (m.host ? " roster-pill--host" : m.you ? " roster-pill--you" : "");
+        var avStyle = m.host
+          ? "background:linear-gradient(145deg,var(--gold),#aa7a22);color:#120900"
+          : m.you ? "background:linear-gradient(145deg,var(--orange),#c84d16);color:#fff"
+          : "background:linear-gradient(145deg,#5a4f7a,#3d3460);color:#ccc";
+        return (
+          '<span class="' + cls + '">' +
+          '<span class="pill-av" style="' + avStyle + '" aria-hidden="true">' + esc(initials(m.name)) + '</span>' +
+          esc(m.name) +
+          (m.char ? '<span style="font-size:9.5px;opacity:0.55;margin-left:3px">· ' + esc(m.char) + '</span>' : '') +
+          (m.tag ? '<span class="pill-tag">' + esc(m.tag) + '</span>' : '') +
+          '</span>'
+        );
+      }).join("");
+
+      /* edge states */
+      var $msg    = document.getElementById("hub-message");
+      var $panels = document.getElementById("hub-panels");
+      if (edgeState === "closed" || edgeState === "expired") {
+        $msg.hidden    = false;
+        $panels.hidden = true;
+        renderHubMessage();
+      } else {
+        $msg.hidden    = true;
+        $panels.hidden = false;
+        if (isHost) renderHostPanel();
+        else        renderJoinerPanel();
+        renderStatusCard(members);
+        renderActionRow(isHost);
+      }
+
+      /* toggle state */
+      var $tJ = document.getElementById("toggle-joiner");
+      var $tH = document.getElementById("toggle-host");
+      $tJ.classList.toggle("active",  !isHost);
+      $tH.classList.toggle("active",   isHost);
+      $tJ.setAttribute("aria-selected", String(!isHost));
+      $tH.setAttribute("aria-selected", String(isHost));
+      $pill.textContent = isHost ? "party_hub_host" : "party_hub_joiner";
+
+      $hub.classList.add("fade-in");
+      setTimeout(function () { $hub.classList.remove("fade-in"); }, 240);
+    }
+
+    /* ── Joiner steps panel ──────────────────── */
+    function renderJoinerPanel() {
+      var noVoice = joinedRoom.voiceType === "none";
+      var voiceDone = partyAtLeast("voice_joined") || noVoice;
+      var steamDone = partyAtLeast("steam_copied");
+      var readyDone = partyAtLeast("ready");
+      var inGame    = partyAtLeast("in_game");
+      var hostReady = hostAtLeast("char_select");
+
+      var steps = [];
+      var n = 1;
+      if (!noVoice) {
+        var vDone = partyAtLeast("voice_joined");
+        steps.push({ n: n++, label: "Join Voice",
+          desc: joinedRoom.voiceType === "lfg"
+            ? "Jump into " + joinedRoom.voiceLabel + " in Discord before starting STS2."
+            : "Join voice (optional) — coordinate in Discord.",
+          action: "voice", done: vDone, primary: !vDone, disabled: false });
+      }
+      steps.push({ n: n++, label: "Add host on Steam",
+        desc: "Copy " + joinedRoom.host + "'s profile and send a friend request.",
+        action: "steam", done: steamDone,
+        primary: voiceDone && !steamDone, disabled: !voiceDone });
+      steps.push({ n: n++, label: "I'm Ready",
+        desc: "Let the host know you're in position.",
+        action: "ready", done: readyDone,
+        primary: steamDone && !readyDone, disabled: !steamDone });
+      if (readyDone || hostReady) {
+        var sts2Done = inGame;
+        steps.push({ n: n++,
+          label: hostReady ? "Start STS2" : "Waiting for host",
+          desc:  hostReady
+            ? "Multiplayer → Join → Refresh if needed. The host sent invites."
+            : joinedRoom.host + " is still setting up. Watch for the STS2 invite.",
+          action: sts2Done ? "ingame-done" : "ingame",
+          done: sts2Done,
+          primary: readyDone && hostReady && !sts2Done,
+          waiting: readyDone && !hostReady && !sts2Done,
+          disabled: !hostReady && !sts2Done });
+      }
+
+      var html = '<div class="steps-heading">Get into the run</div>';
+      steps.forEach(function (s) {
+        var rowCls = "step-row";
+        if      (s.done)    rowCls += " step-row--done";
+        else if (s.primary) rowCls += " step-row--primary";
+        else if (s.waiting) rowCls += " step-row--waiting";
+        var numCls = "step-num" + (s.done ? " step-num--done" : "");
+        var numTxt = s.done ? "✓" : s.n;
+
+        var btnHtml = "";
+        if (s.done) {
+          btnHtml = '<button class="btn btn-sm btn--done" disabled>' + esc(doneLbl(s.action.replace("-done",""))) + '</button>';
+        } else if (!s.waiting) {
+          var cls = s.primary ? "btn btn-primary btn-sm" : "btn btn-secondary btn-sm";
+          var dis = s.disabled ? " disabled" : "";
+          btnHtml = '<button class="' + cls + '" data-joiner-action="' + s.action + '"' + dis + '>' + esc(activeLbl(s.action)) + '</button>';
+        }
+        html += '<div class="' + rowCls + '"><div class="' + numCls + '">' + numTxt + '</div>' +
+          '<div class="step-body"><div class="step-text">' +
+          '<div class="step-label">' + esc(s.label) + '</div>' +
+          '<div class="step-desc">' + esc(s.desc) + '</div>' +
+          '</div>' + btnHtml + '</div></div>';
+      });
+      html += '<details class="step-help"><summary><span class="step-help-icon">?</span> STS2 not showing the host?</summary>' +
+        '<div class="step-help-body">Add the host on Steam before they reach character select. It can take up to 30 seconds to appear. Refresh the Join list if needed.</div></details>';
+
+      document.getElementById("hub-main-panel").innerHTML = '<div class="steps-card">' + html + '</div>';
+
+      document.getElementById("hub-main-panel").querySelectorAll("[data-joiner-action]").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          var a = btn.getAttribute("data-joiner-action");
+          if (a === "voice")  { partyState = "voice_joined"; showToast("Joined " + joinedRoom.voiceLabel + " ✓"); }
+          if (a === "steam")  { partyState = "steam_copied"; try { navigator.clipboard.writeText("https://steamcommunity.com/id/" + joinedRoom.host); } catch(e){} showToast("Steam profile copied ✓"); }
+          if (a === "ready")  { partyState = "ready"; showToast("Marked as ready ✓"); }
+          if (a === "ingame") { partyState = "in_game"; showToast("In game! Have a great run."); }
+          renderHub();
+        });
+      });
+    }
+
+    /* ── Host steps panel ────────────────────── */
+    function renderHostPanel() {
+      var steps = [
+        { label: "Share the party", desc: "Copy the Discord post and paste it in your LFG channel.",
+          action: "discord",  done: hostAtLeast("discord_copied") },
+        { label: "Open STS2 → Host", desc: "Multiplayer → Host → pick Standard, Daily, or Custom.",
+          action: "sts2",     done: hostAtLeast("hosting_sts2") },
+        { label: "Choose your character", desc: "Pick and confirm on the character select screen.",
+          action: "char",     done: hostAtLeast("char_select") },
+        { label: "Send invites through Steam", desc: "Find players in Steam and send invites — or accept requests.",
+          action: "invites",  done: hostAtLeast("invites_sent") },
+        { label: "Mark in game", desc: "Update the room when the run starts.",
+          action: "ingame",   done: hostAtLeast("in_game") },
+      ];
+
+      var discordDone = hostAtLeast("discord_copied");
+      var previewHtml = discordDone
+        ? '<div class="discord-preview">' + esc(discordPost(joinedRoom, joinedRoom.filled)) + '</div>'
+        : '';
+
+      var html = '<div class="steps-heading">Host steps</div>';
+      steps.forEach(function (s, i) {
+        var allPrevDone = steps.slice(0, i).every(function (p) { return p.done; });
+        var isPrimary = !s.done && allPrevDone;
+        var rowCls = "step-row" + (s.done ? " step-row--done" : isPrimary ? " step-row--primary" : "");
+        var numCls = "step-num" + (s.done ? " step-num--done" : "");
+        var numTxt = s.done ? "✓" : (i + 1);
+
+        var btnCls = s.done ? "btn btn-sm btn--done" : isPrimary ? "btn btn-primary btn-sm" : "btn btn-secondary btn-sm";
+        var dis    = (s.done || (!allPrevDone && !s.done)) ? " disabled" : "";
+        var lbl    = s.done ? doneLbl(s.action) : activeLbl(s.action);
+
+        html += '<div class="' + rowCls + '"><div class="' + numCls + '">' + numTxt + '</div>' +
+          '<div class="step-body"><div class="step-text">' +
+          '<div class="step-label">' + esc(s.label) + '</div>' +
+          '<div class="step-desc">' + esc(s.desc) + '</div>' +
+          '</div><button class="' + btnCls + '" data-host-action="' + s.action + '"' + dis + '>' + esc(lbl) + '</button>' +
+          '</div></div>';
+      });
+
+      document.getElementById("hub-main-panel").innerHTML = previewHtml + '<div class="steps-card">' + html + '</div>';
+
+      document.getElementById("hub-main-panel").querySelectorAll("[data-host-action]").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          var a = btn.getAttribute("data-host-action");
+          if (a === "discord") {
+            hostState = "discord_copied";
+            try { navigator.clipboard.writeText(discordPost(joinedRoom, joinedRoom.filled)); } catch(e){}
+            showToast("Discord post copied ✓");
+          }
+          if (a === "sts2")     { hostState = "hosting_sts2"; showToast("Hosting STS2 — pick your character ✓"); }
+          if (a === "char")     { hostState = "char_select";  showToast("On character select ✓"); }
+          if (a === "invites")  { hostState = "invites_sent"; showToast("Invites sent ✓"); }
+          if (a === "ingame")   { hostState = "in_game";      showToast("In game! Have a great run."); }
+          renderHub();
+        });
+      });
+    }
+
+    /* ── Status card ─────────────────────────── */
+    function renderStatusCard(members) {
+      var html = '<div class="sc-heading">Party Status</div>';
+      members.forEach(function (m) {
+        if (m.open) {
+          html += '<div class="sc-member"><div class="sc-av sc-av--open">+</div>' +
+            '<div class="sc-member-info"><div class="sc-name sc-name--open">Open Seat</div></div></div>';
+          return;
+        }
+        var avCls = "sc-av sc-av--" + (m.host ? "host" : m.you ? "you" : "member");
+        var si = m.host ? hostStatusInfo(hostState) : m.you ? joinerStatusInfo(partyState) : { label: "Ready ✓", cls: "sc-status--ready" };
+        html += '<div class="sc-member">' +
+          '<div class="' + avCls + '">' + esc(initials(m.name)) + '</div>' +
+          '<div class="sc-member-info">' +
+            '<div class="sc-name">' + esc(m.name) + (m.tag ? ' <span class="sc-tag">' + esc(m.tag) + '</span>' : '') + '</div>' +
+            (m.char ? '<div class="sc-char">' + esc(m.char) + '</div>' : '') +
+          '</div>' +
+          '<div class="sc-status ' + si.cls + '">' + esc(si.label) + '</div>' +
+          '</div>';
+      });
+
+      html += '<hr class="sc-divider">';
+      var nonOpen = members.filter(function (m) { return !m.open; });
+      var readyN  = nonOpen.filter(function (m) {
+        if (m.host) return hostAtLeast("char_select");
+        if (m.you)  return partyAtLeast("ready");
+        return true;
+      }).length;
+      var rs = roomStatusInfo();
+      html += '<div class="sc-counter"><span class="sc-counter-label">Ready</span>' +
+        '<span class="sc-counter-val' + (readyN > 0 ? " sc-counter-val--ready" : "") + '">' + readyN + ' of ' + nonOpen.length + '</span></div>';
+      html += '<div class="sc-counter"><span class="sc-counter-label">Room</span>' +
+        '<span class="sc-counter-val ' + rs.cls + '">' + esc(rs.text) + '</span></div>';
+      html += '<div class="sc-info-row"><span class="sc-label">Voice</span><span class="sc-val sc-val--blue">' + esc(joinedRoom.voiceLabel) + '</span></div>';
+      html += '<div class="sc-info-row"><span class="sc-label">Branch</span><span class="sc-val">' + esc(joinedRoom.branch) + '</span></div>';
+      html += '<div class="sc-info-row" style="align-items:flex-start"><span class="sc-label">Characters</span><span class="sc-val" style="text-align:right;max-width:58%">' + esc(joinedRoom.charFit) + '</span></div>';
+
+      document.getElementById("status-card").innerHTML = html;
+    }
+
+    /* ── Action row ──────────────────────────── */
+    function renderActionRow(isHost) {
+      var html = "";
+      if (isHost) {
+        html = '<button type="button" class="btn btn-ghost btn-sm" id="btn-close-party">Close Party</button>';
+      } else {
+        html = (partyAtLeast("ready") && !partyAtLeast("in_game"))
+          ? '<button type="button" class="btn btn-secondary btn-sm" id="btn-ingame-shortcut">I\'m In Game</button>'
+          : '';
+        html += '<button type="button" class="btn btn-ghost btn-sm" id="btn-leave">Leave Party</button>';
+      }
+      document.getElementById("hub-action-row").innerHTML = html;
+
+      var leaveBtn = document.getElementById("btn-leave");
+      if (leaveBtn) leaveBtn.addEventListener("click", function () {
+        showToast("Left party"); setTimeout(function () { setState("browse"); }, 380);
+      });
+      var closeBtn = document.getElementById("btn-close-party");
+      if (closeBtn) closeBtn.addEventListener("click", function () {
+        edgeState = "closed"; renderHub();
+      });
+      var igBtn = document.getElementById("btn-ingame-shortcut");
+      if (igBtn) igBtn.addEventListener("click", function () {
+        partyState = "in_game"; showToast("In game! Have a great run."); renderHub();
+      });
+    }
+
+    /* ── Edge state message ──────────────────── */
+    function renderHubMessage() {
+      var closed = (edgeState === "closed");
+      document.getElementById("hub-message").innerHTML =
+        '<div class="hub-message-icon">' + (closed ? "🔒" : "⏳") + '</div>' +
+        '<h2>' + (closed ? "Host closed this party." : "This party has expired.") + '</h2>' +
+        '<p>' + (closed ? "This room is no longer available. The host closed it." : "The room was inactive too long and has been removed.") + '</p>' +
+        '<div class="hub-message-actions">' +
+        '<button type="button" class="btn btn-primary btn-sm" id="btn-msg-back">Back to Open Rooms</button>' +
+        (closed ? '' : '<button type="button" class="btn btn-ghost btn-sm" data-mock="Host a Room">Host a Room</button>') +
+        '</div>';
+      document.getElementById("btn-msg-back").addEventListener("click", function () {
+        edgeState = null; setState("browse");
+      });
+    }
+
+    /* ── Label helpers ───────────────────────── */
+    function activeLbl(a) {
+      var map = {
+        discord: "Copy Discord LFG Post", sts2: "I'm Hosting STS2", char: "On Character Select",
+        invites: "I Sent Invites", ingame: "I'm In Game",
+        voice: "Join " + (joinedRoom ? joinedRoom.voiceLabel : "Voice"),
+        steam: "Copy Steam Profile", ready: "I'm Ready",
+      };
+      return map[a] || a;
+    }
+    function doneLbl(a) {
+      var map = {
+        discord: "Discord Post Copied ✓", sts2: "Hosting STS2 ✓", char: "On Character Select ✓",
+        invites: "Invites Sent ✓", ingame: "In Game ✓",
+        voice: "Joined Voice ✓", steam: "Steam Copied ✓", ready: "Ready ✓",
+      };
+      return map[a] || (a + " ✓");
+    }
+
+    /* ══════════════════════════════════════════
+       DEMO CONTROLS
+    ══════════════════════════════════════════ */
+    document.getElementById("demo-controls").querySelectorAll(".demo-chip").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var d = btn.getAttribute("data-demo");
+        document.getElementById("demo-controls").querySelectorAll(".demo-chip").forEach(function (b) { b.classList.remove("active"); });
+
+        if (d === "reset") {
+          joinedRoom = ROOMS[0]; resetPartyState(); setState("browse"); return;
+        }
+        if (d === "novice") {
+          joinedRoom = ROOMS[1]; resetPartyState(); goToHub(); btn.classList.add("active"); return;
+        }
+        if (d === "closed") {
+          if ($browse.hidden === false) { joinedRoom = ROOMS[0]; resetPartyState(); goToHub(); }
+          edgeState = "closed"; renderHub(); btn.classList.add("active"); return;
+        }
+        if (d === "expired") {
+          if ($browse.hidden === false) { joinedRoom = ROOMS[0]; resetPartyState(); goToHub(); }
+          edgeState = "expired"; renderHub(); btn.classList.add("active"); return;
+        }
+        if (d === "ingame") {
+          if ($browse.hidden === false) { joinedRoom = ROOMS[0]; resetPartyState(); goToHub(); }
+          partyState = "in_game"; hostState = "in_game"; edgeState = null; renderHub(); btn.classList.add("active"); return;
+        }
+        if (d === "advance-partner") {
+          if (partyRole === "joiner") {
+            var idx = HOST_STATES.indexOf(hostState);
+            if (idx < HOST_STATES.length - 1) { hostState = HOST_STATES[idx + 1]; showToast(joinedRoom.host + " → " + hostState.replace(/_/g, " ")); }
+          } else {
+            var idx2 = PARTY_STATES.indexOf(partyState);
+            if (idx2 < PARTY_STATES.length - 1) { partyState = PARTY_STATES[idx2 + 1]; showToast("You → " + partyState.replace(/_/g, " ")); }
+          }
+          renderHub();
+        }
+      });
+    });
+
+    /* ══════════════════════════════════════════
+       TOP-LEVEL EVENTS
+    ══════════════════════════════════════════ */
+    document.getElementById("quick-join").addEventListener("click", function () {
+      joinedRoom = ROOMS[0]; resetPartyState(); goToHub();
+    });
+    document.getElementById("toggle-joiner").addEventListener("click", function () {
+      partyRole = "joiner"; renderHub(); $pill.textContent = "party_hub_joiner";
+    });
+    document.getElementById("toggle-host").addEventListener("click", function () {
+      partyRole = "host"; renderHub(); $pill.textContent = "party_hub_host";
+    });
+    document.getElementById("back-browse").addEventListener("click", function () {
+      edgeState = null; setState("browse");
+    });
+
+    /* ── Mock wire for non-interactive buttons ─ */
+    function wireMock(root) {
+      (root || document).querySelectorAll("[data-mock]").forEach(function (el) {
+        if (el._mocked) return;
+        el._mocked = true;
+        el.addEventListener("click", function () {
+          var label = el.getAttribute("data-mock");
+          if (label) showToast(label + " (mock)");
+        });
+      });
+    }
+
+    /* ══════════════════════════════════════════
+       BOOT
+    ══════════════════════════════════════════ */
+    wireMock(document);
+    renderRec();
+    renderBestMatch();
+    renderParties();
+    setState("browse");
+
+    document.getElementById("quick-join-intent").addEventListener("click", function () {
+      joinedRoom = ROOMS[0]; resetPartyState(); goToHub();
+    });
+
+  })();
+  </script>
+</body>
+</html>

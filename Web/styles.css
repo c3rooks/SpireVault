@@ -8618,6 +8618,22 @@ html.prefer-compact-density .h-stat-num { font-size: 18px; }
 }
 .private-mode-text { flex: 1; min-width: 0; }
 .private-mode-text strong { color: var(--text-1); margin-right: 4px; }
+.session-expired-notice .session-expired-link {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 10px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 196, 86, 0.45);
+  background: rgba(255, 196, 86, 0.12);
+  color: var(--text-1);
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+}
+.session-expired-notice button.session-expired-link {
+  font: inherit;
+}
 .private-mode-close {
   width: 26px; height: 26px;
   border-radius: 6px;
@@ -8914,6 +8930,144 @@ html.prefer-compact-density .h-stat-num { font-size: 18px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .vault-update-banner { animation: none; }
+}
+
+/* =========================================================================
+ * No-FSA refresh nudge — surfaces on Safari/Firefox (no File System
+ * Access API) when the user returns to the tab after probably playing
+ * a run in STS2. One-click CTA opens the file picker so they don't
+ * have to dig through the panel-head Refresh dropdown.
+ *
+ * Floats bottom-center so it doesn't fight the sidebar persona pill
+ * or the top auto-refresh banner. Dismiss arrow on the right keeps it
+ * polite — a single click makes it go away for 5 minutes per the
+ * NUDGE_THROTTLE_MS in script.js.
+ * ========================================================================= */
+.vault-no-fsa-nudge {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  z-index: 96;
+  transform: translateX(-50%);
+  max-width: min(520px, calc(100vw - 32px));
+  border: 1px solid color-mix(in srgb, var(--accent) 50%, transparent);
+  border-radius: 14px;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--accent) 18%, var(--surface) 82%),
+    color-mix(in srgb, var(--accent) 6%, var(--surface) 94%)
+  );
+  color: var(--text);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.45);
+  animation: vault-no-fsa-nudge-in 280ms cubic-bezier(0.2, 0.85, 0.3, 1.05) both;
+}
+.vault-no-fsa-nudge-body {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+}
+.vault-no-fsa-nudge-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--accent) 32%, transparent);
+  color: var(--accent);
+  font-size: 18px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.vault-no-fsa-nudge-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 13px;
+  line-height: 1.4;
+}
+.vault-no-fsa-nudge-text strong {
+  color: var(--text);
+  font-weight: 600;
+}
+.vault-no-fsa-nudge-sub {
+  color: var(--muted);
+  font-size: 12px;
+}
+.vault-no-fsa-nudge-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.vault-no-fsa-nudge-go {
+  appearance: none;
+  border: 0;
+  border-radius: 8px;
+  padding: 8px 14px;
+  font: inherit;
+  font-weight: 600;
+  font-size: 13px;
+  background: var(--accent);
+  color: var(--bg);
+  cursor: pointer;
+  transition: filter 120ms ease, transform 120ms ease;
+  white-space: nowrap;
+}
+.vault-no-fsa-nudge-go:hover { filter: brightness(1.08); }
+.vault-no-fsa-nudge-go:active { transform: translateY(1px); }
+.vault-no-fsa-nudge-go:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.vault-no-fsa-nudge-dismiss {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 22px;
+  line-height: 1;
+  width: 30px;
+  height: 30px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+.vault-no-fsa-nudge-dismiss:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+}
+.vault-no-fsa-nudge-dismiss:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+@keyframes vault-no-fsa-nudge-in {
+  from { opacity: 0; transform: translate(-50%, 10px); }
+  to   { opacity: 1; transform: translate(-50%, 0); }
+}
+@media (max-width: 540px) {
+  .vault-no-fsa-nudge {
+    bottom: 12px;
+    max-width: calc(100vw - 16px);
+  }
+  .vault-no-fsa-nudge-body {
+    grid-template-columns: auto 1fr;
+    grid-template-rows: auto auto;
+    gap: 8px 10px;
+    padding: 11px 12px;
+  }
+  .vault-no-fsa-nudge-actions {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    justify-content: flex-end;
+  }
+  .vault-no-fsa-nudge-go {
+    flex: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .vault-no-fsa-nudge { animation: none; }
 }
 
 /* =========================================================================
@@ -11306,7 +11460,7 @@ html.is-desktop-host .empty-state-cta-upload {
      .coop-section       generic section header + content
      .coop-feed-section  Players Looking Now — visible in BOTH Classic + Beta
      .coop-side-card     sidebar status / activity / howto cards
-     .coop-modal         Run Preferences · Post a Run · Quick Match
+     .coop-modal         Run Preferences · Host a Room · Quick Match
 
    Beta toggle:
      body.coop-lobby-beta-on   → new lobby UI visible
@@ -11698,6 +11852,102 @@ html.is-desktop-host .empty-state-cta-upload {
 .coop-active-card--hosting .coop-active-eyebrow { color: var(--gold); }
 .coop-active-card--joined .coop-active-eyebrow  { color: var(--gold); }
 
+/* Primary UX state panel — dominant next step in main column */
+.coop-primary-state-mount { margin-bottom: 12px; }
+.coop-primary-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 18px;
+  border-radius: 12px;
+  border: 1px solid var(--border-strong);
+  background: linear-gradient(180deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0.02) 100%);
+  box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset;
+}
+.coop-primary-meta { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.coop-primary-eyebrow {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.coop-primary-title {
+  font-family: inherit;
+  font-size: 18px;
+  font-weight: 800;
+  margin: 0;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+}
+.coop-primary-sub {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--text-2);
+  line-height: 1.45;
+}
+.coop-primary-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.coop-primary-card--idle    { border-left: 3px solid var(--border-strong); }
+.coop-primary-card--hosting { border-left: 3px solid rgba(212,175,55,0.65); }
+.coop-primary-card--requested { border-left: 3px solid rgba(212,175,55,0.5); }
+.coop-primary-card--party,
+.coop-primary-card--sts2,
+.coop-primary-card--paired  { border-left: 3px solid rgba(109,217,124,0.65); }
+.coop-primary-card--run     { border-left: 3px solid rgba(109,217,124,0.45); }
+.coop-primary-card--away    { border-left: 3px solid var(--border-strong); opacity: 0.92; }
+.coop-primary-card--hosting .coop-primary-eyebrow,
+.coop-primary-card--requested .coop-primary-eyebrow { color: var(--gold); }
+.coop-primary-card--party .coop-primary-eyebrow,
+.coop-primary-card--sts2 .coop-primary-eyebrow,
+.coop-primary-card--paired .coop-primary-eyebrow { color: var(--win); }
+.coop-primary-pending {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 4px;
+  border-top: 1px solid var(--border-strong);
+}
+.coop-primary-pending-label {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.coop-primary-pending-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(212,175,55,0.06);
+  border: 1px solid rgba(212,175,55,0.2);
+}
+.coop-primary-pending-row .avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  flex-shrink: 0;
+}
+.coop-primary-pending-meta { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.coop-primary-hint { display: inline-block; }
+.coop-lobby-pin {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--gold);
+  margin-right: 4px;
+}
+.coop-lobby-pin--requested { color: var(--text-2); }
+
 /* How-it-works — collapsed by default */
 .coop-side-howto { padding: 0; }
 .coop-howto-toggle {
@@ -11940,6 +12190,12 @@ html.is-desktop-host .empty-state-cta-upload {
   transform: translateY(-1px);
   box-shadow: 0 14px 28px -18px rgba(212,175,55,0.35);
 }
+.coop-lobby-card--highlight {
+  outline: 2px solid rgba(212, 175, 55, 0.75);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 4px rgba(212, 175, 55, 0.15);
+}
+
 .coop-lobby-card--mine {
   border-color: rgba(212,175,55,0.55);
   background: linear-gradient(180deg, rgba(212,175,55,0.06), var(--card));
@@ -12027,6 +12283,11 @@ html.is-desktop-host .empty-state-cta-upload {
   border-color: rgba(155,131,255,0.5);
   color: var(--silent);
   background: rgba(155,131,255,0.08);
+}
+.coop-badge--character {
+  border-color: rgba(255,160,92,0.48);
+  color: var(--accent-hi);
+  background: rgba(255,107,26,0.08);
 }
 .coop-badge--players {
   border-color: rgba(109,217,124,0.5);
@@ -12456,12 +12717,13 @@ html.is-desktop-host .empty-state-cta-upload {
    harmless in case stale CSS is still cached on a client. */
 .coop-lobby-card--ghost { display: none !important; }
 
-/* ── Modals (Run Preferences / Post a Run / Quick Match) ──────────── */
+/* ── Modals (Run Preferences / Host a Room / Quick Match) ─────────── */
 .coop-modal {
   max-width: 540px;
 }
 .coop-modal--lobby { max-width: 600px; }
 .coop-modal--quickmatch { max-width: 460px; }
+.coop-modal--character { max-width: 620px; }
 .coop-modal-body { padding: 22px 24px 24px; }
 
 .coop-form {
@@ -12517,6 +12779,199 @@ html.is-desktop-host .empty-state-cta-upload {
   outline: none;
   border-color: var(--gold);
   box-shadow: 0 0 0 3px rgba(212,175,55,0.18);
+}
+
+.coop-character-picker {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+.coop-character-picker legend {
+  padding: 0;
+  margin: 0 0 8px;
+}
+.coop-character-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(74px, 1fr));
+  gap: 8px;
+}
+.coop-character-choice {
+  position: relative;
+  min-width: 0;
+  min-height: 96px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 5px;
+  padding: 8px 6px 7px;
+  border-radius: 8px;
+  border: 1px solid var(--border-strong);
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.045), rgba(255,255,255,0.015)),
+    rgba(0,0,0,0.16);
+  cursor: pointer;
+  overflow: hidden;
+  transition: border-color 0.14s ease, background 0.14s ease, transform 0.12s ease, opacity 0.14s ease;
+}
+.coop-character-choice:hover {
+  transform: translateY(-1px);
+  border-color: rgba(212,175,55,0.52);
+}
+.coop-character-choice input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+.coop-character-choice img {
+  width: min(62px, 88%);
+  height: 58px;
+  object-fit: contain;
+  object-position: center bottom;
+  filter: drop-shadow(0 7px 10px rgba(0,0,0,0.45));
+}
+.coop-character-choice::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  border: 2px solid transparent;
+  pointer-events: none;
+}
+.coop-character-choice:has(input:checked) {
+  border-color: rgba(255,160,92,0.75);
+  background:
+    radial-gradient(80% 70% at 50% 10%, rgba(255,107,26,0.18), transparent 65%),
+    linear-gradient(180deg, rgba(212,175,55,0.09), rgba(255,255,255,0.02)),
+    rgba(0,0,0,0.20);
+}
+.coop-character-choice:has(input:checked)::after {
+  border-color: rgba(255,160,92,0.38);
+}
+.coop-character-choice:has(input:disabled),
+.coop-character-choice.is-disabled {
+  opacity: 0.38;
+  cursor: not-allowed;
+  filter: grayscale(0.65);
+}
+.coop-character-choice:has(input:disabled):hover,
+.coop-character-choice.is-disabled:hover {
+  transform: none;
+  border-color: var(--border-strong);
+}
+.coop-character-choice--any {
+  justify-content: center;
+  background:
+    radial-gradient(90% 70% at 50% 15%, rgba(109,217,124,0.10), transparent 70%),
+    rgba(0,0,0,0.16);
+}
+.coop-character-any-mark {
+  width: 48px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 1px dashed rgba(109,217,124,0.42);
+  color: var(--win);
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+.coop-character-name {
+  width: 100%;
+  display: block;
+  color: var(--text-2);
+  font-size: 10.5px;
+  font-weight: 800;
+  line-height: 1.15;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+.coop-character-choice:has(input:checked) .coop-character-name {
+  color: var(--text);
+}
+.coop-character-room-summary {
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(212,175,55,0.25);
+  background: rgba(212,175,55,0.055);
+}
+.coop-character-room-title {
+  margin: 0 0 3px;
+  font-size: 13.5px;
+  font-weight: 800;
+  color: var(--text);
+}
+.coop-character-room-meta {
+  margin: 0;
+  color: var(--text-2);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.coop-character-strip {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(36px, 1fr));
+  gap: 6px;
+  align-items: stretch;
+}
+.coop-character-strip-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.coop-character-strip-label {
+  color: var(--text-3);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+.coop-character-token {
+  min-width: 0;
+  height: 50px;
+  border-radius: 8px;
+  border: 1px solid rgba(255,255,255,0.085);
+  background: rgba(0,0,0,0.18);
+  display: grid;
+  place-items: end center;
+  padding: 4px 3px 0;
+  overflow: hidden;
+  position: relative;
+}
+.coop-character-token img {
+  width: 40px;
+  height: 46px;
+  object-fit: contain;
+  object-position: center bottom;
+  filter: drop-shadow(0 7px 9px rgba(0,0,0,0.45));
+}
+.coop-character-token.is-selected {
+  border-color: rgba(255,160,92,0.62);
+  background: rgba(255,107,26,0.105);
+}
+.coop-character-token.is-muted {
+  opacity: 0.3;
+  filter: grayscale(0.85);
+}
+.coop-character-token.is-occupied {
+  opacity: 0.42;
+  filter: grayscale(0.75);
+}
+.coop-character-token-label {
+  position: absolute;
+  left: 3px;
+  right: 3px;
+  bottom: 3px;
+  text-align: center;
+  font-size: 8.5px;
+  font-weight: 900;
+  line-height: 1;
+  color: var(--text);
+  text-shadow: 0 1px 5px rgba(0,0,0,0.9);
 }
 .coop-form-preview {
   margin-top: 6px;
@@ -12625,6 +13080,9 @@ html.is-desktop-host .empty-state-cta-upload {
   .coop-lobbies-list,
   .coop-recs-list,
   .coop-invites-list { grid-template-columns: 1fr; }
+  .coop-character-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .coop-character-choice { min-height: 92px; }
+  .coop-character-strip { grid-template-columns: repeat(5, minmax(34px, 1fr)); }
   .coop-form-grid { grid-template-columns: 1fr; }
   .coop-modal-body { padding: 18px 18px 22px; }
   .coop-empty-card--openruns { min-height: 0; padding: 18px 4px; }
@@ -13068,6 +13526,20 @@ body.coop-lobby-beta-off [data-tab="coop"] .coop-page {
   font-size: 10px;
   padding: 1px 6px;
 }
+.coop-lobby-card--compact .coop-character-strip-label {
+  display: none;
+}
+.coop-lobby-card--compact .coop-character-token {
+  height: 34px;
+  border-radius: 7px;
+}
+.coop-lobby-card--compact .coop-character-token img {
+  width: 30px;
+  height: 32px;
+}
+.coop-lobby-card--compact .coop-character-token-label {
+  display: none;
+}
 
 /* Mobile overrides for filter bar */
 @media (max-width: 720px) {
@@ -13394,29 +13866,26 @@ body.coop-lobby-beta-off [data-tab="coop"] .coop-page {
   outline-offset: 3px;
 }
 
-/* Progress drain bar — now lives inside the card as a hairline at the
-   bottom edge instead of a screen-wide bar, because the card is a
-   toast and the rest of the page is interactive behind it. */
-.victory-progress {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 2px;
-  background: rgba(255, 255, 255, 0.06);
-  overflow: hidden;
+/* Decor fade — after CELEBRATION_DECOR_MS in script.js (7s) the JS
+   adds `.victory-decor-faded` to the overlay. That fades the confetti,
+   edge flash, and trophy out smoothly without touching the card itself
+   (the user-controlled element). The card stays put until the user
+   clicks Continue / Esc / clicks outside — they were losing the run
+   details to an auto-dismiss they didn't ask for.
+
+   Transition rather than animation so the fade is interruptible —
+   if the user clicks Continue mid-fade, the regular exit animation
+   takes over cleanly. */
+.victory-decor-faded .victory-confetti-canvas,
+.victory-decor-faded .victory-flash {
+  opacity: 0;
+  transition: opacity 1200ms cubic-bezier(0.4, 0, 0.6, 1);
+  pointer-events: none;
 }
-.victory-progress-fill {
-  height: 100%;
-  background: linear-gradient(90deg,
-    color-mix(in srgb, var(--char-color, #d4af37) 40%, transparent),
-    color-mix(in srgb, var(--char-color, #d4af37) 90%, white));
-  transform-origin: left;
-  animation: victory-drain 7s linear both;
-}
-@keyframes victory-drain {
-  from { transform: scaleX(1); }
-  to   { transform: scaleX(0); }
+.victory-decor-faded .victory-trophy {
+  opacity: 0.35;
+  transform: scale(0.9);
+  transition: opacity 900ms ease, transform 900ms cubic-bezier(0.4, 0, 0.6, 1);
 }
 
 /* Exit — confetti fades out, card slides down, edge flash drops. */
@@ -13434,21 +13903,26 @@ body.coop-lobby-beta-off [data-tab="coop"] .coop-page {
   to { opacity: 0; }
 }
 
-/* Reduced motion — keep the announcement, drop the animation. */
+/* Reduced motion — keep the announcement, drop the animation. The
+   decor fade is also disabled so the trophy doesn't dim out (which
+   could read as the card being "stale" rather than a celebration). */
 @media (prefers-reduced-motion: reduce) {
   .victory-card,
   .victory-trophy,
   .victory-streak,
   .victory-dismiss,
-  .victory-flash,
-  .victory-progress-fill {
+  .victory-flash {
     animation: none !important;
     opacity: 1 !important;
     transform: translateX(-50%) !important;
   }
   .victory-confetti-canvas,
   .victory-flash { display: none; }
-  .victory-progress { display: none; }
+  .victory-decor-faded .victory-trophy,
+  .victory-decor-faded .victory-flash,
+  .victory-decor-faded .victory-confetti-canvas {
+    transition: none;
+  }
 }
 
 /* Mobile */
@@ -13466,3 +13940,476 @@ body.coop-lobby-beta-off [data-tab="coop"] .coop-page {
   .victory-dismiss { padding: 11px 28px; }
 }
 
+/* Party Room (/party/:partyId) */
+.coop-party-surface {
+  margin-bottom: 12px;
+}
+.coop-party-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.coop-party-title {
+  margin: 4px 0 6px;
+  font-size: 1.25rem;
+}
+.coop-party-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+@media (max-width: 800px) {
+  .coop-party-grid { grid-template-columns: 1fr; }
+}
+.coop-party-panel {
+  background: var(--card, #1a1a22);
+  border: 1px solid var(--border, rgba(255,255,255,.08));
+  border-radius: 12px;
+  padding: 14px 16px;
+}
+.coop-party-checklist {
+  margin: 8px 0 10px;
+  padding-left: 1.2rem;
+  color: var(--muted, #9aa0a6);
+  font-size: 0.92rem;
+}
+.coop-party-members {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 10px 0;
+}
+.coop-party-member {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 8px;
+  border-radius: 8px;
+  background: rgba(0,0,0,0.16);
+}
+.coop-party-member-meta {
+  flex: 1;
+  min-width: 120px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.coop-party-member-character {
+  width: 42px;
+  height: 46px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: end center;
+  border-radius: 8px;
+  border: 1px solid rgba(255,160,92,0.42);
+  background: rgba(255,107,26,0.08);
+  overflow: hidden;
+}
+.coop-party-member-character img {
+  width: 38px;
+  height: 44px;
+  object-fit: contain;
+  object-position: center bottom;
+  filter: drop-shadow(0 7px 9px rgba(0,0,0,0.45));
+}
+.coop-party-member-character--unset {
+  place-items: center;
+  border-style: dashed;
+  border-color: rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.025);
+  color: var(--text-3);
+  font-weight: 900;
+}
+.coop-party-status-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+.coop-party-action-label {
+  margin: 12px 0 6px;
+  color: var(--text-3);
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.coop-party-action-label:first-of-type { margin-top: 0; }
+.coop-party-character-actions {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 6px;
+}
+.coop-party-character-btn {
+  min-width: 0;
+  height: 76px;
+  padding: 5px 4px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 3px;
+  border-radius: 8px;
+  border: 1px solid var(--border-strong);
+  background: rgba(0,0,0,0.18);
+  color: var(--text-2);
+  font-size: 9.5px;
+  font-weight: 800;
+}
+.coop-party-character-btn img {
+  width: 40px;
+  height: 45px;
+  object-fit: contain;
+  object-position: center bottom;
+  filter: drop-shadow(0 7px 9px rgba(0,0,0,0.45));
+}
+.coop-party-character-btn.is-active {
+  color: var(--text);
+  border-color: rgba(255,160,92,0.7);
+  background: rgba(255,107,26,0.12);
+}
+.coop-party-character-btn.is-disabled {
+  opacity: 0.34;
+  filter: grayscale(0.8);
+  cursor: not-allowed;
+}
+.coop-party-end {
+  margin-top: 8px;
+}
+.coop-badge--need {
+  border-color: rgba(120, 200, 255, 0.35);
+  color: #9ed4ff;
+}
+
+.coop-seat-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 8px 0 4px;
+}
+.coop-seat-slots {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.coop-seat-slot {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  border: 1px dashed rgba(255, 255, 255, 0.14);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+.coop-seat-slot--filled {
+  border-style: solid;
+  border-color: rgba(212, 175, 55, 0.45);
+}
+.coop-seat-slot--filled img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.coop-seat-slot--guest {
+  background: rgba(212, 175, 55, 0.12);
+}
+.coop-seat-summary {
+  font-size: 12px;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+.coop-lobby-card--sandbox {
+  outline: 1px dashed rgba(120, 200, 255, 0.2);
+  outline-offset: -1px;
+}
+.coop-filter-actions--primary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.coop-filter-toggle {
+  padding: 3px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border-strong);
+  background: transparent;
+  color: var(--text-2);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.coop-filter-toggle.is-active,
+.coop-filter-toggle:hover {
+  border-color: rgba(212, 175, 55, 0.5);
+  color: var(--text-1);
+}
+.coop-filter-chips {
+  flex-basis: 100%;
+  padding-top: 4px;
+}
+.coop-filter-chips .coop-chip {
+  padding: 2px 8px;
+  font-size: 11px;
+}
+.coop-filter-bar {
+  gap: 6px 8px;
+}
+.coop-sandbox-scenarios {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+.coop-sandbox-actions--party {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border-strong);
+}
+.coop-party-slots {
+  list-style: none;
+  margin: 0 0 8px;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(148px, 1fr));
+  gap: 8px;
+}
+.coop-party-slot {
+  min-width: 0;
+  font-size: 13px;
+  color: var(--text-2);
+}
+.coop-party-slot--empty {
+  opacity: 0.55;
+}
+.coop-party-character-slot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border-radius: 8px;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(0,0,0,0.16);
+}
+.coop-party-character-slot--unset {
+  border-style: dashed;
+}
+.coop-party-character-art {
+  width: 38px;
+  height: 42px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: end center;
+  border-radius: 8px;
+  border: 1px solid rgba(255,160,92,0.38);
+  background: rgba(255,107,26,0.08);
+  overflow: hidden;
+}
+.coop-party-character-art img {
+  width: 36px;
+  height: 40px;
+  object-fit: contain;
+  object-position: center bottom;
+  filter: drop-shadow(0 7px 9px rgba(0,0,0,0.45));
+}
+.coop-party-character-art span {
+  place-self: center;
+  color: var(--text-3);
+  font-weight: 900;
+}
+.coop-party-character-art--empty {
+  border-style: dashed;
+  border-color: rgba(255,255,255,0.12);
+  background: transparent;
+}
+.coop-party-slot-meta {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.coop-party-slot-meta strong,
+.coop-party-slot-meta small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.coop-party-slot-meta strong {
+  color: var(--text);
+  font-size: 12.5px;
+}
+.coop-party-slot-meta small {
+  color: var(--text-3);
+  font-size: 10.5px;
+}
+.coop-party-panel--steps .coop-party-checklist {
+  margin: 0 0 10px;
+  padding-left: 18px;
+}
+
+/* ── Co-op dev sandbox (localhost only) ───────────────────────────── */
+.coop-beta-dev-sandbox {
+  margin-left: 8px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  border: 1px solid rgba(120, 200, 255, 0.45);
+  background: rgba(8, 20, 36, 0.85);
+  color: #9ed4ff;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+  vertical-align: middle;
+}
+.coop-beta-dev-sandbox:hover {
+  border-color: rgba(160, 220, 255, 0.7);
+  color: #c8e8ff;
+}
+.coop-sandbox-wrap {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 1200;
+  font-size: 12px;
+  max-width: min(320px, calc(100vw - 32px));
+}
+.coop-sandbox-toggle {
+  display: block;
+  margin-left: auto;
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(120, 200, 255, 0.35);
+  background: rgba(8, 12, 20, 0.92);
+  color: #9ed4ff;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 600;
+}
+.coop-sandbox-panel {
+  margin-top: 8px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(6, 8, 14, 0.96);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
+  color: var(--text-2);
+}
+.coop-sandbox-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  color: var(--text-1);
+}
+.coop-sandbox-close {
+  border: none;
+  background: transparent;
+  color: var(--text-3);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 4px;
+}
+.coop-sandbox-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 4px 0;
+}
+.coop-sandbox-row code {
+  font-size: 10px;
+  color: #c8d4e8;
+  word-break: break-all;
+  text-align: right;
+}
+.coop-sandbox-hr {
+  border: none;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  margin: 8px 0;
+}
+.coop-sandbox-label {
+  display: block;
+  margin: 6px 0;
+  font-size: 11px;
+}
+.coop-sandbox-select {
+  display: block;
+  width: 100%;
+  margin-top: 4px;
+  padding: 4px 6px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(0, 0, 0, 0.35);
+  color: var(--text-1);
+  font-size: 11px;
+}
+.coop-sandbox-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+.coop-sandbox-warn {
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 180, 80, 0.35);
+  background: rgba(255, 140, 40, 0.08);
+  color: #ffd4a0;
+  font-size: 11px;
+  line-height: 1.45;
+}
+.coop-sandbox-empty {
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(120, 200, 255, 0.35);
+  background: rgba(40, 120, 200, 0.08);
+  color: #b8dcff;
+  font-size: 11px;
+  line-height: 1.45;
+}
+.coop-sandbox-toggle-status {
+  margin: 0 0 4px;
+}
+.coop-sandbox-state.is-on {
+  color: #8fe8a8;
+  font-weight: 700;
+}
+.coop-sandbox-state.is-off {
+  color: #ff9a9a;
+  font-weight: 700;
+}
+.coop-sandbox-seed-b {
+  flex: 1 1 100%;
+  min-width: 100%;
+  font-weight: 700;
+}
+.coop-sandbox-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0;
+  font-size: 11px;
+  cursor: pointer;
+}
+.coop-sandbox-hint {
+  margin: 6px 0 0;
+  font-size: 10px;
+  color: var(--text-3);
+  line-height: 1.4;
+}
+.coop-badge--sandbox {
+  border-color: rgba(255, 180, 80, 0.45);
+  color: #ffc880;
+  background: rgba(255, 140, 40, 0.1);
+}
+.coop-rec-sandbox-tag {
+  font-size: 0.85em;
+  font-weight: 500;
+  color: #ffc880;
+}

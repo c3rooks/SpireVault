@@ -249,11 +249,20 @@ export async function steamAuthCallback(req: Request, env: Env, ctx: ExecutionCo
  * Both surfaces fall through the same KV lookup, so legacy and new
  * clients coexist on the same backend.
  */
+function isSessionSteamId(env: Env, sid: string): boolean {
+  if (/^\d{17}$/.test(sid)) return true;
+  const sandboxOn =
+    env.LOCAL_DEBUG === "1" ||
+    env.DEV_COOP_SANDBOX === "1" ||
+    env.DEV_COOP_SANDBOX === "true";
+  return sandboxOn && /^local-[a-z0-9_-]+$/i.test(sid);
+}
+
 export async function steamIDForRequest(req: Request, env: Env): Promise<string | null> {
   const token = bearerTokenFromRequest(req) ?? cookieSessionToken(req);
   if (!token) return null;
   const sid = await env.LOBBIES.get(`session:${token}`);
-  return sid && /^\d{17}$/.test(sid) ? sid : null;
+  return sid && isSessionSteamId(env, sid) ? sid : null;
 }
 
 /**

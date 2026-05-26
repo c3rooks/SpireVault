@@ -17,8 +17,13 @@ import {
   createLobby,
   declineInvite,
   declineJoinRequest,
+  endParty,
   endSession,
   heartbeatPresence,
+  joinLobbySeat,
+  leaveParty,
+  readPartyForUser,
+  updatePartyMemberStatus,
   isPresenceActive,
   listLobbies,
   listPresence,
@@ -38,7 +43,9 @@ import {
 } from "./coop-engine";
 import {
   COOP_INACTIVE_HIDE_S,
+  getActiveLobbyIdForHost,
   readLobby,
+  readParty,
   readPresence,
   readSession,
 } from "./coop-store";
@@ -165,7 +172,7 @@ export async function handleCoopRoute(
 
   // Per-lobby routes
   const lobbyMatch = pathname.match(
-    /^\/coop\/lobbies\/([0-9a-f]{32})(?:\/(close|request|accept|decline|cancel-request))?$/,
+    /^\/coop\/lobbies\/([0-9a-f]{32})(?:\/(close|request|join-seat|accept|decline|cancel-request))?$/,
   );
   if (lobbyMatch) {
     const auth = await requireSession(req, env);
@@ -191,9 +198,21 @@ export async function handleCoopRoute(
       return json({ ok: true, ...r.value });
     }
     if (subroute === "request" && method === "POST") {
-      const r = await requestToJoinLobby(env, auth.steamID, lobbyId);
+      const body = ((await readJson(req)) || {}) as { selectedCharacter?: string } | null;
+      const r = await requestToJoinLobby(env, auth.steamID, lobbyId, body || {});
       if (!r.ok) return errResp(r.status, r.error, r.message);
       return json({ ok: true, request: r.value });
+    }
+    if (subroute === "join-seat" && method === "POST") {
+      const body = ((await readJson(req)) || {}) as { selectedCharacter?: string } | null;
+      const r = await joinLobbySeat(env, auth.steamID, lobbyId, body || {});
+      if (!r.ok) return errResp(r.status, r.error, r.message);
+      return json({
+        ok: true,
+        lobby: r.value.lobby,
+        party: r.value.party,
+        partyId: r.value.partyId,
+      });
     }
     if (subroute === "cancel-request" && method === "POST") {
       const r = await cancelJoinRequest(env, auth.steamID, lobbyId);
@@ -210,7 +229,13 @@ export async function handleCoopRoute(
       if (subroute === "accept") {
         const r = await acceptJoinRequest(env, auth.steamID, lobbyId, requesterSteamId);
         if (!r.ok) return errResp(r.status, r.error, r.message);
-        return json({ ok: true, session: r.value.session, lobby: r.value.lobby });
+        return json({
+          ok: true,
+          session: r.value.session,
+          lobby: r.value.lobby,
+          party: r.value.party,
+          partyId: r.value.party.partyId,
+        });
       }
       const r = await declineJoinRequest(env, auth.steamID, lobbyId, requesterSteamId);
       if (!r.ok) return errResp(r.status, r.error, r.message);
@@ -278,6 +303,54 @@ export async function handleCoopRoute(
     return json({ ok: true, ...r.value });
   }
 
+  // Party room
+  const partyGetMatch = pathname.match(/^\/coop\/parties\/([0-9a-f]{32})$/);
+  if (partyGetMatch && method === "GET") {
+    const auth = await requireSession(req, env);
+    if (auth instanceof Response) return auth;
+    const party = await readParty(env, partyGetMatch[1]!);
+    if (!party || party.status !== "active") {
+      return errResp(404, "not_found", "Party not found — the host may have closed the room.");
+    }
+    const member = party.members.find((m) => m.steamId === auth.steamID);
+    if (!member || member.status === "left") {
+      return errResp(403, "not_participant", "You're not in this Party Room.");
+    }
+    return json({ ok: true, party });
+  }
+
+  const partyActionMatch = pathname.match(
+    /^\/coop\/parties\/([0-9a-f]{32})\/(status|leave|end)$/,
+  );
+  if (partyActionMatch && method === "POST") {
+    const auth = await requireSession(req, env);
+    if (auth instanceof Response) return auth;
+    const rl = await rateLimit(env, req, "coop-write", 60, 60);
+    if (rl) return rl;
+    const partyId = partyActionMatch[1]!;
+    const action = partyActionMatch[2];
+    if (action === "status") {
+      const body = (await readJson(req)) as { status?: string; selectedCharacter?: string } | null;
+      const r = await updatePartyMemberStatus(
+        env,
+        auth.steamID,
+        partyId,
+        body?.status,
+        body?.selectedCharacter,
+      );
+      if (!r.ok) return errResp(r.status, r.error, r.message);
+      return json({ ok: true, party: r.value });
+    }
+    if (action === "leave") {
+      const r = await leaveParty(env, auth.steamID, partyId);
+      if (!r.ok) return errResp(r.status, r.error, r.message);
+      return json({ ok: true, ...r.value });
+    }
+    const r = await endParty(env, auth.steamID, partyId);
+    if (!r.ok) return errResp(r.status, r.error, r.message);
+    return json({ ok: true, ...r.value });
+  }
+
   return null;
 }
 
@@ -324,12 +397,21 @@ async function buildStateBundle(
   let myLobby = presence.currentLobbyId
     ? await readLobby(env, presence.currentLobbyId)
     : null;
+  // Fallback: presence.currentLobbyId can lag after create/reconnect;
+  // the by-host index is authoritative for open hosted runs.
+  if (!myLobby) {
+    const hostLobbyId = await getActiveLobbyIdForHost(env, steamID);
+    if (hostLobbyId) {
+      myLobby = await readLobby(env, hostLobbyId);
+    }
+  }
   if (myLobby && myLobby.status !== "open" && myLobby.status !== "full" && myLobby.status !== "pending") {
     myLobby = null;
   }
   const mySession = presence.currentSessionId
     ? await readSession(env, presence.currentSessionId)
     : null;
+  const myParty = await readPartyForUser(env, steamID);
 
   // Incoming join requests if I host a lobby
   let incomingJoinRequests: JoinRequest[] = [];
@@ -383,7 +465,9 @@ async function buildStateBundle(
   //   - status === "open"
   const now = Date.now();
   const openLobbiesAll = allLobbies.filter((l) => {
-    if (l.status !== "open") return false;
+    if (l.status !== "open" && l.status !== "full") return false;
+    // Host's own lobby is returned separately as `lobby`; the main board
+    // merges it client-side so hosts still see Manage/Close on the board.
     if (l.hostSteamId === steamID) return false;
     const host = allPresence.find((p) => p.steamId === l.hostSteamId);
     if (!host) return false;
@@ -495,6 +579,7 @@ async function buildStateBundle(
   return {
     presence,
     session: mySession,
+    party: myParty,
     lobby: myLobby,
     incomingInvites: filterPending(incomingInvites),
     outgoingInvites: filterPending(outgoingInvites),
@@ -508,7 +593,22 @@ async function buildStateBundle(
     lookingNowCount,
     pairedNowCount,
     serverTime: new Date(now).toISOString(),
+    // Feature flags. The Worker can flip `COOP_LOBBY_BETA_KILL=1` in
+    // env at runtime (or via wrangler secret) and the next /coop/state
+    // poll forces every client back to Classic. Empty object when no
+    // flags are active so the wire shape stays stable.
+    flags: betaFlagsFromEnv(env),
   };
+}
+
+function betaFlagsFromEnv(env: Env): { coopLobbyBeta?: boolean; coopLobbyBetaKill?: boolean } | undefined {
+  const flags: { coopLobbyBeta?: boolean; coopLobbyBetaKill?: boolean } = {};
+  const killRaw = (env as unknown as Record<string, string | undefined>).COOP_LOBBY_BETA_KILL;
+  if (killRaw === "1" || killRaw === "true") flags.coopLobbyBetaKill = true;
+  const enableRaw = (env as unknown as Record<string, string | undefined>).COOP_LOBBY_BETA_ENABLED;
+  if (enableRaw === "0" || enableRaw === "false") flags.coopLobbyBeta = false;
+  if (enableRaw === "1" || enableRaw === "true")  flags.coopLobbyBeta = true;
+  return Object.keys(flags).length ? flags : undefined;
 }
 
 function filterPending(invites: CoopInvite[]): CoopInvite[] {

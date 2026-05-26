@@ -105,9 +105,9 @@ export function scoreMatch(
 
 function ascensionOverlaps(a: CoopPresence, b: CoopPresence): boolean {
   const aMin = a.ascensionMin ?? 0;
-  const aMax = a.ascensionMax ?? 20;
+  const aMax = a.ascensionMax ?? 10;
   const bMin = b.ascensionMin ?? 0;
-  const bMax = b.ascensionMax ?? 20;
+  const bMax = b.ascensionMax ?? 10;
   return aMin <= bMax && bMin <= aMax;
 }
 
@@ -167,6 +167,7 @@ export function recommendMatches(ctx: ScoringContext, limit = 8): RecommendedMat
     ascensionMax: s.presence.ascensionMax,
     goal: s.presence.goal,
     voicePreference: s.presence.voicePreference,
+    preferredCharacters: s.presence.preferredCharacters,
     note: s.presence.note,
     lastHeartbeatAt: s.presence.lastHeartbeatAt,
     label: s.label,

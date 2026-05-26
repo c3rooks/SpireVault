@@ -1,0 +1,1784 @@
+/* party-finder.css — Co-op Lobby Beta · party-finder UX (game-lobby polish)
+ * ============================================================================
+ * Owns every visual on the new Beta surface:
+ *   • Header (badges + helper strip)
+ *   • Run Preferences / Find Me a Group panel
+ *   • Best Party for You — hero card with character art panel
+ *   • Live Parties — visual rows with character avatars, slot ring
+ *   • Host a Room 3-step modal
+ *   • Details modal
+ *   • Party Hub (desktop + mobile)
+ *
+ * Tokens piggyback on the existing styles.css custom props
+ * (--bg, --panel, --text, --muted, --accent, …) so the new surface
+ * stays in the same palette as the rest of the app without recomputing
+ * the theme. Loaded by party-finder.js via an injected <link> tag so
+ * the primary styles.css stays untouched.
+ *
+ * The design language is gamer-first: rounded cards, soft glows on the
+ * hero CTA, character avatars in every slot, color-coded fit pills,
+ * Discord-blue voice buttons, microinteractions on hover/press, and a
+ * clean information density that a 7-year-old can scan in 5 seconds.
+ * ============================================================================
+ */
+
+:root {
+  /* Geometry */
+  --pf-radius-card: 20px;
+  --pf-radius-chip: 999px;
+  --pf-radius-btn: 14px;
+  --pf-radius-slot: 14px;
+  --pf-pad-card: 22px;
+  --pf-pad-card-sm: 16px;
+  --pf-gap-section: 20px;
+
+  /* Shadow / stroke */
+  --pf-shadow-card: 0 1px 0 rgba(255,255,255,0.04) inset, 0 24px 60px -36px rgba(0,0,0,0.6);
+  --pf-shadow-hero: 0 1px 0 rgba(255,255,255,0.05) inset, 0 40px 80px -32px rgba(245,166,35,0.18), 0 20px 60px -30px rgba(0,0,0,0.7);
+  --pf-shadow-btn: 0 1px 0 rgba(255,255,255,0.18) inset, 0 6px 18px -8px rgba(0,0,0,0.6);
+  --pf-stroke: rgba(255,255,255,0.09);
+  --pf-stroke-soft: rgba(255,255,255,0.05);
+  --pf-stroke-strong: rgba(255,255,255,0.16);
+  --pf-fill: rgba(255,255,255,0.025);
+  --pf-fill-strong: rgba(255,255,255,0.06);
+
+  /* Status colors */
+  --pf-ok: #34d399;       /* fit / ready */
+  --pf-ok-soft: rgba(52, 211, 153, 0.14);
+  --pf-warn: #fbbf24;     /* hosting / live now */
+  --pf-warn-soft: rgba(251, 191, 36, 0.14);
+  --pf-bad: #fb7185;      /* mismatch / full */
+  --pf-bad-soft: rgba(251, 113, 133, 0.14);
+  --pf-info: #60a5fa;     /* general info / sandbox */
+  --pf-info-soft: rgba(96, 165, 250, 0.14);
+
+  /* Brand */
+  --pf-accent: var(--accent, #f5a623);
+  --pf-accent-soft: rgba(245, 166, 35, 0.18);
+  --pf-accent-hot: #ffb347;
+  --pf-discord: #5865f2;
+  --pf-discord-hi: #7289ee;
+  --pf-discord-soft: rgba(88, 101, 242, 0.20);
+  --pf-steam: #66c0f4;
+  --pf-steam-soft: rgba(102, 192, 244, 0.18);
+
+  /* Surface */
+  --pf-text: var(--text, #f4efe6);
+  --pf-muted: var(--muted, #a59f8e);
+  --pf-panel: var(--panel, #14111c);
+  --pf-panel-hi: rgba(255,255,255,0.04);
+}
+
+/* ============================================================
+ * Body class gates: only paint the new surface when Beta is on.
+ * Hide the legacy Beta workspace + activity feed when on.
+ * ============================================================ */
+body.coop-lobby-beta-on .coop-bar[data-coop-mode="beta"],
+body.coop-lobby-beta-on .coop-workspace[data-coop-mode="beta"],
+body.coop-lobby-beta-on .coop-feed-section[data-coop-mode="beta"] {
+  display: none !important;
+}
+
+body.coop-lobby-beta-off .pf-helper-line[data-coop-mode="beta"] {
+  display: none !important;
+}
+
+.pf-helper-line {
+  margin: 6px 0 0;
+  color: var(--pf-muted);
+  font-size: 13px;
+  line-height: 1.5;
+  letter-spacing: 0.005em;
+}
+
+/* ============================================================
+ * Root container
+ * ============================================================ */
+#pf-root {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pf-gap-section);
+  padding-top: 4px;
+}
+#pf-root[hidden] { display: none !important; }
+
+.pf-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--pf-muted);
+  font-weight: 700;
+}
+
+.pf-section-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.pf-section-head h3 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--pf-text);
+  letter-spacing: 0.005em;
+}
+.pf-section-sub {
+  margin: 4px 0 0;
+  color: var(--pf-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.pf-section-actions { display: flex; gap: 8px; align-items: center; }
+.pf-count {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 22px; height: 20px; padding: 0 7px;
+  border-radius: 999px;
+  background: var(--pf-accent-soft);
+  color: var(--pf-accent);
+  font-size: 11px; font-weight: 800;
+  margin-left: 6px;
+  vertical-align: 2px;
+}
+
+.pf-sep { opacity: 0.4; padding: 0 2px; }
+.pf-muted { color: var(--pf-muted); }
+
+/* ============================================================
+ * Header badge row (rendered into the panel-head title row)
+ * (script.js still owns the legacy .coop-beta-badge / dev chip)
+ * ============================================================ */
+.pf-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  border: 1px solid var(--pf-stroke);
+  background: rgba(255,255,255,0.04);
+  color: var(--pf-text);
+  margin-left: 8px;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+.pf-badge--beta {
+  background: linear-gradient(180deg, rgba(245,166,35,0.25), rgba(245,166,35,0.08));
+  border-color: rgba(245,166,35,0.35);
+  color: #ffd591;
+}
+.pf-badge--dev {
+  cursor: pointer;
+  background: linear-gradient(180deg, rgba(96,165,250,0.22), rgba(96,165,250,0.08));
+  border-color: rgba(96,165,250,0.35);
+  color: #bfdbfe;
+}
+.pf-badge--dev:hover { filter: brightness(1.15); }
+
+/* ============================================================
+ * Buttons
+ * ============================================================ */
+.pf-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 9px 16px;
+  border-radius: var(--pf-radius-btn);
+  border: 1px solid transparent;
+  font-size: 13.5px;
+  font-weight: 700;
+  letter-spacing: 0.005em;
+  cursor: pointer;
+  transition: transform .12s ease, filter .12s ease, background .12s ease, box-shadow .12s ease;
+  white-space: nowrap;
+  user-select: none;
+  font-family: inherit;
+  line-height: 1.1;
+}
+.pf-btn:hover { filter: brightness(1.08); transform: translateY(-1px); }
+.pf-btn:active { transform: translateY(0); filter: brightness(0.95); }
+.pf-btn:disabled,
+.pf-btn[aria-disabled="true"] {
+  opacity: 0.55; cursor: not-allowed; transform: none; filter: none;
+}
+
+.pf-btn--primary {
+  background: linear-gradient(180deg, var(--pf-accent-hot), var(--pf-accent));
+  color: #1a0f04;
+  border-color: rgba(0,0,0,0.18);
+  box-shadow: var(--pf-shadow-btn);
+}
+.pf-btn--primary:hover { box-shadow: 0 1px 0 rgba(255,255,255,0.25) inset, 0 10px 24px -8px rgba(245,166,35,0.45); }
+.pf-btn--ghost {
+  background: var(--pf-fill);
+  color: var(--pf-text);
+  border-color: var(--pf-stroke);
+}
+.pf-btn--ghost:hover { background: var(--pf-fill-strong); }
+.pf-btn--success {
+  background: linear-gradient(180deg, rgba(52,211,153,0.22), rgba(52,211,153,0.10));
+  border-color: rgba(52,211,153,0.45);
+  color: #c9f7e1;
+}
+.pf-btn--warn {
+  background: rgba(251,113,133,0.10);
+  border-color: rgba(251,113,133,0.35);
+  color: #fecaca;
+}
+.pf-btn--sm  { padding: 6px 11px; font-size: 12.5px; border-radius: 10px; }
+.pf-btn--lg  { padding: 13px 22px; font-size: 15px; border-radius: 14px; min-height: 48px; min-width: 168px; }
+.pf-btn--xl  { padding: 16px 26px; font-size: 16px; border-radius: 16px; min-height: 56px; min-width: 200px; }
+.pf-btn--block { width: 100%; }
+
+.pf-btn--discord {
+  background: linear-gradient(180deg, var(--pf-discord-hi), var(--pf-discord));
+  color: white;
+  border-color: rgba(0,0,0,0.18);
+  box-shadow: 0 1px 0 rgba(255,255,255,0.18) inset, 0 8px 22px -10px rgba(88,101,242,0.55);
+}
+.pf-btn--discord:hover { box-shadow: 0 1px 0 rgba(255,255,255,0.25) inset, 0 12px 28px -8px rgba(88,101,242,0.65); }
+.pf-btn--steam {
+  background: linear-gradient(180deg, rgba(102,192,244,0.95), rgba(73,150,202,0.95));
+  color: #061521;
+  border-color: rgba(0,0,0,0.18);
+  box-shadow: var(--pf-shadow-btn);
+}
+
+.pf-btn-pulse { animation: pf-pulse 2.4s ease-in-out infinite; }
+@keyframes pf-pulse {
+  0%, 100% { box-shadow: 0 1px 0 rgba(255,255,255,0.18) inset, 0 8px 22px -10px rgba(245,166,35,0.40); }
+  50%      { box-shadow: 0 1px 0 rgba(255,255,255,0.22) inset, 0 14px 38px -8px rgba(245,166,35,0.70); }
+}
+
+/* ============================================================
+ * Run Preferences panel
+ * ============================================================ */
+.pf-prefs {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 14px 18px;
+  padding: 18px 20px;
+  border-radius: var(--pf-radius-card);
+  background: linear-gradient(180deg, var(--pf-fill-strong), var(--pf-fill));
+  border: 1px solid var(--pf-stroke);
+  box-shadow: var(--pf-shadow-card);
+}
+.pf-prefs-head { grid-column: 1 / -1; display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.pf-prefs-head h3 { margin: 0; font-size: 16.5px; font-weight: 700; color: var(--pf-text); }
+.pf-prefs-sub { margin: 0; color: var(--pf-muted); font-size: 12.5px; }
+
+.pf-prefs-chips {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0; margin: 0;
+  grid-column: 1;
+}
+.pf-pref-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: var(--pf-fill);
+  border: 1px solid var(--pf-stroke);
+  font-size: 12.5px;
+  color: var(--pf-text);
+  white-space: nowrap;
+  transition: background .15s ease, border-color .15s ease;
+}
+.pf-pref-chip:hover { background: var(--pf-fill-strong); border-color: var(--pf-stroke-strong); }
+.pf-pref-chip-key {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.10em;
+  color: var(--pf-muted);
+  font-weight: 700;
+}
+.pf-pref-chip-img {
+  width: 16px; height: 16px;
+  border-radius: 999px;
+  object-fit: cover;
+  background: rgba(0,0,0,0.45);
+  border: 1px solid var(--pf-stroke);
+}
+
+.pf-prefs-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  grid-column: 2;
+  justify-content: flex-end;
+}
+
+.pf-prefs-nomatch {
+  grid-column: 1 / -1;
+  margin-top: 4px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  border: 1px dashed rgba(251,191,36,0.35);
+  background: rgba(251,191,36,0.06);
+  color: var(--pf-text);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.pf-prefs-nomatch h4 { margin: 0; font-size: 14px; font-weight: 700; }
+.pf-prefs-nomatch-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* ============================================================
+ * Best Party for You — HERO card with character art panel
+ * ============================================================ */
+.pf-best { display: flex; flex-direction: column; gap: 10px; }
+.pf-best-card {
+  position: relative;
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr) 224px;
+  gap: 0;
+  padding: 0;
+  border-radius: var(--pf-radius-card);
+  overflow: hidden;
+  background: linear-gradient(180deg, rgba(245,166,35,0.06), rgba(0,0,0,0));
+  border: 1px solid rgba(245,166,35,0.30);
+  box-shadow: var(--pf-shadow-hero);
+}
+.pf-best-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  background:
+    radial-gradient(80% 60% at 0% 0%, rgba(245,166,35,0.16), transparent 60%),
+    radial-gradient(60% 80% at 100% 100%, rgba(96,165,250,0.10), transparent 60%);
+  opacity: 0.9;
+}
+
+/* Hero art column */
+.pf-best-art {
+  position: relative;
+  overflow: hidden;
+  background:
+    radial-gradient(120% 100% at 30% 0%, rgba(255,255,255,0.05), rgba(0,0,0,0.30) 60%),
+    linear-gradient(180deg, rgba(0,0,0,0.18), rgba(0,0,0,0.55));
+  border-right: 1px solid var(--pf-stroke);
+}
+.pf-best-art-img {
+  position: absolute;
+  inset: -8% -10% -8% 0;
+  width: 110%;
+  height: 116%;
+  object-fit: cover;
+  object-position: center top;
+  filter: saturate(1.05) contrast(1.04);
+  z-index: 1;
+}
+.pf-best-art-veil {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  background:
+    linear-gradient(180deg, rgba(0,0,0,0) 40%, rgba(0,0,0,0.75) 100%),
+    linear-gradient(90deg, rgba(0,0,0,0) 60%, rgba(20,17,28,0.6) 100%);
+}
+.pf-best-art-stamp {
+  position: absolute;
+  left: 14px; top: 14px;
+  z-index: 3;
+  padding: 4px 9px 4px 8px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+  background: rgba(0,0,0,0.55);
+  border: 1px solid rgba(255,255,255,0.18);
+  color: #fff;
+  backdrop-filter: blur(6px);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.pf-best-art-stamp .pf-dot { width: 7px; height: 7px; }
+.pf-best-art-charname {
+  position: absolute;
+  left: 14px; bottom: 12px;
+  z-index: 3;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: rgba(255,255,255,0.94);
+  text-shadow: 0 1px 4px rgba(0,0,0,0.7);
+}
+
+/* Hero info column */
+.pf-best-meta {
+  position: relative;
+  z-index: 1;
+  padding: 22px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+.pf-best-titlerow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.pf-best-title {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  color: var(--pf-text);
+  line-height: 1.15;
+}
+.pf-attrs {
+  display: flex; flex-wrap: wrap; gap: 4px 12px;
+  align-items: center;
+  font-size: 13px; color: var(--pf-text);
+}
+.pf-attrs strong { font-weight: 700; }
+/* When the live-row observer enriches a row with colored pills the text
+ * separators (·) are gone. Switch to a wider gap so the pills don't crowd
+ * each other and the row feels closer to the Best Party hero card. */
+.pf-attrs--pills { gap: 6px 8px; }
+.pf-attrs--pills .pf-sep { display: none; }
+.pf-attrs-fit {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 3px 9px; border-radius: 999px;
+  background: var(--pf-ok-soft); color: var(--pf-ok);
+  font-size: 12px; font-weight: 700;
+}
+.pf-attrs-fit::before {
+  content: ""; width: 6px; height: 6px; border-radius: 999px; background: currentColor;
+}
+.pf-attrs-fit--neutral { background: var(--pf-info-soft); color: var(--pf-info); }
+.pf-attrs-fit--bad { background: var(--pf-bad-soft); color: var(--pf-bad); }
+.pf-attrs-fit--warn { background: var(--pf-warn-soft); color: var(--pf-warn); }
+
+.pf-host-line {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 13px; color: var(--pf-text);
+}
+.pf-host-line img {
+  width: 22px; height: 22px; border-radius: 999px; object-fit: cover;
+  border: 1px solid var(--pf-stroke);
+  background: rgba(0,0,0,0.45);
+}
+.pf-host-line strong { font-weight: 700; }
+
+/* Why it fits — grid of mini-stat tiles */
+.pf-why {
+  display: flex; flex-direction: column; gap: 7px;
+  padding: 12px 14px;
+  background: rgba(0,0,0,0.22);
+  border: 1px solid var(--pf-stroke-soft);
+  border-radius: 14px;
+}
+.pf-why-title {
+  font-size: 10.5px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--pf-muted);
+  font-weight: 800;
+}
+.pf-why-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0,1fr));
+  gap: 6px 12px;
+}
+.pf-why-item {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 12.5px;
+  color: var(--pf-text);
+}
+.pf-why-item-ico {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 18px; height: 18px;
+  border-radius: 999px;
+  background: var(--pf-ok-soft); color: var(--pf-ok);
+  font-size: 11px; font-weight: 900;
+  flex: 0 0 18px;
+}
+.pf-why-item--bad .pf-why-item-ico { background: var(--pf-bad-soft); color: var(--pf-bad); }
+.pf-why-item--bad { color: var(--pf-muted); }
+.pf-why-item--warn .pf-why-item-ico { background: var(--pf-warn-soft); color: var(--pf-warn); }
+
+/* Hero CTA column */
+.pf-best-actions {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: stretch;
+  justify-content: center;
+  padding: 22px 22px;
+  background: linear-gradient(180deg, rgba(0,0,0,0.18), rgba(0,0,0,0.34));
+  border-left: 1px solid var(--pf-stroke-soft);
+}
+.pf-best-actions .pf-btn { width: 100%; min-height: 48px; }
+.pf-best-actions .pf-btn--lg { font-size: 16px; }
+.pf-best-footnote {
+  margin: 6px 2px 0;
+  font-size: 11.5px;
+  color: var(--pf-muted);
+  text-align: center;
+  line-height: 1.4;
+}
+
+/* Empty Best Party fallback */
+.pf-best-card--empty {
+  grid-template-columns: 1fr;
+  background: linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.01));
+  border: 1px dashed var(--pf-stroke-strong);
+  box-shadow: none;
+  padding: 24px;
+  display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center;
+}
+.pf-best-card--empty .pf-best-art,
+.pf-best-card--empty .pf-best-actions { display: none; }
+.pf-best-card--empty .pf-best-meta { padding: 0; align-items: center; }
+.pf-best-card--empty .pf-best-title { font-size: 18px; }
+.pf-best-card--empty .pf-best-actions-empty { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+
+/* ============================================================
+ * Live Parties list — visual rows with avatar slots
+ * ============================================================ */
+.pf-live { display: flex; flex-direction: column; gap: 10px; }
+
+.pf-live-list { display: flex; flex-direction: column; gap: 12px; }
+
+.pf-live-row {
+  position: relative;
+  display: grid;
+  /* renderLiveRow only emits two children (.pf-live-meta and
+   * .pf-live-actions). The host avatar sits inside .pf-host-strip so we
+   * don't need a dedicated 56px art column — leaving one in the grid
+   * template silently squeezed the meta column down to 56px and stacked
+   * every pill vertically. Two columns: stretchy meta + fixed-width
+   * action stack. */
+  grid-template-columns: minmax(0, 1fr) 196px;
+  gap: 14px;
+  align-items: center;
+  padding: 16px 18px;
+  border-radius: var(--pf-radius-card);
+  background: linear-gradient(180deg, var(--pf-fill-strong), var(--pf-fill));
+  border: 1px solid var(--pf-stroke);
+  box-shadow: var(--pf-shadow-card);
+  transition: border-color .15s ease, transform .15s ease, box-shadow .15s ease;
+}
+.pf-live-row:hover {
+  border-color: var(--pf-stroke-strong);
+  transform: translateY(-1px);
+  box-shadow: 0 1px 0 rgba(255,255,255,0.05) inset, 0 28px 60px -32px rgba(0,0,0,0.7);
+}
+.pf-live-row--highlight {
+  border-color: rgba(245,166,35,0.45);
+  background: linear-gradient(180deg, rgba(245,166,35,0.08), var(--pf-fill));
+  box-shadow: 0 0 0 1px rgba(245,166,35,0.18), 0 24px 60px -32px rgba(245,166,35,0.30);
+}
+.pf-live-row--mine {
+  border-color: rgba(96,165,250,0.45);
+  background: linear-gradient(180deg, rgba(96,165,250,0.06), var(--pf-fill));
+}
+.pf-live-row--mismatch { opacity: 0.78; }
+.pf-live-row--full { opacity: 0.7; }
+
+/* Host avatar column */
+.pf-live-hostart {
+  position: relative;
+  width: 56px; height: 56px;
+  border-radius: 16px;
+  overflow: hidden;
+  background: radial-gradient(80% 60% at 30% 30%, rgba(255,255,255,0.05), rgba(0,0,0,0.4) 60%);
+  border: 1px solid var(--pf-stroke);
+  flex: 0 0 56px;
+}
+.pf-live-hostart img {
+  position: absolute; inset: -10% -10% -10% -10%;
+  width: 120%; height: 120%;
+  object-fit: cover;
+  object-position: center top;
+}
+.pf-live-hostart-fallback {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 18px; font-weight: 800;
+  color: rgba(255,255,255,0.6);
+}
+.pf-live-hostart-mode {
+  position: absolute; left: 4px; bottom: 4px;
+  font-size: 9px; font-weight: 800; letter-spacing: 0.06em;
+  padding: 2px 5px;
+  background: rgba(0,0,0,0.75);
+  color: white;
+  border-radius: 6px;
+  text-transform: uppercase;
+}
+
+/* Meta column */
+.pf-live-meta {
+  display: flex; flex-direction: column; gap: 6px;
+  min-width: 0;
+}
+.pf-live-titlerow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.pf-live-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--pf-text);
+  letter-spacing: -0.005em;
+  line-height: 1.2;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.pf-host-strip {
+  display: flex; align-items: center; gap: 7px;
+  font-size: 12.5px;
+  color: var(--pf-muted);
+}
+.pf-host-strip img {
+  /* Host avatars: keep them tiny in the inline host strip so a missing
+   * Steam avatar that falls back to /assets/vault-mark.svg doesn't
+   * render at its full intrinsic size and dominate the whole row. */
+  width: 22px; height: 22px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex: 0 0 22px;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid var(--pf-stroke);
+}
+.pf-host-strip strong { color: var(--pf-text); font-weight: 700; }
+.pf-host-strip .pf-dot {
+  width: 7px; height: 7px; border-radius: 999px;
+  background: var(--pf-ok);
+  box-shadow: 0 0 0 2px rgba(52,211,153,0.18);
+}
+.pf-host-strip .pf-dot--idle { background: var(--pf-muted); box-shadow: none; }
+
+/* Slot strip — visual party formation */
+.pf-slots {
+  display: flex; gap: 8px;
+  align-items: center;
+  margin-top: 4px;
+  flex-wrap: nowrap;
+  min-width: 0;
+}
+.pf-slot {
+  position: relative;
+  width: 44px; height: 44px;
+  border-radius: 12px;
+  flex: 0 0 44px;
+  background:
+    radial-gradient(70% 60% at 30% 30%, rgba(255,255,255,0.06), rgba(0,0,0,0.35) 60%);
+  border: 1px solid var(--pf-stroke);
+  overflow: hidden;
+  transition: transform .15s ease, border-color .15s ease;
+}
+.pf-slot:hover { transform: translateY(-1px); border-color: var(--pf-stroke-strong); }
+.pf-slot-img {
+  position: absolute; inset: -10% -10% 24% -10%;
+  width: 120%; height: 116%;
+  object-fit: cover;
+  object-position: center top;
+}
+/* Bottom nameplate: a dark strip across the bottom of the slot so the
+ * HOST / IN / YOU label sits below the character art instead of sitting
+ * on top of their lower body. The image's bottom inset above keeps the
+ * art clear of this strip. */
+.pf-slot-tag {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  height: 14px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 8.5px; font-weight: 800; letter-spacing: 0.06em;
+  background: linear-gradient(180deg, rgba(0,0,0,0.55), rgba(0,0,0,0.9));
+  color: rgba(255,255,255,0.92);
+  text-transform: uppercase;
+  border-top: 1px solid rgba(255,255,255,0.06);
+}
+.pf-slot--host { border-color: rgba(245,166,35,0.55); }
+.pf-slot--host .pf-slot-tag {
+  background: linear-gradient(180deg, rgba(245,166,35,0.65), rgba(245,166,35,0.95));
+  color: #1a0f04;
+}
+.pf-slot--mine { border-color: rgba(96,165,250,0.55); }
+.pf-slot--mine .pf-slot-tag {
+  background: linear-gradient(180deg, rgba(96,165,250,0.65), rgba(96,165,250,0.95));
+  color: #0a1226;
+}
+.pf-slot--joined { border-color: rgba(52,211,153,0.45); }
+.pf-slot--joined .pf-slot-tag {
+  background: linear-gradient(180deg, rgba(52,211,153,0.55), rgba(52,211,153,0.9));
+  color: #06241b;
+}
+.pf-slot--open {
+  border-style: dashed;
+  background:
+    repeating-linear-gradient(45deg, rgba(255,255,255,0.02) 0 6px, transparent 6px 12px),
+    radial-gradient(70% 60% at 30% 30%, rgba(255,255,255,0.03), rgba(0,0,0,0.25) 60%);
+}
+.pf-slot--open::after {
+  content: "+";
+  position: absolute; inset: 0 0 14px 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 22px; font-weight: 300; color: rgba(255,255,255,0.4);
+}
+
+/* Attribute strip */
+.pf-attrs-row {
+  display: flex; flex-wrap: wrap; gap: 4px 10px;
+  align-items: center;
+  font-size: 12.5px; color: var(--pf-text);
+}
+.pf-pill {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--pf-fill);
+  border: 1px solid var(--pf-stroke);
+  font-size: 11.5px; font-weight: 600;
+  color: var(--pf-text);
+}
+.pf-pill--branch-beta { background: var(--pf-info-soft); border-color: rgba(96,165,250,0.30); color: #bfdbfe; }
+.pf-pill--branch-main { background: var(--pf-accent-soft); border-color: rgba(245,166,35,0.30); color: #ffd591; }
+.pf-pill--branch-both { background: rgba(255,255,255,0.04); border-color: var(--pf-stroke); color: var(--pf-text); }
+.pf-pill--voice { background: var(--pf-discord-soft); border-color: rgba(88,101,242,0.30); color: #c7cdfa; }
+.pf-pill--voice-none { background: rgba(255,255,255,0.04); border-color: var(--pf-stroke); color: var(--pf-muted); }
+.pf-pill--mic-yes { background: var(--pf-ok-soft); border-color: rgba(52,211,153,0.30); color: #bbf3da; }
+.pf-pill--mic-no { background: var(--pf-fill); border-color: var(--pf-stroke); color: var(--pf-muted); }
+.pf-pill--asc { background: rgba(255,255,255,0.05); border-color: var(--pf-stroke); color: var(--pf-text); font-weight: 800; }
+.pf-pill--goal { background: rgba(255,255,255,0.04); border-color: var(--pf-stroke); }
+.pf-pill--mode { background: rgba(255,255,255,0.05); border-color: var(--pf-stroke); }
+.pf-pill-ico { width: 12px; height: 12px; display: inline-block; }
+.pf-pill .pf-pill-ico { color: currentColor; opacity: 0.92; }
+
+.pf-seats {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-size: 12.5px;
+  color: var(--pf-text);
+}
+.pf-seats strong { font-weight: 700; }
+.pf-seats--full { color: var(--pf-bad); }
+
+/* Live row actions column */
+.pf-live-actions {
+  display: flex; flex-direction: column; gap: 8px;
+  align-items: stretch;
+}
+.pf-live-actions .pf-btn { width: 100%; min-height: 42px; }
+
+/* ============================================================
+ * Empty state for Live Parties
+ * ============================================================ */
+.pf-empty {
+  display: flex; flex-direction: column; align-items: center; gap: 12px;
+  padding: 36px 24px 30px;
+  border-radius: var(--pf-radius-card);
+  background: linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.01));
+  border: 1px dashed var(--pf-stroke-strong);
+  text-align: center;
+}
+.pf-empty-art {
+  width: 76px; height: 76px;
+  border-radius: 22px;
+  display: flex; align-items: center; justify-content: center;
+  background:
+    radial-gradient(60% 60% at 30% 20%, rgba(245,166,35,0.20), transparent 65%),
+    linear-gradient(180deg, rgba(255,255,255,0.05), rgba(0,0,0,0.30));
+  border: 1px solid var(--pf-stroke);
+  margin-bottom: 4px;
+  color: var(--pf-accent);
+  font-size: 32px;
+  font-weight: 900;
+}
+.pf-empty h4 { margin: 0; font-size: 18px; font-weight: 800; }
+.pf-empty p { margin: 0; color: var(--pf-muted); font-size: 13.5px; max-width: 520px; line-height: 1.5; }
+.pf-empty-actions { display: flex; gap: 8px; margin-top: 6px; flex-wrap: wrap; justify-content: center; }
+.pf-empty-list {
+  list-style: none;
+  display: flex; flex-wrap: wrap; gap: 4px 14px;
+  margin: 4px 0 0;
+  padding: 0;
+  color: var(--pf-muted);
+  font-size: 12px;
+  justify-content: center;
+}
+.pf-empty-list li::before { content: "•"; color: var(--pf-accent); margin-right: 6px; }
+
+/* ============================================================
+ * Modal shell — Host / Details / Prefs
+ * ============================================================ */
+.pf-modal-backdrop {
+  position: fixed; inset: 0;
+  z-index: 9000;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(8,5,12,0.66);
+  backdrop-filter: blur(8px);
+  padding: 24px;
+  animation: pf-fade-in 0.15s ease;
+}
+.pf-modal-backdrop[hidden] { display: none !important; }
+@keyframes pf-fade-in { from { opacity: 0 } to { opacity: 1 } }
+
+.pf-modal {
+  width: 100%;
+  max-width: 560px;
+  max-height: calc(100vh - 48px);
+  background:
+    radial-gradient(120% 80% at 0% 0%, rgba(245,166,35,0.10), transparent 55%),
+    radial-gradient(100% 80% at 100% 0%, rgba(88,101,242,0.10), transparent 55%),
+    linear-gradient(180deg, #1c1626, #14111c);
+  border-radius: 22px;
+  border: 1px solid var(--pf-stroke);
+  box-shadow:
+    0 0 0 1px rgba(255,255,255,0.04) inset,
+    0 30px 80px -20px rgba(0,0,0,0.7),
+    0 1px 0 rgba(255,255,255,0.05) inset;
+  padding: 22px 22px 18px;
+  display: flex; flex-direction: column;
+  gap: 14px;
+  overflow: hidden;
+  animation: pf-modal-in 0.18s ease;
+  position: relative;
+}
+.pf-modal::before {
+  /* Soft starfield grain so the modal reads like a game panel, not a
+   * settings dialog. Pure CSS noise so it costs nothing to ship. */
+  content: "";
+  position: absolute; inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(1px 1px at 12% 18%, rgba(255,255,255,0.18), transparent 60%),
+    radial-gradient(1px 1px at 78% 22%, rgba(255,255,255,0.14), transparent 60%),
+    radial-gradient(1px 1px at 32% 70%, rgba(255,255,255,0.10), transparent 60%),
+    radial-gradient(1px 1px at 64% 84%, rgba(255,255,255,0.10), transparent 60%),
+    radial-gradient(1px 1px at 88% 60%, rgba(255,255,255,0.10), transparent 60%);
+  opacity: 0.6;
+  border-radius: inherit;
+  z-index: 0;
+}
+.pf-modal > * { position: relative; z-index: 1; }
+@keyframes pf-modal-in {
+  from { opacity: 0; transform: translateY(8px) scale(0.985); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+.pf-modal--wide { max-width: 980px; }
+
+.pf-modal-head {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 14px;
+}
+.pf-modal-head h3 { margin: 0; font-size: 19px; font-weight: 800; }
+.pf-modal-head p  { margin: 2px 0 0; color: var(--pf-muted); font-size: 13px; }
+
+.pf-modal-close {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--pf-muted);
+  width: 36px; height: 36px;
+  border-radius: 12px;
+  cursor: pointer;
+  font-size: 22px;
+  line-height: 1;
+  transition: background .15s ease, color .15s ease;
+}
+.pf-modal-close:hover { background: var(--pf-fill-strong); color: var(--pf-text); }
+
+.pf-modal-body {
+  overflow-y: auto;
+  display: flex; flex-direction: column;
+  gap: 12px;
+  padding-right: 4px;
+}
+.pf-modal-body::-webkit-scrollbar { width: 10px; }
+.pf-modal-body::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.10); border-radius: 6px; }
+
+/* Host modal body becomes a two-column layout on wide screens when the
+ * live preview side panel is injected (party-finder-globals.js adds the
+ * pf-has-side-panel class). The left column holds the form fields, the
+ * right column holds the sticky preview card. */
+#pf-host-body.pf-has-side-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: 22px;
+  align-items: start;
+}
+#pf-host-body.pf-has-side-panel > .pf-host-side {
+  position: sticky;
+  top: 0;
+  grid-column: 2;
+  grid-row: 1 / span 99;
+  align-self: start;
+}
+
+.pf-modal-actions {
+  display: flex; gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.pf-form-error {
+  padding: 9px 12px;
+  background: rgba(251,113,133,0.12);
+  border: 1px solid rgba(251,113,133,0.35);
+  border-radius: 12px;
+  color: #fecaca;
+  font-size: 12.5px;
+  display: flex; align-items: center; flex-wrap: wrap; gap: 8px 10px;
+}
+.pf-form-error[hidden] { display: none; }
+.pf-form-error-text { flex: 1 1 auto; min-width: 0; }
+.pf-form-error-action {
+  flex: 0 0 auto;
+  appearance: none;
+  border: 1px solid rgba(251, 113, 133, 0.55);
+  background: rgba(251, 113, 133, 0.18);
+  color: #fff5f5;
+  font: inherit; font-weight: 700;
+  font-size: 12px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 160ms ease, border-color 160ms ease, transform 120ms ease;
+}
+.pf-form-error-action:hover { background: rgba(251, 113, 133, 0.30); border-color: rgba(251, 113, 133, 0.85); }
+.pf-form-error-action:active { transform: scale(0.97); }
+.pf-form-error-action:disabled { opacity: 0.6; cursor: progress; }
+
+/* ============================================================
+ * Stepper (Host a Room)
+ * ============================================================ */
+.pf-stepper {
+  display: flex; gap: 8px;
+  flex-wrap: wrap;
+  margin: 0 0 2px;
+}
+.pf-step {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: var(--pf-fill);
+  border: 1px solid var(--pf-stroke);
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--pf-muted);
+}
+.pf-step-num {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 20px; height: 20px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.06);
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--pf-text);
+}
+.pf-step--active {
+  background: var(--pf-accent-soft);
+  border-color: rgba(245,166,35,0.35);
+  color: var(--pf-text);
+}
+.pf-step--active .pf-step-num { background: var(--pf-accent); color: #1a0f04; }
+.pf-step--done {
+  background: var(--pf-ok-soft);
+  border-color: rgba(52,211,153,0.35);
+  color: #bbf3da;
+}
+.pf-step--done .pf-step-num { background: var(--pf-ok); color: #06291c; }
+.pf-step--done .pf-step-num::after { content: "✓"; }
+.pf-step--done .pf-step-num-text { display: none; }
+
+/* ============================================================
+ * Fields / chip rows / char grid (host modal)
+ * ============================================================ */
+.pf-field { display: flex; flex-direction: column; gap: 8px; }
+/* Host modal body: a hair more breathing room between sections so the
+ * Run/Party steps feel scannable instead of dumped-together. Achieved by
+ * spacing siblings rather than touching the JS template. */
+.pf-modal-body > .pf-field + .pf-field { margin-top: 14px; }
+.pf-field-label {
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--pf-muted);
+  font-weight: 800;
+}
+/* Inline contextual hint next to a field label, used for the
+   Planned-start row to explain what other players will see. */
+.pf-field-hint {
+  margin-left: 8px;
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  color: rgba(232, 226, 255, 0.55);
+  font-weight: 500;
+}
+/* Live note-length counter — green/amber/red so the user knows when
+ * their typed text is about to start eating into the [start=ISO]
+ * budget on the server side. */
+.pf-note-counter {
+  margin-left: 4px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+.pf-note-counter[data-tone="ok"]     { color: rgba(232, 226, 255, 0.55); }
+.pf-note-counter[data-tone="warn"]   { color: #fbbf24; }
+.pf-note-counter[data-tone="danger"] { color: #f87171; }
+.pf-field input[type="text"] {
+  padding: 11px 14px;
+  background: var(--pf-fill);
+  border: 1px solid var(--pf-stroke);
+  border-radius: 12px;
+  color: var(--pf-text);
+  font-size: 14px;
+  font-family: inherit;
+  transition: border-color .15s ease;
+}
+.pf-field input[type="text"]:focus {
+  outline: none;
+  border-color: var(--pf-accent);
+  background: rgba(245,166,35,0.05);
+}
+
+.pf-chiprow {
+  display: flex; flex-wrap: wrap; gap: 8px;
+}
+.pf-chip-btn {
+  position: relative;
+  padding: 10px 16px;
+  border-radius: 999px;
+  background: var(--pf-fill);
+  border: 1px solid var(--pf-stroke);
+  color: var(--pf-text);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background .18s ease, border-color .18s ease, transform .12s ease, box-shadow .18s ease;
+  min-height: 38px;
+}
+.pf-chip-btn:hover {
+  background: var(--pf-fill-strong);
+  transform: translateY(-1px);
+  border-color: var(--pf-stroke-strong);
+  box-shadow: 0 4px 14px -8px rgba(0,0,0,0.5);
+}
+.pf-chip-btn.is-active {
+  background: linear-gradient(180deg, var(--pf-accent-hot), var(--pf-accent));
+  border-color: rgba(0,0,0,0.18);
+  color: #1a0f04;
+  font-weight: 800;
+  transform: translateY(-1px);
+  box-shadow:
+    var(--pf-shadow-btn),
+    0 0 0 3px rgba(245,166,35,0.18),
+    0 6px 18px -10px rgba(245,166,35,0.55);
+}
+/* Active chips: subtle pulse on the focus ring so they feel "alive". */
+.pf-chip-btn.is-active::after {
+  content: "";
+  position: absolute; inset: -4px;
+  border-radius: 999px;
+  pointer-events: none;
+  box-shadow: 0 0 0 1.5px rgba(255,255,255,0.06);
+}
+
+/* ─ Color-coded chip variants by radio group ─
+ * Branch / Voice / Mic / Ascension each get their own selected color so
+ * the host can pattern-match "blue means beta, indigo means Discord
+ * voice" instead of staring at five identical orange rows. The radio
+ * group container exposes data-pf-radio so we can scope safely. */
+.pf-chiprow[data-pf-radio="branch"]    .pf-chip-btn.is-active[data-value="beta"] {
+  background: linear-gradient(180deg, rgba(96,165,250,0.95), rgba(96,165,250,0.78));
+  color: #0a1226;
+}
+.pf-chiprow[data-pf-radio="branch"]    .pf-chip-btn.is-active[data-value="main"] {
+  background: linear-gradient(180deg, var(--pf-accent-hot), var(--pf-accent));
+  color: #1a0f04;
+}
+.pf-chiprow[data-pf-radio="branch"]    .pf-chip-btn.is-active[data-value="both"] {
+  background: linear-gradient(180deg, rgba(255,255,255,0.18), rgba(255,255,255,0.10));
+  color: var(--pf-text);
+  border-color: rgba(255,255,255,0.30);
+}
+.pf-chiprow[data-pf-radio="voice"]     .pf-chip-btn.is-active {
+  background: linear-gradient(180deg, rgba(88,101,242,0.95), rgba(88,101,242,0.78));
+  color: #f4f6ff;
+  border-color: rgba(88,101,242,0.6);
+}
+.pf-chiprow[data-pf-radio="voice"]     .pf-chip-btn.is-active[data-value="none"] {
+  background: linear-gradient(180deg, rgba(255,255,255,0.10), rgba(255,255,255,0.04));
+  color: var(--pf-text);
+  border-color: rgba(255,255,255,0.18);
+}
+.pf-chiprow[data-pf-radio="mic"]       .pf-chip-btn.is-active[data-value="yes"] {
+  background: linear-gradient(180deg, rgba(52,211,153,0.92), rgba(52,211,153,0.72));
+  color: #06241b;
+  border-color: rgba(52,211,153,0.55);
+}
+.pf-chiprow[data-pf-radio="mic"]       .pf-chip-btn.is-active[data-value="no"] {
+  background: linear-gradient(180deg, rgba(255,255,255,0.10), rgba(255,255,255,0.04));
+  color: var(--pf-text);
+  border-color: rgba(255,255,255,0.18);
+}
+.pf-chiprow[data-pf-radio="ascensionBucket"] .pf-chip-btn.is-active {
+  background: linear-gradient(180deg, rgba(246,90,98,0.85), rgba(246,90,98,0.65));
+  color: #2a0608;
+  border-color: rgba(246,90,98,0.5);
+}
+.pf-chiprow[data-pf-radio="ascensionBucket"] .pf-chip-btn.is-active[data-value="any"] {
+  background: linear-gradient(180deg, var(--pf-accent-hot), var(--pf-accent));
+  color: #1a0f04;
+}
+
+/* ─ Discord server picker (injected by party-finder-globals.js) ─ */
+.pf-field--server { margin-top: 8px; }
+.pf-server-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+.pf-server-btn {
+  display: flex; flex-direction: column; align-items: flex-start;
+  gap: 2px;
+  text-align: left;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: var(--pf-fill);
+  border: 1px solid var(--pf-stroke);
+  color: var(--pf-text);
+  cursor: pointer;
+  font-family: inherit;
+  transition: background .15s ease, border-color .15s ease, transform .12s ease;
+  min-height: 56px;
+}
+.pf-server-btn:hover { background: var(--pf-fill-strong); transform: translateY(-1px); }
+.pf-server-btn-name { font-size: 13px; font-weight: 800; }
+.pf-server-btn-sub  { font-size: 11.5px; color: var(--pf-muted); line-height: 1.3; }
+.pf-server-btn.is-active {
+  background: linear-gradient(180deg, rgba(88,101,242,0.22), rgba(88,101,242,0.08));
+  border-color: rgba(88,101,242,0.55);
+  box-shadow: 0 0 0 1px rgba(88,101,242,0.25), 0 8px 24px -16px rgba(88,101,242,0.5);
+}
+.pf-server-btn.is-active .pf-server-btn-name { color: #d6dafc; }
+
+/* ─ Host modal: step-3 rich review card ─
+ * Replaces the flat bullet list with a Roblox-style preview that looks
+ * exactly like a Live Parties row so the host knows what they're about
+ * to publish. */
+.pf-host-review {
+  display: grid;
+  grid-template-columns: 132px minmax(0, 1fr);
+  gap: 16px;
+  padding: 16px;
+  border-radius: var(--pf-radius-card);
+  background: linear-gradient(180deg, var(--pf-fill-strong), var(--pf-fill));
+  border: 1px solid var(--pf-stroke);
+  box-shadow: var(--pf-shadow-card);
+}
+.pf-host-review-art {
+  position: relative;
+  border-radius: 14px;
+  overflow: hidden;
+  background: radial-gradient(80% 60% at 30% 30%, rgba(255,255,255,0.05), rgba(0,0,0,0.45) 70%);
+  border: 1px solid var(--pf-stroke);
+  aspect-ratio: 1 / 1;
+  min-height: 132px;
+}
+.pf-host-review-art img {
+  position: absolute; inset: -4% -4% 18% -4%;
+  width: 108%; height: 110%;
+  object-fit: cover;
+  object-position: center top;
+}
+.pf-host-review-anyart {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  text-align: center;
+  font-size: 13px; font-weight: 800; color: rgba(255,255,255,0.55);
+  letter-spacing: 0.04em;
+}
+.pf-host-review-arttag {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  padding: 6px 8px;
+  font-size: 11px; font-weight: 800; letter-spacing: 0.06em;
+  text-align: center;
+  background: linear-gradient(180deg, rgba(0,0,0,0.45), rgba(0,0,0,0.85));
+  color: rgba(255,255,255,0.92);
+  text-transform: uppercase;
+}
+.pf-host-review-body {
+  display: flex; flex-direction: column; gap: 8px;
+  min-width: 0;
+}
+.pf-host-review-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: -0.005em;
+  color: var(--pf-text);
+}
+.pf-host-review .pf-attrs--pills { margin: 0; }
+.pf-host-review .pf-slots { margin-top: 4px; }
+.pf-host-review-fill {
+  font-size: 12.5px;
+  color: var(--pf-muted);
+}
+.pf-host-review-note {
+  margin: 4px 0 0;
+  padding: 8px 12px;
+  font-size: 13px;
+  color: var(--pf-text);
+  font-style: italic;
+  background: rgba(255,255,255,0.04);
+  border-left: 3px solid var(--pf-accent);
+  border-radius: 8px;
+}
+
+/* ─ Live preview side panel (steps 1 + 2) ────────────────────────────
+ * Injected by party-finder-globals.js. Updates as the host clicks chips
+ * so they can SEE the room they're building, like a Roblox character
+ * card on the right of a creator screen. */
+.pf-host-side {
+  display: flex; flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  border-radius: 18px;
+  background:
+    radial-gradient(120% 60% at 0% 0%, rgba(245,166,35,0.10), transparent 55%),
+    linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.01));
+  border: 1px solid var(--pf-stroke);
+  box-shadow:
+    0 0 0 1px rgba(255,255,255,0.04) inset,
+    0 16px 40px -24px rgba(0,0,0,0.6);
+}
+.pf-host-side-eyebrow {
+  font-size: 10.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--pf-muted);
+  font-weight: 800;
+}
+.pf-host-side-art {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  border-radius: 14px;
+  overflow: hidden;
+  border: 1px solid var(--pf-stroke);
+  background: radial-gradient(80% 60% at 30% 30%, rgba(255,255,255,0.05), rgba(0,0,0,0.45) 70%);
+}
+.pf-host-side-art img {
+  position: absolute; inset: -4% -4% 16% -4%;
+  width: 108%; height: 112%;
+  object-fit: cover;
+  object-position: center top;
+  transition: transform .35s ease;
+}
+.pf-host-side-art:hover img { transform: scale(1.04); }
+.pf-host-side-art-tag {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  padding: 5px 8px;
+  text-align: center;
+  font-size: 10.5px; font-weight: 800; letter-spacing: 0.10em;
+  background: linear-gradient(180deg, rgba(0,0,0,0.45), rgba(0,0,0,0.85));
+  color: rgba(255,255,255,0.92);
+  text-transform: uppercase;
+}
+.pf-host-side-anyart {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  text-align: center;
+  font-size: 12px; font-weight: 800;
+  color: rgba(255,255,255,0.5);
+  letter-spacing: 0.06em;
+}
+.pf-host-side-title {
+  margin: 4px 0 0;
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: -0.005em;
+  color: var(--pf-text);
+  line-height: 1.25;
+  word-break: break-word;
+}
+.pf-host-side-pills { display: flex; flex-wrap: wrap; gap: 5px; }
+.pf-host-side-pills .pf-pill { font-size: 11px; padding: 3px 8px; }
+.pf-host-side-slots .pf-slot { width: 32px; height: 32px; flex: 0 0 32px; }
+.pf-host-side-slots .pf-slot-tag { font-size: 7px; height: 11px; letter-spacing: 0.05em; }
+.pf-host-side-slots .pf-slot--open::after { font-size: 16px; }
+.pf-host-side-foot {
+  font-size: 11.5px;
+  color: var(--pf-muted);
+  display: flex; align-items: center; justify-content: space-between;
+  padding-top: 6px;
+  border-top: 1px dashed var(--pf-stroke);
+}
+.pf-host-side-foot strong { color: var(--pf-text); font-weight: 800; }
+.pf-host-side-update {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 11px; color: var(--pf-ok);
+  opacity: 0;
+  transition: opacity .25s ease;
+}
+.pf-host-side-update.is-live { opacity: 1; }
+.pf-host-side-update::before {
+  content: ""; width: 6px; height: 6px; border-radius: 999px;
+  background: var(--pf-ok);
+  box-shadow: 0 0 0 3px rgba(52,211,153,0.18);
+  animation: pf-pulse-dot 1.4s ease-in-out infinite;
+}
+@keyframes pf-pulse-dot {
+  0%, 100% { box-shadow: 0 0 0 3px rgba(52,211,153,0.15); }
+  50%      { box-shadow: 0 0 0 5px rgba(52,211,153,0.05); }
+}
+
+.pf-char-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0,1fr));
+  gap: 6px;
+}
+.pf-char-btn {
+  background: var(--pf-fill);
+  border: 1px solid var(--pf-stroke);
+  border-radius: 14px;
+  padding: 6px;
+  cursor: pointer;
+  font-family: inherit;
+  color: var(--pf-text);
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  font-size: 11.5px;
+  font-weight: 700;
+  transition: transform .12s ease, border-color .15s ease, background .15s ease;
+}
+.pf-char-btn:hover { transform: translateY(-1px); border-color: var(--pf-stroke-strong); background: var(--pf-fill-strong); }
+.pf-char-btn.is-active {
+  border-color: rgba(245,166,35,0.55);
+  background: linear-gradient(180deg, rgba(245,166,35,0.18), rgba(245,166,35,0.06));
+  box-shadow: 0 0 0 1px rgba(245,166,35,0.20);
+}
+.pf-char-btn img {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  object-fit: cover;
+  object-position: center top;
+  border-radius: 10px;
+  background: rgba(0,0,0,0.45);
+}
+.pf-char-btn-any {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  border-radius: 10px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02));
+  display: flex; align-items: center; justify-content: center;
+  color: var(--pf-muted);
+  font-size: 18px;
+  font-weight: 900;
+}
+.pf-char-btn.is-active .pf-char-btn-any { color: var(--pf-accent); }
+
+/* Voice channel cards (Host modal step 2 + Run Prefs) */
+.pf-voicegrid {
+  display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 6px;
+}
+.pf-voice-btn {
+  padding: 9px 10px;
+  border-radius: 12px;
+  background: var(--pf-fill);
+  border: 1px solid var(--pf-stroke);
+  color: var(--pf-text);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: inherit;
+  display: flex; flex-direction: column; align-items: flex-start;
+  gap: 2px;
+  transition: background .15s ease, border-color .15s ease, transform .12s ease;
+}
+.pf-voice-btn:hover { background: var(--pf-fill-strong); transform: translateY(-1px); }
+.pf-voice-btn.is-active {
+  background: var(--pf-discord-soft);
+  border-color: rgba(88,101,242,0.45);
+  color: #ffffff;
+}
+.pf-voice-btn-sub {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--pf-muted);
+}
+.pf-voice-btn.is-active .pf-voice-btn-sub { color: rgba(255,255,255,0.85); }
+
+/* Host preview (step 3) */
+.pf-host-preview {
+  display: flex; flex-direction: column; gap: 6px;
+  padding: 16px 16px;
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(245,166,35,0.08), rgba(245,166,35,0.02));
+  border: 1px solid rgba(245,166,35,0.30);
+}
+.pf-host-preview h4 { margin: 0; font-size: 18px; font-weight: 800; }
+.pf-host-preview-attrs { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 12.5px; }
+.pf-host-preview-sub { margin: 0; color: var(--pf-muted); font-size: 12.5px; }
+
+/* ============================================================
+ * Details modal body
+ * ============================================================ */
+.pf-fit-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 11px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+.pf-fit-pill--great { background: var(--pf-ok-soft); color: var(--pf-ok); }
+.pf-fit-pill--good { background: var(--pf-info-soft); color: var(--pf-info); }
+.pf-fit-pill--mismatch { background: var(--pf-bad-soft); color: var(--pf-bad); }
+
+.pf-details-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0,1fr));
+  gap: 6px 14px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: rgba(0,0,0,0.22);
+  border: 1px solid var(--pf-stroke-soft);
+}
+.pf-details-row { display: flex; justify-content: space-between; gap: 8px; font-size: 12.5px; }
+.pf-details-key { color: var(--pf-muted); font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; font-size: 10.5px; }
+.pf-details-val { color: var(--pf-text); font-weight: 700; }
+
+.pf-howto {
+  display: flex; flex-direction: column; gap: 6px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: rgba(0,0,0,0.22);
+  border: 1px solid var(--pf-stroke-soft);
+}
+.pf-howto strong { font-size: 13.5px; }
+.pf-howto ol {
+  list-style: decimal inside;
+  margin: 4px 0 0;
+  padding: 0;
+  display: flex; flex-direction: column;
+  gap: 4px;
+  font-size: 12.5px;
+  color: var(--pf-text);
+}
+
+.pf-details-party {
+  display: flex; flex-direction: column; gap: 6px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: rgba(0,0,0,0.16);
+  border: 1px solid var(--pf-stroke-soft);
+}
+.pf-details-party-title {
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--pf-muted);
+  font-weight: 800;
+}
+
+/* ============================================================
+ * Party Hub
+ * ============================================================ */
+.pf-hub {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+  gap: 18px;
+}
+.pf-hub-head {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
+  margin-bottom: 4px;
+}
+.pf-hub-head h2 {
+  margin: 0;
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+.pf-hub-head p { margin: 4px 0 0; color: var(--pf-muted); font-size: 13.5px; max-width: 580px; }
+
+.pf-hub-summary {
+  grid-column: 1 / -1;
+  display: flex; flex-direction: column; gap: 6px;
+  padding: 16px 18px;
+  border-radius: var(--pf-radius-card);
+  background: linear-gradient(180deg, var(--pf-fill-strong), var(--pf-fill));
+  border: 1px solid var(--pf-stroke);
+  box-shadow: var(--pf-shadow-card);
+}
+.pf-hub-summary-title { margin: 0; font-weight: 800; font-size: 18px; }
+.pf-hub-summary-attrs { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 13px; color: var(--pf-text); }
+.pf-hub-summary-status {
+  display: flex; flex-wrap: wrap; gap: 4px 14px;
+  font-size: 12.5px;
+  color: var(--pf-muted);
+}
+.pf-hub-summary-status strong { color: var(--pf-text); }
+
+.pf-hub-card {
+  padding: 18px 18px;
+  border-radius: var(--pf-radius-card);
+  background: linear-gradient(180deg, var(--pf-fill-strong), var(--pf-fill));
+  border: 1px solid var(--pf-stroke);
+  box-shadow: var(--pf-shadow-card);
+  display: flex; flex-direction: column; gap: 10px;
+}
+.pf-hub-card h3 {
+  margin: 0;
+  font-size: 14px;
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+  color: var(--pf-muted);
+  font-weight: 800;
+}
+
+.pf-hub-next {
+  background: linear-gradient(180deg, rgba(245,166,35,0.10), rgba(245,166,35,0.02));
+  border-color: rgba(245,166,35,0.30);
+}
+.pf-hub-next-title { font-size: 18px; font-weight: 800; color: var(--pf-text); line-height: 1.25; }
+.pf-hub-next-body { font-size: 13.5px; color: var(--pf-text); line-height: 1.5; margin: 0; }
+.pf-hub-next-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.pf-hub-next-actions .pf-btn { min-height: 42px; }
+
+/* Member rows with character art */
+.pf-members-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; }
+.pf-member-row {
+  display: grid;
+  grid-template-columns: 40px minmax(0,1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(0,0,0,0.18);
+  border: 1px solid var(--pf-stroke-soft);
+}
+.pf-member-row--me {
+  background: rgba(96,165,250,0.10);
+  border-color: rgba(96,165,250,0.30);
+}
+.pf-member-row--host { background: rgba(245,166,35,0.08); border-color: rgba(245,166,35,0.28); }
+.pf-member-row--open { opacity: 0.7; border-style: dashed; }
+.pf-member-avatar {
+  position: relative;
+  width: 40px; height: 40px;
+  border-radius: 12px;
+  overflow: hidden;
+  background: radial-gradient(60% 60% at 30% 30%, rgba(255,255,255,0.06), rgba(0,0,0,0.4) 60%);
+  border: 1px solid var(--pf-stroke);
+}
+.pf-member-avatar img {
+  position: absolute; inset: -10% -10% -10% -10%;
+  width: 120%; height: 120%; object-fit: cover; object-position: center top;
+}
+.pf-member-meta { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.pf-member-meta strong { font-size: 13.5px; font-weight: 700; color: var(--pf-text); }
+.pf-member-meta small { font-size: 11.5px; color: var(--pf-muted); }
+.pf-member-status {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--pf-fill);
+  border: 1px solid var(--pf-stroke);
+  font-size: 11.5px; font-weight: 700;
+  color: var(--pf-muted);
+}
+.pf-member-status--ready    { background: var(--pf-ok-soft);   color: var(--pf-ok);   border-color: rgba(52,211,153,0.35); }
+.pf-member-status--cs       { background: var(--pf-warn-soft); color: var(--pf-warn); border-color: rgba(251,191,36,0.35); }
+.pf-member-status--ingame   { background: var(--pf-info-soft); color: var(--pf-info); border-color: rgba(96,165,250,0.35); }
+
+/* Discord LFG preview */
+.pf-discord-preview {
+  padding: 12px 14px;
+  background: rgba(0,0,0,0.30);
+  border: 1px solid rgba(88,101,242,0.25);
+  border-radius: 14px;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Consolas, monospace;
+  font-size: 12px;
+  color: var(--pf-text);
+  white-space: pre-wrap;
+  line-height: 1.55;
+  position: relative;
+  overflow: auto;
+  max-height: 220px;
+}
+.pf-discord-preview::before {
+  content: "Discord post preview";
+  position: absolute; top: 8px; right: 10px;
+  font-family: inherit;
+  font-size: 9.5px;
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+  color: var(--pf-discord-hi);
+  font-weight: 800;
+}
+
+/* ============================================================
+ * Sandbox scenarios row (Dev panel)
+ * ============================================================ */
+.pf-sandbox-scenarios {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 10px;
+}
+.pf-sandbox-scenarios button {
+  font-size: 11.5px !important;
+  padding: 6px 8px !important;
+}
+
+/* ============================================================
+ * Mobile (≤768px)
+ * ============================================================ */
+@media (max-width: 768px) {
+  #pf-root { gap: 16px; }
+
+  /* Modal: server picker becomes a vertical stack so each option has
+   * room for its name + subtitle without overflow on narrow phones. */
+  .pf-server-row { grid-template-columns: 1fr; }
+  .pf-server-btn { flex-direction: row; align-items: center; gap: 10px; min-height: 48px; }
+  .pf-server-btn-name { min-width: 0; flex: 0 0 auto; }
+  .pf-server-btn-sub  { flex: 1 1 auto; }
+
+  /* Review card: character art moves above the body. */
+  .pf-host-review { grid-template-columns: 1fr; }
+  .pf-host-review-art { min-height: 160px; aspect-ratio: auto; }
+
+  /* Host modal live preview: collapse to a single column with the
+   * preview pinned to the top so the host still sees what they're
+   * building before they scroll into the form. */
+  #pf-host-body.pf-has-side-panel {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+  #pf-host-body.pf-has-side-panel > .pf-host-side {
+    position: relative;
+    grid-column: 1;
+    grid-row: auto;
+    order: -1;
+  }
+  .pf-host-side-art { aspect-ratio: 16 / 9; }
+
+  .pf-prefs { grid-template-columns: 1fr; padding: 14px 14px; }
+  .pf-prefs-actions { width: 100%; flex-wrap: wrap; justify-content: stretch; grid-column: 1; }
+  .pf-prefs-actions .pf-btn { flex: 1 1 calc(50% - 4px); min-width: 0; }
+
+  /* Best Party stacks: art on top, info middle, actions bottom */
+  .pf-best-card { grid-template-columns: 1fr; }
+  .pf-best-art {
+    height: 200px;
+    border-right: none;
+    border-bottom: 1px solid var(--pf-stroke);
+  }
+  .pf-best-art-img { object-position: center 20%; }
+  .pf-best-meta { padding: 16px 18px; }
+  .pf-best-title { font-size: 20px; }
+  .pf-best-actions {
+    border-left: none;
+    border-top: 1px solid var(--pf-stroke-soft);
+    flex-direction: row; flex-wrap: wrap;
+    padding: 14px 14px;
+  }
+  .pf-best-actions .pf-btn { flex: 1 1 calc(50% - 4px); }
+  .pf-best-actions .pf-btn--lg { font-size: 15px; }
+  .pf-best-footnote { width: 100%; }
+  .pf-why-grid { grid-template-columns: 1fr; }
+
+  /* Live rows stack meta + actions vertically on narrow screens. The
+   * host avatar already lives inside .pf-host-strip so there's no
+   * separate art column to reserve space for. */
+  .pf-live-row {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto;
+    column-gap: 0;
+    row-gap: 12px;
+    padding: 14px 14px;
+  }
+  .pf-live-hostart { width: 48px; height: 48px; }
+  .pf-live-actions {
+    grid-column: 1 / -1;
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+  .pf-live-actions .pf-btn { flex: 1 1 calc(50% - 4px); min-height: 46px; font-size: 14px; }
+  .pf-attrs-row { gap: 4px 8px; }
+
+  .pf-modal { padding: 18px 16px; border-radius: 18px; max-height: calc(100vh - 32px); }
+  .pf-char-grid { grid-template-columns: repeat(3, minmax(0,1fr)); }
+  .pf-voicegrid { grid-template-columns: repeat(2, minmax(0,1fr)); }
+  .pf-stepper { gap: 6px; }
+  .pf-step { padding: 4px 10px; font-size: 11.5px; }
+  .pf-modal-actions { flex-direction: column-reverse; align-items: stretch; gap: 8px; }
+  .pf-modal-actions .pf-btn { width: 100%; min-height: 46px; font-size: 14px; }
+
+  .pf-hub { grid-template-columns: 1fr; gap: 12px; }
+  .pf-hub-head h2 { font-size: 22px; }
+  .pf-hub-card { padding: 16px 14px; }
+  .pf-hub-next-actions .pf-btn { flex: 1 1 calc(50% - 4px); }
+}
+
+/* Narrower phones */
+@media (max-width: 420px) {
+  .pf-char-grid { grid-template-columns: repeat(3, minmax(0,1fr)); }
+  .pf-voicegrid { grid-template-columns: 1fr 1fr; }
+  .pf-best-title { font-size: 19px; }
+  .pf-hub-head h2 { font-size: 20px; }
+  .pf-live-title { font-size: 15px; }
+  .pf-best-art { height: 170px; }
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .pf-btn-pulse { animation: none; }
+  .pf-btn, .pf-chip-btn, .pf-char-btn, .pf-voice-btn, .pf-live-row, .pf-slot {
+    transition: none;
+  }
+  .pf-modal-backdrop, .pf-modal { animation: none; }
+}
+
+/* Keyboard focus visible */
+.pf-btn:focus-visible,
+.pf-chip-btn:focus-visible,
+.pf-char-btn:focus-visible,
+.pf-voice-btn:focus-visible {
+  outline: 2px solid var(--pf-accent);
+  outline-offset: 2px;
+}
+
+/* Compatibility: legacy classes the JS still emits (party hub render helpers) */
+.pf-party-line {
+  display: flex; flex-direction: column; gap: 6px;
+}
+.pf-party-line-label {
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--pf-muted);
+  font-weight: 800;
+}
+.pf-party-slots {
+  list-style: none; padding: 0; margin: 0;
+  display: flex; flex-direction: column; gap: 4px;
+  font-size: 12.5px; color: var(--pf-text);
+}
+.pf-party-slots li { display: flex; align-items: center; gap: 6px; }
+.pf-slot-bullet {
+  width: 6px; height: 6px; border-radius: 999px;
+  background: var(--pf-accent);
+}
+.pf-slot-open .pf-slot-bullet { background: var(--pf-muted); }
+.pf-slot-open { color: var(--pf-muted); }

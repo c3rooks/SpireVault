@@ -64,6 +64,32 @@ export const VOICE_PREFERENCES: readonly VoicePreference[] = [
   "optional",
 ];
 
+/** Discord LFG voice preset on a run room (Co-op Lobby Beta reset). */
+export type VoicePreset = "none" | "any" | "lfg1" | "lfg_duo3" | "custom";
+
+export const VOICE_PRESETS: readonly VoicePreset[] = [
+  "none",
+  "any",
+  "lfg1",
+  "lfg_duo3",
+  "custom",
+];
+
+export type CoopCharacter =
+  | "ironclad"
+  | "silent"
+  | "defect"
+  | "regent"
+  | "necrobinder";
+
+export const COOP_CHARACTERS: readonly CoopCharacter[] = [
+  "ironclad",
+  "silent",
+  "defect",
+  "regent",
+  "necrobinder",
+];
+
 /**
  * Live presence row. Stored at `coop:presence:<steamId>`, refreshed on
  * every heartbeat. `expiresAt` is what gates "stale" handling at read
@@ -82,11 +108,13 @@ export interface CoopPresence {
   ascensionMax?: number;
   goal?: CoopGoal;
   voicePreference?: VoicePreference;
-  preferredCharacters?: string[];
+  preferredCharacters?: CoopCharacter[];
   /** Active lobby (the one the user is hosting OR is a member of). */
   currentLobbyId?: string;
   /** Active session — set when paired. */
   currentSessionId?: string;
+  /** Active party room — set after seat accept. */
+  currentPartyId?: string;
   /**
    * True when the server automatically overrode the user's status (e.g.,
    * Steam offline → "afk", or entered STS2 while "looking" → "solo").
@@ -114,22 +142,81 @@ export const RUN_LOBBY_STATUSES: readonly RunLobbyStatus[] = [
   "closed",
 ];
 
+/** STS2 co-op lobby capacity advertised by the host. */
+export type RunLobbySize = 2 | 3 | 4;
+
+export const RUN_LOBBY_SIZES: readonly RunLobbySize[] = [2, 3, 4];
+
 export interface RunLobby {
   lobbyId: string;
   hostSteamId: string;
   hostPersonaName: string;
   hostAvatarUrl?: string;
   title: string;
+  /** Run mode label (defaults to goal when omitted). */
+  mode?: string;
   goal: CoopGoal;
+  /** Seats including host. Default 4 for new lobbies; legacy rows omit → 2. */
+  lobbySize?: RunLobbySize;
   ascensionMin?: number;
   ascensionMax?: number;
   voicePreference?: VoicePreference;
-  preferredCharacters?: string[];
+  /** When true, joiners use Request Seat; default false = open Join Seat. */
+  approvalRequired?: boolean;
+  voicePreset?: VoicePreset;
+  voiceChannelUrl?: string;
+  preferredCharacters?: CoopCharacter[];
   note?: string;
   discordHandle?: string;
   status: RunLobbyStatus;
+  /** Accepted members (host is slot 1). */
+  acceptedMemberSteamIds?: string[];
+  /** Pending seat requests (Steam IDs). */
+  pendingSeatRequestSteamIds?: string[];
+  /** @deprecated Use acceptedMemberSteamIds — kept for KV backward compat. */
   memberSteamIds: string[];
+  /** @deprecated Use pendingSeatRequestSteamIds. */
   pendingJoinRequestSteamIds: string[];
+  /** Party minted after first accept, when applicable. */
+  partyId?: string;
+  createdAt: string;
+  updatedAt: string;
+  expiresAt: string;
+}
+
+export type CoopPartyMemberStatus =
+  | "joined"
+  | "ready"
+  | "character_select"
+  | "in_game"
+  | "left";
+
+export const COOP_PARTY_MEMBER_STATUSES: readonly CoopPartyMemberStatus[] = [
+  "joined",
+  "ready",
+  "character_select",
+  "in_game",
+  "left",
+];
+
+export interface CoopPartyMember {
+  steamId: string;
+  personaName?: string;
+  avatarUrl?: string;
+  selectedCharacter?: CoopCharacter;
+  status: CoopPartyMemberStatus;
+  updatedAt: string;
+}
+
+export type CoopPartyStatus = "active" | "ended";
+
+export interface CoopParty {
+  partyId: string;
+  lobbyId: string;
+  hostSteamId: string;
+  lobbySize: RunLobbySize;
+  members: CoopPartyMember[];
+  status: CoopPartyStatus;
   createdAt: string;
   updatedAt: string;
   expiresAt: string;
@@ -185,6 +272,7 @@ export interface JoinRequest {
   lobbyId: string;
   fromSteamId: string;
   toHostSteamId: string;
+  selectedCharacter?: CoopCharacter;
   status: JoinRequestStatus;
   createdAt: string;
   expiresAt: string;
@@ -223,6 +311,7 @@ export interface RecommendedMatch {
   ascensionMax?: number;
   goal?: CoopGoal;
   voicePreference?: VoicePreference;
+  preferredCharacters?: CoopCharacter[];
   note?: string;
   lastHeartbeatAt: string;
   label: MatchLabel;
@@ -242,6 +331,7 @@ export interface RecommendedMatch {
 export interface CoopStateBundle {
   presence: CoopPresence;
   session: CoopSession | null;
+  party: CoopParty | null;
   lobby: RunLobby | null;
   incomingInvites: CoopInvite[];
   outgoingInvites: CoopInvite[];
@@ -259,6 +349,18 @@ export interface CoopStateBundle {
   /** Active rows currently paired — true total. */
   pairedNowCount?: number;
   serverTime: string;
+  /**
+   * Optional feature flags echoed by the server. The web client reads
+   * `flags.coopLobbyBetaKill` / `flags.coopLobbyBeta` to support a
+   * server-side rollback of the new lobby surface without a deploy:
+   * setting `COOP_LOBBY_BETA_KILL=1` in the Worker env emits
+   * `coopLobbyBetaKill: true` here, and the client downgrades to
+   * Classic on the next render. See coop-lobby-product-reset.md.
+   */
+  flags?: {
+    coopLobbyBeta?: boolean;
+    coopLobbyBetaKill?: boolean;
+  };
 }
 
 /**

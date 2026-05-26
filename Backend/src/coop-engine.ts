@@ -1,28 +1,46 @@
 import type { Env } from "./types";
 import {
+  COOP_CHARACTERS,
   COOP_GOALS,
   COOP_INVITE_MESSAGES,
   COOP_PRESENCE_STATUSES,
   VOICE_PREFERENCES,
+  type CoopCharacter,
   type CoopGoal,
   type CoopInvite,
   type CoopPresence,
   type CoopPresenceStatus,
+  type CoopParty,
+  type CoopPartyMember,
+  type CoopPartyMemberStatus,
   type CoopSession,
   type JoinRequest,
   type RunLobby,
+  type RunLobbySize,
   type VoicePreference,
+  type VoicePreset,
+  VOICE_PRESETS,
 } from "./coop-types";
+import {
+  COOP_MAX_ASCENSION,
+  lobbyCapacity,
+  lobbyIsFull,
+  normalizeRunLobby,
+} from "./coop-lobby-utils";
 import {
   COOP_INVITE_TTL_S,
   COOP_JOIN_REQUEST_TTL_S,
   COOP_LOBBY_TTL_S,
+  COOP_PARTY_TTL_S,
   COOP_PRESENCE_TTL_S,
   COOP_SESSION_TTL_S,
   COOP_STALE_GRACE_S,
   deleteLobby,
+  deleteParty,
   getActiveLobbyIdForHost,
+  getActivePartyIdForUser,
   getActiveSessionIdForUser,
+  getPartyIdForLobby,
   isUnderDeclineCooldown,
   listLobbies,
   listPresence,
@@ -33,6 +51,7 @@ import {
   readLobby,
   readLobbyJoinIds,
   readOutbox,
+  readParty,
   readPresence,
   readSession,
   readUserJoinIds,
@@ -43,6 +62,7 @@ import {
   writeLobby,
   writeLobbyJoinIds,
   writeOutbox,
+  writeParty,
   writePresence,
   writeSession,
   writeUserJoinIds,
@@ -70,6 +90,7 @@ export const MAX_NOTE_LEN = 160;
 export const MAX_TITLE_LEN = 80;
 export const MAX_PREFERRED_CHARS = 6;
 export const MAX_DISCORD_LEN = 40;
+export const MAX_VOICE_URL_LEN = 200;
 
 // ---------- Sanitizers / validators ----------
 
@@ -123,22 +144,56 @@ function isValidVoice(v: unknown): v is VoicePreference {
   );
 }
 
-export function sanitizePreferredCharacters(raw: unknown): string[] | undefined {
+function isValidVoicePreset(v: unknown): v is VoicePreset {
+  return (
+    typeof v === "string" &&
+    (VOICE_PRESETS as readonly string[]).includes(v)
+  );
+}
+
+function sanitizeVoiceChannelUrl(raw: unknown): string | undefined {
+  const s = sanitizeOptionalText(raw, MAX_VOICE_URL_LEN);
+  if (!s) return undefined;
+  try {
+    const u = new URL(s);
+    if (u.protocol !== "https:" && u.protocol !== "http:") return undefined;
+    return u.toString();
+  } catch {
+    return undefined;
+  }
+}
+
+export function sanitizePreferredCharacters(raw: unknown): CoopCharacter[] | undefined {
   if (!Array.isArray(raw)) return undefined;
+  const valid = new Set(COOP_CHARACTERS as readonly string[]);
+  const seen = new Set<string>();
   const cleaned = raw
     .filter((x) => typeof x === "string")
-    .map((s) => sanitizeText(s, 32))
-    .filter((s) => s.length > 0);
+    .map((s) => sanitizeText(s, 32).toLowerCase())
+    .filter((s): s is CoopCharacter => valid.has(s))
+    .filter((s) => {
+      if (seen.has(s)) return false;
+      seen.add(s);
+      return true;
+    });
   if (cleaned.length === 0) return undefined;
   return cleaned.slice(0, MAX_PREFERRED_CHARS);
+}
+
+function sanitizeSelectedCharacter(raw: unknown): CoopCharacter | undefined {
+  if (typeof raw !== "string") return undefined;
+  const s = sanitizeText(raw, 32).toLowerCase();
+  return (COOP_CHARACTERS as readonly string[]).includes(s)
+    ? (s as CoopCharacter)
+    : undefined;
 }
 
 export function sanitizeAscensionRange(
   rawMin: unknown,
   rawMax: unknown,
 ): { ascensionMin?: number; ascensionMax?: number } {
-  let min = clampInt(rawMin, 0, 20);
-  let max = clampInt(rawMax, 0, 20);
+  let min = clampInt(rawMin, 0, COOP_MAX_ASCENSION);
+  let max = clampInt(rawMax, 0, COOP_MAX_ASCENSION);
   if (min != null && max != null && min > max) {
     const tmp = min;
     min = max;
@@ -229,8 +284,9 @@ export async function upsertPresenceV2(
     : prev?.voicePreference;
 
   const preferredCharacters =
-    sanitizePreferredCharacters(body.preferredCharacters) ??
-    prev?.preferredCharacters;
+    body.preferredCharacters !== undefined
+      ? sanitizePreferredCharacters(body.preferredCharacters)
+      : prev?.preferredCharacters;
 
   const next: CoopPresence = {
     steamId,
@@ -438,9 +494,14 @@ async function pruneUserJoinRequests(
 export interface CreateLobbyBody {
   title?: unknown;
   goal?: unknown;
+  mode?: unknown;
+  lobbySize?: unknown;
   ascensionMin?: unknown;
   ascensionMax?: unknown;
   voicePreference?: unknown;
+  approvalRequired?: unknown;
+  voicePreset?: unknown;
+  voiceChannelUrl?: unknown;
   preferredCharacters?: unknown;
   note?: unknown;
   discordHandle?: unknown;
@@ -453,6 +514,9 @@ export async function createLobby(
 ): Promise<CoopResult<RunLobby>> {
   if (await getActiveSessionIdForUser(env, hostSteamId)) {
     return err(409, "in_session", "You're already in a co-op session.");
+  }
+  if (await getActivePartyIdForUser(env, hostSteamId)) {
+    return err(409, "in_party", "You're already in a party.");
   }
   const existingLobbyId = await getActiveLobbyIdForHost(env, hostSteamId);
   if (existingLobbyId) {
@@ -475,6 +539,12 @@ export async function createLobby(
     body.ascensionMin,
     body.ascensionMax,
   );
+  const sizeRaw = clampInt(body.lobbySize, 2, 4);
+  const lobbySize: RunLobbySize =
+    sizeRaw === 2 || sizeRaw === 3 || sizeRaw === 4 ? sizeRaw : 4;
+  const mode =
+    sanitizeOptionalText(body.mode, 40) ??
+    (typeof body.goal === "string" ? body.goal : undefined);
   const now = Date.now();
   const nowIso = new Date(now).toISOString();
 
@@ -484,16 +554,25 @@ export async function createLobby(
     hostPersonaName: profile.personaName,
     hostAvatarUrl: profile.avatarUrl,
     title,
+    mode,
     goal: body.goal as CoopGoal,
+    lobbySize,
     ascensionMin,
     ascensionMax,
     voicePreference: isValidVoice(body.voicePreference)
       ? (body.voicePreference as VoicePreference)
       : undefined,
+    approvalRequired: body.approvalRequired === true,
+    voicePreset: isValidVoicePreset(body.voicePreset)
+      ? (body.voicePreset as VoicePreset)
+      : "any",
+    voiceChannelUrl: sanitizeVoiceChannelUrl(body.voiceChannelUrl),
     preferredCharacters: sanitizePreferredCharacters(body.preferredCharacters),
     note: sanitizeOptionalText(body.note, MAX_NOTE_LEN),
     discordHandle: sanitizeOptionalText(body.discordHandle, MAX_DISCORD_LEN),
     status: "open",
+    acceptedMemberSteamIds: [hostSteamId],
+    pendingSeatRequestSteamIds: [],
     memberSteamIds: [hostSteamId],
     pendingJoinRequestSteamIds: [],
     createdAt: nowIso,
@@ -548,6 +627,17 @@ export async function updateLobby(
       ? (body.voicePreference as VoicePreference)
       : undefined;
   }
+  if (body.approvalRequired !== undefined) {
+    lobby.approvalRequired = body.approvalRequired === true;
+  }
+  if (body.voicePreset !== undefined) {
+    lobby.voicePreset = isValidVoicePreset(body.voicePreset)
+      ? (body.voicePreset as VoicePreset)
+      : lobby.voicePreset ?? "any";
+  }
+  if (body.voiceChannelUrl !== undefined) {
+    lobby.voiceChannelUrl = sanitizeVoiceChannelUrl(body.voiceChannelUrl);
+  }
   if (body.preferredCharacters !== undefined) {
     lobby.preferredCharacters = sanitizePreferredCharacters(body.preferredCharacters);
   }
@@ -556,6 +646,12 @@ export async function updateLobby(
   }
   if (body.discordHandle !== undefined) {
     lobby.discordHandle = sanitizeOptionalText(body.discordHandle, MAX_DISCORD_LEN);
+  }
+  if (body.lobbySize !== undefined) {
+    const sizeRaw = clampInt(body.lobbySize, 2, 4);
+    if (sizeRaw === 2 || sizeRaw === 3 || sizeRaw === 4) {
+      lobby.lobbySize = sizeRaw;
+    }
   }
 
   const now = Date.now();
@@ -614,6 +710,35 @@ export async function closeLobby(
   await writeLobby(env, lobby);
   await deleteLobby(env, lobby);
 
+  const norm = normalizeRunLobby(lobby);
+  const partyId = lobby.partyId ?? (await getPartyIdForLobby(env, lobbyId));
+  if (partyId) {
+    const party = await readParty(env, partyId);
+    if (party && party.status === "active") {
+      party.status = "ended";
+      party.updatedAt = new Date().toISOString();
+      await writeParty(env, party);
+      for (const m of party.members) {
+        if (m.steamId === lobby.hostSteamId) continue;
+        await setPresenceField(env, m.steamId, {
+          currentPartyId: undefined,
+          currentLobbyId: undefined,
+          currentSessionId: undefined,
+          status: "looking",
+        });
+      }
+      await deleteParty(env, party);
+    }
+  }
+  for (const sid of norm.acceptedMemberSteamIds ?? []) {
+    if (sid === lobby.hostSteamId) continue;
+    await setPresenceField(env, sid, {
+      currentPartyId: undefined,
+      currentLobbyId: undefined,
+      status: "looking",
+    });
+  }
+
   // Clear the host's currentLobbyId on their presence row.
   await setPresenceField(env, lobby.hostSteamId, { currentLobbyId: undefined });
   return ok({ closed: true });
@@ -623,6 +748,7 @@ export async function requestToJoinLobby(
   env: Env,
   fromSteamId: string,
   lobbyId: string,
+  body: { selectedCharacter?: unknown } = {},
 ): Promise<CoopResult<JoinRequest>> {
   const lobby = await readLobby(env, lobbyId);
   if (!lobby) return err(404, "not_found", "This lobby expired.");
@@ -632,11 +758,25 @@ export async function requestToJoinLobby(
   if (lobby.hostSteamId === fromSteamId) {
     return err(400, "self_lobby", "You can't request to join your own lobby.");
   }
-  if (lobby.memberSteamIds.length >= 2) {
+  const normLobby = normalizeRunLobby(lobby);
+  if (!normLobby.approvalRequired) {
+    return err(
+      409,
+      "open_join",
+      "This room uses open join — tap Join Seat instead.",
+    );
+  }
+  if (lobbyIsFull(lobby)) {
     return err(409, "lobby_full", "This lobby is full.");
+  }
+  if ((lobby.acceptedMemberSteamIds ?? []).includes(fromSteamId)) {
+    return err(409, "already_member", "You're already in this lobby.");
   }
   if (await getActiveSessionIdForUser(env, fromSteamId)) {
     return err(409, "in_session", "You're already in a co-op session.");
+  }
+  if (await getActivePartyIdForUser(env, fromSteamId)) {
+    return err(409, "in_party", "You're already in a party.");
   }
   // Block stale targets
   const hostPresence = await readPresence(env, lobby.hostSteamId);
@@ -664,6 +804,17 @@ export async function requestToJoinLobby(
     return err(429, "too_many_requests", "Too many pending join requests.");
   }
 
+  const selectedCharacter = sanitizeSelectedCharacter(body.selectedCharacter);
+  if (body.selectedCharacter !== undefined && !selectedCharacter) {
+    return err(400, "invalid_character", "Pick a valid character.");
+  }
+  if (
+    selectedCharacter &&
+    (await isCharacterClaimedForLobby(env, lobby, fromSteamId, selectedCharacter))
+  ) {
+    return err(409, "character_claimed", "That character is already claimed.");
+  }
+
   const fromProfile = await profileFor(env, fromSteamId);
   const now = Date.now();
   const req: JoinRequest = {
@@ -671,6 +822,7 @@ export async function requestToJoinLobby(
     lobbyId,
     fromSteamId,
     toHostSteamId: lobby.hostSteamId,
+    selectedCharacter,
     status: "pending",
     createdAt: new Date(now).toISOString(),
     expiresAt: new Date(now + COOP_JOIN_REQUEST_TTL_S * 1000).toISOString(),
@@ -683,13 +835,109 @@ export async function requestToJoinLobby(
   await writeLobbyJoinIds(env, lobbyId, [...lobbyIds, req.requestId]);
   const userIds = await readUserJoinIds(env, fromSteamId);
   await writeUserJoinIds(env, fromSteamId, [...userIds, req.requestId]);
-  lobby.pendingJoinRequestSteamIds = Array.from(
-    new Set([...lobby.pendingJoinRequestSteamIds, fromSteamId]),
+  lobby.pendingSeatRequestSteamIds = Array.from(
+    new Set([...(lobby.pendingSeatRequestSteamIds ?? []), fromSteamId]),
   );
+  lobby.pendingJoinRequestSteamIds = lobby.pendingSeatRequestSteamIds;
   lobby.updatedAt = new Date(now).toISOString();
   await writeLobby(env, lobby);
 
   return ok(req);
+}
+
+/**
+ * Open join: atomically claim a seat, mint/update party, return partyId.
+ */
+export async function joinLobbySeat(
+  env: Env,
+  fromSteamId: string,
+  lobbyId: string,
+  body: { selectedCharacter?: unknown } = {},
+): Promise<CoopResult<{ lobby: RunLobby; party: CoopParty; partyId: string }>> {
+  const lobby = await readLobby(env, lobbyId);
+  if (!lobby) return err(404, "not_found", "This room expired.");
+  if (lobby.status !== "open") {
+    return err(409, "lobby_closed", "This room is no longer open.");
+  }
+  if (lobby.hostSteamId === fromSteamId) {
+    return err(400, "self_lobby", "You can't join your own room.");
+  }
+  const norm = normalizeRunLobby(lobby);
+  if (norm.approvalRequired) {
+    return err(
+      409,
+      "approval_required",
+      "This room requires host approval — use Request Seat.",
+    );
+  }
+  if (lobbyIsFull(lobby)) {
+    return err(409, "lobby_full", "This room is full.");
+  }
+  if ((norm.acceptedMemberSteamIds ?? []).includes(fromSteamId)) {
+    const party =
+      (lobby.partyId && (await readParty(env, lobby.partyId))) ||
+      (await ensurePartyForLobby(env, lobby, fromSteamId));
+    return ok({ lobby, party, partyId: party.partyId });
+  }
+  if (await getActiveSessionIdForUser(env, fromSteamId)) {
+    return err(409, "in_session", "You're already in a co-op session.");
+  }
+  if (await getActivePartyIdForUser(env, fromSteamId)) {
+    return err(409, "in_party", "You're already in a party.");
+  }
+  const hostPresence = await readPresence(env, lobby.hostSteamId);
+  if (!hostPresence || !isPresenceActive(hostPresence)) {
+    return err(409, "host_stale", "They went offline.");
+  }
+  if (hostPresence.status === "afk" || hostPresence.status === "offline") {
+    return err(409, "host_stale", "They went offline.");
+  }
+  if (hostPresence.status === "paired") {
+    return err(409, "host_paired", "They're already paired.");
+  }
+  if (await isUnderDeclineCooldown(env, fromSteamId, lobby.hostSteamId)) {
+    return err(429, "decline_cooldown", "Give them a moment before trying again.");
+  }
+
+  const joinerCharacter = sanitizeSelectedCharacter(body.selectedCharacter);
+  if (body.selectedCharacter !== undefined && !joinerCharacter) {
+    return err(400, "invalid_character", "Pick a valid character.");
+  }
+  if (
+    joinerCharacter &&
+    (await isCharacterClaimedForLobby(env, lobby, fromSteamId, joinerCharacter))
+  ) {
+    return err(409, "character_claimed", "That character is already claimed.");
+  }
+
+  const accepted = Array.from(
+    new Set([...(norm.acceptedMemberSteamIds ?? [lobby.hostSteamId]), fromSteamId]),
+  );
+  lobby.acceptedMemberSteamIds = accepted;
+  lobby.memberSteamIds = accepted;
+  lobby.pendingSeatRequestSteamIds = (lobby.pendingSeatRequestSteamIds ?? []).filter(
+    (sid) => sid !== fromSteamId,
+  );
+  lobby.pendingJoinRequestSteamIds = lobby.pendingSeatRequestSteamIds;
+
+  const selectedBySid = new Map<string, CoopCharacter>();
+  if (joinerCharacter) selectedBySid.set(fromSteamId, joinerCharacter);
+  const party = await ensurePartyForLobby(env, lobby, fromSteamId, selectedBySid);
+  lobby.partyId = party.partyId;
+  lobby.status = lobbyIsFull(lobby) ? "full" : "open";
+  lobby.updatedAt = new Date().toISOString();
+  await writeLobby(env, lobby);
+
+  await cancelConflictingInvites(env, fromSteamId);
+  await cancelOtherJoinRequestsFromUser(env, fromSteamId, "");
+
+  await setPresenceField(env, fromSteamId, {
+    currentPartyId: party.partyId,
+    currentLobbyId: lobbyId,
+    status: "looking",
+  });
+
+  return ok({ lobby, party, partyId: party.partyId });
 }
 
 export async function cancelJoinRequest(
@@ -720,9 +968,10 @@ export async function cancelJoinRequest(
 
   const lobby = await readLobby(env, lobbyId);
   if (lobby) {
-    lobby.pendingJoinRequestSteamIds = lobby.pendingJoinRequestSteamIds.filter(
-      (sid) => sid !== callerSteamId,
-    );
+    lobby.pendingSeatRequestSteamIds = (
+      lobby.pendingSeatRequestSteamIds ?? lobby.pendingJoinRequestSteamIds ?? []
+    ).filter((sid) => sid !== callerSteamId);
+    lobby.pendingJoinRequestSteamIds = lobby.pendingSeatRequestSteamIds;
     lobby.updatedAt = new Date().toISOString();
     await writeLobby(env, lobby);
   }
@@ -781,7 +1030,7 @@ export async function acceptJoinRequest(
   hostSteamId: string,
   lobbyId: string,
   requesterSteamId: string,
-): Promise<CoopResult<{ session: CoopSession; lobby: RunLobby }>> {
+): Promise<CoopResult<{ session: CoopSession | null; lobby: RunLobby; party: CoopParty }>> {
   const lobby = await readLobby(env, lobbyId);
   if (!lobby) return err(404, "not_found", "Lobby not found.");
   if (lobby.hostSteamId !== hostSteamId) {
@@ -790,7 +1039,7 @@ export async function acceptJoinRequest(
   if (lobby.status !== "open") {
     return err(409, "lobby_closed", "This lobby is no longer open.");
   }
-  if (lobby.memberSteamIds.length >= 2) {
+  if (lobbyIsFull(lobby)) {
     return err(409, "lobby_full", "This lobby is full.");
   }
 
@@ -801,6 +1050,9 @@ export async function acceptJoinRequest(
   }
   if (await getActiveSessionIdForUser(env, requesterSteamId)) {
     return err(409, "they_paired", "They're already paired.");
+  }
+  if (await getActivePartyIdForUser(env, requesterSteamId)) {
+    return err(409, "they_in_party", "They're already in a Party Room.");
   }
 
   // Find the join request
@@ -816,12 +1068,34 @@ export async function acceptJoinRequest(
     }
   }
   if (!targetId) return err(404, "request_not_found", "That request expired.");
+  const reqBlob = await readJoinRequest(env, targetId);
+  const requestedCharacter = reqBlob?.selectedCharacter;
+  if (
+    requestedCharacter &&
+    (await isCharacterClaimedForLobby(env, lobby, requesterSteamId, requestedCharacter))
+  ) {
+    return err(409, "character_claimed", "That character is already claimed.");
+  }
 
-  // Mint the session
-  const session = await mintSession(env, hostSteamId, requesterSteamId, lobbyId);
+  // Promote requester into accepted seats
+  const accepted = Array.from(
+    new Set([...(lobby.acceptedMemberSteamIds ?? [lobby.hostSteamId]), requesterSteamId]),
+  );
+  lobby.acceptedMemberSteamIds = accepted;
+  lobby.memberSteamIds = accepted;
+
+  const selectedBySid = new Map<string, CoopCharacter>();
+  if (reqBlob?.selectedCharacter) selectedBySid.set(requesterSteamId, reqBlob.selectedCharacter);
+  const party = await ensurePartyForLobby(env, lobby, requesterSteamId, selectedBySid);
+  lobby.partyId = party.partyId;
+
+  // Mint pairing session when at least two players (STS2 co-op minimum)
+  let session: CoopSession | null = null;
+  if (accepted.length >= 2) {
+    session = await mintSession(env, hostSteamId, requesterSteamId, lobbyId);
+  }
 
   // Mark the request accepted, drop it from indexes
-  const reqBlob = await readJoinRequest(env, targetId);
   if (reqBlob) {
     reqBlob.status = "accepted";
     await writeJoinRequest(env, reqBlob);
@@ -834,12 +1108,9 @@ export async function acceptJoinRequest(
     userIds.filter((id) => id !== targetId),
   );
 
-  // Promote lobby to "full"
-  lobby.memberSteamIds = Array.from(
-    new Set([...lobby.memberSteamIds, requesterSteamId]),
-  );
+  lobby.pendingSeatRequestSteamIds = [];
   lobby.pendingJoinRequestSteamIds = [];
-  lobby.status = "full";
+  lobby.status = lobbyIsFull(lobby) ? "full" : "open";
   lobby.updatedAt = new Date().toISOString();
   await writeLobby(env, lobby);
 
@@ -851,18 +1122,16 @@ export async function acceptJoinRequest(
   await cancelOtherJoinRequestsFromUser(env, requesterSteamId, targetId);
 
   // Stamp session ids onto presence rows
-  await setPresenceField(env, hostSteamId, {
-    currentSessionId: session.sessionId,
+  const presencePatch: Partial<CoopPresence> = {
+    currentPartyId: party.partyId,
     currentLobbyId: lobbyId,
-    status: "paired",
-  });
-  await setPresenceField(env, requesterSteamId, {
-    currentSessionId: session.sessionId,
-    currentLobbyId: lobbyId,
-    status: "paired",
-  });
+    status: session ? "paired" : "looking",
+  };
+  if (session) presencePatch.currentSessionId = session.sessionId;
+  await setPresenceField(env, hostSteamId, presencePatch);
+  await setPresenceField(env, requesterSteamId, presencePatch);
 
-  return ok({ session, lobby });
+  return ok({ session, lobby, party });
 }
 
 // ---------- Direct invites ----------
@@ -1103,6 +1372,235 @@ async function mintSession(
   return session;
 }
 
+// ---------- Party room ----------
+
+async function memberRowFor(
+  env: Env,
+  steamId: string,
+  status: CoopPartyMemberStatus = "joined",
+  selectedCharacter?: CoopCharacter,
+): Promise<CoopPartyMember> {
+  const profile = await profileFor(env, steamId);
+  return {
+    steamId,
+    personaName: profile.personaName,
+    avatarUrl: profile.avatarUrl,
+    selectedCharacter,
+    status,
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+function hostCharacterForLobby(lobby: RunLobby): CoopCharacter | undefined {
+  const [first] = normalizeRunLobby(lobby).preferredCharacters ?? [];
+  return sanitizeSelectedCharacter(first);
+}
+
+async function isCharacterClaimedForLobby(
+  env: Env,
+  lobby: RunLobby,
+  steamId: string,
+  selectedCharacter: CoopCharacter,
+): Promise<boolean> {
+  const hostCharacter = hostCharacterForLobby(lobby);
+  if (hostCharacter === selectedCharacter && steamId !== lobby.hostSteamId) {
+    return true;
+  }
+  const partyId = lobby.partyId ?? (await getPartyIdForLobby(env, lobby.lobbyId));
+  if (!partyId) return false;
+  const party = await readParty(env, partyId);
+  if (!party || party.status !== "active") return false;
+  return party.members.some(
+    (m) =>
+      m.steamId !== steamId &&
+      m.status !== "left" &&
+      m.selectedCharacter === selectedCharacter,
+  );
+}
+
+async function ensurePartyForLobby(
+  env: Env,
+  lobby: RunLobby,
+  newestMemberSteamId: string,
+  selectedBySid: Map<string, CoopCharacter> = new Map(),
+): Promise<CoopParty> {
+  const norm = normalizeRunLobby(lobby);
+  const existingId =
+    lobby.partyId ?? (await getPartyIdForLobby(env, lobby.lobbyId));
+  const now = Date.now();
+  const nowIso = new Date(now).toISOString();
+  const cap = lobbyCapacity(norm) as RunLobbySize;
+
+  if (existingId) {
+    const existing = await readParty(env, existingId);
+    if (existing && existing.status === "active") {
+      const ids = new Set(existing.members.map((m) => m.steamId));
+      const hostCharacter = hostCharacterForLobby(lobby);
+      for (const sid of norm.acceptedMemberSteamIds ?? []) {
+        if (!ids.has(sid)) {
+          const selected = selectedBySid.get(sid) || (sid === lobby.hostSteamId ? hostCharacter : undefined);
+          existing.members.push(await memberRowFor(env, sid, "joined", selected));
+        } else {
+          const member = existing.members.find((m) => m.steamId === sid);
+          const selected = selectedBySid.get(sid) || (sid === lobby.hostSteamId ? hostCharacter : undefined);
+          if (member && selected && !member.selectedCharacter) member.selectedCharacter = selected;
+        }
+      }
+      existing.updatedAt = nowIso;
+      existing.expiresAt = new Date(now + COOP_PARTY_TTL_S * 1000).toISOString();
+      await writeParty(env, existing);
+      return existing;
+    }
+  }
+
+  const members: CoopPartyMember[] = [];
+  const hostCharacter = hostCharacterForLobby(lobby);
+  for (const sid of norm.acceptedMemberSteamIds ?? []) {
+    const st: CoopPartyMemberStatus =
+      sid === newestMemberSteamId ? "joined" : "joined";
+    const selected = selectedBySid.get(sid) || (sid === lobby.hostSteamId ? hostCharacter : undefined);
+    members.push(await memberRowFor(env, sid, st, selected));
+  }
+
+  const party: CoopParty = {
+    partyId: newRandomId(),
+    lobbyId: lobby.lobbyId,
+    hostSteamId: lobby.hostSteamId,
+    lobbySize: cap,
+    members,
+    status: "active",
+    createdAt: nowIso,
+    updatedAt: nowIso,
+    expiresAt: new Date(now + COOP_PARTY_TTL_S * 1000).toISOString(),
+  };
+  await writeParty(env, party);
+  return party;
+}
+
+export async function readPartyForUser(
+  env: Env,
+  steamId: string,
+): Promise<CoopParty | null> {
+  const id = await getActivePartyIdForUser(env, steamId);
+  if (!id) return null;
+  const party = await readParty(env, id);
+  if (!party || party.status !== "active") return null;
+  return party;
+}
+
+export async function updatePartyMemberStatus(
+  env: Env,
+  callerSteamId: string,
+  partyId: string,
+  status: unknown,
+  selectedCharacter?: unknown,
+): Promise<CoopResult<CoopParty>> {
+  if (
+    typeof status !== "string" ||
+    !(["ready", "character_select", "in_game", "joined"] as string[]).includes(status)
+  ) {
+    return err(400, "invalid_status", "Pick a valid status.");
+  }
+  const party = await readParty(env, partyId);
+  if (!party || party.status !== "active") {
+    return err(404, "not_found", "Party Room not found.");
+  }
+  const member = party.members.find((m) => m.steamId === callerSteamId);
+  if (!member) {
+    return err(403, "not_participant", "You're not in this Party Room.");
+  }
+
+  let nextSelected: CoopCharacter | undefined;
+  if (selectedCharacter !== undefined) {
+    nextSelected = sanitizeSelectedCharacter(selectedCharacter);
+    if (selectedCharacter !== "" && selectedCharacter !== null && !nextSelected) {
+      return err(400, "invalid_character", "Pick a valid character.");
+    }
+    if (
+      nextSelected &&
+      party.members.some(
+        (m) =>
+          m.steamId !== callerSteamId &&
+          m.status !== "left" &&
+          m.selectedCharacter === nextSelected,
+      )
+    ) {
+      return err(409, "character_claimed", "That character is already claimed.");
+    }
+  }
+
+  member.status = status as CoopPartyMemberStatus;
+  if (selectedCharacter !== undefined) {
+    member.selectedCharacter = nextSelected;
+  }
+  member.updatedAt = new Date().toISOString();
+  party.updatedAt = member.updatedAt;
+  await writeParty(env, party);
+  return ok(party);
+}
+
+export async function leaveParty(
+  env: Env,
+  callerSteamId: string,
+  partyId: string,
+): Promise<CoopResult<{ left: boolean }>> {
+  const party = await readParty(env, partyId);
+  if (!party) return ok({ left: false });
+  const member = party.members.find((m) => m.steamId === callerSteamId);
+  if (!member) return ok({ left: false });
+  member.status = "left";
+  member.updatedAt = new Date().toISOString();
+  party.updatedAt = member.updatedAt;
+  await writeParty(env, party);
+
+  const lobby = await readLobby(env, party.lobbyId);
+  if (lobby && lobby.status === "open") {
+    const norm = normalizeRunLobby(lobby);
+    const nextAccepted = (norm.acceptedMemberSteamIds ?? []).filter(
+      (sid) => sid !== callerSteamId,
+    );
+    lobby.acceptedMemberSteamIds = nextAccepted;
+    lobby.memberSteamIds = nextAccepted;
+    lobby.status = lobbyIsFull(lobby) ? "full" : "open";
+    lobby.updatedAt = new Date().toISOString();
+    await writeLobby(env, lobby);
+  }
+
+  await setPresenceField(env, callerSteamId, {
+    currentPartyId: undefined,
+    currentLobbyId: undefined,
+    status: "looking",
+  });
+  return ok({ left: true });
+}
+
+export async function endParty(
+  env: Env,
+  callerSteamId: string,
+  partyId: string,
+): Promise<CoopResult<{ ended: boolean }>> {
+  const party = await readParty(env, partyId);
+  if (!party) return ok({ ended: false });
+  if (party.hostSteamId !== callerSteamId) {
+    return err(403, "not_host", "Only the host can end the party.");
+  }
+  party.status = "ended";
+  party.updatedAt = new Date().toISOString();
+  await writeParty(env, party);
+  for (const m of party.members) {
+    await setPresenceField(env, m.steamId, {
+      currentPartyId: undefined,
+      currentLobbyId: undefined,
+      currentSessionId: undefined,
+      status: "looking",
+    });
+  }
+  await deleteParty(env, party);
+  const lobby = await readLobby(env, party.lobbyId);
+  if (lobby) await deleteLobby(env, lobby);
+  return ok({ ended: true });
+}
+
 export async function endSession(
   env: Env,
   callerSteamId: string,
@@ -1120,11 +1618,17 @@ export async function endSession(
   await writeSession(env, session);
 
   for (const sid of session.playerSteamIds) {
+    const partyId = await getActivePartyIdForUser(env, sid);
     await setPresenceField(env, sid, {
       currentSessionId: undefined,
       currentLobbyId: undefined,
+      currentPartyId: undefined,
       status: "looking",
     });
+    if (partyId) {
+      const party = await readParty(env, partyId);
+      if (party) await deleteParty(env, party);
+    }
   }
 
   // If the session was tied to a lobby, close that lobby so it doesn't
@@ -1215,9 +1719,10 @@ async function cancelOtherJoinRequestsFromUser(
     );
     const lobby = await readLobby(env, r.lobbyId);
     if (lobby) {
-      lobby.pendingJoinRequestSteamIds = lobby.pendingJoinRequestSteamIds.filter(
-        (sid) => sid !== steamId,
-      );
+      lobby.pendingSeatRequestSteamIds = (
+        lobby.pendingSeatRequestSteamIds ?? lobby.pendingJoinRequestSteamIds ?? []
+      ).filter((sid) => sid !== steamId);
+      lobby.pendingJoinRequestSteamIds = lobby.pendingSeatRequestSteamIds;
       lobby.updatedAt = new Date().toISOString();
       await writeLobby(env, lobby);
     }

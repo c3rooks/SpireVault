@@ -210,8 +210,35 @@ function setDownloadFallback(label) {
   if (heroWinCTA) heroWinCTA.href = "#install";
 }
 
+/** Pick the Windows NSIS installer from a GitHub release payload. */
+function pickWindowsInstallerAsset(release) {
+  const assets = release?.assets;
+  if (!Array.isArray(assets)) return null;
+  const setup = assets.find((a) => {
+    const name = String(a?.name || "");
+    return /_x64-setup\.exe$/i.test(name) && !/\.blockmap$/i.test(name);
+  });
+  return setup?.browser_download_url || null;
+}
+
 async function resolveLatestRelease() {
-  const version = "v0.9.9";
+  let version = "v0.9.9";
+  let exeHref = null;
+
+  try {
+    const resp = await fetch(
+      `https://api.github.com/repos/${GITHUB_REPO}/releases/latest`,
+      { headers: { accept: "application/vnd.github+json" } },
+    );
+    if (resp.ok) {
+      const release = await resp.json();
+      if (release?.tag_name) version = release.tag_name;
+      exeHref = pickWindowsInstallerAsset(release);
+    }
+  } catch {
+    /* fall back to pinned version below */
+  }
+
   if (heroVersion)    heroVersion.textContent    = version;
   if (installVer)     installVer.textContent     = version;
   if (installVerWin)  installVerWin.textContent  = version;
@@ -226,15 +253,19 @@ async function resolveLatestRelease() {
     heroCTA.removeAttribute("target");
   }
 
-  // Windows EXE — served from GitHub Releases (CI uploads it on each tag)
-  const exeHref = `https://github.com/${GITHUB_REPO}/releases/latest/download/TheVault_${version.replace("v","")}_x64-setup.exe`;
+  // Windows EXE — resolve real asset name (Tauri productName may include spaces)
+  if (!exeHref) {
+    exeHref = `https://github.com/${GITHUB_REPO}/releases/latest`;
+  }
   if (exeLink) {
     exeLink.href = exeHref;
-    exeLink.removeAttribute("target");
+    if (exeHref.includes("/releases/latest/download/")) exeLink.removeAttribute("target");
+    else { exeLink.target = "_blank"; exeLink.rel = "noopener"; }
   }
   if (heroWinCTA) {
     heroWinCTA.href = exeHref;
-    heroWinCTA.removeAttribute("target");
+    if (exeHref.includes("/releases/latest/download/")) heroWinCTA.removeAttribute("target");
+    else { heroWinCTA.target = "_blank"; heroWinCTA.rel = "noopener"; }
   }
 }
 resolveLatestRelease();

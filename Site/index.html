@@ -4,12 +4,12 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Spire Vault · Slay the Spire 2 stats and co-op companion</title>
-  <meta name="description" content="Drop your Slay the Spire 2 save folder, see your stats, find a co-op partner at your level. Free, no signup, your saves stay on your machine." />
+  <meta name="description" content="Drop your Slay the Spire 2 save folder, see your stats, find a co-op partner at your level. Live Discord countdowns, synced GO moments, no-mic-friendly matchmaking. Free, no signup, your saves stay on your machine." />
   <meta name="theme-color" content="#0c0a14" />
 
   <!-- Open Graph -->
   <meta property="og:title" content="Spire Vault · Slay the Spire 2 stats and co-op companion" />
-  <meta property="og:description" content="Drop your STS2 save folder. See your stats. Find a co-op partner at your level. Free, no signup, source on GitHub." />
+  <meta property="og:description" content="Drop your STS2 save folder. See your stats. Find a co-op partner at your level. Live Discord countdowns, synced GO, no-mic-friendly. Free, source on GitHub." />
   <meta property="og:image" content="https://spirevault.app/assets/og.png?v=1" />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
@@ -18,7 +18,7 @@
   <meta property="og:site_name" content="Spire Vault" />
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="Spire Vault · Slay the Spire 2 stats and co-op companion" />
-  <meta name="twitter:description" content="Drop your STS2 save folder. See your stats. Find a co-op partner at your level. Free, no signup, source on GitHub." />
+  <meta name="twitter:description" content="Drop your STS2 save folder. See your stats. Find a co-op partner at your level. Live Discord countdowns, synced GO, no-mic-friendly. Free, source on GitHub." />
   <meta name="twitter:image" content="https://spirevault.app/assets/og.png?v=1" />
 
   <link rel="icon" type="image/svg+xml" href="/assets/vault-mark.svg" />
@@ -174,9 +174,9 @@
       </article>
       <article class="feature-card">
         <div class="feature-icon" data-color="ascend">🤝</div>
-        <span class="feature-beta-pill feature-beta-pill--ascend">CLASSIC + LOBBY BETA</span>
-        <h3>Two ways to find a co-op partner</h3>
-        <p>Classic Co-op is the live roster &mdash; sign in with Steam, see who's around, fire a canned invite. Lobby Beta is the new path: post the run you actually want to play (character + ascension target), browse Open Run Lobbies, check Best Matches, accept or decline. Both feeds run side by side, both end in a Steam invite, both are free.</p>
+        <span class="feature-beta-pill feature-beta-pill--ascend">CO-OP LOBBY · DEFAULT</span>
+        <h3>A lobby finder that does what Discord can&rsquo;t</h3>
+        <p>The new default surface. Host a room with a planned start, paste the Discord LFG post into your channel, and the message live-updates as the countdown ticks &mdash; native <code>&lt;t:UNIX:R&gt;</code> tags, no edits, no re-posts. Synced GO moment chimes everyone at T-0. Quiet match for no-mic players. Campfire Log remembers who you played with so they show up first next time. Classic Co-op is one toggle away if you prefer the old roster.</p>
       </article>
       <article class="feature-card">
         <div class="feature-icon" data-color="silent">📊</div>
@@ -448,24 +448,27 @@
           someone at your level who's around right now</em>.
         </p>
         <ol class="steps">
-          <li><span class="step-num">1</span><div><strong>Sign in with Steam.</strong> Official OpenID. Your password is typed into Steam's login page, never ours.</div></li>
-          <li><span class="step-num">2</span><div><strong>See who's online.</strong> Live roster of every signed-in Vault user with their tier, status, and reach-out handles.</div></li>
-          <li><span class="step-num">3</span><div><strong>Reach out.</strong> One click opens their Steam profile, copies their Discord handle, or fires a friend request.</div></li>
-          <li><span class="step-num">4</span><div><strong>Play.</strong> Coordinate over Steam or Discord, host the STS2 lobby, send the in-game invite &mdash; same as you would today.</div></li>
+          <li><span class="step-num">1</span><div><strong>Sign in with Steam.</strong> Official OpenID. Your password is typed into Steam&rsquo;s login page, never ours.</div></li>
+          <li><span class="step-num">2</span><div><strong>Quick Play, or host.</strong> Quick Play auto-matches you into the best open room. Hosting takes three taps: goal &amp; timing, party shape, review.</div></li>
+          <li><span class="step-num">3</span><div><strong>Bring Discord with you.</strong> One click copies a Discord LFG post that live-updates in your channel as the countdown ticks. Native <code>&lt;t:UNIX:R&gt;</code> timestamp tags &mdash; no edits, no bots.</div></li>
+          <li><span class="step-num">4</span><div><strong>Synced GO.</strong> Everyone in the lobby shares the same countdown. T-60s chime + browser notification (opt-in). T-0 launches Steam together.</div></li>
         </ol>
 
-        <!-- New: Co-op Lobby Beta callout. Beta shipped in v166 of the web
-             companion. Classic Co-op is still the default, so we frame the
-             Beta as the alternate path rather than a replacement. -->
+        <!-- v0.10.0 (May 26 2026): The Co-op Lobby is now the default
+             surface. Live Discord countdowns + synced GO + Campfire Log
+             are the three things Discord literally cannot do, and they
+             are the value prop. Classic Co-op is one toggle away. -->
         <aside class="coop-beta-note">
-          <span class="coop-beta-note-pill">NEW &middot; BETA</span>
-          <strong>Co-op Lobby Beta.</strong>
-          Don't want to scroll the live roster? Flip the Lobby Beta on
-          under <em>Beta</em> in the app. Post the run you actually want
-          to play (character + ascension target), browse Open Run
-          Lobbies, see Best Matches the server picks for you, accept or
-          decline invites. Classic Co-op stays the default; toggle back
-          any time.
+          <span class="coop-beta-note-pill">NEW &middot; DEFAULT</span>
+          <strong>Co-op Lobby v2 &mdash; the default now.</strong>
+          Host a room with a planned start, paste the Discord LFG post
+          into your channel, and watch the countdown live-update inside
+          Discord with no re-posts. Everyone in the lobby shares the
+          same GO chime at T-0. Quiet match toggle if you don&rsquo;t
+          want voice. The Campfire Log remembers who you played with so
+          repeat parties surface first. Prefer the old live-roster
+          layout? &ldquo;Switch to Classic Co-op&rdquo; is one click and
+          sticks for your browser.
         </aside>
       </div>
       <aside class="coop-card" id="coop-card">
@@ -562,7 +565,7 @@
           <span>Download .exe</span>
           <span class="version" id="install-version-win">v0.9.9</span>
         </a>
-        <p class="install-meta">SmartScreen may prompt "More info → Run anyway" on first launch (no EV cert yet). Same experience as the macOS right-click requirement.</p>
+        <p class="install-meta">Installer from GitHub Releases (tagged build). SmartScreen may prompt &ldquo;More info &rarr; Run anyway&rdquo; on first launch (no EV cert yet). Same experience as the macOS right-click requirement.</p>
       </article>
 
       <article class="install-card" id="install-web">

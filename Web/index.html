@@ -31,7 +31,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Playfair+Display:wght@700;900&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/styles.css?v=136" />
+  <link rel="stylesheet" href="/styles.css?v=140" />
 
   <!-- Google tag (gtag.js) — Spire Vault GA4 stream G-09LEQ247HN.
        Loaded async so it never blocks the critical rendering path; the
@@ -268,7 +268,7 @@
              redundant CTAs. -->
         <div class="sidebar-status-row" id="me-pill-status-row">
           <span class="status-dot" id="status-dot" aria-hidden="true"></span>
-          <span class="sidebar-status-label" id="status-label">Connecting…</span>
+          <span class="sidebar-status-label" id="status-label">Loading…</span>
           <span class="me-pill-status-pill" id="me-pill-status-pill" data-status="looking" hidden>Looking</span>
           <button class="me-pill-invites" id="me-pill-invites" type="button" hidden title="Open profile menu to respond">0</button>
         </div>
@@ -295,7 +295,7 @@
           <strong id="me-pill-name-mobile">…</strong>
         </div>
         <span class="status-dot" id="status-dot-mobile"></span>
-        <span id="status-label-mobile" class="muted-status">Connecting…</span>
+        <span id="status-label-mobile" class="muted-status">Loading…</span>
         <div class="mobile-account-action" id="mobile-account-action">
           <button class="status-signout" id="signout-btn-mobile" title="Sign out" hidden>Sign out</button>
           <button class="mobile-signin-cta" id="signin-btn-mobile" type="button" data-action="signin-cta" hidden>
@@ -759,11 +759,15 @@
                lives in the slim header above, so the bar doesn't
                repeat it. Designed to stay under ~70px on desktop.
           ============================================================ -->
+          <section class="coop-party-surface" id="coop-party-surface" data-coop-mode="beta" hidden aria-label="Party Hub">
+            <div id="coop-party-root" class="coop-party-root"></div>
+          </section>
+
           <section class="coop-bar" data-coop-mode="beta" aria-label="Co-op activity and quick actions">
             <div class="coop-bar-stats" aria-label="Co-op activity right now">
               <div class="coop-bar-stat">
                 <span class="coop-bar-stat-num" id="coop-stat-lobbies">0</span>
-                <span class="coop-bar-stat-label">Open Lobbies</span>
+                <span class="coop-bar-stat-label">Open Rooms</span>
               </div>
               <span class="coop-bar-divider" aria-hidden="true"></span>
               <div class="coop-bar-stat">
@@ -777,7 +781,7 @@
               </div>
             </div>
             <div class="coop-bar-cta-row">
-              <button class="btn-primary btn-sm" type="button" data-coop-action="open-create-lobby">+ Post a Run</button>
+              <button class="btn-primary btn-sm" type="button" data-coop-action="open-create-lobby">+ Host a Room</button>
               <button class="btn-ghost btn-sm" type="button" data-coop-action="quick-match">⚡ Quick Match</button>
               <button class="coop-link-btn" type="button" data-coop-action="open-intent">Run Preferences</button>
             </div>
@@ -799,15 +803,18 @@
 
             <main class="coop-work-main">
 
+              <!-- Dominant UX state — one primary next step per co-op state -->
+              <div id="coop-primary-state" class="coop-primary-state-mount" aria-live="polite"></div>
+
               <!-- Invites & requests — only when actionable -->
               <section class="coop-section coop-section--urgent" id="coop-invites-section" hidden aria-labelledby="coop-invites-title">
                 <header class="coop-section-head">
                   <div>
                     <h2 class="coop-section-title" id="coop-invites-title">
-                      Invites &amp; requests
+                      Seat Requests
                       <span class="count-pill" id="coop-invites-count">0</span>
                     </h2>
-                    <p class="coop-section-sub">Respond before they expire — incoming invites and join requests show up here first.</p>
+                    <p class="coop-section-sub">Respond before they expire. Seat requests help players join run lobbies before moving to the Party Room.</p>
                   </div>
                 </header>
                 <div class="coop-invites-list" id="coop-invites-list"></div>
@@ -822,13 +829,13 @@
                 <header class="coop-board-head">
                   <div class="coop-board-head-text">
                     <h2 class="coop-section-title" id="coop-lobbies-title">
-                      Open Run Lobbies
+                      Open Rooms
                       <span class="count-pill" id="coop-lobbies-count">0</span>
                     </h2>
-                    <p class="coop-section-sub">Posted run lobbies other players are looking to fill. Pair up here, then add each other on Steam.</p>
+                    <p class="coop-section-sub">Browse open STS2 rooms, claim a seat, then coordinate in Party Hub before Steam.</p>
                   </div>
                   <div class="coop-board-head-actions">
-                    <button class="btn-primary btn-sm" type="button" data-coop-action="open-create-lobby">+ Post a Run</button>
+                    <button class="btn-primary btn-sm" type="button" data-coop-action="open-create-lobby">+ Host a Room</button>
                   </div>
                 </header>
                 <div class="coop-lobbies-list" id="coop-lobbies-list">
@@ -899,7 +906,7 @@
                 <button class="coop-howto-toggle" type="button" id="coop-howto-toggle" aria-expanded="false" aria-controls="coop-howto-body">
                   <span class="coop-howto-toggle-meta">
                     <span class="eyebrow">How it works</span>
-                    <span class="coop-howto-summary">Post or join a run lobby, pair up, then add each other on Steam.</span>
+                    <span class="coop-howto-summary">Host or join a room, pair up, then add each other on Steam.</span>
                   </span>
                   <span class="coop-howto-caret" aria-hidden="true">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
@@ -907,7 +914,7 @@
                 </button>
                 <div class="coop-howto-body" id="coop-howto-body" hidden>
                   <ol class="coop-howto-list">
-                    <li><span class="coop-howto-num">1</span><div><strong>Post or request</strong><p>Post the run lobby you want to play, or request to join one that matches your goal and ascension.</p></div></li>
+                    <li><span class="coop-howto-num">1</span><div><strong>Host or request</strong><p>Host the room you want to play, or request to join one that matches your goal and ascension.</p></div></li>
                     <li><span class="coop-howto-num">2</span><div><strong>Pair up</strong><p>When the host accepts, you&rsquo;re paired. Both see the same active pairing.</p></div></li>
                     <li><span class="coop-howto-num">3</span><div><strong>Add on Steam</strong><p>Open the partner&rsquo;s Steam profile from the pairing card and send the friend invite.</p></div></li>
                     <li><span class="coop-howto-num">4</span><div><strong>Play the run</strong><p>Steam handles the actual co-op invite. End the pairing here when you&rsquo;re done.</p></div></li>
@@ -1026,6 +1033,121 @@
 
             <!-- ====== Post 003 — May 9 2026 — STS2 v0.105.0 content support ====== -->
             <!-- ====== Post 006 — May 10 2026 — Desktop / cloud parity rebuild ====== -->
+            <!-- ====== Post 007 — May 26 2026 — Co-op Lobby v2 default ============ -->
+            <article class="news-post" id="news-007" data-news-id="007" data-news-eyebrow="Update · May 26, 2026" data-news-tags="Update,Co-op,Beta" aria-labelledby="news-007-title">
+              <figure class="news-post-banner">
+                <picture>
+                  <source media="(max-width: 720px)" srcset="/assets/news/post-007-banner-1x.webp" />
+                  <img src="/assets/news/post-007-banner.webp" alt="Painted illustration of a glowing campfire on a high stone outpost, with four hooded travelers seated around it. In the foreground a wooden notice board pinned with parchment scraps that read like handwritten lobby listings, and a small brass hourglass on a stand beside it. Behind, a vast dark spire rises against a violet-and-ember dusk sky." decoding="async" />
+                </picture>
+              </figure>
+              <header class="news-post-head">
+                <span class="news-post-eyebrow">Update &middot; May 26, 2026</span>
+                <h3 class="news-post-title" id="news-007-title">The Co-op Lobby is the default now &mdash; and it does a few things Discord can&rsquo;t</h3>
+                <p class="news-post-byline">
+                  Corey
+                  <span class="news-post-byline-sep">&middot;</span>
+                  <span class="news-post-byline-meta">~5 min read</span>
+                </p>
+              </header>
+
+              <div class="news-post-body">
+                <p class="news-lede">
+                  Open the Co-op tab today and you&rsquo;ll land on the new lobby surface instead of the live roster. Same Steam OpenID sign-in, same friend-gated invite at the end &mdash; the middle is what changed. The big bet: a co-op tool earns its real estate by doing things the Slay the Spire 2 Discord <em>can&rsquo;t</em> do, not by being a prettier version of the same thing. Three of those landed in this release.
+                </p>
+
+                <h4 class="news-post-section">What you&rsquo;ll see when you open it</h4>
+
+                <p>
+                  Hero card with two large buttons in the same row above the fold: <strong>Quick Play</strong> (auto-match into the best open room) and <strong>Host a Room</strong> (3-step modal &mdash; goal &amp; timing, party shape, review). Below it, four stat tiles: online now, hosting rooms, looking for group, and a new <strong>starting soon</strong> tile that lights up green when somebody&rsquo;s countdown is &le;30 minutes out. Below the stats, your <strong>Campfire Log</strong> ribbon &mdash; rank, parties, hearts, friends, and an XP bar showing how close you are to the next rank. Tap it for the full personal-history sheet (friends roster, run timeline, send-a-heart). Below the log, the <strong>Live Parties</strong> list, sorted soonest-first.
+                </p>
+
+                <h4 class="news-post-section">The three things Discord can&rsquo;t do</h4>
+
+                <div class="news-feature-block">
+                  <h5>1. Live-updating Discord LFG posts</h5>
+                  <p>
+                    When you host a room with a planned start time, the &ldquo;Copy Discord LFG Post&rdquo; button now embeds Discord&rsquo;s native <code>&lt;t:UNIX:R&gt;</code> timestamp tags. Paste the post into your channel and Discord renders it as &ldquo;Starts in 28 minutes&rdquo; &mdash; and re-renders it five minutes later as &ldquo;Starts in 23 minutes&rdquo; without anyone editing or re-posting the message. Each viewer also sees their own local time via <code>&lt;t:UNIX:t&gt;</code>. You&rsquo;d have to type the message manually with a Discord bot to do this otherwise. The toast that appears after copying tells you straight up: &ldquo;Discord LFG post copied &mdash; it&rsquo;ll live-update in your channel.&rdquo;
+                  </p>
+                </div>
+
+                <div class="news-feature-block">
+                  <h5>2. A synced GO moment</h5>
+                  <p>
+                    Hosts can set a planned start (now / 15m / 30m / 1h / when full) when they post a room. Everyone in the lobby sees the same countdown badge tick down in real time. At T-60s, anyone who opted in gets a chime and a browser notification; at T-0, a green pulse + &ldquo;Launch Steam now&rdquo; CTA appears inline on the row, and the host sees a one-tap <strong>&ldquo;&#x26A1; Start now&rdquo;</strong> pill if they want to fast-forward. Voice optional, voice required, no-mic-needed &mdash; doesn&rsquo;t matter; the countdown is the coordination.
+                  </p>
+                </div>
+
+                <div class="news-feature-block">
+                  <h5>3. A play-again memory that survives the run</h5>
+                  <p>
+                    Discord doesn&rsquo;t remember who you played with last week. The Campfire Log does. Every party you join gets logged locally; every teammate becomes a friend with a count and a last-played stamp. Open <em>My Co-op</em> and you can send any of them a heart (one per teammate per 24 hours, so it stays meaningful). The XP curve is real &mdash; party joined: +10 XP, completed: +15, heart-run goal: +25, heart sent: +5 &mdash; and the bar inside the Rank tile fills smoothly as you accumulate. Two-tab open? A heart sent in tab A updates tab B inside ~250ms via <code>BroadcastChannel</code>.
+                  </p>
+                </div>
+
+                <h4 class="news-post-section">Smaller things, all of them mattering</h4>
+
+                <ul class="news-post-list">
+                  <li><strong>Quiet match</strong> &mdash; a single toggle next to the hero CTAs that biases matchmaking toward voice-optional rooms. For the player who just wants to play and not talk. Renamed from &ldquo;Quiet mode&rdquo; because Sound and Notifications already mean different things and overloaded copy was confusing.</li>
+                  <li><strong>One Alerts gear</strong> instead of two floating toggles. Sound chime + Browser notification now live in a single popover anchored to a &#x2699;&#xFE0F; gear next to Quiet match. Green dot lights up when either is active so the closed state still tells you what you&rsquo;ve enabled.</li>
+                  <li><strong>Live Parties auto-sort by urgency.</strong> Rooms starting in &le;15 min sort first; then 15&ndash;60 min; then everything else. Inside a tier, it&rsquo;s your fit score and recency. So if you want to play <em>right now</em>, the imminent rooms are the first thing you see.</li>
+                  <li><strong>Pagination.</strong> List caps at 25 rows with a &ldquo;Show 25 more&rdquo; footer. The 1-second runtime tick uses an <code>IntersectionObserver</code> so we only update countdown badges on rows you can actually see &mdash; even at 200 visible rooms the page stays cool.</li>
+                  <li><strong>Reconnecting banner.</strong> If <code>/coop/state</code> fails twice in a row, you see a yellow &ldquo;Reconnecting&hellip;&rdquo; banner. After five fails it goes red with &ldquo;Can&rsquo;t reach the server. Your stats may be stale.&rdquo; A &ldquo;Retry now&rdquo; button forces a refresh. No more silently-stale UI.</li>
+                  <li><strong>Steam launch fallback.</strong> Click &ldquo;Launch Steam&rdquo; at GO time without Steam installed and ~800ms later a &ldquo;Don&rsquo;t have Steam? Open the store &rarr;&rdquo; link appears under the CTA. Same pattern Discord and Slack use for their deep links.</li>
+                  <li><strong>Reduced motion respected.</strong> If your OS has <code>prefers-reduced-motion: reduce</code> set, the tab-title flash, the GO pulse, and the &ldquo;starting soon&rdquo; tile&rsquo;s pulse all turn off. Information is still there in color and text.</li>
+                </ul>
+
+                <h4 class="news-post-section">Server-side kill switch &mdash; in case something&rsquo;s on fire</h4>
+
+                <p>
+                  This is shipping default-on, which means I need a way to roll it back without a deploy. Three layers, in priority:
+                </p>
+                <ol class="news-post-list">
+                  <li><code>?beta=off</code> on any SpireVault URL persists an opt-out for that browser. <code>?beta=kill</code> sets a per-browser kill flag. <code>?beta=on</code> clears both. Query string is stripped on load so links stay clean.</li>
+                  <li>The Cloudflare Worker reads <code>COOP_LOBBY_BETA_KILL=1</code> from env and emits <code>flags.coopLobbyBetaKill: true</code> in <code>/coop/state</code>. Every connected client downgrades to Classic on the next poll (&le;15s focused, &le;60s hidden). No deploy.</li>
+                  <li>Code-level: <code>ENABLE_COOP_LOBBY_BETA = false</code> in <code>Web/script.js</code> and a redeploy. Hides the toggle entirely.</li>
+                </ol>
+                <p>
+                  Prefer the old layout? In the lobby surface, <em>Switch to Classic Co-op</em> sticks for your browser. You can flip back any time.
+                </p>
+
+                <h4 class="news-post-section">What I&rsquo;m not claiming</h4>
+
+                <p>
+                  This isn&rsquo;t the must-use STS2 co-op tool yet. The build is polished, the integration with Discord is genuinely useful, but a lobby finder is only as alive as the lobby list. If you open it and see &ldquo;No live parties yet&rdquo; that&rsquo;s the failure mode I can&rsquo;t fix from a UI &mdash; it needs hosters. So if you read this and you&rsquo;re going to play co-op tonight, host the room <em>here</em> first and then drop the live-updating Discord post into your channel. That&rsquo;s the bootstrap.
+                </p>
+
+                <p>
+                  The next move is the part Discord literally can&rsquo;t replicate: <strong>verified co-op reputation</strong>. SpireVault already has your save data. We can show real ascensions cleared, real Heart kills, real co-op completion rate, and a reliability score (&ldquo;this player has hosted 14 runs, 12 finished&rdquo;) at host time and at join time &mdash; numbers nobody on Discord can boast their way into. That&rsquo;s the lock-in feature, and that&rsquo;s the next sprint. Steam Rich Presence integration sits right behind it &mdash; the version of this where you launch STS2 and your status flips to &ldquo;looking&rdquo; without you opening a tab.
+                </p>
+
+                <h4 class="news-post-section">Try it</h4>
+
+                <ol class="news-post-list">
+                  <li>Sign in at <a href="https://app.spirevault.app" target="_blank" rel="noopener">app.spirevault.app</a> with Steam.</li>
+                  <li>Click Host a Room. Pick &ldquo;In 15 min.&rdquo; Click Copy Discord LFG Post when it appears. Paste into your STS2 Discord channel and watch the timestamp render live.</li>
+                  <li>Tap the &#x2699;&#xFE0F; Alerts gear, turn on Sound and Notifications. Walk away. Get pinged at T-60s.</li>
+                  <li>If anything feels off, file an issue at <a href="https://github.com/c3rooks/SpireVault/issues/new" target="_blank" rel="noopener">github.com/c3rooks/SpireVault/issues</a> with a screenshot.</li>
+                </ol>
+
+                <p class="news-post-signoff">
+                  &mdash; Corey
+                </p>
+              </div>
+
+              <footer class="news-post-foot">
+                <div class="news-post-foot-meta">
+                  <span class="news-post-tag">Update</span>
+                  <span class="news-post-tag">Co-op</span>
+                  <span class="news-post-tag">v0.10.0</span>
+                </div>
+                <div class="news-post-foot-actions">
+                  <a class="action-link" href="https://app.spirevault.app/?tab=coop" target="_blank" rel="noopener">Open the Co-op Lobby &rarr;</a>
+                  <a class="action-link" href="https://github.com/c3rooks/SpireVault/issues/new" target="_blank" rel="noopener">Report something off &rarr;</a>
+                </div>
+              </footer>
+            </article>
+
             <article class="news-post" id="news-006" data-news-id="006" data-news-eyebrow="Update · May 10, 2026" data-news-tags="Update,Desktop,Parity" aria-labelledby="news-006-title">
               <header class="news-post-head">
                 <span class="news-post-eyebrow">Update · May 10, 2026</span>
@@ -1605,7 +1727,7 @@
   </div>
 
   <!-- ================================================================
-       Co-op modals — Run Preferences, Post a Run, Quick Match.
+       Co-op modals — Run Preferences, Host a Room, Quick Match.
        Mounted always so coop-lobbies.js can just toggle [hidden].
        Ascension range is capped at A10 (Slay the Spire 2 max).
   ================================================================ -->
@@ -1625,6 +1747,41 @@
             <label><input type="radio" name="modal-status" value="paired"><span class="pill ember">In Co-op</span></label>
             <label><input type="radio" name="modal-status" value="afk"><span class="pill mute">Away</span></label>
           </fieldset>
+          <fieldset class="coop-character-picker" aria-label="Preferred character">
+            <legend><span class="field-label">Preferred character</span></legend>
+            <div class="coop-character-grid">
+              <label class="coop-character-choice coop-character-choice--any">
+                <input type="radio" name="intentPreferredCharacter" value="" checked />
+                <span class="coop-character-any-mark" aria-hidden="true">Any</span>
+                <span class="coop-character-name">Open to any</span>
+              </label>
+              <label class="coop-character-choice">
+                <input type="radio" name="intentPreferredCharacter" value="ironclad" />
+                <img src="/assets/sts2/characters/ironclad-v2.webp" alt="" />
+                <span class="coop-character-name">Ironclad</span>
+              </label>
+              <label class="coop-character-choice">
+                <input type="radio" name="intentPreferredCharacter" value="silent" />
+                <img src="/assets/sts2/characters/silent-v2.webp" alt="" />
+                <span class="coop-character-name">Silent</span>
+              </label>
+              <label class="coop-character-choice">
+                <input type="radio" name="intentPreferredCharacter" value="defect" />
+                <img src="/assets/sts2/characters/defect-v2.webp" alt="" />
+                <span class="coop-character-name">Defect</span>
+              </label>
+              <label class="coop-character-choice">
+                <input type="radio" name="intentPreferredCharacter" value="regent" />
+                <img src="/assets/sts2/characters/regent-v2.webp" alt="" />
+                <span class="coop-character-name">Regent</span>
+              </label>
+              <label class="coop-character-choice">
+                <input type="radio" name="intentPreferredCharacter" value="necrobinder" />
+                <img src="/assets/sts2/characters/necrobinder-v2.webp" alt="" />
+                <span class="coop-character-name">Necrobinder</span>
+              </label>
+            </div>
+          </fieldset>
           <div class="coop-form-grid">
             <label class="coop-pref-field">
               <span class="field-label">Goal</span>
@@ -1633,7 +1790,7 @@
                 <option value="any">Any run</option>
                 <option value="casual">Casual</option>
                 <option value="climb">Climb</option>
-                <option value="high">High Ascension</option>
+                <option value="a20">High Ascension</option>
                 <option value="heart">Heart attempt</option>
                 <option value="teaching">Teaching</option>
                 <option value="learning">Learning</option>
@@ -1680,16 +1837,51 @@
   <div class="modal-backdrop coop-modal-backdrop" id="coop-modal-lobby" hidden role="dialog" aria-modal="true" aria-labelledby="coop-modal-lobby-title">
     <div class="modal coop-modal coop-modal--lobby">
       <header class="modal-head">
-        <h2 id="coop-modal-lobby-title">Post a Run</h2>
+        <h2 id="coop-modal-lobby-title">Host a Room</h2>
         <button class="modal-close" type="button" data-coop-modal-close aria-label="Close">×</button>
       </header>
       <div class="modal-body coop-modal-body">
-        <p class="modal-sub">Post the kind of run you want to play. Other players can request to join, then you can accept and add each other on Steam.</p>
+        <p class="modal-sub">Post the STS2 room you want to play. By default players can Join Seat instantly; enable approval if you want to review requests first.</p>
         <form id="coop-lobby-form" class="coop-form" novalidate>
           <label class="coop-pref-field coop-pref-field--wide">
             <span class="field-label">Run title (80 chars)</span>
             <input type="text" name="title" required maxlength="80" placeholder='e.g. "A10 Heart attempt, voice optional"' />
           </label>
+          <fieldset class="coop-character-picker" aria-label="Host character preference">
+            <legend><span class="field-label">Host character</span></legend>
+            <div class="coop-character-grid">
+              <label class="coop-character-choice coop-character-choice--any">
+                <input type="radio" name="preferredCharacter" value="" checked />
+                <span class="coop-character-any-mark" aria-hidden="true">Any</span>
+                <span class="coop-character-name">Open to any</span>
+              </label>
+              <label class="coop-character-choice">
+                <input type="radio" name="preferredCharacter" value="ironclad" />
+                <img src="/assets/sts2/characters/ironclad-v2.webp" alt="" />
+                <span class="coop-character-name">Ironclad</span>
+              </label>
+              <label class="coop-character-choice">
+                <input type="radio" name="preferredCharacter" value="silent" />
+                <img src="/assets/sts2/characters/silent-v2.webp" alt="" />
+                <span class="coop-character-name">Silent</span>
+              </label>
+              <label class="coop-character-choice">
+                <input type="radio" name="preferredCharacter" value="defect" />
+                <img src="/assets/sts2/characters/defect-v2.webp" alt="" />
+                <span class="coop-character-name">Defect</span>
+              </label>
+              <label class="coop-character-choice">
+                <input type="radio" name="preferredCharacter" value="regent" />
+                <img src="/assets/sts2/characters/regent-v2.webp" alt="" />
+                <span class="coop-character-name">Regent</span>
+              </label>
+              <label class="coop-character-choice">
+                <input type="radio" name="preferredCharacter" value="necrobinder" />
+                <img src="/assets/sts2/characters/necrobinder-v2.webp" alt="" />
+                <span class="coop-character-name">Necrobinder</span>
+              </label>
+            </div>
+          </fieldset>
           <div class="coop-form-grid">
             <label class="coop-pref-field">
               <span class="field-label">Goal</span>
@@ -1697,12 +1889,20 @@
                 <option value="any">Any run</option>
                 <option value="casual">Casual</option>
                 <option value="climb">Climb</option>
-                <option value="high">High Ascension</option>
+                <option value="a20">High Ascension</option>
                 <option value="heart">Heart attempt</option>
                 <option value="teaching">Teaching</option>
                 <option value="learning">Learning</option>
                 <option value="daily">Daily</option>
                 <option value="experimental">Experimental</option>
+              </select>
+            </label>
+            <label class="coop-pref-field">
+              <span class="field-label">Lobby size</span>
+              <select name="lobbySize">
+                <option value="2">2 players</option>
+                <option value="3">3 players</option>
+                <option value="4" selected>4 players</option>
               </select>
             </label>
             <label class="coop-pref-field">
@@ -1734,12 +1934,12 @@
           <div class="coop-form-preview" aria-live="polite">
             <span class="field-label">Preview</span>
             <div class="coop-lobby-card coop-lobby-card--preview" id="coop-lobby-preview">
-              <p class="coop-tile-hint">Fill the form to see how your posted run will look.</p>
+              <p class="coop-tile-hint">Fill the form to see how your room will look.</p>
             </div>
           </div>
           <p class="coop-form-error" id="coop-lobby-error" role="alert" hidden></p>
           <div class="coop-form-actions">
-            <button type="submit" class="btn-primary" id="coop-lobby-save">Post Run</button>
+            <button type="submit" class="btn-primary" id="coop-lobby-save">Host Room</button>
             <button type="button" class="btn-ghost" data-coop-modal-close>Cancel</button>
           </div>
         </form>
@@ -1758,9 +1958,33 @@
         <div class="coop-quickmatch-body" id="coop-quickmatch-body"></div>
         <p class="coop-form-error" id="coop-quickmatch-error" role="alert" hidden></p>
         <div class="coop-form-actions" id="coop-quickmatch-actions">
-          <button type="button" class="btn-primary" id="coop-quickmatch-send">Send Invite</button>
+          <button type="button" class="btn-primary" id="coop-quickmatch-send">Request Seat</button>
           <button type="button" class="btn-ghost" data-coop-modal-close>Cancel</button>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-backdrop coop-modal-backdrop" id="coop-modal-character" hidden role="dialog" aria-modal="true" aria-labelledby="coop-modal-character-title">
+    <div class="modal coop-modal coop-modal--character">
+      <header class="modal-head">
+        <h2 id="coop-modal-character-title">Choose your character</h2>
+        <button class="modal-close" type="button" data-coop-modal-close aria-label="Close">×</button>
+      </header>
+      <div class="modal-body coop-modal-body">
+        <p class="modal-sub" id="coop-character-modal-sub">Pick the character you plan to play before taking a seat.</p>
+        <div class="coop-character-room-summary" id="coop-character-room-summary"></div>
+        <form id="coop-character-form" class="coop-form" novalidate>
+          <fieldset class="coop-character-picker coop-character-picker--join" aria-label="Your character">
+            <legend><span class="field-label">Your character</span></legend>
+            <div class="coop-character-grid" id="coop-join-character-grid"></div>
+          </fieldset>
+          <p class="coop-form-error" id="coop-character-error" role="alert" hidden></p>
+          <div class="coop-form-actions">
+            <button type="submit" class="btn-primary" id="coop-character-confirm">Join Seat</button>
+            <button type="button" class="btn-ghost" data-coop-modal-close>Cancel</button>
+          </div>
+        </form>
       </div>
     </div>
   </div>
@@ -1906,7 +2130,56 @@
        script before the module so it's available synchronously when
        script.js's renderActiveTab() is called for the Beta tab. Cache
        bust string is bumped alongside the script.js bust on each ship. -->
+  <!-- Localhost safety net: runs before the ES module so a stale/broken
+       script.js bundle cannot leave "Connecting…" + an empty main forever. -->
+  <script>
+  (function () {
+    var LOCAL = /^(localhost|127\.0\.0\.1|::1)$/.test(location.hostname) ||
+      (location.protocol === "http:" && /^(8788|8080|3000)$/.test(location.port || ""));
+    if (!LOCAL) return;
+    document.documentElement.classList.add("vault-local-dev");
+    function labels() {
+      return [
+        document.getElementById("status-label"),
+        document.getElementById("status-label-mobile")
+      ].filter(Boolean);
+    }
+    function setLabels(text) {
+      labels().forEach(function (el) { el.textContent = text; });
+    }
+    function unstuckMain() {
+      var main = document.getElementById("app-content");
+      if (!main) return;
+      var active = main.querySelector(".tab-panel:not([hidden])");
+      if (active && active.querySelector(".panel-body")?.textContent?.trim()) return;
+      var ov = document.querySelector('.tab-panel[data-tab="overview"]');
+      if (!ov) return;
+      document.querySelectorAll("#app-content .tab-panel").forEach(function (p) {
+        p.hidden = p !== ov;
+      });
+      var body = ov.querySelector(".panel-body");
+      if (body && !body.textContent.trim()) {
+        body.innerHTML = '<p class="muted" style="padding:1.5rem">Still loading Vault — hard-refresh (Cmd+Shift+R) or <a href="/api/_dev-login?as=c3rooks">dev sign-in</a>.</p>';
+      }
+    }
+    setTimeout(function () {
+      var stuck = labels().some(function (el) {
+        return /connecting|loading/i.test(el.textContent || "");
+      });
+      if (stuck) {
+        setLabels("Local: open /api/_dev-login?as=c3rooks");
+        unstuckMain();
+      }
+    }, 4000);
+    window.addEventListener("error", function (ev) {
+      var src = ev.filename || "";
+      if (src.indexOf("script.js") === -1 && src.indexOf("/lib/") === -1) return;
+      setLabels("Script error — hard-refresh (Cmd+Shift+R)");
+      unstuckMain();
+    });
+  })();
+  </script>
   <script src="/run-coach.js?v=2" defer></script>
-  <script src="/script.js?v=173" type="module"></script>
+  <script src="/script.js?v=183" type="module"></script>
 </body>
 </html>

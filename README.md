@@ -220,19 +220,52 @@ official Windows and Linux path.
 ## How co-op actually works
 
 Some people ask if I'm trying to replace Steam multiplayer or matchmake
-for them. I'm not. Here's the four-step flow:
+for them. I'm not. STS2 multiplayer is friend-gated through Steam — no
+third-party tool can route those invites. The Vault solves the *finding*
+half: who's around, what run do they want, and when does it start.
+
+As of v0.10.0 (May 26, 2026) the **Co-op Lobby** is the default surface.
+The four-step flow:
 
 1. **Sign in with Steam.** Standard Steam OpenID, the same flow Steam
    uses for every other site. Your password never reaches my server.
-2. **See who's online.** The Co-op tab shows everyone else with Spire
-   Vault open right now. You see their Steam persona, avatar, current
-   status (Looking / Playing / Idle), an optional self-declared skill
-   tier, and an optional Discord handle.
-3. **Reach out.** One click opens their Steam profile, copies their
-   Discord handle to your clipboard, or fires `steam://friends/add/<id>`.
-4. **Play.** You coordinate the rest over Steam or Discord (agreeing on
-   a time, picking characters, whatever). The actual STS2 multiplayer
-   game gets hosted and joined the same way you'd do it today.
+2. **Quick Play, or host a room.** Quick Play auto-matches you into the
+   best open room. Hosting takes three taps — goal & timing (character
+   + ascension target + planned start: now / 15m / 30m / 1h / when full),
+   party shape (size, voice required / optional / quiet, ascension
+   floor), review.
+3. **Bring Discord with you.** One click on a hosted room copies a
+   Discord LFG post that uses native `<t:UNIX:R>` and `<t:UNIX:t>`
+   timestamp tags. Paste it into your channel and Discord renders it as
+   "Starts in 28 minutes" — and re-renders five minutes later as
+   "Starts in 23 minutes" — without anyone editing or re-posting. Each
+   viewer also sees their own local time. No bots, no integrations.
+4. **Synced GO.** Everyone in the lobby shares the same countdown
+   badge. At T-60s, opted-in users get a chime + browser notification.
+   At T-0, a green pulse + "Launch Steam now" CTA appears on the row.
+   Host can hit "⚡ Start now" to fast-forward.
+
+The **Campfire Log** ribbon below the hero stats is the persistent layer.
+Every party you join gets logged locally; every teammate becomes a
+friend with a count and a last-played stamp. Open *My Co-op* and you
+can send any of them a heart (one per teammate per 24 hours, so it
+stays meaningful). XP curve is real — party joined: +10, completed: +15,
+heart-run goal: +25, heart sent: +5 — and the bar inside the Rank tile
+fills smoothly as you accumulate. The whole log is `localStorage` +
+`BroadcastChannel` for cross-tab sync; no server side yet, by design.
+
+Don't want the lobby surface? **Switch to Classic Co-op** in the
+header is one click and persists per-browser. The classic live-roster
+flow (see who's around, fire a canned invite, copy a Discord handle)
+is unchanged.
+
+**Server-side kill switch.** Default-on releases need a bail-out, so
+there are three layers: per-browser via `?beta=off` / `?beta=kill`
+URL params, server-pushed via the worker env (`COOP_LOBBY_BETA_KILL=1`
+flips every connected client back to Classic on the next poll, ≤15s
+focused / ≤60s hidden — no deploy needed), and code-level via
+`ENABLE_COOP_LOBBY_BETA = false` + redeploy. Classic stays available
+under all three.
 
 Total infrastructure cost: **$0**. The whole thing runs on Cloudflare's
 free tier. The only fixed cost in this entire project is the $14/year

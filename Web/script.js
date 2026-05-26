@@ -17,7 +17,9 @@ import * as Stats from "/lib/stats-engine.js?v=4";
 import * as HistoryStore from "/lib/history-store.js?v=8";
 import * as InviteAPI from "/lib/invites.js?v=4";
 import * as HighlightsAPI from "/lib/highlights.js?v=1";
-import * as CoopLobbies from "/lib/coop-lobbies.js?v=15";
+import * as CoopLobbies from "/lib/coop-lobbies.js?v=23";
+import { isCoopSandboxEnabled, openCoopSandboxPanel } from "/lib/coop-sandbox.js?v=5";
+import * as PartyRoom from "/lib/party-room.js?v=4";
 import * as AscInfo from "/lib/ascension-info.js?v=1";
 import * as CharInfo from "/lib/character-info.js?v=1";
 import * as RelicInfo from "/lib/relic-info.js?v=1";
@@ -69,7 +71,37 @@ const STS2_APP_ID = "2868840";
  * on an old client — instruct hard refresh. If it DOES match, the
  * bug is real and we can stop chasing cache ghosts.
  */
-const VAULT_BUILD = "v173-2026-05-18-remove-character-pin";
+const VAULT_BUILD = "v183-2026-05-23-run-history-autopoll-and-victory";
+
+/** True on wrangler pages dev / local loopback — not production hostnames. */
+function isLocalDevHost() {
+  try {
+    const h = window.location.hostname;
+    if (
+      h === "localhost" ||
+      h === "127.0.0.1" ||
+      h === "::1" ||
+      h.endsWith(".localhost")
+    ) {
+      return true;
+    }
+    return (
+      window.location.protocol === "http:" &&
+      (window.location.port === "8788" ||
+        window.location.port === "8080" ||
+        window.location.port === "3000")
+    );
+  } catch {
+    return false;
+  }
+}
+
+function vaultDevBootStep(step) {
+  if (!isLocalDevHost()) return;
+  try {
+    document.getElementById("vault-dev-boot-banner")?.remove();
+  } catch { /* never block boot */ }
+}
 
 // Feature flag — set to `true` only on local dev when iterating on the
 // Run Companion Overlay. Production stays false until the feature is
@@ -100,18 +132,104 @@ const OVERLAY_NAV_VISIBLE = false;
 //  Per-user opt-in is stored in localStorage under
 //  `spirevault.coopLobbyBeta` and reflected as a `<body>` class so
 //  CSS can swap surfaces without re-rendering JS.
+//
+//  DEFAULT NOTE — the new Co-op Lobby is now the default surface
+//  for everyone. The legacy Classic Co-op is preserved as an
+//  opt-out: users who explicitly clicked "Switch back to Classic
+//  Co-op" have the `off` value persisted and keep their choice.
+//  Anyone else (new accounts, returning users, anon visitors) gets
+//  the new lobby on first paint. Tests still set the key to "on"
+//  explicitly so fixtures remain deterministic.
 // ─────────────────────────────────────────────────────────────────────
-const ENABLE_COOP_LOBBY_BETA = true;
-const COOP_LOBBY_BETA_KEY    = "spirevault.coopLobbyBeta";
+const ENABLE_COOP_LOBBY_BETA      = true;
+const COOP_LOBBY_BETA_KEY         = "spirevault.coopLobbyBeta";
+// Emergency kill-switch keys. Any of these (in priority order) flips
+// the entire Beta surface back to Classic for the user, with no code
+// deploy:
+//
+//   1. `?beta=off` query string  → persists "off" to localStorage and
+//      strips the query so refresh works clean.
+//   2. `?beta=kill` query string → sets the kill localStorage key,
+//      which wins over a user's "on" choice. Clear with `?beta=on`.
+//   3. localStorage `spirevault.coopLobbyBeta.kill` = "1"
+//      (set manually or by a future server response handler).
+//   4. `window.__VAULT_COOP_BETA_KILL` set by inline server-rendered
+//      script (Cloudflare can inject this into index.html via a
+//      transform if we ever need a server-controlled freeze without
+//      touching the API).
+//
+// The kill state is checked on EVERY isCoopLobbyBetaEnabled() call
+// so a server-pushed flag (via a periodic /coop/state poll, see
+// applyServerBetaFlag below) takes effect within one poll cycle.
+const COOP_LOBBY_BETA_KILL_KEY    = "spirevault.coopLobbyBeta.kill";
+
+function isCoopLobbyBetaKilled() {
+  if (!ENABLE_COOP_LOBBY_BETA) return true;
+  try { if (window.__VAULT_COOP_BETA_KILL === true) return true; } catch {}
+  try { if (localStorage.getItem(COOP_LOBBY_BETA_KILL_KEY) === "1") return true; } catch {}
+  return false;
+}
 
 function isCoopLobbyBetaEnabled() {
-  if (!ENABLE_COOP_LOBBY_BETA) return false;
+  if (isCoopLobbyBetaKilled()) return false;
   try {
-    return localStorage.getItem(COOP_LOBBY_BETA_KEY) === "on";
+    // Default ON. Only the explicit "off" opt-out (set when the
+    // user clicks "Switch back to Classic Co-op") downgrades.
+    return localStorage.getItem(COOP_LOBBY_BETA_KEY) !== "off";
   } catch {
-    return false;
+    return true;
   }
 }
+
+// URL-override entry point. Called once during boot. Lets us flip a
+// single user back to Classic instantly via a shareable link without
+// requiring a deploy:
+//   /coop?beta=off  → opt out
+//   /coop?beta=on   → opt back in (also clears any kill flag)
+//   /coop?beta=kill → kill switch ON (forces Classic)
+// We strip the query after applying so the URL stays clean on share.
+function applyBetaUrlOverride() {
+  try {
+    const url = new URL(window.location.href);
+    const v = (url.searchParams.get("beta") || "").toLowerCase();
+    if (!v) return;
+    if (v === "off")  { try { localStorage.setItem(COOP_LOBBY_BETA_KEY, "off"); } catch {} }
+    if (v === "on")   {
+      try { localStorage.setItem(COOP_LOBBY_BETA_KEY, "on"); } catch {}
+      try { localStorage.removeItem(COOP_LOBBY_BETA_KILL_KEY); } catch {}
+    }
+    if (v === "kill") { try { localStorage.setItem(COOP_LOBBY_BETA_KILL_KEY, "1"); } catch {} }
+    url.searchParams.delete("beta");
+    const cleanUrl = url.pathname + (url.searchParams.toString() ? `?${url.searchParams}` : "") + url.hash;
+    window.history.replaceState({}, "", cleanUrl);
+  } catch { /* best-effort */ }
+}
+applyBetaUrlOverride();
+
+// Honor a server-pushed kill signal. Any /coop/state response shape
+// `{ flags: { coopLobbyBetaKill: true } }` (or `?.flags?.coopLobbyBeta
+// === false`) flips users to Classic without a code deploy. Wired
+// into the existing state poll path in coop-lobbies.js when that
+// module mounts; this helper is just the side-effect application.
+function applyServerBetaFlag(state) {
+  try {
+    const flags = state && state.flags;
+    if (!flags) return;
+    if (flags.coopLobbyBetaKill === true || flags.coopLobbyBeta === false) {
+      try { localStorage.setItem(COOP_LOBBY_BETA_KILL_KEY, "1"); } catch {}
+      // If the user is currently on the Beta surface, downgrade
+      // visibly. Reload guarantees the next paint is Classic.
+      if (document.body && document.body.classList.contains("coop-lobby-beta-on")) {
+        try { window.location.reload(); } catch {}
+      }
+    } else if (flags.coopLobbyBetaKill === false || flags.coopLobbyBeta === true) {
+      // Server has explicitly cleared the kill — let the user back in
+      // (their existing on/off choice still applies).
+      try { localStorage.removeItem(COOP_LOBBY_BETA_KILL_KEY); } catch {}
+    }
+  } catch { /* best-effort */ }
+}
+window.__VAULT_COOP_BETA_APPLY_SERVER_FLAG = applyServerBetaFlag;
 
 function setCoopLobbyBetaEnabled(on) {
   try { localStorage.setItem(COOP_LOBBY_BETA_KEY, on ? "on" : "off"); }
@@ -120,6 +238,15 @@ function setCoopLobbyBetaEnabled(on) {
   renderCoopBetaHeaderControls();
   try { renderCoopDiscoveryBanner(); } catch {}
   try { if (window.RunCoach?.renderBetaTab) window.RunCoach.renderBetaTab(); } catch {}
+  if (on && isCoopSandboxEnabled()) {
+    try {
+      CoopLobbies.ensureCoopSandboxMounted({
+        api: API_BASE,
+        session,
+        deps: { toast: (msg) => { if (msg) toast(msg); } },
+      });
+    } catch { /* non-fatal */ }
+  }
 }
 
 function applyCoopLobbyBetaClass() {
@@ -176,6 +303,37 @@ function renderCoopBetaHeaderControls() {
     $badge.remove();
   }
 
+  // Local dev: prominent Dev Sandbox chip (localhost / 127.0.0.1:8788 only).
+  let $devChip = titleBox.querySelector(".coop-beta-dev-sandbox");
+  if (isCoopLobbyBetaEnabled() && isCoopSandboxEnabled()) {
+    if (!$devChip) {
+      $devChip = document.createElement("button");
+      $devChip.type = "button";
+      $devChip.className = "coop-beta-dev-sandbox";
+      $devChip.textContent = "Dev Sandbox";
+      $devChip.title = "Open the local co-op test harness (seed lobbies, switch personas)";
+      $devChip.addEventListener("click", (ev) => {
+        ev.preventDefault();
+        try {
+          CoopLobbies.ensureCoopSandboxMounted({
+            api: API_BASE,
+            session,
+            deps: { toast: (msg) => { if (msg) toast(msg); } },
+          });
+          openCoopSandboxPanel({
+            api: API_BASE,
+            session,
+            deps: { toast: (msg) => { if (msg) toast(msg); } },
+          });
+        } catch { /* ignore */ }
+      });
+      const $h2 = titleBox.querySelector("h2");
+      if ($h2) $h2.appendChild($devChip);
+    }
+  } else if ($devChip) {
+    $devChip.remove();
+  }
+
   // 2) Below the subtitle, a single subtle action line:
   //    • Beta on:  "You're using the new Co-op Lobby Beta. Switch back to Classic Co-op"
   //    • Beta off: "Try the new Co-op Lobby Beta"
@@ -191,13 +349,16 @@ function renderCoopBetaHeaderControls() {
     titleBox.appendChild($row);
   }
   if (isCoopLobbyBetaEnabled()) {
+    // Default surface — keep the link discreet. Two-tone, no
+    // preamble, because most users won't ever need it.
     $row.innerHTML =
-      '<span class="coop-beta-action-text">You\u2019re using the Co-op Lobby Beta.</span> ' +
-      '<button type="button" class="coop-link-btn coop-beta-switch" data-coop-beta="off">Switch back to Classic Co-op</button>';
+      '<button type="button" class="coop-link-btn coop-beta-switch" data-coop-beta="off">Prefer the old layout? Switch to Classic Co-op</button>';
   } else {
+    // Opt-out state — show the player what they're on and how to
+    // get back to the modern lobby.
     $row.innerHTML =
-      '<span class="coop-beta-action-text">Classic Co-op.</span> ' +
-      '<button type="button" class="coop-link-btn coop-beta-switch" data-coop-beta="on">Try the Co-op Lobby Beta</button>';
+      '<span class="coop-beta-action-text">You\u2019re on Classic Co-op.</span> ' +
+      '<button type="button" class="coop-link-btn coop-beta-switch" data-coop-beta="on">Switch to the new Co-op Lobby</button>';
   }
 }
 
@@ -236,13 +397,16 @@ function dismissCoopBetaDiscovery() {
 }
 
 function renderCoopDiscoveryBanner() {
+  // The new Co-op Lobby is now the default surface — the discovery
+  // banner ("Try the Beta") no longer makes sense for anyone. Users
+  // who actively switched back to Classic chose that explicitly and
+  // shouldn't be nagged. Users on the new lobby don't need a banner
+  // because they're already there. Banner stays hidden in every
+  // state; the HTML element is kept in case we want to revive it for
+  // a different announcement later.
   const $banner = document.getElementById("coop-discovery-banner");
   if (!$banner) return;
-  const shouldShow =
-    ENABLE_COOP_LOBBY_BETA &&
-    !isCoopLobbyBetaEnabled() &&
-    !isCoopBetaDiscoveryDismissed();
-  $banner.hidden = !shouldShow;
+  $banner.hidden = true;
 }
 
 // Delegated handler for the banner's two buttons + the × close.
@@ -320,15 +484,30 @@ let updateBannerShown   = false;
 const SS_RELOADED_FOR = "vault.update.reloadedForVersion";
 const SS_DISMISSED    = "vault.update.dismissed";
 
+function isUpdateCheckSuppressed() {
+  if (typeof IS_DESKTOP_HOST !== "undefined" && IS_DESKTOP_HOST) return true;
+  try {
+    const h = window.location.hostname;
+    if (
+      h === "localhost" ||
+      h === "127.0.0.1" ||
+      h === "::1" ||
+      h.endsWith(".localhost")
+    ) {
+      return true;
+    }
+  } catch { /* ignore */ }
+  try {
+    if (typeof import.meta !== "undefined" && import.meta.env?.DEV) return true;
+  } catch { /* ignore */ }
+  return false;
+}
+
 async function checkForUpdate() {
   if (updateCheckInflight || updateBannerShown) return;
-  // Inside the macOS app's WKWebView the update banner is misleading
-  // — what's stale is just the embedded web bundle, not "Spire Vault"
-  // itself. The desktop has its own native updater (UpdateService) that
-  // delivers DMG-level updates. Suppress the web-side nag entirely so
-  // users on the desktop don't see a phantom "Spire Vault is out of
-  // date" alert that has nothing to do with the app they installed.
-  if (typeof IS_DESKTOP_HOST !== "undefined" && IS_DESKTOP_HOST) return;
+  // Local dev and desktop builds: HTML/script version pins drift during
+  // iteration and the banner becomes a false positive on every tab focus.
+  if (isUpdateCheckSuppressed()) return;
   updateCheckInflight = true;
   try {
     const r = await fetch("/", {
@@ -387,14 +566,15 @@ async function checkForUpdate() {
  *  reason a stuck user reaches this code path). */
 function showUpdateBanner(liveVersion) {
   if (updateBannerShown) return;
-  updateBannerShown = true;
-  // Honor a per-tab dismiss. If the user explicitly closed the
-  // banner already, don't re-show it on every visibility-change.
+  // Honor a per-tab dismiss before marking shown — otherwise a
+  // dismissed banner blocks future genuine deploy notifications.
   try {
     if (sessionStorage.getItem(SS_DISMISSED) === String(liveVersion)) {
+      updateBannerShown = true;
       return;
     }
   } catch {}
+  updateBannerShown = true;
 
   const host = document.getElementById("app-content");
   if (!host) return;
@@ -474,14 +654,15 @@ function showUpdateBanner(liveVersion) {
  *  banner normally. */
 function showHardRefreshHint(liveVersion, myVersion) {
   if (updateBannerShown) return;
-  updateBannerShown = true;
-  // Per-tab dismissal still applies — if they dismissed the hint
-  // already, don't re-show it on every visibility change.
+  // Per-tab dismissal — if they dismissed the hint already, don't
+  // re-show it on every visibility change or poll.
   try {
     if (sessionStorage.getItem(SS_DISMISSED) === `hint:${liveVersion}`) {
+      updateBannerShown = true;
       return;
     }
   } catch {}
+  updateBannerShown = true;
 
   const host = document.getElementById("app-content");
   if (!host) return;
@@ -552,6 +733,15 @@ const STORAGE_OVERLAY_STATE = "vault.web.overlay.v1";
 const STORAGE_DIR_FP        = "vault.web.history.dir-fp.v2";
 /** Display name of the linked save folder ("SlayTheSpire2", "history", …) — survives reloads so the "Linked" pill paints instantly. */
 const STORAGE_LINKED_NAME   = "vault.web.history.linked-name";
+/** Epoch-ms of the last successful disk read (any source: folder picker,
+ *  drag-drop, single-file picker, auto-refresh tick). Used by the
+ *  Safari/Firefox "Refresh from disk?" nudge to decide if it's been
+ *  long enough since the last import to be worth nagging the user.
+ *  Skipped on Chromium because auto-refresh handles freshness there. */
+const STORAGE_LAST_IMPORT_AT = "vault.web.history.last-import-at";
+/** Epoch-ms of the last time we showed the no-FSA refresh nudge so we
+ *  don't spam it on every visibility flicker. */
+const STORAGE_LAST_NUDGE_AT  = "vault.web.history.last-nudge-at";
 
 // Companion options for the Overview page's animated persona picker.
 // Declared up here (not next to renderCompanion()) because boot() runs
@@ -1194,6 +1384,11 @@ function bossImageSrcset(slug) {
 // every other site in the file still treats it as the single source of
 // truth for "is there a logged-in user right now."
 let session = readSession();
+// Set during `/api/_session` rehydration. When localStorage still has a
+// blob but the HttpOnly cookie is dead (common on Safari after ITP), API
+// calls 401 or hang — surface a re-auth banner instead of a blank shell.
+let sessionCookieVerified = false;
+let sessionCookieMissing = false;
 let parsedRuns = [];          // current normalized history runs (in memory)
 // Live "you're currently in an STS2 game" snapshot. Populated by
 // commitParsedRuns when an ingest discovers a save file with run shape
@@ -1425,10 +1620,48 @@ let isDemoMode = false;
 //      on next page load. This is the case our resilience fix unblocked.
 //   5. Cookie says definitive 401 → wipe localStorage (token genuinely dead).
 //   6. No cookie + no localStorage → guest.
-(async () => {
+let bootShellCommitted = false;
+
+/** First paint in under 100ms on localhost — never wait for /api/_session or IDB. */
+function bootShellFirstPaint() {
+  if (bootShellCommitted) return;
+  bootShellCommitted = true;
+  vaultDevBootStep("shell");
+  try {
+    const $publicTopbar = document.getElementById("topbar-public");
+    const $publicMain = document.getElementById("main-public");
+    if ($publicTopbar) $publicTopbar.hidden = true;
+    if ($publicMain) $publicMain.hidden = true;
+    const $shell = document.getElementById("app-shell");
+    if ($shell) $shell.hidden = false;
+
+    if (!session) {
+      setStatus("offline", "Browsing as guest");
+    } else if (isLocalDevHost()) {
+      setStatus("online", "Ready (local)");
+    }
+
+    let tab = "overview";
+    try {
+      const last = localStorage.getItem(STORAGE_LAST_TAB);
+      if (session && last && new Set(KNOWN_TABS).has(last)) tab = last;
+    } catch { /* private mode */ }
+    switchTab(tab);
+    paintInitialTabShell();
+    if (!session) {
+      try { wireGuestCoop(); } catch { /* panel may not exist yet */ }
+    }
+  } catch (e) {
+    console.error("[Vault] bootShellFirstPaint failed", e);
+  }
+}
+
+async function rehydrateSessionFromCookie() {
+  const hadLocalSession = !!session;
+  const timeoutMs = isLocalDevHost() ? 500 : 2800;
   try {
     const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), 2800);
+    const t = setTimeout(() => ctrl.abort(), timeoutMs);
     const r = await fetch("/api/_session", {
       method: "GET",
       credentials: "include",
@@ -1437,16 +1670,14 @@ let isDemoMode = false;
     });
     clearTimeout(t);
     if (r.ok) {
+      sessionCookieVerified = true;
+      sessionCookieMissing = false;
       const j = await r.json();
-      if (j && /^\d{17}$/.test(j.steamID || "")) {
-        // Cookie session is valid. Decide how to merge with whatever
-        // localStorage already had:
-        //   - Same Steam ID + has a real bearer? Keep the localStorage
-        //     bearer (some legacy code paths still hit the worker
-        //     directly with the raw token). Refresh persona/avatar.
-        //   - Different Steam ID? User signed in to a different
-        //     account in another tab — cookie wins, replace.
-        //   - No localStorage? Hydrate fresh from the cookie response.
+      const sid = j?.steamID || "";
+      const sidOk =
+        /^\d{17}$/.test(sid) ||
+        (isCoopSandboxEnabled() && /^local-[a-z0-9_-]+$/i.test(sid));
+      if (j && sidOk) {
         const sameSteam = !!session && session.steamID === j.steamID;
         const hasRealBearer = !!session?.sessionToken && session.sessionToken !== "__cookie__";
         if (sameSteam && hasRealBearer) {
@@ -1468,25 +1699,57 @@ let isDemoMode = false;
         }
         try {
           localStorage.setItem(STORAGE_SESSION, JSON.stringify(session));
-        } catch { /* private mode etc. — cookie still wins */ }
+        } catch { /* private mode */ }
       }
     } else if (r.status === 401) {
-      // Cookie path returned a definitive 401 (the proxy explicitly
-      // tells us "this token is dead"). Wipe localStorage so we
-      // don't keep banging on the proxy with a dead bearer for the
-      // rest of the session. The proxy already cleared the cookie.
       session = null;
+      sessionCookieVerified = false;
+      sessionCookieMissing = false;
       try { localStorage.removeItem(STORAGE_SESSION); } catch {}
+      if (isLocalDevHost()) {
+        try {
+          bootShellCommitted = false;
+          bootShellFirstPaint();
+        } catch { /* ignore */ }
+      }
     } else if (r.status === 503) {
-      // Transient upstream failure (KV blip, network hiccup,
-      // Cloudflare colo restart). Keep whatever localStorage had
-      // — the user is probably still signed in, the worker is just
-      // having a moment. We'll retry on the next request that
-      // actually needs auth.
       console.info("[Vault] /api/_session transient, retaining local session");
+      if (hadLocalSession && session) sessionCookieMissing = true;
+    } else if (hadLocalSession && session) {
+      sessionCookieMissing = true;
     }
-    // r.status 404 / other unexpected — leave session as-is, fall through.
-  } catch { /* offline, timeout, or proxy down — keep localStorage */ }
+  } catch {
+    if (session) sessionCookieMissing = true;
+  }
+  if (!session) {
+    try { setStatus("offline", "Browsing as guest"); } catch {}
+  } else if (isLocalDevHost() && sessionCookieVerified) {
+    try { setStatus("online", "Ready (local)"); } catch {}
+  }
+}
+
+try {
+  if (!session) setStatus("offline", "Browsing as guest");
+  else if (isLocalDevHost()) setStatus("online", "Ready (local)");
+} catch { /* DOM not ready */ }
+
+if (isLocalDevHost()) {
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", () => bootShellFirstPaint(), { once: true });
+  } else {
+    queueMicrotask(() => bootShellFirstPaint());
+  }
+}
+
+(async () => {
+  if (isLocalDevHost()) {
+    void rehydrateSessionFromCookie().then(() => {
+      vaultDevBootStep("session");
+      boot();
+    });
+    return;
+  }
+  await rehydrateSessionFromCookie();
   boot();
 })();
 
@@ -1806,6 +2069,32 @@ async function refreshPublicCount() {
 // Stats UI is universal; only the Co-op tab differs based on session.
 // =========================================================================
 async function boot() {
+  vaultDevBootStep("boot");
+  let markedConnecting = false;
+  const finishBootGuards = () => {
+    clearTimeout(bootWatchdog);
+    clearConnectingIfStuck(markedConnecting);
+    vaultDevBootStep("ready");
+  };
+  const bootWatchdog = setTimeout(() => {
+    try {
+      const $dot = document.getElementById("status-dot");
+      if ($dot?.dataset.state !== "connecting") return;
+      if (!session) {
+        setStatus("offline", "Browsing as guest — sign in for co-op");
+        return;
+      }
+      if (!sessionCookieVerified) {
+        session = null;
+        try { localStorage.removeItem(STORAGE_SESSION); } catch {}
+        setStatus("offline", "Sign in to continue");
+        try { wireGuestCoop(); } catch {}
+        return;
+      }
+      clearConnectingIfStuck(true);
+    } catch {}
+  }, 3000);
+  try {
   // Always show the app shell. The signed-out hero is gone; the only thing
   // a visitor sees is the real product — pre-populated with demo data
   // until they drop their own history.json.
@@ -1846,10 +2135,20 @@ async function boot() {
     if ($meTier) $meTier.textContent = tierText;
     const $classicTier = document.getElementById("classic-me-tier");
     if ($classicTier) $classicTier.textContent = tierText;
-    setStatus("connecting", "Connecting…");
+    if (isLocalDevHost()) {
+      setStatus("online", "Ready (local)");
+    } else {
+      setStatus("connecting", "Connecting…");
+      markedConnecting = true;
+    }
     // Paint the profile dock at boot so the user sees their status pill
     // immediately, before the first heartbeat round-trip lands.
     renderProfileDock();
+    // Kick presence immediately — boot still has slow awaits (invite
+    // catalog, IDB history) before the main heartbeat block; without this
+    // the footer can sit on "Connecting…" for seconds or forever if IDB hangs.
+    if (!isLocalDevHost() || sessionCookieVerified) schedulePush(0);
+    if (sessionCookieMissing) showSessionExpiredBanner();
   } else {
     // Guest sidebar pill: invite to sign in instead of the persona block.
     const $mePill = document.getElementById("me-pill");
@@ -1926,7 +2225,15 @@ async function boot() {
     const qsTab = new URLSearchParams(window.location.search).get("tab");
     const known = new Set(KNOWN_TABS);
     const path = (window.location.pathname || "/").replace(/\/+$/, "") || "/";
+    if (path === "/coop-v2") {
+      try {
+        history.replaceState(null, "", "/coop" + (window.location.search || ""));
+      } catch {}
+    }
+    const partyMatch = path.match(/^\/party\/([0-9a-f]{32})$/i);
+    if (partyMatch) window.__VAULT_PARTY_ID = partyMatch[1];
     if (path === "/overlay") initialTab = "overlay";
+    else if (path === "/coop" || partyMatch) initialTab = "coop";
     else if (qsTab && known.has(qsTab)) initialTab = qsTab;
   } catch {}
   const lastTab = localStorage.getItem(STORAGE_LAST_TAB);
@@ -1953,6 +2260,8 @@ async function boot() {
   // ranks highest because a fresh native sidebar click is more recent
   // intent than the URL the host opened the WebView with.
   switchTab(hostQueuedTab || initialTab || lastTab || (session ? "coop" : "overview"));
+  // Never leave #app-content empty while slow boot awaits (IDB, cloud) run.
+  paintInitialTabShell();
 
   // Wire the "notify me when this ships" forms inside news posts —
   // the markup is static and ships in index.html, but the click
@@ -1982,29 +2291,17 @@ async function boot() {
     // co-op page (Status / Active Session / Open Lobbies / Recommended).
     // The legacy roster `#feed` keeps rendering via `renderFeed()` below;
     // the new module owns everything above it on the Co-op tab.
+    // Co-op lobby module mounts lazily on first Co-op tab visit (ensureCoopLobbiesMounted).
     try {
-      CoopLobbies.mountCoopLobbies({
-        api: API_BASE,
-        session,
-        deps: {
-          toast: (msg) => { if (msg) toast(msg); },
-          openInviteModal: (sid, name) => openInviteModal(sid, name),
-          onAuthFailure: () => {
-            const giveUp = recordAuthFailureAndShouldGiveUp();
-            if (giveUp) clearSessionAndReload();
-          },
-          onStateRefresh: () => {
-            // After every successful state refresh, also pump the legacy
-            // feed + inbox so the bottom-of-page "Active players" section
-            // and the global invite banner stay current without the
-            // user having to wait for the slower 30s legacy poll.
-            void pullFeed();
-            void pullInbox();
-          },
-        },
-      });
+      if (window.__VAULT_PARTY_ID) {
+        PartyRoom.mountPartyRoom({
+          api: API_BASE,
+          session,
+          deps: { toast: (msg) => { if (msg) toast(msg); } },
+        }, window.__VAULT_PARTY_ID);
+      }
     } catch (err) {
-      console.warn("coop lobbies mount failed", err);
+      console.warn("party room mount failed", err);
     }
     // Refresh button. Debounced to once per ~5 s so a frustrated panic-clicker
     // can't blast our server quotas. The button visually "ticks" each press
@@ -2237,10 +2534,17 @@ async function boot() {
   // notes) without blocking the rest of the boot sequence.
   void loadAssetManifest();
 
+  const runBootSlowPath = async () => {
+  vaultDevBootStep("slow");
+
   // Load preset message catalog (auth-only — only signed-in users send invites).
   if (session) {
     try {
-      await InviteAPI.loadMessageCatalog(API_BASE);
+      await promiseWithTimeout(
+        InviteAPI.loadMessageCatalog(API_BASE),
+        5000,
+        "loadMessageCatalog"
+      );
       populateInviteOptions();
     } catch (e) {
       console.warn("could not load invite messages", e);
@@ -2283,8 +2587,11 @@ async function boot() {
   // intermediate frame is the bug the screenshot caught.)
   let hasLinkedSaves = false;
   try {
-    hasLinkedSaves = !!(await HistoryStore.loadDirectoryHandle())
-                  || !!(await HistoryStore.loadHandle());
+    hasLinkedSaves = !!(await promiseWithTimeout(
+      HistoryStore.loadDirectoryHandle(), 8000, "loadDirectoryHandle"
+    )) || !!(await promiseWithTimeout(
+      HistoryStore.loadHandle(), 8000, "loadHandle"
+    ));
   } catch (e) {
     console.warn("loadDirectoryHandle/loadHandle failed at boot", e);
   }
@@ -2298,7 +2605,7 @@ async function boot() {
   // data" bug class.
   let cached = null;
   try {
-    cached = await HistoryStore.loadHistory();
+    cached = await promiseWithTimeout(HistoryStore.loadHistory(), 8000, "loadHistory");
   } catch (e) {
     console.warn("could not load cached history", e);
   }
@@ -2416,7 +2723,7 @@ async function boot() {
       }
     }, 60_000);
 
-    await Promise.all([pullFeed(), pullInbox(), pullOutbox()]);
+    await bootPullInitial();
   } else {
     // Guests still see the live presence count update on the Co-op tab.
     void refreshGuestRoster();
@@ -2477,7 +2784,15 @@ async function boot() {
       void refreshGuestRoster();
     }
     if (activeTab === "highlights") pullHighlights();
-    void autoReloadHistoryIfPermitted({ silent: true });
+    // Coming back from another window (almost certainly STS2): force a
+    // full re-read by bypassing the fingerprint cache. The cache exists
+    // to keep the background loop cheap, not to filter user-driven
+    // refreshes — alt-tabbing back IS a "tell me what's new" signal.
+    void autoReloadHistoryIfPermitted({ silent: true, bypassFingerprint: true });
+    // Safari/Firefox path: no auto-poll runs on those browsers, so the
+    // nudge banner is the only signal the user has that fresh runs may
+    // be on disk. Tick it on every focus.
+    void maybeOfferNoFSARefresh({ reason: "visibility" });
   });
 
   // Phone-breakpoint re-render. Charts emit a different viewBox on
@@ -2507,7 +2822,9 @@ async function boot() {
     } else {
       void refreshGuestRoster();
     }
-    void autoReloadHistoryIfPermitted({ silent: true });
+    // Same "fresh window, fresh read" reasoning as visibilitychange.
+    void autoReloadHistoryIfPermitted({ silent: true, bypassFingerprint: true });
+    void maybeOfferNoFSARefresh({ reason: "pageshow" });
   });
 
   // Auth-only: tell the server we're going away so the roster decays.
@@ -2524,6 +2841,41 @@ async function boot() {
         navigator.sendBeacon && navigator.sendBeacon(`${API_BASE}/presence`, blob);
       } catch {}
     });
+  }
+  }; // end runBootSlowPath
+
+  if (isLocalDevHost()) {
+    const startSlow = () => {
+      void runBootSlowPath()
+        .catch((err) => {
+          console.error("[Vault] boot slow path failed", err);
+          if (session) setStatus("trouble", "Trouble starting — try refreshing");
+          try { paintInitialTabShell(); } catch {}
+        })
+        .finally(finishBootGuards);
+    };
+    if (typeof requestIdleCallback === "function") {
+      requestIdleCallback(startSlow, { timeout: 2000 });
+    } else {
+      setTimeout(startSlow, 0);
+    }
+    return;
+  }
+
+  try {
+    await runBootSlowPath();
+  } catch (err) {
+    console.error("[Vault] boot failed", err);
+    if (session) setStatus("trouble", "Trouble starting — try refreshing");
+    try { paintInitialTabShell(); } catch {}
+  } finally {
+    finishBootGuards();
+  }
+  } catch (err) {
+    console.error("[Vault] boot failed", err);
+    if (session) setStatus("trouble", "Trouble starting — try refreshing");
+    try { paintInitialTabShell(); } catch {}
+    finishBootGuards();
   }
 }
 
@@ -2771,10 +3123,24 @@ function switchTab(tab) {
   // the same hook so a user who hasn't visited Co-op yet sees it
   // the first time they land here after this deploy.
   if (tab === "coop") {
+    if (session) ensureCoopLobbiesMounted();
+    try { CoopLobbies.setCoopTabActive?.(); } catch {}
     try { renderCoopBetaHeaderControls(); } catch {}
     try { renderCoopDiscoveryBanner(); } catch {}
+    if (isCoopSandboxEnabled()) {
+      try {
+        CoopLobbies.ensureCoopSandboxMounted({
+          api: API_BASE,
+          session,
+          deps: { toast: (msg) => { if (msg) toast(msg); } },
+        });
+      } catch { /* non-fatal */ }
+    }
   }
-  renderActiveTab();
+  try { renderActiveTab(); } catch (e) {
+    console.warn("renderActiveTab failed", e);
+    try { paintInitialTabShell(); } catch {}
+  }
 }
 
 /**
@@ -3346,6 +3712,34 @@ function showPrivateModeNotice() {
 // =========================================================================
 // Co-op form (your status card)
 // =========================================================================
+
+let coopLobbiesMounted = false;
+function ensureCoopLobbiesMounted() {
+  if (coopLobbiesMounted || !session) return;
+  coopLobbiesMounted = true;
+  try {
+    CoopLobbies.mountCoopLobbies({
+      api: API_BASE,
+      session,
+      deps: {
+        toast: (msg) => { if (msg) toast(msg); },
+        openInviteModal: (sid, name) => openInviteModal(sid, name),
+        onAuthFailure: () => {
+          const giveUp = recordAuthFailureAndShouldGiveUp();
+          if (giveUp) clearSessionAndReload();
+        },
+        onStateRefresh: () => {
+          void pullFeed();
+          void pullInbox();
+        },
+      },
+    });
+  } catch (err) {
+    coopLobbiesMounted = false;
+    console.warn("coop lobbies mount failed", err);
+  }
+}
+
 function wireCoopForm() {
   document.querySelectorAll('input[name="status"]').forEach((el) =>
     el.addEventListener("change", () => {
@@ -3478,7 +3872,7 @@ function mapStatusToLegacy(s) {
 function readMyForm() {
   const raw = (document.querySelector('input[name="status"]:checked') || {}).value || "looking";
   const status = mapStatusToLegacy(raw);
-  const discordHandle = (document.getElementById("me-discord").value || "").trim();
+  const discordHandle = (document.getElementById("me-discord")?.value || "").trim();
 
   return {
     status,
@@ -3490,6 +3884,108 @@ function readMyForm() {
 function schedulePush(delay = 600) {
   clearTimeout(pushTimer);
   pushTimer = setTimeout(() => pushNow(false), delay);
+}
+
+const PUSH_TIMEOUT_MS = 8_000;
+
+/** Race any promise against a timeout — used for IDB reads at boot so a
+ *  hung IndexedDB open can't block the UI forever. */
+function promiseWithTimeout(promise, ms, label = "operation") {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
+async function fetchWithTimeout(url, init = {}, ms = PUSH_TIMEOUT_MS) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), ms);
+  try {
+    return await fetch(url, { ...init, signal: ctrl.signal });
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+function clearConnectingIfStuck(wasConnecting) {
+  const $dot = document.getElementById("status-dot");
+  if ($dot?.dataset.state !== "connecting") return;
+  if (!wasConnecting) {
+    if (!session) setStatus("offline", "Browsing as guest");
+    return;
+  }
+  if (!session) {
+    setStatus("offline", "Browsing as guest");
+    return;
+  }
+  if (!sessionCookieVerified) {
+    setStatus("offline", "Sign in to continue");
+    return;
+  }
+  setStatus("trouble", "Trouble reaching server, retrying…");
+}
+
+/** Paint stats/co-op shells before IDB + cloud hydrate finish so
+ *  #app-content is never an empty panel during boot. */
+function paintInitialTabShell() {
+  if (TABS_WITH_DATA.includes(activeTab)) {
+    if (session?.steamID && parsedRuns.length === 0 && activeTab === "overview") {
+      showBootSkeleton();
+    } else if (parsedRuns.length === 0) {
+      try { renderStatsTab(activeTab); } catch (e) { console.warn("early stats tab paint failed", e); }
+    }
+  }
+  if (activeTab === "coop" && session) {
+    try {
+      renderClassicCoopMirror([], [], { inGame: 0, looking: 0, activeNow: 0 });
+    } catch (e) { console.warn("early coop mirror paint failed", e); }
+  }
+}
+
+async function bootPullInitial() {
+  try {
+    await promiseWithTimeout(
+      Promise.all([pullFeed(), pullInbox(), pullOutbox()]),
+      PUSH_TIMEOUT_MS,
+      "bootPullInitial"
+    );
+  } catch (e) {
+    console.warn("initial feed/inbox pull timed out or failed", e);
+    setStatus("trouble", "Trouble reaching server, retrying…");
+  }
+}
+
+let sessionExpiredBannerShown = false;
+function showSessionExpiredBanner() {
+  if (sessionExpiredBannerShown) return;
+  sessionExpiredBannerShown = true;
+  const $host = document.getElementById("app-content");
+  if (!$host) return;
+  const isLocalDev = /^(localhost|127\.0\.0\.1)$/.test(location.hostname);
+  const personaSlug = (session?.personaName || "c3rooks")
+    .replace(/[^\w-]+/g, "")
+    .toLowerCase() || "c3rooks";
+  const devLoginHref = isLocalDev
+    ? `/api/_dev-login?as=${encodeURIComponent(personaSlug)}`
+    : null;
+  const div = document.createElement("div");
+  div.className = "private-mode-notice session-expired-notice";
+  div.setAttribute("role", "alert");
+  div.innerHTML = `
+    <span class="private-mode-icon" aria-hidden="true">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
+    </span>
+    <span class="private-mode-text">
+      <strong>Session expired — sign in again.</strong>
+      Your browser lost the sign-in cookie; co-op and cloud sync won't work until you re-authenticate.
+      ${devLoginHref
+        ? `<a class="session-expired-link" href="${esc(devLoginHref)}">Dev sign-in</a>`
+        : `<button type="button" class="session-expired-link" data-action="signin-cta">Sign in with Steam</button>`}
+    </span>
+    <button type="button" class="private-mode-close" aria-label="Dismiss">&times;</button>`;
+  $host.insertBefore(div, $host.firstChild);
+  div.querySelector(".private-mode-close")?.addEventListener("click", () => div.remove());
 }
 
 /**
@@ -3620,6 +4116,7 @@ setInterval(() => {
 }, 60_000);
 
 async function pushNow(silent) {
+  if (!session?.steamID) return;
   const body = readMyForm();
   saveDraft(body);
   // Reflect the new status in the bottom profile dock immediately so
@@ -3629,7 +4126,7 @@ async function pushNow(silent) {
   refreshProfilePopoverIfOpen();
   if (!silent) showPushingPill(true);
   try {
-    const resp = await fetch(`${API_BASE}/presence`, {
+    const resp = await fetchWithTimeout(`${API_BASE}/presence`, {
       method: "POST",
       credentials: "include",
       headers: {
@@ -3640,8 +4137,10 @@ async function pushNow(silent) {
         status: body.status,
         discordHandle: body.discordHandle,
       }),
-    });
+    }, PUSH_TIMEOUT_MS);
     if (resp.status === 401) {
+      sessionCookieMissing = true;
+      showSessionExpiredBanner();
       // Don't immediately nuke the session. Many transient causes (KV blip,
       // network corruption, brief worker hiccup) return 401. Only give up
       // after AUTH_FAIL_THRESHOLD consecutive 401s inside a short window.
@@ -3674,8 +4173,9 @@ async function pushNow(silent) {
     }
     setStatus(resp.ok ? "online" : "trouble", resp.ok ? "Live on the feed" : "Trouble reaching server");
   } catch (e) {
-    console.warn("presence push error", e);
-    setStatus("trouble", "Trouble reaching server");
+    const timedOut = e?.name === "AbortError";
+    console.warn(timedOut ? "presence push timed out" : "presence push error", e);
+    setStatus("trouble", timedOut ? "Trouble reaching server, retrying…" : "Trouble reaching server");
   } finally {
     if (!silent) setTimeout(() => showPushingPill(false), 400);
   }
@@ -7006,7 +7506,21 @@ async function reloadSavedHistoryInteractive() {
 // history.json) for new runs. 30s balances "feels live" vs. disk churn.
 // Was 60s — bumped down because users completing a run want their stats
 // refreshed *fast*, not "in the next minute".
-const HISTORY_REREAD_INTERVAL_MS = 30_000;
+// How often the background loop re-reads the linked save folder (or
+// rollup file) for new runs while the user is mid-session in STS2.
+//
+// Was 60s → 30s → now 8s. A user with a 2-win streak in Silent A3
+// alt-tabbed back to the browser and his fresh victory was nowhere on
+// the Overview — he had to manually re-pick the folder. With STS2
+// fsync'ing the new `.run` file the moment a run ends, an 8s poll
+// drops the worst-case lag from "Continue" in-game to "live on the
+// page" to a single heartbeat.
+//
+// Cost: the FSA walk + fingerprint compare is local disk and a few
+// hundred stat() calls — measured <12ms on the same Mac running STS2
+// — so 8s vs 30s is no measurable battery hit. Safari/Firefox don't
+// run this loop at all (no FSA), so the change is Chromium-only.
+const HISTORY_REREAD_INTERVAL_MS = 8_000;
 let historyRereadTimer = null;
 
 /**
@@ -7281,7 +7795,14 @@ function startHistoryAutoRefresh() {
   const canFSA =
     HistoryStore.supportsFSA() || typeof window.showDirectoryPicker === "function";
   if (!canFSA) {
+    // Safari / Firefox: no File System Access API → we cannot poll the
+    // disk between user gestures. The "stale runs" CTA in
+    // maybeOfferNoFSARefresh() picks up the slack.
     publishAutoRefreshState({ phase: "off" });
+    // Schedule the first nudge eligibility check on boot. The handler
+    // is idempotent and self-throttling, so it's safe to call from
+    // multiple places.
+    void maybeOfferNoFSARefresh({ reason: "boot" });
     return;
   }
   // Snapshot the linked target name so the pill can display it.
@@ -7289,8 +7810,113 @@ function startHistoryAutoRefresh() {
   wireAutoRefreshUI();
   if (historyRereadTimer) return;
   historyRereadTimer = setInterval(() => {
-    void autoReloadHistoryIfPermitted({ silent: true });
+    // Bypass the fingerprint cache when we don't currently have an
+    // in-progress run on screen. This catches the race window where
+    // STS2 momentarily deletes `current_run.save` (e.g. mid run-end
+    // rename into `history/<ts>.run`) and our last commit nulled out
+    // `currentRun`. Without bypass, the directory fingerprint can lock
+    // us into "no live run" until something else changes on disk —
+    // which for a player mid-fight can be a long time.
+    void autoReloadHistoryIfPermitted({
+      silent: true,
+      bypassFingerprint: !currentRun,
+    });
   }, HISTORY_REREAD_INTERVAL_MS);
+}
+
+/**
+ * Safari / Firefox refresh nudge.
+ *
+ * These browsers have no File System Access API, so once the user has
+ * imported their saves there's no way for the page to silently re-read
+ * the disk on a timer. The result was a real user-reported failure
+ * mode: a player completes a run, alt-tabs back to the browser, and
+ * the fresh win is nowhere on the Overview — they have to manually
+ * re-pick the folder every single time.
+ *
+ * This function decides whether to show a polite, dismissible banner
+ * that says "Fresh runs may be on disk — tap to re-import" with a
+ * one-click button that opens the file picker.
+ *
+ * Suppression rules (in priority order):
+ *   1. If the browser DOES support FSA → never show. The background
+ *      loop handles freshness, this banner would be pure noise.
+ *   2. If the user has never successfully imported → never show. They
+ *      haven't picked a folder yet; the empty-state already prompts
+ *      them.
+ *   3. If less than NUDGE_FRESHNESS_MS has passed since the last
+ *      import → never show. Stats are still likely current.
+ *   4. If less than NUDGE_THROTTLE_MS has passed since the last
+ *      nudge → never show. Nagging on every focus is worse than
+ *      missing one update.
+ *   5. If a nudge banner is already on screen → never show. Don't
+ *      stack.
+ *
+ * @param {object} opts
+ * @param {"boot"|"visibility"|"pageshow"} opts.reason — diagnostic
+ *     hint for analytics; does not change behavior.
+ */
+const NUDGE_FRESHNESS_MS = 90 * 1000;   // 90s: long enough that a
+                                         // run could have ended on disk
+const NUDGE_THROTTLE_MS  = 5 * 60 * 1000; // 5 min: hard floor between
+                                          // consecutive nudges
+async function maybeOfferNoFSARefresh({ reason = "unknown" } = {}) {
+  if (HistoryStore.supportsFSA() || typeof window.showDirectoryPicker === "function") {
+    return;
+  }
+  let lastImportAt = 0;
+  let lastNudgeAt = 0;
+  try {
+    lastImportAt = Number(localStorage.getItem(STORAGE_LAST_IMPORT_AT)) || 0;
+    lastNudgeAt = Number(localStorage.getItem(STORAGE_LAST_NUDGE_AT)) || 0;
+  } catch { /* private mode — fall through, just won't throttle as well */ }
+  if (!lastImportAt) return;
+  const now = Date.now();
+  if (now - lastImportAt < NUDGE_FRESHNESS_MS) return;
+  if (now - lastNudgeAt < NUDGE_THROTTLE_MS) return;
+  if (document.getElementById("vault-no-fsa-nudge")) return;
+
+  try { localStorage.setItem(STORAGE_LAST_NUDGE_AT, String(now)); }
+  catch { /* private mode */ }
+  vaultGtagEvent("no_fsa_nudge_shown", { reason, since_import_s: Math.round((now - lastImportAt) / 1000) });
+
+  const banner = document.createElement("div");
+  banner.id = "vault-no-fsa-nudge";
+  banner.className = "vault-no-fsa-nudge";
+  banner.setAttribute("role", "status");
+  banner.innerHTML = `
+    <div class="vault-no-fsa-nudge-body">
+      <span class="vault-no-fsa-nudge-icon" aria-hidden="true">↻</span>
+      <div class="vault-no-fsa-nudge-text">
+        <strong>Fresh runs may be on disk.</strong>
+        <span class="vault-no-fsa-nudge-sub">Safari can't auto-refresh — tap to pull the latest from your STS2 folder.</span>
+      </div>
+      <div class="vault-no-fsa-nudge-actions">
+        <button type="button" class="vault-no-fsa-nudge-go" data-action="no-fsa-refresh">Refresh now</button>
+        <button type="button" class="vault-no-fsa-nudge-dismiss" data-action="dismiss-no-fsa" aria-label="Dismiss">×</button>
+      </div>
+    </div>`;
+  document.body.appendChild(banner);
+
+  // One global dismisser. Use { once: true } so we don't accumulate
+  // dangling listeners across multiple nudges in the same session.
+  banner.addEventListener("click", (e) => {
+    const target = e.target instanceof Element ? e.target : null;
+    if (!target) return;
+    if (target.closest('[data-action="dismiss-no-fsa"]')) {
+      e.preventDefault();
+      vaultGtagEvent("no_fsa_nudge_dismissed", { reason });
+      banner.remove();
+      return;
+    }
+    if (target.closest('[data-action="no-fsa-refresh"]')) {
+      e.preventDefault();
+      vaultGtagEvent("no_fsa_nudge_accepted", { reason });
+      banner.remove();
+      try { scanForHistory(); }
+      catch (err) { console.warn("[Vault] no-FSA nudge picker failed", err); }
+    }
+  });
 }
 
 /**
@@ -7605,6 +8231,12 @@ async function commitParsedRuns(runs, sourceName, { silent, fileCount = 1 }) {
   const newWins = completedRuns.filter((r) => !previousIds.has(r.id) && r.won === true);
   // Real data has arrived — flip out of demo mode so the banner disappears.
   isDemoMode = false;
+
+  // Stamp "last successful disk read" so the Safari/Firefox nudge
+  // (the only refresh signal available on no-FSA browsers) knows when
+  // it's been long enough to bother the user with a re-import CTA.
+  try { localStorage.setItem(STORAGE_LAST_IMPORT_AT, String(Date.now())); }
+  catch { /* private mode */ }
 
   // Beacon the successful import. This is THE event the path bug should
   // have been caught by — without it, "user saw stats" had zero signal
@@ -10774,6 +11406,13 @@ function showVictoryCelebration(run, streakCount) {
   overlay.setAttribute("role", "dialog");
   overlay.setAttribute("aria-label", "Victory");
   overlay.style.setProperty("--char-color", meta.color);
+  // Note: no `.victory-progress` element anymore. The bar implied an
+  // auto-dismiss countdown — but a real user reported a finished run
+  // disappearing before they got to read it, and asked us to keep the
+  // card up until they explicitly click Continue. The confetti and
+  // trophy still fade after CELEBRATION_DECOR_MS via the CSS
+  // `.victory-decor-faded` class, so the moment still feels punchy
+  // without trapping the user inside a perpetual overlay.
   overlay.innerHTML = `
     <div class="victory-flash" aria-hidden="true"></div>
     <div class="victory-confetti-canvas" aria-hidden="true"></div>
@@ -10784,9 +11423,6 @@ function showVictoryCelebration(run, streakCount) {
       ${floorStr ? `<p class="victory-floor">${esc(floorStr)}</p>` : ""}
       ${streakHtml}
       <button type="button" class="victory-dismiss" id="victory-dismiss">Continue</button>
-      <div class="victory-progress" role="progressbar" aria-label="Auto-closes in 7 seconds" aria-valuenow="100">
-        <div class="victory-progress-fill"></div>
-      </div>
     </div>`;
   document.body.appendChild(overlay);
 
@@ -10801,15 +11437,25 @@ function showVictoryCelebration(run, streakCount) {
     setTimeout(() => overlay.remove(), 450);
   };
 
-  // Slightly longer auto-close because the card is non-blocking now —
-  // user can keep scrolling stats behind it. 7s is plenty.
-  const timer = setTimeout(dismiss, 7000);
+  // Decor fade timer — fires once, cannot be cancelled by the user.
+  // After this, the confetti, flash, and trophy quietly fade out so
+  // the screen stops looking like a parade. The CARD itself stays put
+  // until the user clicks Continue / Esc / outside.
+  //
+  // Rationale: previously the whole overlay auto-dismissed after 7s
+  // and a user reading their run details would lose the card before
+  // they finished. Splitting the timer (decor → 7s, card → user) keeps
+  // the celebratory burst while respecting their pace.
+  const CELEBRATION_DECOR_MS = 7000;
+  setTimeout(() => {
+    if (!dismissed) overlay.classList.add("victory-decor-faded");
+  }, CELEBRATION_DECOR_MS);
 
-  document.getElementById("victory-dismiss")?.addEventListener("click", () => { clearTimeout(timer); dismiss(); });
+  document.getElementById("victory-dismiss")?.addEventListener("click", dismiss);
 
-  overlay.addEventListener("click", (e) => { if (e.target === overlay) { clearTimeout(timer); dismiss(); } });
+  overlay.addEventListener("click", (e) => { if (e.target === overlay) dismiss(); });
 
-  const onKey = (e) => { if (e.key === "Escape") { clearTimeout(timer); dismiss(); document.removeEventListener("keydown", onKey); } };
+  const onKey = (e) => { if (e.key === "Escape") { dismiss(); document.removeEventListener("keydown", onKey); } };
   document.addEventListener("keydown", onKey);
 
   setTimeout(() => document.getElementById("victory-dismiss")?.focus({ preventScroll: true }), 100);
@@ -12675,7 +13321,11 @@ function readSession() {
     const raw = localStorage.getItem(STORAGE_SESSION);
     if (!raw) return null;
     const j = JSON.parse(raw);
-    if (j && /^\d{17}$/.test(j.steamID || "") && j.sessionToken) return j;
+    const sid = j?.steamID || "";
+    const sidOk =
+      /^\d{17}$/.test(sid) ||
+      (isCoopSandboxEnabled() && /^local-[a-z0-9_-]+$/i.test(sid));
+    if (j && sidOk && j.sessionToken) return j;
     return null;
   } catch { return null; }
 }
