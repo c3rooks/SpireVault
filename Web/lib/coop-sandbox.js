@@ -578,6 +578,84 @@ function ensurePartyFinderGlobalsScript() {
           document.head.appendChild(s4);
         }
       } catch (_) { /* ignore */ }
+      // Verified Co-op Reputation runtime (v0.11.0). Loads after
+      // startsoon-rt so the host-strip slot has already been rendered
+      // by party-finder.js. Pure additive — hydrates `[data-pf-rep-slot]`
+      // and leaves rows alone if the API is unreachable.
+      try {
+        if (!document.getElementById("pf-reputation-css")) {
+          const cssLink2 = document.createElement("link");
+          cssLink2.id = "pf-reputation-css";
+          cssLink2.rel = "stylesheet";
+          cssLink2.href = "/lib/party-finder-reputation.css?v=1";
+          document.head.appendChild(cssLink2);
+        }
+        if (!document.getElementById("pf-reputation-rt-script")) {
+          const s5 = document.createElement("script");
+          s5.id = "pf-reputation-rt-script";
+          s5.src = "/lib/party-finder-reputation-rt.js?v=1";
+          s5.async = false;
+          document.head.appendChild(s5);
+        }
+      } catch (_) { /* ignore */ }
+      // Daily Co-op Challenge tile (v0.11.0). Loaded after reputation —
+      // also purely additive; renders a single button-tile under the
+      // hero stat row.
+      try {
+        if (!document.getElementById("pf-daily-css")) {
+          const cssLink3 = document.createElement("link");
+          cssLink3.id = "pf-daily-css";
+          cssLink3.rel = "stylesheet";
+          cssLink3.href = "/lib/party-finder-daily.css?v=1";
+          document.head.appendChild(cssLink3);
+        }
+        if (!document.getElementById("pf-daily-rt-script")) {
+          const s6 = document.createElement("script");
+          s6.id = "pf-daily-rt-script";
+          s6.src = "/lib/party-finder-daily-rt.js?v=1";
+          s6.async = false;
+          document.head.appendChild(s6);
+        }
+      } catch (_) { /* ignore */ }
+      // Synced Ready-up + auto-advance (v0.11.0). Renders a Ready
+      // pill inside the user's own party row; auto-advances all
+      // members to in_game once everyone is ready AND any planned
+      // start time has elapsed.
+      try {
+        if (!document.getElementById("pf-readyup-css")) {
+          const cssLink4 = document.createElement("link");
+          cssLink4.id = "pf-readyup-css";
+          cssLink4.rel = "stylesheet";
+          cssLink4.href = "/lib/party-finder-readyup.css?v=1";
+          document.head.appendChild(cssLink4);
+        }
+        if (!document.getElementById("pf-readyup-rt-script")) {
+          const s7 = document.createElement("script");
+          s7.id = "pf-readyup-rt-script";
+          s7.src = "/lib/party-finder-readyup-rt.js?v=1";
+          s7.async = false;
+          document.head.appendChild(s7);
+        }
+      } catch (_) { /* ignore */ }
+      // Post-run Shared Report (v0.11.0). Adds a "Share this run"
+      // button to the user's own active-party row once any member
+      // has reached in_game. Pure additive.
+      try {
+        if (!document.getElementById("pf-share-css")) {
+          const cssLink5 = document.createElement("link");
+          cssLink5.id = "pf-share-css";
+          cssLink5.rel = "stylesheet";
+          cssLink5.href = "/lib/party-finder-share.css?v=1";
+          document.head.appendChild(cssLink5);
+        }
+        if (!document.getElementById("pf-share-rt-script")) {
+          const s8 = document.createElement("script");
+          s8.id = "pf-share-rt-script";
+          s8.src = "/lib/party-finder-share-rt.js?v=1";
+          s8.async = false;
+          document.head.appendChild(s8);
+        }
+      } catch (_) { /* ignore */ }
       resolve();
     };
     s.addEventListener("load", done, { once: true });

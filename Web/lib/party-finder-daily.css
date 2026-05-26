@@ -1,0 +1,110 @@
+/* Daily Co-op Challenge — tile styles.
+ *
+ * One-row, button-shaped pill that sits under the hero stat tiles.
+ * Click → copy seed. Aimed at being unmistakable as "today's thing" —
+ * gold-tinted, mild glow, but not so loud it competes with Quick Play.
+ */
+
+.pf-daily-wrap {
+  display: flex;
+  justify-content: center;
+  padding: 8px 12px 0 12px;
+}
+
+.pf-daily-tile {
+  display: grid;
+  grid-template-columns: auto auto auto auto auto;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  border-radius: 14px;
+  border: 1px solid rgba(212, 175, 55, 0.42);
+  background: linear-gradient(135deg, rgba(212, 175, 55, 0.10), rgba(155, 131, 255, 0.06));
+  color: rgba(232, 226, 255, 0.95);
+  text-align: left;
+  font-family: inherit;
+  cursor: pointer;
+  transition: transform 120ms ease, border-color 120ms ease, background 120ms ease;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.pf-daily-tile:hover,
+.pf-daily-tile:focus-visible {
+  transform: translateY(-1px);
+  border-color: rgba(212, 175, 55, 0.72);
+  outline: none;
+}
+
+.pf-daily-eyebrow {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(212, 175, 55, 0.92);
+  font-weight: 700;
+}
+
+.pf-daily-seed {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-weight: 700;
+  font-size: 15px;
+  letter-spacing: 0.04em;
+  color: #f4e7b3;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.28);
+  border: 1px solid rgba(212, 175, 55, 0.35);
+}
+
+.pf-daily-meta {
+  font-weight: 600;
+  font-size: 13px;
+  color: rgba(232, 226, 255, 0.85);
+}
+
+.pf-daily-joined {
+  font-size: 12px;
+  color: rgba(232, 226, 255, 0.55);
+}
+
+.pf-daily-cta {
+  font-size: 12px;
+  font-weight: 700;
+  color: rgba(212, 175, 55, 0.95);
+  border: 1px solid rgba(212, 175, 55, 0.55);
+  padding: 4px 10px;
+  border-radius: 8px;
+  white-space: nowrap;
+}
+
+.pf-daily-toast {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(20, 16, 32, 0.96);
+  color: #f4e7b3;
+  border: 1px solid rgba(212, 175, 55, 0.55);
+  padding: 10px 16px;
+  border-radius: 12px;
+  font-size: 13px;
+  z-index: 9999;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
+  max-width: 92vw;
+  text-align: center;
+}
+
+@media (max-width: 720px) {
+  .pf-daily-tile {
+    grid-template-columns: 1fr;
+    gap: 6px;
+    padding: 12px 14px;
+  }
+  .pf-daily-cta { justify-self: start; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pf-daily-tile { transition: none; }
+  .pf-daily-tile:hover,
+  .pf-daily-tile:focus-visible { transform: none; }
+}

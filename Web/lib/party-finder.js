@@ -919,14 +919,15 @@ function renderLiveRow(l, state, best) {
     isFull ? "pf-live-row--full" : "",
   ].filter(Boolean).join(" ");
   return `
-    <article class="${cls}" data-lobby-id="${esc(l.lobbyId)}">
+    <article class="${cls}" data-lobby-id="${esc(l.lobbyId)}" data-host-steam-id="${esc(l.hostSteamId || "")}">
       <div class="pf-live-meta">
         <div class="pf-live-titlerow">
           <h4 class="pf-live-title">${esc(l.title || "Co-op room")}${isMine ? ' <span class="pf-fit-pill pf-fit-pill--good">Your Room</span>' : ""}</h4>
         </div>
-        <div class="pf-host-strip">
+        <div class="pf-host-strip" data-pf-host-strip>
           <img src="${esc(l.hostAvatarUrl || "/assets/vault-mark.svg")}" alt="" />
           <strong>${esc(l.hostPersonaName || "Host")}</strong>
+          <span class="pf-rep-slot" data-pf-rep-slot data-host-steam-id="${esc(l.hostSteamId || "")}"></span>
           <span class="pf-dot ${hostStatusLabel(state, l.hostSteamId) === "idle" ? "pf-dot--idle" : ""}"></span>
           <span>${esc(hostStatusLabel(state, l.hostSteamId))}</span>
         </div>

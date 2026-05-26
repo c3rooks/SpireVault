@@ -5,6 +5,167 @@ Dates in YYYY-MM-DD. The project follows [Semantic Versioning](https://semver.or
 loosely — patch bumps for fixes, minor for features, major if I ever
 break the wire format.
 
+## v0.11.0 — 2026-05-26
+
+Five co-op features land in one release. The thesis from the v0.10.0
+ship note was "a co-op tool earns its real estate by doing things the
+STS2 Discord literally cannot do." v0.10.0 shipped three of those.
+v0.11.0 ships the next five, plus the web-side endpoint for a sixth
+that needs a native helper to complete.
+
+### 1. Verified Co-op Reputation
+
+Server-aggregated trust signal per Steam ID, derived from data the
+client cannot fake — run history (`runs:<steamID>`, server-stored) and
+a new server-authored co-op event log (`rep:hist:v1:<steamID>`).
+
+Five tiers — Newcomer / Regular / Trusted / Veteran / Ascended —
+mapped from totalRunsLogged, partiesCompleted, reliabilityScore (with
+a 5-outcome confidence floor), and highestAscensionCleared. Four
+optional badges: heart kill, A20 clear, host reliable, active recent.
+
+Public endpoint `GET /coop/reputation/:steamID` returns a redacted
+shape (tier + badges + bucketed `partiesCompletedBucket`) so the
+underlying formula isn't directly farmable. Authenticated endpoint
+`GET /coop/reputation/me` returns the full counter blob.
+
+UI: a small tier dot + badge row next to the host persona name on
+every live-parties row. Newcomers render no dot (a "junior badge"
+would feel like a downgrade on fresh accounts). Hover reveals the
+tier name and any earned badges.
+
+Event log fires from `coop-engine.ts` party / session transitions —
+`hosted_lobby`, `started_party_run`, `completed_party_role`,
+`abandoned_party`, `completed_session`. All writes are best-effort
+(wrapped in `void appendCoopHistory(...)`); a logging error never
+rejects the user's action.
+
+Spec: `docs/coop-reputation-spec.md`. Test: 41 passing in
+`/tmp/coop-reputation-test.mjs` (newcomer / regular / trusted /
+veteran / ascended / host_reliable / redaction / bucket boundaries /
+small-sample win rate).
+
+### 2. Steam Rich Presence — web endpoint
+
+The endpoint that a desktop helper will POST to lives in
+`Backend/src/coop-rich-presence.ts`. Validates STS2 app id (2868840),
+maps `state` to v2 presence status, returns the computed plan so the
+helper can call `/coop/heartbeat` next. 30 writes/min IP rate limit.
+Audit log at `coop:richp:log:<steamID>`, 50 entries / 7d TTL.
+
+The native helper itself (macOS LaunchAgent / Windows Service / Linux
+systemd) is **deferred to v0.12.0** — building the binaries is a
+2–4 week project that lives in `VaultApp/App/Helpers/` and
+`VaultApp/Windows/`. The spec at
+`docs/coop-steam-rich-presence-spec.md` covers detection (Steam's own
+`RunningAppID` via `registry.vdf` on macOS and the Windows registry),
+auth (shared keychain entry seeded by a one-time `postMessage`
+handshake with the web app), distribution (signed pkg / MSI / tarball),
+and opt-out.
+
+The endpoint shipping in v0.11.0 means the helper team can start
+against a real production target on day 1 of v0.12.
+
+### 3. Synced Ready-up + Auto-advance
+
+Pure frontend. Uses the existing `joined → ready → character_select
+→ in_game` engine flow that already accepts `POST
+/coop/parties/:id/status`. A new pill on the user's own active-party
+row toggles Ready / Joined; the same poll renders `X / Y ready`.
+
+When all non-`left` members are `ready` AND the planned start time
+has elapsed, every client posts `status: in_game` for its own user
+exactly once. No central coordinator, no race — each client makes its
+own decision against observable state. Opt-out per browser via
+`localStorage["pf.readyup.autoAdvance.v1"] = "off"`.
+
+Reduced-motion guards on the glow / transform. Spec at
+`docs/coop-synced-readyup-spec.md`.
+
+### 4. Daily Co-op Challenge
+
+Deterministic per-UTC-day seed + suggested character + suggested
+ascension. `fnv1a("YYYY-MM-DD")` → uint32 → base-36 seed string of
+10 chars, character pool index from the top 3 bits, ascension 0..20
+from the mid bits. Every client in the world gets the same daily.
+
+`GET /coop/daily-challenge` (public, 5-min server cache). A new tile
+under the hero stat row shows today's seed + character + A-level +
+`joinedCount`. Tap → seed to clipboard, with a toast: "Seed
+${SEED} copied — type into STS2 seed field, then host a co-op room."
+
+When a host types `[daily=YYYY-MM-DD]` into the lobby note (or pastes
+the tile-suggested note that auto-injects it), `createLobby` records
+them in `coop:daily:joined:<date>` and `joinedCount` increments. The
+record is host-Steam-ID-deduped per day so spamming Create doesn't
+inflate the number.
+
+We don't enforce the seed — no game-side mod. The challenge is a
+coordination signal, not a leaderboard.
+
+Spec: `docs/coop-daily-challenge-spec.md`. Test: 17 passing in
+`/tmp/coop-daily-test.mjs` (determinism, seed format, pool coverage,
+tag parsing).
+
+### 5. Post-run Shared Report
+
+`POST /coop/share/from-party` (authed, 10/min IP, caller must be a
+party member). Server snapshots the party's roster (display names
+only — no Steam IDs go on the share card), character selections,
+roles, and outcome status into `coop:share:<shareId>` with a 30-day
+TTL. Returns a `shareId`.
+
+`GET /coop/share/:shareId` (public, 5-min cache) returns the snapshot.
+
+Frontend: a "Share this run" button appears on the user's own
+active-party row once any member has reached `in_game`. Click →
+optional caption prompt → server capture → URL copied to clipboard
+(`https://app.spirevault.app/share/coop/<shareId>`).
+
+What v0.11.0 ships is the API + the capture button. The HTML render
+of `/share/coop/:shareId` (with OG tags so Discord / X previews look
+right) is scheduled for v0.11.1 next week. Until then, pasting the
+URL surfaces the raw JSON — ugly but functional.
+
+A future v0.12 will correlate each member's most-recent `RunSummary`
+whose `endedAt` is within the party window so the card can say
+"Heart killed by Ironclad + Silent." Blocked on `RunSummary.coop`
+metadata in the parser.
+
+Spec: `docs/coop-post-run-shared-report-spec.md`.
+
+### Wire-format changes
+
+- Adds `coop:rep:v1:*`, `coop:rep:hist:v1:*`, `coop:share:*`,
+  `coop:daily:joined:*`, `coop:richp:log:*` to the LOBBIES KV
+  namespace. All have explicit TTLs.
+- Adds `RunLobby.note` `[daily=YYYY-MM-DD]` tag convention (note
+  field schema is unchanged — the tag is just a string convention
+  on the existing field, like `[start=ISO]` was).
+- No changes to `RunSummary`, `CoopPresence`, `CoopParty`,
+  `CoopSession` shapes. Old desktop and mobile clients keep working
+  identically.
+
+### What it's like to use
+
+1. Open Co-op. The hero card now has a gold-bordered "Today's Co-op
+   Challenge" tile under the stats row. Today's seed is shown,
+   along with the suggested character + ascension and the
+   joined-hosts count.
+2. Tap the tile. The seed is on your clipboard. The toast tells you
+   to type it into STS2's seed field on character select.
+3. Host a room. The note auto-includes `[daily=YYYY-MM-DD]` if you
+   came from the tile.
+4. Live Parties rows have a small tier dot + badge row next to
+   every host's name. The "veteran" / "ascended" dots glow softly;
+   newcomers render no dot at all.
+5. Once your party gets a member to `in_game`, a purple "Share this
+   run" button appears next to Ready. Click → caption prompt → URL
+   copied.
+6. When everyone in your party hits Ready and the planned start
+   time has passed, every client auto-advances to `in_game`
+   together.
+
 ## v0.10.0 — 2026-05-26
 
 The Co-op Lobby is the default surface now. Four months of "Beta" tab
