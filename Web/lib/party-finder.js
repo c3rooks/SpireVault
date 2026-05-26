@@ -14,7 +14,7 @@
 // Ascension is capped at 10 (Slay the Spire 2 max).
 // =========================================================================
 
-import { isSandboxSteamId, isCoopSandboxEnabled } from "./coop-sandbox.js?v=5";
+import { isSandboxSteamId, isCoopSandboxEnabled } from "./coop-sandbox.js?v=6";
 import { encodeStart, presetToPlanned, decodeStart, formatCountdown, startSortKey } from "./party-finder-startsoon.js?v=1";
 var PFH = window.PFH;
 

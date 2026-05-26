@@ -655,6 +655,30 @@ function ensurePartyFinderGlobalsScript() {
           s8.async = false;
           document.head.appendChild(s8);
         }
+        // Empty State v2 — runtime enhancer for the cold-start
+        // "No live parties yet" stub. Pure DOM-overlay, no API
+        // calls. Loaded after the other -rt runtimes so it can
+        // delegate to features they expose (Daily tile scroll
+        // target, etc.). CSS pin v1 since this is its first ship.
+        if (!document.getElementById("pf-empty-rt-script")) {
+          const s9 = document.createElement("script");
+          s9.id = "pf-empty-rt-script";
+          s9.src = "/lib/party-finder-empty-rt.js?v=1";
+          s9.async = false;
+          document.head.appendChild(s9);
+        }
+        // Discord LFG Mirror — bridges Discord LFG posts into the
+        // SpireVault lobby list as ephemeral "via Discord" cards.
+        // Public, unauthenticated read of /coop/mirrors every 30s.
+        // Loaded last so it can mount above the lobby list once the
+        // surface DOM is settled. v0.12.0+ feature, CSS pin v1.
+        if (!document.getElementById("pf-mirror-rt-script")) {
+          const s10 = document.createElement("script");
+          s10.id = "pf-mirror-rt-script";
+          s10.src = "/lib/party-finder-mirror-rt.js?v=2";
+          s10.async = false;
+          document.head.appendChild(s10);
+        }
       } catch (_) { /* ignore */ }
       resolve();
     };
@@ -669,12 +693,41 @@ function ensurePartyFinderGlobalsScript() {
 }
 
 export function ensureCoopSandboxMounted(ctx) {
-  // Bootstrap the party-finder Beta UI alongside the sandbox panel.
-  // The sandbox panel itself only renders in dev / local hosts, but the
-  // party-finder must run on every host where the Beta toggle is on, so
-  // we mount it regardless of isCoopSandboxEnabled().
+  // Hard-gate the party-finder.js Beta UI to sandbox/dev hosts.
+  //
+  // History: v0.10.0 promoted party-finder.js to "default on every host"
+  // so the hero stage / Live Parties / Quick Play scene could ride the
+  // Beta toggle into production. In practice the party-finder.js surface
+  // and the production coop-lobbies.js v23 surface BOTH render into
+  // `#coop-page-root`, which means signed-in production users get two
+  // overlapping Co-op UIs:
+  //
+  //   • coop-lobbies.js v23 — the real working board:
+  //       data-coop-action="open-edit-lobby"  → openEditLobbyModal()
+  //       data-coop-action="join-seat"        → character-picker modal
+  //       hostForm defaults to character: "" (Open to any)
+  //
+  //   • party-finder.js — the prototype layered on top of it:
+  //       data-pf-action="manage-room"       → ONLY scrollIntoView()
+  //       data-pf-action="join-room"         → its own pre-pick join
+  //       hostForm defaults to hostCharacter: "ironclad"
+  //
+  // The dual mount is what produces every symptom users report on the
+  // live Co-op tab: "Manage Your Room does nothing" (party-finder.js
+  // scroll-only handler), "auto-defaults Ironclad" (party-finder.js
+  // hostForm default), "the lobby is jumping" (two independent state
+  // polls + renders into the same page), and "no one can join" (the
+  // party-finder.js join path silently picks an already-claimed
+  // character when the picker is bypassed).
+  //
+  // The v0.11.0 runtime-augmentation scripts (reputation-rt, daily-rt)
+  // are designed to also target the coop-lobbies.js DOM directly, so
+  // we keep loading those via ensurePartyFinderGlobalsScript(). Only
+  // the party-finder.js root section itself is gated.
   const pfCtx = ctx || bootCtx;
+  const sandboxOn = isCoopSandboxEnabled();
   ensurePartyFinderGlobalsScript().then(() => {
+    if (!sandboxOn) return;
     try {
       if (pfCtx?.session?.steamID) {
         // Expose the toast function so party-finder-globals.js can show
@@ -690,7 +743,7 @@ export function ensureCoopSandboxMounted(ctx) {
       console.warn("party-finder mount failed", err);
     }
   });
-  if (!isCoopSandboxEnabled()) return;
+  if (!sandboxOn) return;
   mountCoopSandbox(ctx || bootCtx || { api: "/api", deps: {} });
 }
 

@@ -32,10 +32,10 @@ import {
   filterOpenLobbiesForViewer,
   filterRecommendationsForViewer,
   isSandboxSteamId,
-} from "./coop-sandbox.js?v=5";
+} from "./coop-sandbox.js?v=6";
 import { decodeStart } from "./party-finder-startsoon.js?v=1";
 
-export { ensureCoopSandboxMounted, isCoopSandboxEnabled } from "./coop-sandbox.js?v=5";
+export { ensureCoopSandboxMounted, isCoopSandboxEnabled } from "./coop-sandbox.js?v=6";
 
 const GAME_CONFIG = Object.freeze({
   game: "Slay the Spire 2",
@@ -462,10 +462,21 @@ function setNetworkBanner(state) {
       bar.className = "pf-net-banner";
       bar.setAttribute("role", "status");
       bar.setAttribute("aria-live", "polite");
+      // NOTE: the Retry button uses a directly-bound listener instead
+      // of a data-action attribute. Earlier builds shipped this with
+      // `data-pf-action="net-retry"`, whose handler lived in
+      // party-finder.js — fine when party-finder.js mounted on every
+      // host, but party-finder.js is now sandbox-only (see
+      // coop-sandbox.js#ensureCoopSandboxMounted) so production was
+      // left with an inert Retry button on every network blip. The
+      // direct listener removes that coupling entirely.
       bar.innerHTML =
         '<span class="pf-net-banner-dot" aria-hidden="true"></span>' +
         '<span class="pf-net-banner-text" data-pf-net-text>Reconnecting&hellip;</span>' +
-        '<button type="button" class="pf-net-banner-retry" data-pf-action="net-retry">Retry now</button>';
+        '<button type="button" class="pf-net-banner-retry" data-coop-action="net-retry">Retry now</button>';
+      bar.querySelector(".pf-net-banner-retry")?.addEventListener("click", () => {
+        void refreshState({ force: true });
+      });
       // Pin to top of the Co-op tab so it never overlaps modals.
       const host = document.getElementById("coop-lobby-beta-root") || document.body;
       host.insertBefore(bar, host.firstChild);
