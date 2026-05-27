@@ -366,7 +366,11 @@ fn restart_watcher(app: AppHandle, state: Arc<VaultState>, folder: PathBuf) {
 
     match watcher_result {
         Ok(w) => {
-            let mut guard = state.clone()._watcher.lock().unwrap();
+            // Use the function-owned `state` directly. The previous
+            // `state.clone()._watcher.lock()` form created a temporary
+            // Arc that dropped at statement end, leaving the MutexGuard
+            // dangling — rejected by Rust 2021's temporary-lifetime rules.
+            let mut guard = state._watcher.lock().unwrap();
             *guard = Some(w);
             eprintln!(
                 "[VaultWatcher] watching {}",
