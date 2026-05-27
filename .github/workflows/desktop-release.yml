@@ -1,0 +1,258 @@
+name: Desktop Release
+
+# Triggered by pushing a version tag (e.g. v0.9.9). One workflow, two
+# parallel jobs — Windows builds the Tauri NSIS installer, macOS builds
+# the native Swift DMG via VaultApp/Makefile. Both jobs upload to the
+# same GitHub Release, keyed by the pushed tag, so a single `git push
+# origin v0.9.9` materialises both artefacts on the same release page.
+#
+# Code signing is intentionally skipped for the MVP:
+#   • Windows: SmartScreen will prompt "More info → Run anyway" until the
+#     installer earns reputation (~50 installs).
+#   • macOS: ad-hoc signed — users right-click → Open on first launch.
+# Both behaviours are documented in the auto-generated release notes
+# and on the marketing-site FAQ.
+#
+# Manual trigger (workflow_dispatch) builds the artefacts but does NOT
+# upload to a release — useful for sanity-checking the pipeline before
+# cutting an actual tag.
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Build only (don't touch a release)"
+        required: false
+        default: "true"
+        type: boolean
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  # ─── Windows: Tauri NSIS .exe ─────────────────────────────────────────────
+  windows:
+    name: Windows .exe (Tauri NSIS)
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Cache Rust artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: WindowsApp/src-tauri -> target
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install Tauri CLI
+        working-directory: WindowsApp
+        shell: bash
+        run: |
+          npm install --no-audit --no-fund --silent
+
+      # Sync the version baked into the binary + installer to the pushed
+      # tag (e.g. v0.9.9 → 0.9.9). Skipped on workflow_dispatch dry runs;
+      # the committed Cargo.toml / tauri.conf.json version is used as-is.
+      - name: Extract version from tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "VAULT_VERSION=$VERSION" >> "$GITHUB_ENV"
+          sed -i "s/^version = \".*\"/version = \"$VERSION\"/" \
+            WindowsApp/src-tauri/Cargo.toml
+          sed -i "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" \
+            WindowsApp/src-tauri/tauri.conf.json
+          echo "Patched WindowsApp to version $VERSION"
+
+      - name: Build The Vault (release)
+        working-directory: WindowsApp
+        shell: bash
+        run: npm run build
+
+      - name: List build outputs
+        shell: bash
+        run: |
+          find WindowsApp/src-tauri/target/release/bundle -type f \
+            \( -name "*.exe" -o -name "*.msi" \) | sort
+          echo "--- file sizes ---"
+          find WindowsApp/src-tauri/target/release/bundle -type f \
+            \( -name "*.exe" -o -name "*.msi" \) -exec ls -lh {} \;
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: TheVault-Windows-Installer
+          path: |
+            WindowsApp/src-tauri/target/release/bundle/nsis/*.exe
+            WindowsApp/src-tauri/target/release/bundle/msi/*.msi
+          retention-days: 14
+          if-no-files-found: error
+
+      - name: Upload to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            WindowsApp/src-tauri/target/release/bundle/nsis/*_x64-setup.exe
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          tag_name: ${{ github.ref_name }}
+          name: "The Vault ${{ github.ref_name }}"
+          fail_on_unmatched_files: true
+          body: |
+            ## The Vault ${{ github.ref_name }}
+
+            Native wrapper around the live web app at
+            **[app.spirevault.app](https://app.spirevault.app)**. Same
+            backend, same UI, same co-op feed — just wrapped in a native
+            window with a system menu, save-folder watcher, and OBS
+            invisibility on Windows.
+
+            ### Install
+
+            - **Windows:** Download `The-Vault_*_x64-setup.exe` below and
+              run it. SmartScreen will say "Windows protected your PC" on
+              first launch — click **More info → Run anyway**. The warning
+              clears automatically once the installer earns reputation
+              (~50 installs).
+            - **macOS:** Download `The-Vault-*.dmg` below, drag **The
+              Vault** to **Applications**, then on first launch
+              **right-click → Open** to bypass the unidentified-developer
+              prompt. Subsequent launches are normal.
+
+            See [CHANGELOG.md](https://github.com/c3rooks/SpireVault/blob/main/CHANGELOG.md)
+            for full release notes.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ─── macOS: native Swift DMG ──────────────────────────────────────────────
+  macos:
+    name: macOS .dmg (native Swift)
+    runs-on: macos-14
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install xcodegen
+        run: brew install xcodegen
+
+      - name: Resolve version from tag
+        id: ver
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            VERSION="0.0.0-dev"
+          fi
+          echo "VERSION=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Building DMG for version $VERSION"
+
+      # ---------------------------------------------------------------------
+      # Notarization (optional). Provide the following repository secrets to
+      # ship a fully notarized DMG; otherwise the workflow falls back to
+      # ad-hoc signing automatically:
+      #
+      #   APPLE_DEVELOPER_ID_CERT_P12_BASE64
+      #   APPLE_DEVELOPER_ID_CERT_PASSWORD
+      #   APPLE_DEVELOPER_ID
+      #   APPLE_NOTARY_APPLE_ID
+      #   APPLE_NOTARY_TEAM_ID
+      #   APPLE_NOTARY_PASSWORD
+      # ---------------------------------------------------------------------
+      - name: Import signing certificate
+        if: ${{ env.APPLE_DEVELOPER_ID_CERT_P12_BASE64 != '' }}
+        env:
+          APPLE_DEVELOPER_ID_CERT_P12_BASE64: ${{ secrets.APPLE_DEVELOPER_ID_CERT_P12_BASE64 }}
+          APPLE_DEVELOPER_ID_CERT_PASSWORD: ${{ secrets.APPLE_DEVELOPER_ID_CERT_PASSWORD }}
+        run: |
+          echo "$APPLE_DEVELOPER_ID_CERT_P12_BASE64" | base64 -d > /tmp/cert.p12
+          security create-keychain -p tmppass build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p tmppass build.keychain
+          security import /tmp/cert.p12 -k build.keychain \
+            -P "$APPLE_DEVELOPER_ID_CERT_PASSWORD" \
+            -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: \
+            -s -k tmppass build.keychain
+
+      - name: Build DMG
+        working-directory: VaultApp
+        env:
+          CODE_SIGN_IDENTITY: ${{ secrets.APPLE_DEVELOPER_ID || '-' }}
+        run: make dmg VERSION=${{ steps.ver.outputs.VERSION }}
+
+      - name: Notarize & staple
+        if: ${{ env.APPLE_NOTARY_PASSWORD != '' }}
+        env:
+          APPLE_NOTARY_APPLE_ID: ${{ secrets.APPLE_NOTARY_APPLE_ID }}
+          APPLE_NOTARY_TEAM_ID: ${{ secrets.APPLE_NOTARY_TEAM_ID }}
+          APPLE_NOTARY_PASSWORD: ${{ secrets.APPLE_NOTARY_PASSWORD }}
+        run: |
+          DMG="VaultApp/build/The-Vault-${{ steps.ver.outputs.VERSION }}.dmg"
+          xcrun notarytool submit "$DMG" \
+            --apple-id "$APPLE_NOTARY_APPLE_ID" \
+            --team-id "$APPLE_NOTARY_TEAM_ID" \
+            --password "$APPLE_NOTARY_PASSWORD" \
+            --wait
+          xcrun stapler staple "$DMG"
+
+      - name: Compute SHA-256
+        id: sha
+        run: |
+          DMG="VaultApp/build/The-Vault-${{ steps.ver.outputs.VERSION }}.dmg"
+          echo "SHA=$(shasum -a 256 "$DMG" | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+          ls -lh "$DMG"
+
+      - name: Upload macOS artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: TheVault-macOS-DMG
+          path: VaultApp/build/The-Vault-${{ steps.ver.outputs.VERSION }}.dmg
+          retention-days: 14
+          if-no-files-found: error
+
+      - name: Upload to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: VaultApp/build/The-Vault-${{ steps.ver.outputs.VERSION }}.dmg
+          draft: false
+          prerelease: false
+          generate_release_notes: false
+          tag_name: ${{ github.ref_name }}
+          name: "The Vault ${{ github.ref_name }}"
+          fail_on_unmatched_files: true
+          append_body: true
+          body: |
+
+            ### macOS asset
+
+            - `The-Vault-${{ steps.ver.outputs.VERSION }}.dmg`
+            - SHA-256: `${{ steps.sha.outputs.SHA }}`
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

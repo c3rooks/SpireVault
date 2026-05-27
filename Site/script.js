@@ -185,45 +185,53 @@ const exeLink      = document.getElementById("exe-link");
 const heroCTA      = document.getElementById("download-cta-mac");
 const heroWinCTA   = document.getElementById("download-cta-win");
 const heroVersion  = document.getElementById("hero-version");
+const heroVersionWin = document.getElementById("hero-version-win");
 const installVer   = document.getElementById("install-version");
 const installVerWin = document.getElementById("install-version-win");
+const rcMacVersion = document.getElementById("rc-mac-version");
 
 const BUILD_FROM_SOURCE_URL =
   `https://github.com/${GITHUB_REPO}#build-from-source`;
 const RELEASES_URL = `https://github.com/${GITHUB_REPO}/releases`;
 
-function setDownloadFallback(label) {
-  if (heroVersion)    heroVersion.textContent    = label;
-  if (installVer)     installVer.textContent     = label;
-  if (installVerWin)  installVerWin.textContent  = label;
-  if (dmgLink) {
-    dmgLink.href = BUILD_FROM_SOURCE_URL;
-    dmgLink.target = "_blank";
-    dmgLink.rel = "noopener";
-  }
-  if (exeLink) {
-    exeLink.href = RELEASES_URL;
-    exeLink.target = "_blank";
-    exeLink.rel = "noopener";
-  }
-  if (heroCTA)    heroCTA.href    = "#install";
-  if (heroWinCTA) heroWinCTA.href = "#install";
-}
-
-/** Pick the Windows NSIS installer from a GitHub release payload. */
-function pickWindowsInstallerAsset(release) {
+/**
+ * Pick a release asset by suffix pattern. Skips blockmap sidecars.
+ *
+ *   pickAsset(release, /\.dmg$/i)       → first .dmg
+ *   pickAsset(release, /_x64-setup\.exe$/i) → Tauri NSIS installer
+ */
+function pickAsset(release, pattern) {
   const assets = release?.assets;
   if (!Array.isArray(assets)) return null;
-  const setup = assets.find((a) => {
+  const hit = assets.find((a) => {
     const name = String(a?.name || "");
-    return /_x64-setup\.exe$/i.test(name) && !/\.blockmap$/i.test(name);
+    return pattern.test(name) && !/\.blockmap$/i.test(name);
   });
-  return setup?.browser_download_url || null;
+  return hit?.browser_download_url || null;
 }
 
+/**
+ * Resolve real download URLs + version from the latest GitHub release.
+ *
+ * Truthfulness contract:
+ *   - The version pill shows the actual published tag (e.g. v0.9.8),
+ *     never an aspirational future tag.
+ *   - The Mac DMG link points at the actual .dmg asset on GitHub if
+ *     one is attached to the latest release; falls back to the locally
+ *     served /assets/The.Vault.dmg only when GitHub's API is
+ *     unreachable (rate-limited browsers, offline previews).
+ *   - The Windows .exe link is only upgraded to a real release URL
+ *     when the latest release ACTUALLY has a `_x64-setup.exe` asset.
+ *     If the release has no Windows installer (current state during
+ *     Tauri build-out), the Windows CTAs keep their server-rendered
+ *     "Coming soon" stub instead of redirecting to /releases/latest,
+ *     which would 302 to a release page with no .exe attached — the
+ *     credibility-bleed pattern we're explicitly avoiding.
+ */
 async function resolveLatestRelease() {
-  let version = "v0.9.9";
+  let version = null;
   let exeHref = null;
+  let dmgHref = null;
 
   try {
     const resp = await fetch(
@@ -233,39 +241,57 @@ async function resolveLatestRelease() {
     if (resp.ok) {
       const release = await resp.json();
       if (release?.tag_name) version = release.tag_name;
-      exeHref = pickWindowsInstallerAsset(release);
+      exeHref = pickAsset(release, /_x64-setup\.exe$/i);
+      dmgHref = pickAsset(release, /\.dmg$/i);
     }
   } catch {
-    /* fall back to pinned version below */
+    /* keep server-rendered defaults */
   }
 
-  if (heroVersion)    heroVersion.textContent    = version;
-  if (installVer)     installVer.textContent     = version;
-  if (installVerWin)  installVerWin.textContent  = version;
+  // ── macOS: version pill + DMG link ──
+  if (version) {
+    if (heroVersion)    heroVersion.textContent    = version;
+    if (installVer)     installVer.textContent     = version;
+    if (rcMacVersion)   rcMacVersion.textContent   = version;
+  }
 
-  // macOS DMG — served locally from /assets/
+  // Prefer the actual GitHub release asset over the local /assets copy
+  // so the version label and the bytes the user downloads agree.
+  const macHref = dmgHref || "/assets/The.Vault.dmg";
   if (dmgLink) {
-    dmgLink.href = "/assets/The.Vault.dmg";
-    dmgLink.removeAttribute("target");
+    dmgLink.href = macHref;
+    if (macHref.startsWith("http")) { dmgLink.target = "_blank"; dmgLink.rel = "noopener"; }
+    else                            { dmgLink.removeAttribute("target"); }
   }
   if (heroCTA) {
-    heroCTA.href = "/assets/The.Vault.dmg";
-    heroCTA.removeAttribute("target");
+    heroCTA.href = macHref;
+    if (macHref.startsWith("http")) { heroCTA.target = "_blank"; heroCTA.rel = "noopener"; }
+    else                            { heroCTA.removeAttribute("target"); }
   }
 
-  // Windows EXE — resolve real asset name (Tauri productName may include spaces)
-  if (!exeHref) {
-    exeHref = `https://github.com/${GITHUB_REPO}/releases/latest`;
-  }
-  if (exeLink) {
-    exeLink.href = exeHref;
-    if (exeHref.includes("/releases/latest/download/")) exeLink.removeAttribute("target");
-    else { exeLink.target = "_blank"; exeLink.rel = "noopener"; }
-  }
-  if (heroWinCTA) {
-    heroWinCTA.href = exeHref;
-    if (exeHref.includes("/releases/latest/download/")) heroWinCTA.removeAttribute("target");
-    else { heroWinCTA.target = "_blank"; heroWinCTA.rel = "noopener"; }
+  // ── Windows: ONLY upgrade the CTA if a real .exe asset exists ──
+  // Otherwise leave the "Coming soon" stub the HTML ships with —
+  // anchor link to #install-win and the install card explains the state.
+  if (exeHref) {
+    if (exeLink) {
+      exeLink.href = exeHref;
+      exeLink.classList.remove("is-soon", "alt");
+      exeLink.target = "_blank";
+      exeLink.rel = "noopener";
+      const label = exeLink.querySelector("span:first-of-type");
+      if (label) label.textContent = "Download .exe";
+    }
+    if (heroWinCTA) {
+      heroWinCTA.href = exeHref;
+      heroWinCTA.classList.remove("is-soon");
+      heroWinCTA.target = "_blank";
+      heroWinCTA.rel = "noopener";
+      heroWinCTA.removeAttribute("title");
+    }
+    if (heroVersionWin)  heroVersionWin.textContent  = version || "latest";
+    if (installVerWin)   installVerWin.textContent   = version || "latest";
+    if (heroVersionWin)  heroVersionWin.classList.remove("version-soon");
+    if (installVerWin)   installVerWin.classList.remove("version-soon");
   }
 }
 resolveLatestRelease();

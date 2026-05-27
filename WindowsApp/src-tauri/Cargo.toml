@@ -20,7 +20,10 @@ tauri-plugin-global-shortcut = "2"
 tauri-plugin-shell           = "2"
 tauri-plugin-fs              = "2"
 tauri-plugin-dialog          = "2"
-tauri-plugin-updater         = "2"
+# Updater intentionally NOT included — the wrapper loads the live cloud app
+# at https://app.spirevault.app, so "updates" are just a browser reload. We
+# avoid shipping auto-update infrastructure (and the signing-key plumbing it
+# demands) until/unless the wrapper needs to ship genuinely native changes.
 tauri-plugin-process         = "2"
 tauri-plugin-os              = "2"
 

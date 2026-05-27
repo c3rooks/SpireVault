@@ -30,7 +30,6 @@
     "os:allow-platform",
     "os:allow-version",
     "process:allow-exit",
-    "updater:default",
     "global-shortcut:allow-register",
     "global-shortcut:allow-unregister",
     "global-shortcut:allow-is-registered",

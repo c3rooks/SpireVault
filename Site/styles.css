@@ -314,6 +314,34 @@ section {
   background: rgba(0,0,0,0.18);
 }
 
+/* Truthful "Coming soon" pill — gold-tinted, intentional. Used while
+   the Windows installer is being built so the CTA looks deliberately
+   in-progress instead of broken. Replaces the v0.9.x version pill on
+   the same button. */
+.version-soon {
+  background: rgba(212,175,55,0.14);
+  border: 1px solid rgba(212,175,55,0.35);
+  color: var(--gold);
+  opacity: 1;
+  letter-spacing: 0.02em;
+  font-size: 10.5px;
+  padding: 2px 8px;
+}
+
+/* Ghost button in "coming soon" state — same shape, slightly softened
+   so it sits visually beneath the live macOS CTA without looking
+   disabled. Hover lifts toward the gold so it still feels clickable
+   (it anchor-jumps to the install card explanation). */
+.btn-ghost.is-soon {
+  color: var(--text-3);
+  border-color: rgba(212,175,55,0.25);
+}
+.btn-ghost.is-soon:hover {
+  color: var(--text);
+  border-color: rgba(212,175,55,0.55);
+  background: var(--card-raised);
+}
+
 /* ──────────────────────────────────────────────────────────────────────
    Hero
    ────────────────────────────────────────────────────────────────────── */
@@ -1598,6 +1626,37 @@ section {
   background: linear-gradient(180deg, var(--card-raised), var(--card));
   border-color: rgba(212,175,55,0.5);
   box-shadow: 0 12px 36px -16px rgba(255,107,26,0.45);
+}
+
+/* Windows install card while the .exe is being built. Same layout as
+   the live cards — the difference is the gold "Coming soon" badge
+   pinned to the top-right and the muted primary CTA that routes the
+   user to the web companion instead of a broken .exe link. JS upgrades
+   this back to a live download card automatically the moment the
+   latest GitHub release exposes a `_x64-setup.exe` asset. */
+.install-card.install-card-soon {
+  background: linear-gradient(180deg, var(--card-raised), var(--card));
+  border-color: rgba(212,175,55,0.32);
+  box-shadow: 0 12px 36px -16px rgba(212,175,55,0.22);
+}
+.install-card-badge {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  padding: 4px 10px;
+  border-radius: 999px;
+  text-transform: uppercase;
+  background: rgba(212,175,55,0.12);
+  border: 1px solid rgba(212,175,55,0.4);
+  color: var(--gold);
+}
+.install-card.install-card-soon .install-meta a {
+  color: var(--gold);
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 .install-os {
   display: flex;
