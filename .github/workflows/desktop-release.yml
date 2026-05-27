@@ -147,15 +147,25 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # ─── macOS: native Swift DMG ──────────────────────────────────────────────
+  # `macos-15` ships Xcode 16.x as the default. We need >=16 because the
+  # brew-installed `xcodegen` emits objectVersion 77 (Xcode 16+) project
+  # files; Xcode 15.4 on `macos-14` rejects them with "future Xcode
+  # project file format" and the build aborts at xcodebuild parse time.
   macos:
     name: macOS .dmg (native Swift)
-    runs-on: macos-14
+    runs-on: macos-15
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - name: Select Xcode 16
+        run: |
+          sudo xcode-select -switch /Applications/Xcode_16.app || \
+            sudo xcode-select -switch /Applications/Xcode.app
+          xcodebuild -version
 
       - name: Install xcodegen
         run: brew install xcodegen

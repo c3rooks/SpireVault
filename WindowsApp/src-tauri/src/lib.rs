@@ -439,16 +439,26 @@ pub fn run() {
             let handle = app.handle().clone();
 
             // ── Inject desktop flag + webkit bridge shim into both windows ──
-            // The tauri.conf.json initialization_script handles the lightweight
-            // __VAULT_DESKTOP__ flag. We add the full webkit bridge shim here
-            // so it's centrally maintained in Rust, not in the config file.
+            // Tauri 2.x dropped per-window `initialization_script` from the
+            // config schema; everything that used to live there now flows
+            // through `win.eval()` in setup, which fires before the first
+            // user script and re-runs on every navigation reload. The
+            // WEBKIT_SHIM patches Object.prototype glue separately on
+            // DOMContentLoaded / load so late-bound SpireVault.seedSession
+            // calls still land correctly.
             for label in ["main", "overlay"] {
                 if let Some(win) = handle.get_webview_window(label) {
                     let version = VAULT_VERSION;
+                    let overlay_flag = if label == "overlay" {
+                        "window.__VAULT_OVERLAY__=true;"
+                    } else {
+                        ""
+                    };
                     let init = format!(
                         "window.__VAULT_DESKTOP__=true;\
                          window.__VAULT_DESKTOP_PLATFORM__='windows';\
                          window.__VAULT_DESKTOP_VERSION__='{version}';\
+                         {overlay_flag}\
                          {WEBKIT_SHIM}"
                     );
                     let _ = win.eval(&init);

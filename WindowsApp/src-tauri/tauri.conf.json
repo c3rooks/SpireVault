@@ -22,8 +22,7 @@
         "decorations": true,
         "titleBarStyle": "Overlay",
         "visible": true,
-        "focus": true,
-        "initialization_script": "window.__VAULT_DESKTOP__=true;window.__VAULT_DESKTOP_PLATFORM__='windows';window.__VAULT_DESKTOP_VERSION__='0.9.9';"
+        "focus": true
       },
       {
         "label": "overlay",
@@ -39,8 +38,7 @@
         "resizable": false,
         "focus": false,
         "x": 20,
-        "y": 20,
-        "initialization_script": "window.__VAULT_DESKTOP__=true;window.__VAULT_DESKTOP_PLATFORM__='windows';window.__VAULT_OVERLAY__=true;"
+        "y": 20
       }
     ],
     "security": {
