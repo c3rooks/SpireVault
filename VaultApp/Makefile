@@ -23,7 +23,12 @@ gen:
 # Xcode tags the bundle root with com.apple.FinderInfo which codesign refuses
 # — we strip it and re-sign in `sign`. The build itself still completes
 # successfully, so we tolerate xcodebuild's nonzero exit.
+#
+# The `mkdir -p $(BUILD)` is required for the output redirect to succeed on
+# a clean checkout (e.g. CI runners) — bash evaluates the `> file` redirect
+# BEFORE running xcodebuild, so a missing parent dir aborts the step early.
 build: gen
+	@mkdir -p $(BUILD)
 	-xcodebuild -project $(PROJECT) -scheme $(SCHEME) -configuration $(CONFIG) \
 	  -derivedDataPath $(BUILD) CODE_SIGN_IDENTITY="-" build > $(BUILD)/last-build.log 2>&1
 	@if [ ! -d $(APP) ]; then \
@@ -54,6 +59,7 @@ clean:
 # -----------------------------------------------------------------------------
 
 release:
+	@mkdir -p $(BUILD)
 	xcodegen generate
 	-xcodebuild -project $(PROJECT) -scheme $(SCHEME) -configuration Release \
 	  -derivedDataPath $(BUILD) CODE_SIGN_IDENTITY="$${CODE_SIGN_IDENTITY:--}" \

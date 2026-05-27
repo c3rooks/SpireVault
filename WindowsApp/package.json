@@ -4,9 +4,9 @@
   "description": "Slay the Spire 2 companion — Windows build",
   "private": true,
   "scripts": {
-    "dev":   "cargo tauri dev",
-    "build": "cargo tauri build",
-    "build:debug": "cargo tauri build --debug",
+    "dev":   "tauri dev",
+    "build": "tauri build",
+    "build:debug": "tauri build --debug",
     "lint":  "cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings"
   },
   "dependencies": {},
