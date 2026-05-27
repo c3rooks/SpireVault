@@ -11,11 +11,10 @@
     "core:window:allow-set-position",
     "core:window:allow-set-size",
     "core:window:allow-is-visible",
-    "core:webview:allow-eval",
     "core:webview:allow-print",
     "core:event:allow-emit",
     "core:event:allow-listen",
-    "core:app:allow-app-version",
+    "core:app:allow-version",
     "core:app:allow-name",
     "core:path:default",
     "shell:allow-open",
@@ -24,7 +23,7 @@
     "fs:allow-read-text-file",
     "fs:allow-write-text-file",
     "fs:allow-read-dir",
-    "fs:allow-create-dir",
+    "fs:allow-mkdir",
     "fs:allow-exists",
     "fs:allow-stat",
     "os:allow-platform",
@@ -32,7 +31,6 @@
     "process:allow-exit",
     "global-shortcut:allow-register",
     "global-shortcut:allow-unregister",
-    "global-shortcut:allow-is-registered",
-    "global-shortcut:allow-on-shortcut"
+    "global-shortcut:allow-is-registered"
   ]
 }
