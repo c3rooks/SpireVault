@@ -189,6 +189,7 @@ const heroVersionWin = document.getElementById("hero-version-win");
 const installVer   = document.getElementById("install-version");
 const installVerWin = document.getElementById("install-version-win");
 const rcMacVersion = document.getElementById("rc-mac-version");
+const rcWinVersion = document.getElementById("rc-win-version");
 
 const BUILD_FROM_SOURCE_URL =
   `https://github.com/${GITHUB_REPO}#build-from-source`;
@@ -269,9 +270,13 @@ async function resolveLatestRelease() {
     else                            { heroCTA.removeAttribute("target"); }
   }
 
-  // ── Windows: ONLY upgrade the CTA if a real .exe asset exists ──
-  // Otherwise leave the "Coming soon" stub the HTML ships with —
-  // anchor link to #install-win and the install card explains the state.
+  // ── Windows: upgrade the CTA only when a real .exe asset exists ──
+  // The SSR fallback (live download buttons hard-pinned to the current
+  // shipped tag) is correct for the typical case; this block swaps in
+  // the precise asset URL once the GitHub API confirms it. If a future
+  // release ships Mac-only by mistake, we leave the Windows pill at the
+  // SSR-rendered version so users don't see a brand-new tag advertised
+  // for an OS that didn't actually get a binary.
   if (exeHref) {
     if (exeLink) {
       exeLink.href = exeHref;
@@ -290,6 +295,7 @@ async function resolveLatestRelease() {
     }
     if (heroVersionWin)  heroVersionWin.textContent  = version || "latest";
     if (installVerWin)   installVerWin.textContent   = version || "latest";
+    if (rcWinVersion)    rcWinVersion.textContent    = version || "latest";
     if (heroVersionWin)  heroVersionWin.classList.remove("version-soon");
     if (installVerWin)   installVerWin.classList.remove("version-soon");
   }
