@@ -19,19 +19,17 @@ mod key_store;
 mod run_history;
 mod save_reader;
 mod save_watcher;
-mod screen_capture;
 mod snapshot_delta;
 
 use run_history::{scan_run_files, RunRecord};
 use save_reader::{default_sts2_save_path, read_live_snapshot, LiveRunSnapshot};
 use save_watcher::SaveWatcher;
-use snapshot_delta::SnapshotDelta;
 
 use std::{
     path::PathBuf,
     sync::{Arc, Mutex},
 };
-use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 // ─── App state shared across commands ────────────────────────────────────────
 
@@ -231,13 +229,6 @@ fn clear_api_keys() {
     key_store::clear_all_keys();
 }
 
-/// Screen capture for the Run Coach AI prompt.
-/// Returns a base64 PNG string (no data: prefix) or null.
-#[tauri::command]
-async fn capture_screen(max_dimension: u32) -> Option<String> {
-    screen_capture::capture_primary_display_b64(max_dimension)
-}
-
 /// Show / hide the overlay window.
 #[tauri::command]
 async fn show_overlay(visible: bool, app: AppHandle) -> Result<(), String> {
@@ -388,23 +379,17 @@ fn restart_watcher(app: AppHandle, state: Arc<VaultState>, folder: PathBuf) {
     }
 }
 
-// ─── OBS / screen-recording invisibility (Windows only) ──────────────────────
-//
-// `SetWindowDisplayAffinity(hwnd, WDA_EXCLUDEFROMCAPTURE)` makes both windows
-// invisible to DXGI capture (OBS, Snipping Tool, Xbox Game Bar). This is the
-// exact Windows equivalent of NSWindow.sharingType = .none on macOS.
-// Applied to BOTH main and overlay so streamers are protected by default.
-
-#[cfg(target_os = "windows")]
-fn apply_capture_exclusion(hwnd: isize) {
-    use windows::Win32::Foundation::HWND;
-    use windows::Win32::UI::WindowsAndMessaging::{
-        SetWindowDisplayAffinity, WDA_EXCLUDEFROMCAPTURE,
-    };
-    let _ = unsafe { SetWindowDisplayAffinity(HWND(hwnd as _), WDA_EXCLUDEFROMCAPTURE) };
-}
-
 // ─── Entry point ─────────────────────────────────────────────────────────────
+//
+// OBS / screen-recording invisibility (`SetWindowDisplayAffinity` with
+// `WDA_EXCLUDEFROMCAPTURE`) intentionally removed from the v0.9.9 MVP —
+// the Tauri 2 build no longer re-exports `tauri::raw_window_handle`, so
+// the previous implementation no longer compiles. The macOS counterpart
+// (`NSWindow.sharingType = .none`) still runs in the Swift app. When we
+// re-introduce the Windows invisibility behaviour, pull HWND via
+// `raw_window_handle::HasWindowHandle` directly (the crate is already a
+// transitive dep of Tauri 2 winit) and call `SetWindowDisplayAffinity`
+// from the `windows` crate.
 
 pub fn run() {
     let vault_state = VaultState::new();
@@ -428,7 +413,6 @@ pub fn run() {
             set_api_key,
             get_api_key,
             clear_api_keys,
-            capture_screen,
             show_overlay,
             resize_overlay,
             set_overlay_position,
@@ -465,22 +449,8 @@ pub fn run() {
                 }
             }
 
-            // ── OBS invisibility ────────────────────────────────────────────
-            #[cfg(target_os = "windows")]
-            {
-                // Get HWND from the raw window handle.
-                use tauri::raw_window_handle::HasWindowHandle;
-                use raw_window_handle::RawWindowHandle;
-                for label in ["main", "overlay"] {
-                    if let Some(win) = handle.get_webview_window(label) {
-                        if let Ok(handle_guard) = win.window_handle() {
-                            if let RawWindowHandle::Win32(h) = handle_guard.as_raw() {
-                                apply_capture_exclusion(h.hwnd.get() as isize);
-                            }
-                        }
-                    }
-                }
-            }
+            // OBS invisibility step intentionally removed — see top-of-module
+            // comment for restoration plan.
 
             // ── Auto-detect STS2 save folder ────────────────────────────────
             let state = state_for_setup.clone();
