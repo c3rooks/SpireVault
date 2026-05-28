@@ -42,10 +42,12 @@ import {
   declineJoinRequest,
   endParty,
   endSession,
+  getPartyForViewer,
   heartbeatPresence,
   joinLobbySeat,
   leaveParty,
   readPartyForUser,
+  reAdvertiseParty,
   updatePartyMemberStatus,
   isPresenceActive,
   listLobbies,
@@ -68,7 +70,6 @@ import {
   COOP_INACTIVE_HIDE_S,
   getActiveLobbyIdForHost,
   readLobby,
-  readParty,
   readPresence,
   readSession,
 } from "./coop-store";
@@ -538,15 +539,40 @@ export async function handleCoopRoute(
   if (partyGetMatch && method === "GET") {
     const auth = await requireSession(req, env);
     if (auth instanceof Response) return auth;
-    const party = await readParty(env, partyGetMatch[1]!);
-    if (!party || party.status !== "active") {
-      return errResp(404, "not_found", "Party not found — the host may have closed the room.");
-    }
-    const member = party.members.find((m) => m.steamId === auth.steamID);
-    if (!member || member.status === "left") {
-      return errResp(403, "not_participant", "You're not in this Party Room.");
-    }
-    return json({ ok: true, party });
+    const r = await getPartyForViewer(env, auth.steamID, partyGetMatch[1]!);
+    if (!r.ok) return errResp(r.status, r.error, r.message);
+    return json({
+      ok: true,
+      party: r.value.party,
+      // Surface the linked lobby (or `lobbyMissing: true`) so the
+      // Party Hub can render a Re-advertise CTA when the lobby has
+      // expired off the public board mid-party. Frontend keys off
+      // `lobbyMissing` only — the lobby payload is informational.
+      lobby: r.value.lobby,
+      lobbyMissing: r.value.lobbyMissing,
+    });
+  }
+
+  // Host-only Re-advertise. Mints a fresh lobby record from the
+  // party's snapshotted metadata when the original 35-min lobby has
+  // expired off the board while the party (4 h TTL) is still alive.
+  const partyReAdvertiseMatch = pathname.match(
+    /^\/coop\/parties\/([0-9a-f]{32})\/re-advertise$/,
+  );
+  if (partyReAdvertiseMatch && method === "POST") {
+    const auth = await requireSession(req, env);
+    if (auth instanceof Response) return auth;
+    // Tighter rate limit on re-advertise specifically (vs the
+    // generic 60/60s coop-write bucket): the action mutates the
+    // public board and we don't want a host accidentally double-
+    // tapping the button into duplicate listings. 5 attempts per
+    // minute is plenty for the legitimate "I came back, my room
+    // expired, re-list it" flow.
+    const rl = await rateLimit(env, req, "coop-re-advertise", 5, 60);
+    if (rl) return rl;
+    const r = await reAdvertiseParty(env, auth.steamID, partyReAdvertiseMatch[1]!);
+    if (!r.ok) return errResp(r.status, r.error, r.message);
+    return json({ ok: true, party: r.value.party, lobby: r.value.lobby });
   }
 
   const partyActionMatch = pathname.match(

@@ -11,6 +11,7 @@ import {
   type CoopPresence,
   type CoopPresenceStatus,
   type CoopParty,
+  type CoopPartyLobbyMeta,
   type CoopPartyMember,
   type CoopPartyMemberStatus,
   type CoopSession,
@@ -1609,6 +1610,33 @@ async function isCharacterClaimedForLobby(
   );
 }
 
+/**
+ * Snapshot the host-set advertising surface of a `RunLobby` so it can
+ * survive on the party record after the lobby's own 35-min TTL has
+ * expired. Used by the re-advertise flow (which lets a host whose
+ * lobby fell off the board mint a fresh equivalent without the host
+ * having to refill the create-room form from memory).
+ */
+function snapshotLobbyMeta(lobby: RunLobby): CoopPartyLobbyMeta {
+  const norm = normalizeRunLobby(lobby);
+  const cap = lobbyCapacity(norm) as RunLobbySize;
+  return {
+    title: norm.title,
+    mode: norm.mode,
+    goal: norm.goal,
+    lobbySize: cap,
+    ascensionMin: norm.ascensionMin,
+    ascensionMax: norm.ascensionMax,
+    voicePreference: norm.voicePreference,
+    approvalRequired: norm.approvalRequired === true ? true : undefined,
+    voicePreset: norm.voicePreset,
+    voiceChannelUrl: norm.voiceChannelUrl,
+    preferredCharacters: norm.preferredCharacters,
+    note: norm.note,
+    discordHandle: norm.discordHandle,
+  };
+}
+
 async function ensurePartyForLobby(
   env: Env,
   lobby: RunLobby,
@@ -1676,6 +1704,10 @@ async function ensurePartyForLobby(
       }
       existing.updatedAt = nowIso;
       existing.expiresAt = new Date(now + COOP_PARTY_TTL_S * 1000).toISOString();
+      // Refresh the lobby-meta snapshot every time we touch the party
+      // — host might have edited the lobby title, voice channel, etc.
+      // since the party was minted. Idempotent + cheap.
+      existing.lobbyMeta = snapshotLobbyMeta(lobby);
       await writeParty(env, existing);
       return existing;
     }
@@ -1699,6 +1731,7 @@ async function ensurePartyForLobby(
     createdAt: nowIso,
     updatedAt: nowIso,
     expiresAt: new Date(now + COOP_PARTY_TTL_S * 1000).toISOString(),
+    lobbyMeta: snapshotLobbyMeta(lobby),
   };
   await writeParty(env, party);
   return party;
@@ -1917,6 +1950,192 @@ export async function endParty(
   const lobby = await readLobby(env, party.lobbyId);
   if (lobby) await deleteLobby(env, lobby);
   return ok({ ended: true });
+}
+
+// ---------- Party-hub heartbeat + re-advertise ----------
+
+/**
+ * If a party's linked lobby is within `LOBBY_REFRESH_THRESHOLD_S` of
+ * its TTL expiry, push it out to a fresh full TTL. Called from the
+ * GET /coop/parties/:id path so that, while the host (or any member)
+ * has the Party Hub open, the lobby stays advertised on the public
+ * board — no manual host action required.
+ *
+ * Returns `null` if the lobby is missing entirely (host needs to
+ * re-advertise) or the linked lobby was never set. The caller uses
+ * that null to surface a `lobbyMissing: true` flag on the wire.
+ */
+const LOBBY_REFRESH_THRESHOLD_S = 10 * 60; // 10 minutes
+
+async function refreshLobbyForParty(
+  env: Env,
+  party: CoopParty,
+): Promise<RunLobby | null> {
+  if (!party.lobbyId) return null;
+  const lobby = await readLobby(env, party.lobbyId);
+  if (!lobby) return null;
+  if (lobby.status !== "open" && lobby.status !== "full") return lobby;
+  const now = Date.now();
+  const exp = Date.parse(lobby.expiresAt);
+  if (!Number.isFinite(exp)) return lobby;
+  const msUntilExpiry = exp - now;
+  if (msUntilExpiry > LOBBY_REFRESH_THRESHOLD_S * 1000) return lobby;
+  // Re-stamp the lobby so it survives another full TTL cycle. We
+  // touch updatedAt too so the listing's "last activity" sort stays
+  // honest. writeLobby is idempotent and re-emits the host index.
+  lobby.updatedAt = new Date(now).toISOString();
+  lobby.expiresAt = new Date(now + COOP_LOBBY_TTL_S * 1000).toISOString();
+  await writeLobby(env, lobby);
+  return lobby;
+}
+
+export interface PartyForViewerResult {
+  party: CoopParty;
+  lobby: RunLobby | null;
+  /** True when the linked lobby has expired out of KV. */
+  lobbyMissing: boolean;
+}
+
+/**
+ * Fetch a party for a viewer, validate participation, and best-effort
+ * extend the linked lobby's TTL (Bug 1 / Option A). Surfaces
+ * `lobbyMissing: true` to the frontend so the Party Hub can render a
+ * Re-advertise CTA (Bug 1 / Option C).
+ */
+export async function getPartyForViewer(
+  env: Env,
+  viewerSteamId: string,
+  partyId: string,
+): Promise<CoopResult<PartyForViewerResult>> {
+  const party = await readParty(env, partyId);
+  if (!party || party.status !== "active") {
+    return err(404, "not_found", "Party not found — the host may have closed the room.");
+  }
+  const member = party.members.find((m) => m.steamId === viewerSteamId);
+  if (!member || member.status === "left") {
+    return err(403, "not_participant", "You're not in this Party Room.");
+  }
+  const lobby = await refreshLobbyForParty(env, party);
+  return ok({ party, lobby, lobbyMissing: !lobby });
+}
+
+/**
+ * Mint a fresh `RunLobby` from a party's snapshotted lobby metadata
+ * (or sane defaults for legacy parties created before the snapshot
+ * field existed) and re-link it to the party. Used when the original
+ * lobby's 35-min TTL expired while the party was still alive. Only
+ * the host can call this.
+ *
+ * This is deliberately tolerant of partially-missing meta: a legacy
+ * party with no `lobbyMeta` snapshot still gets a usable lobby with
+ * "Co-op room" / `goal: "any"` defaults, which is good enough for
+ * the host to re-edit through the normal lobby PATCH route.
+ */
+export async function reAdvertiseParty(
+  env: Env,
+  callerSteamId: string,
+  partyId: string,
+): Promise<CoopResult<{ party: CoopParty; lobby: RunLobby }>> {
+  const party = await readParty(env, partyId);
+  if (!party || party.status !== "active") {
+    return err(404, "not_found", "Party Room not found.");
+  }
+  if (party.hostSteamId !== callerSteamId) {
+    return err(403, "not_host", "Only the host can re-advertise this room.");
+  }
+  // If the original lobby still exists and is open/full, just bump
+  // its TTL and re-link without minting a new record. Avoids host
+  // double-clicks creating duplicate board entries.
+  const existingLobby = party.lobbyId ? await readLobby(env, party.lobbyId) : null;
+  const now = Date.now();
+  const nowIso = new Date(now).toISOString();
+  if (existingLobby && (existingLobby.status === "open" || existingLobby.status === "full")) {
+    existingLobby.updatedAt = nowIso;
+    existingLobby.expiresAt = new Date(now + COOP_LOBBY_TTL_S * 1000).toISOString();
+    await writeLobby(env, existingLobby);
+    return ok({ party, lobby: existingLobby });
+  }
+  // Block the host from minting a duplicate parallel lobby — if
+  // they've created a fresh lobby through the regular flow since
+  // their original one expired, we re-link to that instead.
+  const otherActiveLobbyId = await getActiveLobbyIdForHost(env, callerSteamId);
+  if (otherActiveLobbyId && otherActiveLobbyId !== party.lobbyId) {
+    const otherLobby = await readLobby(env, otherActiveLobbyId);
+    if (otherLobby && (otherLobby.status === "open" || otherLobby.status === "full")) {
+      party.lobbyId = otherLobby.lobbyId;
+      otherLobby.partyId = party.partyId;
+      otherLobby.updatedAt = nowIso;
+      await writeLobby(env, otherLobby);
+      party.updatedAt = nowIso;
+      await writeParty(env, party);
+      return ok({ party, lobby: otherLobby });
+    }
+  }
+  const profile = await profileFor(env, callerSteamId);
+  const meta = party.lobbyMeta;
+  const fallbackTitle = `${profile.personaName || "Spire"}'s co-op room`;
+  const newLobbyId = newRandomId();
+  // Active member list — host always seat 1, then any non-left
+  // member who's still attached. Mirrors the "accepted" invariant
+  // that `joinLobbySeat` relies on.
+  const activeMemberIds: string[] = [callerSteamId];
+  for (const m of party.members) {
+    if (m.steamId === callerSteamId) continue;
+    if (m.status === "left") continue;
+    activeMemberIds.push(m.steamId);
+  }
+  const lobbySize: RunLobbySize = (() => {
+    const s = meta?.lobbySize ?? party.lobbySize;
+    return s === 2 || s === 3 || s === 4 ? s : 4;
+  })();
+  const newLobby: RunLobby = {
+    lobbyId: newLobbyId,
+    hostSteamId: callerSteamId,
+    hostPersonaName: profile.personaName,
+    hostAvatarUrl: profile.avatarUrl,
+    title: meta?.title || fallbackTitle,
+    mode: meta?.mode,
+    goal: meta?.goal ?? ("any" as CoopGoal),
+    lobbySize,
+    ascensionMin: meta?.ascensionMin,
+    ascensionMax: meta?.ascensionMax,
+    voicePreference: meta?.voicePreference,
+    approvalRequired: meta?.approvalRequired === true,
+    voicePreset: meta?.voicePreset ?? "any",
+    voiceChannelUrl: meta?.voiceChannelUrl,
+    preferredCharacters: meta?.preferredCharacters,
+    note: meta?.note,
+    discordHandle: meta?.discordHandle,
+    status: "open",
+    acceptedMemberSteamIds: activeMemberIds,
+    pendingSeatRequestSteamIds: [],
+    memberSteamIds: activeMemberIds,
+    pendingJoinRequestSteamIds: [],
+    partyId: party.partyId,
+    createdAt: nowIso,
+    updatedAt: nowIso,
+    expiresAt: new Date(now + COOP_LOBBY_TTL_S * 1000).toISOString(),
+  };
+  await writeLobby(env, newLobby);
+  party.lobbyId = newLobbyId;
+  party.updatedAt = nowIso;
+  party.expiresAt = new Date(now + COOP_PARTY_TTL_S * 1000).toISOString();
+  // Update the snapshot too so subsequent re-advertise calls don't
+  // drift back to legacy defaults if the host later edits the lobby
+  // and the new metadata gets baked into `party.lobbyMeta` via
+  // `ensurePartyForLobby`.
+  party.lobbyMeta = snapshotLobbyMeta(newLobby);
+  await writeParty(env, party);
+  // Pin host presence to the new lobby so the public lobby card on
+  // /coop renders the host as "looking" again immediately, not on
+  // the next presence heartbeat tick.
+  await setPresenceField(env, callerSteamId, {
+    currentLobbyId: newLobbyId,
+    currentPartyId: party.partyId,
+    status: "looking",
+    statusAutoSet: true,
+  });
+  return ok({ party, lobby: newLobby });
 }
 
 export async function endSession(

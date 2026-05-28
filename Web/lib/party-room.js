@@ -44,8 +44,16 @@ let partyId = null;
 let pollTimer = null;
 let lastParty = null;
 let lastLobby = null;
+let lastLobbyMissing = false;
+// Fingerprint of the most recent render, used to skip no-op innerHTML
+// writes when nothing meaningful has changed since the last poll. The
+// 12-s polling cadence used to re-emit the entire party hub DOM every
+// tick, which (combined with the party-finder-scene MutationObserver)
+// caused a visible layout jump roughly twice per minute even when
+// nobody had joined, left, or changed status. See Bug 3.
+let lastRenderSig = "";
 const hostStepState = {};   // partyId → { hosting, charSelect, invitesSent, inGame, copied }
-const joinerStepState = {}; // partyId → { joinedVoice, steamCopied, ready, waitingInvite, inGame }
+const joinerStepState = {}; // partyId → { joinedVoice, steamCopied, ready, waitingInvite, inGame, reAdvertising }
 
 export function mountPartyRoom(ctx, id) {
   bootCtx = ctx;
@@ -65,6 +73,10 @@ export function mountPartyRoom(ctx, id) {
 
 export function unmountPartyRoom() {
   clearTimeout(pollTimer);
+  // Reset the render fingerprint so a remount after unmount actually
+  // paints, instead of skipping when the same party data lands again.
+  lastRenderSig = "";
+  lastLobbyMissing = false;
   const $surface = document.getElementById("coop-party-surface");
   const $workspace = document.querySelector(".coop-workspace");
   const $bar = document.querySelector(".coop-bar");
@@ -117,8 +129,21 @@ async function refreshParty() {
     return;
   }
   lastParty = r.party;
-  // Best-effort lobby lookup so we can show branch, voice preset, etc.
-  if (lastParty?.lobbyId) {
+  // Backend now returns `lobbyMissing: true` when the linked lobby
+  // has expired off the public board mid-party (Bug 1). The hub
+  // renders a Re-advertise CTA in that case so the host has agency
+  // instead of being silently gaslit by a stale "Waiting for
+  // players" subtitle for hours.
+  lastLobbyMissing = r.lobbyMissing === true;
+  // Prefer the lobby record the backend just refreshed (the GET path
+  // bumps the lobby TTL so the public board sees it as fresh — see
+  // Option A in the engine). Fall back to /coop/state for legacy
+  // payloads that don't include the lobby inline.
+  if (r.lobby && r.lobby.lobbyId === lastParty.lobbyId) {
+    lastLobby = r.lobby;
+  } else if (lastLobbyMissing) {
+    lastLobby = null;
+  } else if (lastParty?.lobbyId) {
     const lr = await jsonFetch("/coop/state");
     if (lr.ok) {
       lastLobby = lr.lobby?.lobbyId === lastParty.lobbyId
@@ -246,11 +271,73 @@ function renderError(msg) {
     </div>`;
 }
 
+/**
+ * Build a compact signature of the visible state so the 12-s poller
+ * doesn't re-emit identical innerHTML on every tick. Idempotent
+ * polling that re-writes the same DOM is what made the seat row jump
+ * twice a minute even when nothing had changed (Bug 3). Anything
+ * that meaningfully affects rendering goes into this string.
+ *
+ * The signature deliberately excludes the in-memory step state maps
+ * (host/joiner) — those mutate via local click handlers, which call
+ * `renderParty(lastParty, lastLobby)` after stamping the step state,
+ * so the natural render path forces a re-paint without help from
+ * this fingerprint. Including them here would double-count.
+ */
+function renderSignature(party, lobby, lobbyMissing, viewerSteamId, viewerIsHost) {
+  if (!party) return "";
+  const members = (party.members || []).map((m) => [
+    m.steamId, m.status, m.selectedCharacter || "", m.personaName || "", m.avatarUrl || "",
+  ].join("|")).join(";");
+  // Deliberately EXCLUDE lobby.expiresAt: the backend's
+  // heartbeat-extension path bumps it on every GET once the lobby is
+  // within 10 min of TTL, so including it here would force a
+  // re-render on every 12-s poll — exactly the layout-jump symptom
+  // we're trying to eliminate. expiresAt isn't shown to the user in
+  // the hub copy anyway.
+  const lobbyBits = lobby
+    ? [
+        lobby.lobbyId || "",
+        lobby.title || "",
+        lobby.voicePreset || "",
+        lobby.voiceChannelUrl || "",
+        lobby.voicePreference || "",
+        String(lobby.ascensionMin ?? ""),
+        String(lobby.ascensionMax ?? ""),
+        lobby.goal || "",
+        lobby.mode || "",
+        (lobby.preferredCharacters || []).join(","),
+        lobby.note || "",
+      ].join("|")
+    : "";
+  const hostLocal = hostStepState[party.partyId] ? JSON.stringify(hostStepState[party.partyId]) : "";
+  const joinerLocal = joinerStepState[party.partyId] ? JSON.stringify(joinerStepState[party.partyId]) : "";
+  return [
+    party.partyId, party.status, party.lobbyId || "", party.lobbySize || "",
+    members, lobbyBits,
+    lobbyMissing ? "1" : "0",
+    viewerSteamId || "", viewerIsHost ? "h" : "g",
+    hostLocal, joinerLocal,
+  ].join("§");
+}
+
 function renderParty(party, lobby) {
   const $root = document.getElementById("coop-party-root");
   if (!$root) return;
   const me = bootCtx?.session?.steamId || bootCtx?.session?.steamID;
   const isHost = party.hostSteamId === me;
+  // Skip the innerHTML write when nothing has changed since the last
+  // paint. Without this gate, every 12-s poll detached and reinstalled
+  // the entire #coop-party-root subtree, which (a) caused a visible
+  // scroll/layout jump on the page and (b) re-triggered the
+  // party-finder-scene MutationObserver into rebuilding the campfire
+  // scene from scratch. See Bug 3.
+  const sig = renderSignature(party, lobby, lastLobbyMissing, me, isHost);
+  if ($root.dataset.pfPartyMounted === party.partyId && sig === lastRenderSig) {
+    return;
+  }
+  lastRenderSig = sig;
+  $root.dataset.pfPartyMounted = party.partyId;
   const myMember = party.members.find((m) => m.steamId === me);
   const activeMembers = party.members.filter((m) => m.status !== "left");
   const cap = party.lobbySize || 4;
@@ -278,11 +365,20 @@ function renderParty(party, lobby) {
          <p>Join voice, add the host on Steam, and get into STS2.</p>
        </div>`;
 
+  // Bug 1 / Option C — when the linked lobby has expired off the
+  // public board mid-party, show the host a clear warning + a
+  // Re-advertise CTA. Joiners see a softer note (they can't act on
+  // it, but should know the room is no longer listed). The banner
+  // is inline-styled so it doesn't drag in a styles.css bump on a
+  // hotfix-only deploy. The fade-in respects prefers-reduced-motion.
+  const expiredBannerHtml = lastLobbyMissing ? renderExpiredBanner(isHost) : "";
+
   $root.innerHTML = `
     <header class="pf-hub-head">
       ${headHtml}
       <a class="pf-btn pf-btn--ghost pf-btn--sm" href="/?tab=coop">Back to Co-op</a>
     </header>
+    ${expiredBannerHtml}
     <section class="pf-hub-summary">
       <h3 class="pf-hub-summary-title">${esc(lobby?.title || "Co-op room")}</h3>
       <div class="pf-hub-summary-attrs">
@@ -381,14 +477,59 @@ function renderStatusRow(m, party, meSid) {
 function renderEmptyMemberSlots(n) {
   let out = "";
   for (let i = 0; i < n; i++) {
+    // The `pf-member-row--empty` class is the contract the campfire
+    // scene reader (`party-finder-scene.js → readPartyMembers`)
+    // uses to tell empty slots apart from filled members. Without
+    // it the scene treated every empty seat as a real member,
+    // defaulted the badge text to "Joined", and CSS uppercased it
+    // into a loud "JOINED" pill on top of an "Open Seat / Pick
+    // character" body row (Bug 2). Adding the marker class makes
+    // the scene render the dashed silhouette + "Open seat / Any
+    // character" treatment instead — no badge at all on an empty
+    // slot, which is what the design called for.
     out += `
-      <li class="pf-member-row">
+      <li class="pf-member-row pf-member-row--empty">
         <span class="pf-member-avatar" style="background:rgba(255,255,255,0.06);"></span>
         <div class="pf-member-meta"><strong>Open Seat</strong><small>Any</small></div>
-        <span class="pf-member-status">Open</span>
+        <span class="pf-member-status pf-member-status--open">Open</span>
       </li>`;
   }
   return out;
+}
+
+function renderExpiredBanner(isHost) {
+  // Inline styles only — see the call-site note. Keeps this hotfix
+  // a CSS-pin-free deploy and avoids fighting cascade order with the
+  // campfire scene CSS, which has high-specificity selectors.
+  const wrapStyle =
+    "margin:12px 0;padding:12px 14px;border-radius:10px;" +
+    "background:rgba(251,191,36,0.10);border:1px solid rgba(251,191,36,0.42);" +
+    "color:#fde68a;display:flex;align-items:center;gap:12px;flex-wrap:wrap;" +
+    "animation:pf-room-expired-fade 200ms ease-out both;";
+  const msgStyle = "flex:1 1 240px;font-size:14px;line-height:1.45;";
+  const motionGuard =
+    "@media (prefers-reduced-motion: reduce){section[data-pf-room-expired]{animation:none!important;}}";
+  const keyframes =
+    "@keyframes pf-room-expired-fade{from{opacity:0;transform:translateY(-4px);}to{opacity:1;transform:none;}}";
+  if (isHost) {
+    return `
+      <style>${keyframes}${motionGuard}</style>
+      <section data-pf-room-expired role="alert" style="${wrapStyle}">
+        <span style="${msgStyle}">
+          <strong>Your room expired and isn&rsquo;t listed anymore.</strong>
+          Re-advertise to bring it back to the board so new players can join.
+        </span>
+        <button type="button" class="pf-btn pf-btn--primary" data-pf-hub="re-advertise">Re-advertise</button>
+      </section>`;
+  }
+  return `
+    <style>${keyframes}${motionGuard}</style>
+    <section data-pf-room-expired role="status" style="${wrapStyle}">
+      <span style="${msgStyle}">
+        Heads up &mdash; this room isn&rsquo;t listed on the public board right now.
+        The host can re-advertise it from their hub.
+      </span>
+    </section>`;
 }
 
 // ── Joiner next-action card ──────────────────────────────────────────
@@ -642,8 +783,40 @@ function onHubClick(e) {
       return;
     }
     case "end-party": void endParty(); return;
+    case "re-advertise": void reAdvertise(btn); return;
     default: return;
   }
+}
+
+async function reAdvertise(btn) {
+  if (!btn || btn.dataset.busy === "1") return;
+  btn.dataset.busy = "1";
+  const prevLabel = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = "Re-advertising…";
+  const r = await jsonFetch(`/coop/parties/${partyId}/re-advertise`, { body: {} });
+  btn.disabled = false;
+  btn.dataset.busy = "";
+  btn.textContent = prevLabel;
+  if (!r.ok) {
+    bootCtx?.deps?.toast?.(r.message || "Couldn't re-advertise the room.");
+    return;
+  }
+  // Optimistically clear the warning state so the next render path
+  // doesn't repaint the banner before the poll lands.
+  lastLobbyMissing = false;
+  if (r.party) lastParty = r.party;
+  if (r.lobby) lastLobby = r.lobby;
+  // Force-refresh the fingerprint so the cleared-banner render
+  // actually paints (the signature would otherwise match if the
+  // party data is byte-identical to the previous tick).
+  lastRenderSig = "";
+  renderParty(lastParty, lastLobby);
+  bootCtx?.deps?.toast?.("Room re-advertised — players can find it again.");
+  // Pull the canonical state for chrome/CSS that depends on lobby
+  // freshness elsewhere on the page (the body MutationObserver in
+  // party-finder-scene.js will pick this up automatically).
+  void refreshParty();
 }
 
 async function postStatus(status) {

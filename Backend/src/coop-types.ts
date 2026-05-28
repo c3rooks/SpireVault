@@ -249,6 +249,33 @@ export interface CoopPartyMember {
 
 export type CoopPartyStatus = "active" | "ended";
 
+/**
+ * Snapshot of the lobby fields needed to re-mint an equivalent lobby
+ * record after the original `RunLobby` has expired out of KV. Only
+ * captures the host-set advertising surface (title, mode, ascension,
+ * voice preset, etc.) — never seat occupancy, since seats are
+ * authoritatively tracked by the party itself.
+ *
+ * Optional because parties created before this field was added simply
+ * don't have a snapshot; the re-advertise flow falls back to safe
+ * defaults in that case so legacy parties stay re-advertisable.
+ */
+export interface CoopPartyLobbyMeta {
+  title: string;
+  mode?: string;
+  goal: CoopGoal;
+  lobbySize: RunLobbySize;
+  ascensionMin?: number;
+  ascensionMax?: number;
+  voicePreference?: VoicePreference;
+  approvalRequired?: boolean;
+  voicePreset?: VoicePreset;
+  voiceChannelUrl?: string;
+  preferredCharacters?: CoopCharacter[];
+  note?: string;
+  discordHandle?: string;
+}
+
 export interface CoopParty {
   partyId: string;
   lobbyId: string;
@@ -259,6 +286,15 @@ export interface CoopParty {
   createdAt: string;
   updatedAt: string;
   expiresAt: string;
+  /**
+   * Optional snapshot of the parent lobby's host-set metadata, taken
+   * at party creation. Lets the host re-advertise after the original
+   * lobby's 35-min TTL has expired (parties live up to 4 h, so the
+   * lobby can vanish from the public board while the party is still
+   * active — see `re-advertise` route). Field is only required by
+   * the re-advertise path; everything else can ignore it.
+   */
+  lobbyMeta?: CoopPartyLobbyMeta;
 }
 
 export type CoopInviteStatus =
