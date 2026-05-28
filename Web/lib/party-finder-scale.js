@@ -176,15 +176,56 @@
            'fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>' +
            '</svg>';
   }
+  // v196 — three-stage gate. The toolbar is a deliberate stage-C
+  // surface; stage A and B don't paint it at all. We read the bucket
+  // off the documentElement, which is owned by party-finder-scene.js
+  // (also defaults to "a" when state hasn't loaded yet, so we err
+  // on the side of NOT painting noise on a cold page).
+  function currentStageBucket() {
+    var v = (doc.documentElement.getAttribute('data-pf-stage-bucket') || 'a').toLowerCase();
+    return (v === 'a' || v === 'b' || v === 'c') ? v : 'a';
+  }
+  function shouldMountToolbar() {
+    return currentStageBucket() === 'c';
+  }
+  function ensureFilterTrigger(section) {
+    // Stage-C Filter button: a small iOS-style icon button that sits
+    // in the section header (right side, near Host a Room). Click
+    // toggles the inline toolbar open/closed. Hidden in any other
+    // stage via CSS reading [data-pf-stage-bucket].
+    if (!section) return;
+    var head = section.querySelector('.pf-section-head .pf-section-actions');
+    if (!head) return;
+    if (head.querySelector('[data-pf-action="pf-toggle-filter-sheet"]')) return;
+    var btn = doc.createElement('button');
+    btn.type = 'button';
+    btn.className = 'pf-btn pf-btn--ghost pf-btn--sm pf-live-filter-trigger';
+    btn.setAttribute('data-pf-action', 'pf-toggle-filter-sheet');
+    btn.setAttribute('aria-expanded', 'false');
+    btn.setAttribute('aria-controls', 'pf-live-toolbar');
+    btn.innerHTML =
+      '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+        '<path d="M3 6h18"/><path d="M6 12h12"/><path d="M10 18h4"/>' +
+      '</svg><span>Filter</span>';
+    head.appendChild(btn);
+    btn.addEventListener('click', function () {
+      var open = section.getAttribute('data-pf-toolbar-open') === '1';
+      section.setAttribute('data-pf-toolbar-open', open ? '0' : '1');
+      btn.setAttribute('aria-expanded', open ? 'false' : 'true');
+    });
+  }
   function ensureToolbar() {
+    if (!shouldMountToolbar()) return null;
     var section = doc.getElementById('pf-live');
     if (!section) return null;
+    ensureFilterTrigger(section);
     var existing = section.querySelector('.pf-live-toolbar');
     if (existing) return existing;
     var list = section.querySelector('#pf-live-list');
     if (!list) return null;
     var bar = doc.createElement('div');
     bar.className = 'pf-live-toolbar';
+    bar.id = 'pf-live-toolbar';
     bar.setAttribute('data-pf-live-toolbar', '1');
     bar.innerHTML =
       '<div class="pf-live-toolbar-row pf-live-toolbar-row--top">' +
@@ -399,14 +440,23 @@
       setTimeout(boot, 200);
       return;
     }
+    // v196 — re-evaluate the stage bucket every poll so a 3rd lobby
+    // appearing mid-session promotes the page to full UI (stage C)
+    // and exposes the Filter trigger + toolbar in place.
     ensureToolbar();
     apply();
     var list = doc.getElementById('pf-live-list');
     if (list) {
-      var mo = new MutationObserver(function () { apply(); });
+      var mo = new MutationObserver(function () {
+        ensureToolbar();
+        apply();
+      });
       mo.observe(list, { childList: true, subtree: false });
     }
-    setInterval(apply, 4000);
+    setInterval(function () {
+      ensureToolbar();
+      apply();
+    }, 4000);
   }
   if (doc.readyState !== 'loading') {
     boot();

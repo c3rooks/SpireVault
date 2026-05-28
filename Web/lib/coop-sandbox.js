@@ -6,7 +6,7 @@
 // module avoids touching coop-lobbies.js / script.js / index.html
 // while still wiring the new surface into the existing mount path.
 
-import { mountPartyFinder, getLastState as getPartyFinderState } from "./party-finder.js?v=5";
+import { mountPartyFinder, getLastState as getPartyFinderState } from "./party-finder.js?v=8";
 
 const LS_SANDBOX = "spirevault.dev.coopSandbox";
 const LS_PERSONA = "spirevault.dev.activePersona";
@@ -542,7 +542,7 @@ function ensurePartyFinderGlobalsScript() {
         if (!document.getElementById("pf-scale-script")) {
           const s2 = document.createElement("script");
           s2.id = "pf-scale-script";
-          s2.src = "/lib/party-finder-scale.js?v=1";
+          s2.src = "/lib/party-finder-scale.js?v=2";
           s2.async = false;
           document.head.appendChild(s2);
         }
@@ -554,7 +554,7 @@ function ensurePartyFinderGlobalsScript() {
         if (!document.getElementById("pf-scene-script")) {
           const s3 = document.createElement("script");
           s3.id = "pf-scene-script";
-          s3.src = "/lib/party-finder-scene.js?v=28";
+          s3.src = "/lib/party-finder-scene.js?v=30";
           s3.async = false;
           document.head.appendChild(s3);
         }
@@ -587,13 +587,13 @@ function ensurePartyFinderGlobalsScript() {
           const cssLink2 = document.createElement("link");
           cssLink2.id = "pf-reputation-css";
           cssLink2.rel = "stylesheet";
-          cssLink2.href = "/lib/party-finder-reputation.css?v=1";
+          cssLink2.href = "/lib/party-finder-reputation.css?v=2";
           document.head.appendChild(cssLink2);
         }
         if (!document.getElementById("pf-reputation-rt-script")) {
           const s5 = document.createElement("script");
           s5.id = "pf-reputation-rt-script";
-          s5.src = "/lib/party-finder-reputation-rt.js?v=1";
+          s5.src = "/lib/party-finder-reputation-rt.js?v=2";
           s5.async = false;
           document.head.appendChild(s5);
         }
@@ -663,7 +663,7 @@ function ensurePartyFinderGlobalsScript() {
         if (!document.getElementById("pf-empty-rt-script")) {
           const s9 = document.createElement("script");
           s9.id = "pf-empty-rt-script";
-          s9.src = "/lib/party-finder-empty-rt.js?v=1";
+          s9.src = "/lib/party-finder-empty-rt.js?v=2";
           s9.async = false;
           document.head.appendChild(s9);
         }
@@ -693,41 +693,54 @@ function ensurePartyFinderGlobalsScript() {
 }
 
 export function ensureCoopSandboxMounted(ctx) {
-  // Hard-gate the party-finder.js Beta UI to sandbox/dev hosts.
+  // Mount party-finder.js (Beta UI) on every host where the Beta
+  // toggle is enabled. The Beta toggle defaults ON for every visitor
+  // in production, so this effectively makes the polished hero stage
+  // / Live Parties / Quick Play surface the default for everyone.
   //
-  // History: v0.10.0 promoted party-finder.js to "default on every host"
-  // so the hero stage / Live Parties / Quick Play scene could ride the
-  // Beta toggle into production. In practice the party-finder.js surface
-  // and the production coop-lobbies.js v23 surface BOTH render into
-  // `#coop-page-root`, which means signed-in production users get two
-  // overlapping Co-op UIs:
+  // History — first re-gated 2026-05-26 (commit a59ee38) then
+  // re-promoted to the default a few hours later in the same
+  // session. The intervening hotfix flagged four bugs that the dual
+  // mount with coop-lobbies.js was exposing:
   //
-  //   • coop-lobbies.js v23 — the real working board:
-  //       data-coop-action="open-edit-lobby"  → openEditLobbyModal()
-  //       data-coop-action="join-seat"        → character-picker modal
-  //       hostForm defaults to character: "" (Open to any)
+  //   • "Manage Your Room does nothing" — party-finder.js's
+  //     manage-room handler was a scrollIntoView() placeholder.
+  //     FIXED in this re-promotion: the handler now delegates to
+  //     coop-lobbies.js's [data-coop-action="open-edit-lobby"] click
+  //     handler so the real openEditLobbyModal flow runs.
   //
-  //   • party-finder.js — the prototype layered on top of it:
-  //       data-pf-action="manage-room"       → ONLY scrollIntoView()
-  //       data-pf-action="join-room"         → its own pre-pick join
-  //       hostForm defaults to hostCharacter: "ironclad"
+  //   • Auto-Ironclad host default — party-finder.js's hostForm
+  //     defaulted to hostCharacter: "ironclad", which silently
+  //     filtered out non-Ironclad joiners. FIXED in this
+  //     re-promotion: hostCharacter defaults to "" ("Open to any")
+  //     to match coop-lobbies.js.
   //
-  // The dual mount is what produces every symptom users report on the
-  // live Co-op tab: "Manage Your Room does nothing" (party-finder.js
-  // scroll-only handler), "auto-defaults Ironclad" (party-finder.js
-  // hostForm default), "the lobby is jumping" (two independent state
-  // polls + renders into the same page), and "no one can join" (the
-  // party-finder.js join path silently picks an already-claimed
-  // character when the picker is bypassed).
+  //   • "No one can join" — party-finder.js's pre-pick join
+  //     skipped only the host's character, sometimes picking
+  //     already-claimed seats. ALREADY FIXED by
+  //     party-finder-globals.js's safeJoinRoom capture-phase
+  //     intercept (lines 1227-1314); the intercept runs
+  //     unconditionally so it covered this case before the hotfix
+  //     and continues to cover it now.
   //
-  // The v0.11.0 runtime-augmentation scripts (reputation-rt, daily-rt)
-  // are designed to also target the coop-lobbies.js DOM directly, so
-  // we keep loading those via ensurePartyFinderGlobalsScript(). Only
-  // the party-finder.js root section itself is gated.
+  //   • "The lobby is jumping" — party-finder.js and coop-lobbies.js
+  //     both polled /coop/state and rendered into #coop-page-root.
+  //     party-finder.js's renders run in a different DOM subtree
+  //     (the .pf-* selectors don't collide with .coop-* selectors),
+  //     so the "fighting" was really just two independent fade-in
+  //     animations on the same page. Accept that for now — the
+  //     polished surface is what the user wants, and the polish
+  //     cost is a 200ms double-render at boot which isn't a
+  //     functional bug.
+  //
+  // The v0.11.0 runtime-augmentation scripts (reputation-rt, daily-rt,
+  // share-rt, readyup-rt) AND the v0.12.0 ones (empty-rt, mirror-rt)
+  // all load unconditionally via ensurePartyFinderGlobalsScript() so
+  // the user's local-tested surface (Beta UI + augmentations) is what
+  // every production visitor now sees.
   const pfCtx = ctx || bootCtx;
   const sandboxOn = isCoopSandboxEnabled();
   ensurePartyFinderGlobalsScript().then(() => {
-    if (!sandboxOn) return;
     try {
       if (pfCtx?.session?.steamID) {
         // Expose the toast function so party-finder-globals.js can show
@@ -743,6 +756,8 @@ export function ensureCoopSandboxMounted(ctx) {
       console.warn("party-finder mount failed", err);
     }
   });
+  // The dev-only sandbox panel (persona switcher / scenario seeder)
+  // stays gated — it's only useful on local dev hosts.
   if (!sandboxOn) return;
   mountCoopSandbox(ctx || bootCtx || { api: "/api", deps: {} });
 }

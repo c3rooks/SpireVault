@@ -889,6 +889,23 @@
     }
     return null;
   }
+  // SpireVault House lobbies (operator-seeded ambient rooms). Detected
+  // from the wire field; falls back to the synthetic Steam ID range
+  // for older payloads that pre-date the `isHouseLobby` flag.
+  function isHouseLobbyLite(lobby) {
+    if (!lobby) return false;
+    if (lobby.isHouseLobby === true) return true;
+    var sid = String(lobby.hostSteamId || '');
+    return /^7656119000000\d{4}$/.test(sid);
+  }
+  function houseSlugKey(lobby) {
+    var slug = String((lobby && lobby.houseSlug) || '');
+    if (slug === 'house-a10-heart') return 'a10-heart';
+    if (slug === 'house-a0-casual') return 'a0-casual';
+    var title = String((lobby && lobby.title) || '');
+    if (/a10/i.test(title) || /heart/i.test(title)) return 'a10-heart';
+    return 'a0-casual';
+  }
   function lobbyRowStatusBadge(lobby, state) {
     var nowMs = parseIsoMs(state && state.serverTime) || Date.now();
     var createdMs = parseIsoMs(lobby.createdAt);
@@ -897,23 +914,67 @@
     var filled = Array.isArray(lobby.acceptedMemberSteamIds)
       ? lobby.acceptedMemberSteamIds.length
       : (Array.isArray(lobby.memberSteamIds) ? lobby.memberSteamIds.length : 1);
-    var open = Math.max(0, size - filled);
-    if (open === 1)            return { cls: 'filling', label: 'Filling fast' };
-    if (size - open >= 2 && open >= 1) return { cls: 'go',      label: 'Go now' };
+    // House lobby seat math: the synthetic operator host occupies a
+    // seat but isn't a real human, so the room is functionally empty
+    // until a real joiner accepts. Show "OPEN" instead of "GO NOW"
+    // when only the synthetic host is present — "GO NOW" against an
+    // un-joinable operator placeholder is the same kind of dishonest
+    // urgency cue the rest of this pass is meant to kill.
+    if (isHouseLobbyLite(lobby)) {
+      var hostSid = String(lobby.hostSteamId || '');
+      var realCount = Array.isArray(lobby.acceptedMemberSteamIds)
+        ? lobby.acceptedMemberSteamIds.filter(function (s) { return s !== hostSid; }).length
+        : 0;
+      if (realCount === 0) {
+        return { cls: 'open', label: 'OPEN' };
+      }
+      // Once a real joiner is in, the room functions like a normal
+      // lobby and the standard urgency tiers apply.
+      var open = Math.max(0, size - filled);
+      if (open === 1)            return { cls: 'filling', label: 'Filling fast' };
+      if (size - open >= 2 && open >= 1) return { cls: 'go',      label: 'Go now' };
+      return { cls: 'open', label: 'OPEN' };
+    }
+    var open2 = Math.max(0, size - filled);
+    if (open2 === 1)            return { cls: 'filling', label: 'Filling fast' };
+    if (size - open2 >= 2 && open2 >= 1) return { cls: 'go',      label: 'Go now' };
     if (ageS > 0 && ageS < 90) return { cls: 'new',     label: 'New' };
     return null;
   }
   function ensureRowArt(article, lobby) {
     if (!article) return;
     if (article.querySelector(':scope > .pf-row-art')) return;
+    var div = document.createElement('div');
+    div.className = 'pf-row-art';
+    // SpireVault House lobbies get a themed crest tile instead of the
+    // generic "Open / to any" placeholder. The placeholder was the
+    // single biggest source of "this looks like a bot farm" feedback —
+    // two identical gray squares stamped with "OPEN TO ANY" reads as
+    // dead surface, not as a curated room. The themed tile gives each
+    // House slug a distinct visual identity (A0 Casual = chill/azure,
+    // A10 Heart Attempts = aggressive/ember).
+    if (isHouseLobbyLite(lobby)) {
+      var slugKey = houseSlugKey(lobby);
+      var stamp = slugKey === 'a10-heart' ? 'A10 Heart' : 'A0 Casual';
+      var subline = slugKey === 'a10-heart' ? 'Heart Hunters' : 'Casual Climb';
+      div.classList.add('pf-row-art--house');
+      div.classList.add('pf-row-art--house-' + slugKey);
+      div.innerHTML =
+        '<div class="pf-row-art-house-bg" aria-hidden="true"></div>' +
+        '<img class="pf-row-art-house-crest" src="/assets/vault-mark.svg" alt="" />' +
+        '<span class="pf-row-art-house-stamp">' + esc(stamp) + '</span>' +
+        '<span class="pf-row-art-house-sub">' + esc(subline) + '</span>';
+      article.insertBefore(div, article.firstChild);
+      article.classList.add('pf-live-row--has-art');
+      article.classList.add('pf-live-row--house-art');
+      return;
+    }
     var hostChars = (lobby.preferredCharacters || []).map(normalizeCharId).filter(Boolean);
     var slug = hostChars[0] || '';
     var inner = slug
       ? '<img class="pf-row-art-img" src="' + esc(charAsset(slug)) + '" alt="" />' +
         '<span class="pf-row-art-tag">' + esc(CHAR_LABEL[slug] || '') + '</span>'
       : '<div class="pf-row-art-any">Open<br/><span>to any</span></div>';
-    var div = document.createElement('div');
-    div.className = 'pf-row-art';
     div.innerHTML = inner;
     article.insertBefore(div, article.firstChild);
     article.classList.add('pf-live-row--has-art');
@@ -980,8 +1041,15 @@
     // into a live "active 14s ago" with a pulsing dot so the row reads
     // as a breathing lobby, not a frozen card. Idempotent — runs once
     // and re-runs cheaply on each sweep if the row gets re-rendered.
+    //
+    // House lobbies opt out: the synthetic operator host never updates
+    // `lastHeartbeatAt`, so "active 33m ago" is a lie — the room is
+    // perpetually open by design. The renderer already painted
+    // "always open" copy and a [data-pf-house-row] attribute; we skip
+    // the rewrite here so the honest copy survives.
     var strip = article.querySelector('.pf-host-strip');
-    if (strip) {
+    var isHouseRow = article.getAttribute('data-pf-house-row') === '1';
+    if (strip && !isHouseRow) {
       var nowMs = parseIsoMs(state && state.serverTime) || Date.now();
       var when = relativeAgo(lobby.updatedAt || lobby.createdAt, nowMs) || 'active now';
       var label = 'active ' + when;

@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>v199 House identity — visual demo</title>
+  <link rel="stylesheet" href="https://app.spirevault.app/styles.css?v=146" />
+  <link rel="stylesheet" href="https://app.spirevault.app/lib/party-finder.css?v=3" />
+  <link rel="stylesheet" href="https://app.spirevault.app/lib/party-finder-lobby-bar.css?v=8" />
+  <link rel="stylesheet" href="https://app.spirevault.app/lib/party-finder-house.css?v=1" />
+  <style>
+    body {
+      background: #0a0e1a;
+      color: #e8eaed;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      padding: 36px;
+      max-width: 1100px;
+      margin: 0 auto;
+    }
+    h1 { font-size: 18px; letter-spacing: 0.04em; text-transform: uppercase; color: #9ca3af; margin: 0 0 4px; font-weight: 600; }
+    p.lead { color: #9ca3af; margin: 0 0 28px; font-size: 13.5px; }
+    .demo-strip { display: flex; flex-direction: column; gap: 16px; }
+    h2 { font-size: 13px; color: #6b7280; margin: 16px 0 4px; letter-spacing: 0.06em; text-transform: uppercase; font-weight: 700; }
+  </style>
+</head>
+<body>
+  <h1>SpireVault House — v199 visual identity</h1>
+  <p class="lead">Each card uses the deployed <code>party-finder-house.css?v=1</code> stylesheet against the same live-row markup the runtime renders. No JS — pure CSS proof of the VAULT TEAM pill, themed art tiles, disclosure copy, and A0/A10 palette split.</p>
+
+  <h2>Best party card (House — A0 Casual)</h2>
+  <div id="pf-best-card">
+    <article class="pf-best-card pf-best-card--house pf-best-card--house-a0-casual" data-pf-house-row="1" data-pf-house-slug="a0-casual">
+      <div class="pf-best-art">
+        <div class="pf-best-art-house" data-pf-house-art="a0-casual">
+          <img class="pf-best-art-crest" src="https://app.spirevault.app/assets/vault-mark.svg" alt="" />
+          <span class="pf-best-art-eyebrow">Casual climb · all welcome</span>
+        </div>
+        <span class="pf-best-art-stamp"><span class="pf-dot" style="width:7px;height:7px;border-radius:999px;background:#5eead4;"></span>Casual Climb</span>
+      </div>
+      <div class="pf-best-meta">
+        <div class="pf-best-titlerow">
+          <h3 class="pf-best-title">SpireVault House · A0 Casual · all welcome</h3>
+          <span class="pf-fit-pill pf-fit-pill--good">Great fit</span>
+        </div>
+        <div class="pf-attrs-row">
+          <span class="pf-pill">Beta</span>
+          <span class="pf-pill">Co-op</span>
+          <span class="pf-pill">A0 Casual</span>
+          <span class="pf-pill">Casual</span>
+          <span class="pf-pill">Mic optional</span>
+        </div>
+        <div class="pf-host-line">
+          <img class="pf-host-line-img--house" src="https://app.spirevault.app/assets/vault-mark.svg" alt="" width="28" height="28" />
+          <strong>SpireVault House</strong>
+          <span class="pf-house-pill" title="Operator-seeded room (SpireVault Team)"><span class="pf-house-pill-shield">✦</span><span class="pf-house-pill-label">VAULT TEAM</span></span>
+          <span class="pf-muted">always open</span>
+        </div>
+        <p class="pf-house-disclosure">Ambient open room — first player to join takes it over.</p>
+        <div class="pf-seats"><strong>0 of 4 filled</strong> · 3 open seats</div>
+      </div>
+    </article>
+  </div>
+
+  <h2>Live Parties row (House — A0 Casual)</h2>
+  <article class="pf-live-row pf-live-row--has-art pf-live-row--house pf-live-row--house-a0-casual pf-live-row--house-art" data-pf-house-row="1" data-pf-house-slug="a0-casual">
+    <div class="pf-row-art pf-row-art--house pf-row-art--house-a0-casual">
+      <div class="pf-row-art-house-bg"></div>
+      <img class="pf-row-art-house-crest" src="https://app.spirevault.app/assets/vault-mark.svg" alt="" />
+      <span class="pf-row-art-house-stamp">A0 Casual</span>
+      <span class="pf-row-art-house-sub">Casual Climb</span>
+    </div>
+    <div class="pf-live-meta">
+      <div class="pf-live-titlerow">
+        <h4 class="pf-live-title">SpireVault House · A0 Casual · all welcome</h4>
+        <span class="pf-row-badge pf-row-badge--open">OPEN</span>
+      </div>
+      <div class="pf-host-strip" data-pf-host-strip>
+        <img class="pf-host-strip-img pf-host-strip-img--house" src="https://app.spirevault.app/assets/vault-mark.svg" alt="" width="28" height="28" />
+        <strong>SpireVault House</strong>
+        <span class="pf-house-pill"><span class="pf-house-pill-shield">✦</span><span class="pf-house-pill-label">VAULT TEAM</span></span>
+        <span class="pf-dot pf-dot--house"></span>
+        <span class="pf-host-status pf-host-status--house">always open</span>
+      </div>
+      <p class="pf-house-disclosure">Ambient open room — first player to join takes it over.</p>
+      <div class="pf-attrs"><span>Beta</span><span class="pf-sep">·</span><span>Co-op</span><span class="pf-sep">·</span><span>A0 Casual</span><span class="pf-sep">·</span><span>Casual</span></div>
+      <span class="pf-seats"><strong>0 of 4 filled</strong> · 3 open seats</span>
+    </div>
+    <div class="pf-live-actions">
+      <button class="pf-btn pf-btn--primary">Take this room</button>
+      <button class="pf-btn pf-btn--ghost">Details</button>
+    </div>
+  </article>
+
+  <h2>Live Parties row (House — A10 Heart Attempts)</h2>
+  <article class="pf-live-row pf-live-row--has-art pf-live-row--house pf-live-row--house-a10-heart pf-live-row--house-art" data-pf-house-row="1" data-pf-house-slug="a10-heart">
+    <div class="pf-row-art pf-row-art--house pf-row-art--house-a10-heart">
+      <div class="pf-row-art-house-bg"></div>
+      <img class="pf-row-art-house-crest" src="https://app.spirevault.app/assets/vault-mark.svg" alt="" />
+      <span class="pf-row-art-house-stamp">A10 Heart</span>
+      <span class="pf-row-art-house-sub">Heart Hunters</span>
+    </div>
+    <div class="pf-live-meta">
+      <div class="pf-live-titlerow">
+        <h4 class="pf-live-title">SpireVault House · A10 Heart Attempts</h4>
+        <span class="pf-row-badge pf-row-badge--open">OPEN</span>
+      </div>
+      <div class="pf-host-strip" data-pf-host-strip>
+        <img class="pf-host-strip-img pf-host-strip-img--house" src="https://app.spirevault.app/assets/vault-mark.svg" alt="" width="28" height="28" />
+        <strong>SpireVault House</strong>
+        <span class="pf-house-pill"><span class="pf-house-pill-shield">✦</span><span class="pf-house-pill-label">VAULT TEAM</span></span>
+        <span class="pf-dot pf-dot--house"></span>
+        <span class="pf-host-status pf-host-status--house">always open</span>
+      </div>
+      <p class="pf-house-disclosure">Ambient open room — first player to join takes it over.</p>
+      <div class="pf-attrs"><span>Beta</span><span class="pf-sep">·</span><span>Co-op</span><span class="pf-sep">·</span><span>A10 Heart</span><span class="pf-sep">·</span><span>Endgame</span></div>
+      <span class="pf-seats"><strong>0 of 4 filled</strong> · 3 open seats</span>
+    </div>
+    <div class="pf-live-actions">
+      <button class="pf-btn pf-btn--primary">Take this room</button>
+      <button class="pf-btn pf-btn--ghost">Details</button>
+    </div>
+  </article>
+
+  <h2>For comparison — pre-v199 (Initiate Lv1 badge, "OPEN TO ANY", "active 33m ago")</h2>
+  <article class="pf-live-row pf-live-row--has-art" style="opacity:0.85">
+    <div class="pf-row-art"><div class="pf-row-art-any">Open<br/><span>to any</span></div></div>
+    <div class="pf-live-meta">
+      <div class="pf-live-titlerow">
+        <h4 class="pf-live-title">SpireVault House · A10 Heart Attempts</h4>
+        <span class="pf-row-badge pf-row-badge--go">GO NOW</span>
+      </div>
+      <div class="pf-host-strip" data-pf-host-strip>
+        <img src="https://app.spirevault.app/assets/vault-mark.svg" alt="" width="28" height="28" />
+        <strong>SpireVault House</strong>
+        <span class="pf-rep-slot"><span style="display:inline-flex; align-items:center; gap:4px; padding:2px 6px; border-radius:6px; background:rgba(120,120,140,0.18); color:#a8a29e; font-size:11px; font-weight:700;">★ Lv 1 Initiate</span></span>
+        <span class="pf-dot"></span>
+        <span>active 33m ago</span>
+      </div>
+      <div class="pf-attrs"><span>Beta</span><span class="pf-sep">·</span><span>Co-op</span><span class="pf-sep">·</span><span>A10 Heart</span></div>
+      <span class="pf-seats"><strong>0 of 4 filled</strong> · 3 open seats</span>
+    </div>
+    <div class="pf-live-actions">
+      <button class="pf-btn pf-btn--primary">Join</button>
+      <button class="pf-btn pf-btn--ghost">Details</button>
+    </div>
+  </article>
+</body>
+</html>

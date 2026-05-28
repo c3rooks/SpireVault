@@ -1,0 +1,360 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <title>SpireVault Coach · STS2 team-aware AI strategist</title>
+  <meta name="description" content="Drop a Slay the Spire 2 screenshot and Coach grades your picks. No install. Works on any browser." />
+  <meta name="theme-color" content="#0c0a14" />
+  <link rel="icon" type="image/svg+xml" href="/assets/vault-mark.svg" />
+  <meta property="og:title" content="SpireVault Coach" />
+  <meta property="og:description" content="Team-aware AI strategist for Slay the Spire 2. Screenshot in, recommendation out." />
+  <meta property="og:image" content="https://app.spirevault.app/assets/og.png?v=1" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Playfair+Display:wght@700;900&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/assets/showtime.css?v=3" />
+</head>
+<body>
+  <div class="sv-shell">
+    <div class="sv-topbar">
+      <a class="sv-back" href="/">← SpireVault</a>
+      <div class="sv-brand">SpireVault Coach</div>
+    </div>
+
+    <!-- HERO ===================================================== -->
+    <header class="sv-hero sv-rise sv-rise--1">
+      <div>
+        <div class="sv-hero-eyebrow"><span class="sv-dot" aria-hidden="true"></span> AI Coach</div>
+        <h1 class="sv-hero-title">Screenshot in. Read out.</h1>
+        <p class="sv-hero-sub">Drop a card-reward, map, deck, or boss-relic screenshot. Coach grades each pick and tells you what to take, what to skip, and why — in plain English.</p>
+        <div class="sv-hero-actions">
+          <button class="sv-btn sv-btn--primary" id="hero-pick-cta">Pick a screenshot</button>
+          <a class="sv-btn sv-btn--ghost" href="/watch">Or coach a shared replay →</a>
+        </div>
+      </div>
+      <aside class="sv-hero-side">
+        <div class="sv-hero-metrics">
+          <div class="sv-hero-metric">
+            <div class="sv-hero-metric-label">Modes</div>
+            <div class="sv-hero-metric-value">4</div>
+          </div>
+          <div class="sv-hero-metric">
+            <div class="sv-hero-metric-label">Limit</div>
+            <div class="sv-hero-metric-value">10 / hr</div>
+          </div>
+        </div>
+      </aside>
+    </header>
+
+    <!-- MODE CHIPS =============================================== -->
+    <div class="sv-mode-row sv-rise sv-rise--2" style="margin-top:24px" role="tablist" aria-label="Coach mode">
+      <button class="sv-mode-chip is-active" data-mode="screenshot" role="tab">
+        Screenshot
+        <span class="sv-mode-chip-sub">drop a PNG / JPG</span>
+      </button>
+      <button class="sv-mode-chip" data-mode="lastshared" role="tab">
+        Last shared run
+        <span class="sv-mode-chip-sub">your most recent replay</span>
+      </button>
+      <button class="sv-mode-chip" data-mode="narrative" role="tab">
+        Post-run recap
+        <span class="sv-mode-chip-sub">narrative on a finished run</span>
+      </button>
+      <button class="sv-mode-chip" data-mode="snapshot" role="tab">
+        Live run (paste runId)
+        <span class="sv-mode-chip-sub">requires the Companion mod · optional</span>
+      </button>
+    </div>
+
+    <div class="sv-coach-grid" style="margin-top:18px">
+      <div class="sv-card sv-rise sv-rise--3">
+        <!-- Screenshot (default) -->
+        <div id="mode-screenshot" class="sv-form">
+          <div class="sv-drop" id="shot-drop" tabindex="0" role="button" aria-label="Drop or pick a screenshot">
+            <svg class="sv-drop-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <rect x="3" y="5" width="18" height="14" rx="2" stroke="currentColor" stroke-width="2"/>
+              <circle cx="12" cy="12" r="3.5" stroke="currentColor" stroke-width="2"/>
+              <path d="M9 5l2-2h2l2 2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+            <div class="sv-drop-title">Drop a card-reward, map, or deck screenshot</div>
+            <div class="sv-drop-sub">PNG or JPG up to 1 MB · Coach reads the image directly</div>
+            <input type="file" id="shot-file" accept="image/*" />
+            <img id="shot-preview" class="sv-drop-thumb" alt="" hidden />
+          </div>
+        </div>
+
+        <!-- Last shared run -->
+        <div id="mode-lastshared" class="sv-form" hidden>
+          <p class="sv-sub" style="margin:0 0 8px">Coach uses the most recent shared run on your account. Sign in first if you haven't.</p>
+          <div id="lastshared-target" class="sv-card" style="background:var(--sv-bg-elev-2);box-shadow:none">
+            <div class="sv-sub" style="margin:0">Pulling your shared runs…</div>
+          </div>
+        </div>
+
+        <!-- Narrative -->
+        <div id="mode-narrative" class="sv-form" hidden>
+          <label>runId of a recently-finished run
+            <input class="sv-coach-input" id="narr-runid" placeholder="e.g. share id from /watch" />
+          </label>
+          <p class="sv-sub" style="margin:0;font-size:12px">Coach writes a short story-style recap suitable for Discord or X.</p>
+        </div>
+
+        <!-- Live snapshot -->
+        <div id="mode-snapshot" class="sv-form" hidden>
+          <label>runId from the Companion mod
+            <input class="sv-coach-input" id="snap-runid" placeholder="ULID-style runId" />
+          </label>
+          <p class="sv-sub" style="margin:0;font-size:12px">Live snapshots need the optional Companion mod streaming. <a href="/companion-mod">Learn more →</a></p>
+        </div>
+
+        <label style="margin-top:14px">Optional question
+          <input class="sv-coach-input" id="coach-q" placeholder='e.g. "Should I take Bash+ or skip?"' maxlength="400" />
+        </label>
+        <button id="coach-go" class="sv-btn sv-btn--primary" style="margin-top:14px">Ask Coach</button>
+        <p class="sv-sub" style="margin-top:8px;font-size:12px">Limit: 10 calls / hour / account.</p>
+      </div>
+
+      <div class="sv-card sv-rise sv-rise--3">
+        <h2 style="margin:0 0 8px">Coach response</h2>
+        <div id="coach-out" aria-live="polite">
+          <p class="sv-sub" style="margin:0 0 10px">Pick a mode and ask — or try one of these:</p>
+          <div class="sv-coach-chips" id="coach-chips">
+            <button class="sv-coach-chip" type="button" data-coach-chip="screenshot">
+              <strong>Drop a card reward</strong>
+              <span>Coach grades each pick and recommends one.</span>
+            </button>
+            <button class="sv-coach-chip" type="button" data-coach-chip="lastshared">
+              <strong>Coach my last shared run</strong>
+              <span>Pulls your most recent shared run and writes a narrative.</span>
+            </button>
+            <button class="sv-coach-chip" type="button" data-coach-chip="sample">
+              <strong>See a sample analysis</strong>
+              <span>What the output looks like before you run anything.</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { api, esc, qs, getSession, fmtRel } from "/lib/showtime-shared.js?v=2";
+
+    let session = null;
+    let mode = "screenshot";
+    let lastSharedTarget = null; // { id, run, authorPersona }
+
+    const modes = ["screenshot", "lastshared", "narrative", "snapshot"];
+    function setMode(m) {
+      mode = m;
+      modes.forEach((k) => {
+        const panel = document.getElementById("mode-" + k);
+        if (panel) panel.hidden = k !== m;
+      });
+      document.querySelectorAll("[data-mode]").forEach((b) => {
+        b.classList.toggle("is-active", b.dataset.mode === m);
+        b.setAttribute("aria-selected", b.dataset.mode === m ? "true" : "false");
+      });
+      if (m === "lastshared") void loadLastShared();
+    }
+    document.querySelectorAll("[data-mode]").forEach((b) => {
+      b.addEventListener("click", () => setMode(b.dataset.mode));
+    });
+
+    // ─── Screenshot drop ────────────────────────────────────────────
+    const shotDrop = document.getElementById("shot-drop");
+    const shotInput = document.getElementById("shot-file");
+    const shotPreview = document.getElementById("shot-preview");
+    let shotDataUrl = null;
+
+    shotDrop.addEventListener("click", () => shotInput.click());
+    shotDrop.addEventListener("keydown", (ev) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); shotInput.click(); } });
+    ;["dragenter", "dragover"].forEach((evt) => shotDrop.addEventListener(evt, (e) => { e.preventDefault(); shotDrop.classList.add("is-dragover"); }));
+    ;["dragleave", "drop"].forEach((evt) => shotDrop.addEventListener(evt, (e) => { e.preventDefault(); shotDrop.classList.remove("is-dragover"); }));
+    shotDrop.addEventListener("drop", (e) => {
+      const f = e.dataTransfer?.files?.[0];
+      if (f) handleShot(f);
+    });
+    shotInput.addEventListener("change", (e) => {
+      const f = e.target.files?.[0];
+      if (f) handleShot(f);
+    });
+    document.getElementById("hero-pick-cta").addEventListener("click", () => {
+      setMode("screenshot");
+      shotInput.click();
+    });
+
+    async function handleShot(file) {
+      if (file.size > 1024 * 1024) {
+        return alertOut(`That screenshot is ${(file.size / 1024).toFixed(0)} KB — over the 1 MB cap.`);
+      }
+      const url = await readFileAsDataURL(file);
+      shotDataUrl = url;
+      shotPreview.src = url;
+      shotPreview.hidden = false;
+      shotPreview.alt = "Screenshot preview: " + file.name;
+    }
+
+    function readFileAsDataURL(file) {
+      return new Promise((res, rej) => {
+        const r = new FileReader();
+        r.onload = () => res(r.result);
+        r.onerror = rej;
+        r.readAsDataURL(file);
+      });
+    }
+
+    // ─── Last shared run ────────────────────────────────────────────
+    async function loadLastShared() {
+      const target = document.getElementById("lastshared-target");
+      session = session || await getSession();
+      if (!session) {
+        target.innerHTML = `<p class="sv-sub" style="margin:0">You're signed out. <a href="/">Sign in on the SpireVault home page</a> to coach your last shared run.</p>`;
+        lastSharedTarget = null;
+        return;
+      }
+      target.innerHTML = `<div class="sv-skel sv-skel--line" aria-hidden="true"></div><div class="sv-skel sv-skel--line" aria-hidden="true"></div>`;
+      const r = await api("/highlights");
+      const mine = (r.data?.items || []).filter((h) => h.authorID === session.steamID);
+      if (!mine.length) {
+        target.innerHTML = `
+          <p class="sv-sub" style="margin:0">You haven't shared any runs yet. <a href="/">Share a run</a> first, then come back.</p>`;
+        lastSharedTarget = null;
+        return;
+      }
+      const top = mine[0];
+      lastSharedTarget = top;
+      target.innerHTML = `
+        <div style="display:flex;gap:10px;align-items:center">
+          <img src="${esc(top.authorAvatar || "/assets/vault-mark.svg")}" alt="" style="width:40px;height:40px;border-radius:50%"/>
+          <div style="flex:1;min-width:0">
+            <div style="font-weight:700">${esc(top.authorPersona || "you")}</div>
+            <div class="sv-race-meta">${esc(cap(top.run.character))} A${top.run.ascension ?? 0} · ${top.run.won ? "victory" : "floor " + (top.run.floorReached ?? 0)} · ${esc(fmtRel(top.run.endedAt) || "recent")}</div>
+          </div>
+        </div>
+        <p class="sv-sub" style="margin:8px 0 0">Click "Ask Coach" to get a narrative recap of this run.</p>
+      `;
+    }
+    function cap(s) { return String(s || "—").replace(/^\w/, (c) => c.toUpperCase()); }
+
+    // ─── Ask ───────────────────────────────────────────────────────
+    function renderAnalysis(a) {
+      const out = document.getElementById("coach-out");
+      if (!a) { out.innerHTML = `<p class="sv-sub">No response.</p>`; return; }
+      const picks = (a.picks || []).map((p) => `
+        <div class="sv-pick-row">
+          <span class="sv-pick-grade sv-pick-grade-${esc(p.grade)}">${esc(p.grade)}</span>
+          <div>
+            <div class="sv-pick-label">${esc(p.label)}</div>
+            <div class="sv-pick-reason">${esc(p.reason)}</div>
+          </div>
+        </div>
+      `).join("");
+      const warnings = (a.warnings || []).map((w) => `<div class="sv-warning">${esc(w)}</div>`).join("");
+      const bullets = (a.bullets || []).map((b) => `<li>${esc(b)}</li>`).join("");
+      const narrative = a.narrative ? `<p style="margin-top:12px">${esc(a.narrative)}</p>` : "";
+      const fallback = a.meta?.fallback
+        ? `<p class="sv-sub" style="font-size:12px;margin-top:12px">(model: ${esc(a.meta.model)}, fallback heuristic)</p>`
+        : `<p class="sv-sub" style="font-size:12px;margin-top:12px">(model: ${esc(a.meta?.model || "unknown")})</p>`;
+      out.innerHTML = `
+        <h3 style="margin:0 0 6px;font-family:var(--font-display);font-size:18px">${esc(a.headline || "Coach analysis")}</h3>
+        ${bullets ? `<ul class="sv-coach-bullets">${bullets}</ul>` : ""}
+        ${picks}
+        ${warnings}
+        ${narrative}
+        ${fallback}
+      `;
+    }
+
+    function alertOut(msg) {
+      const out = document.getElementById("coach-out");
+      out.innerHTML = `<div class="sv-warning" style="display:inline-block">${esc(msg)}</div>`;
+    }
+
+    async function ask() {
+      session = session || await getSession();
+      if (!session && mode !== "screenshot" && mode !== "snapshot") {
+        return alertOut("Sign in on the SpireVault home page to use this mode.");
+      }
+      if (mode === "screenshot" && !session) {
+        return alertOut("Sign in on the SpireVault home page to use Coach.");
+      }
+      const out = document.getElementById("coach-out");
+      out.innerHTML = `<p class="sv-sub"><span class="sv-loading"></span> Coach is thinking…</p>`;
+      const question = document.getElementById("coach-q").value.trim() || undefined;
+
+      let body = { question };
+      if (mode === "screenshot") {
+        if (!shotDataUrl) return alertOut("Drop a screenshot first.");
+        body = { mode: "screenshot", imageRef: shotDataUrl, question };
+      } else if (mode === "snapshot") {
+        const runId = document.getElementById("snap-runid").value.trim();
+        if (!runId) return alertOut("Paste a runId from the Companion mod.");
+        body = { mode: "snapshot", runId, question };
+      } else if (mode === "narrative") {
+        const runId = document.getElementById("narr-runid").value.trim();
+        if (!runId) return alertOut("Paste a runId of a finished run.");
+        body = { mode: "narrative", runId, question };
+      } else if (mode === "lastshared") {
+        if (!lastSharedTarget) return alertOut("No shared runs found — share one first.");
+        // Map to the narrative endpoint with the highlight id as runId.
+        // /coop/coach/analyze is happy with any runId-shaped string; the
+        // narrative path will fetch through the same lookup the Coach
+        // already does for shared runs.
+        body = { mode: "narrative", runId: lastSharedTarget.id, question };
+      }
+
+      const r = await api("/coop/coach/analyze", { method: "POST", body: JSON.stringify(body) });
+      if (!r.ok) {
+        return alertOut(r.message || r.error || "Coach is unavailable.");
+      }
+      renderAnalysis(r.data?.analysis);
+    }
+    document.getElementById("coach-go").addEventListener("click", ask);
+
+    // ─── Example chips ─────────────────────────────────────────────
+    const SAMPLE_ANALYSIS = {
+      headline: "Card reward · Floor 3, Ironclad A8",
+      bullets: [
+        "Block is the bottleneck against the Lagavulin elite — pick anything that survives turn 2.",
+        "Skipping is fine here; current deck already has good front-loaded damage.",
+      ],
+      picks: [
+        { grade: "A", label: "Shrug It Off", reason: "Block + draw fixes the turn-2 stall and threads with Inflame later." },
+        { grade: "B", label: "Pummel",       reason: "Only after you have Limit Break or two Inflames." },
+        { grade: "C", label: "Sentinel",     reason: "Marginal in this deck — no retains yet, no payoff." },
+      ],
+      warnings: ["Don't take Pommel Strike here — your draw is already healthy."],
+      meta: { model: "sample · not a live call" },
+    };
+    document.querySelectorAll("[data-coach-chip]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const which = btn.dataset.coachChip;
+        if (which === "screenshot") {
+          setMode("screenshot");
+          document.getElementById("shot-file").click();
+        } else if (which === "lastshared") {
+          setMode("lastshared");
+        } else if (which === "sample") {
+          renderAnalysis(SAMPLE_ANALYSIS);
+        }
+      });
+    });
+
+    // ─── Boot ──────────────────────────────────────────────────────
+    // Honor ?runId from a deep-link out of /watch (Coach this run).
+    const initialRunId = qs("runId");
+    if (initialRunId) {
+      setMode("snapshot");
+      document.getElementById("snap-runid").value = initialRunId;
+    } else if (qs("shareId")) {
+      setMode("narrative");
+      document.getElementById("narr-runid").value = qs("shareId");
+    } else {
+      setMode("screenshot");
+    }
+  </script>
+</body>
+</html>

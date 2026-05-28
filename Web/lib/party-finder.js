@@ -14,7 +14,7 @@
 // Ascension is capped at 10 (Slay the Spire 2 max).
 // =========================================================================
 
-import { isSandboxSteamId, isCoopSandboxEnabled } from "./coop-sandbox.js?v=6";
+import { isSandboxSteamId, isCoopSandboxEnabled } from "./coop-sandbox.js?v=8";
 import { encodeStart, presetToPlanned, decodeStart, formatCountdown, startSortKey } from "./party-finder-startsoon.js?v=1";
 var PFH = window.PFH;
 
@@ -115,7 +115,13 @@ const hostForm = {
   goal: "heart",
   ascensionBucket: "a8-10",
   branch: "beta",
-  hostCharacter: "ironclad",
+  // Default "Open to any" so the host doesn't accidentally lock out
+  // joiners who'd be a perfect fit on a different class. The previous
+  // "ironclad" default was the largest single source of "no one is
+  // joining my room" reports — every Beta host who skipped the chip
+  // step was inadvertently telling the matcher "Ironclad only". Match
+  // coop-lobbies.js's "" default so the two surfaces behave the same.
+  hostCharacter: "",
   openCharacterPreference: "",
   lobbySize: 4,
   voice: "lfg1",
@@ -154,12 +160,25 @@ export function getLastState() { return lastState; }
 
 // ── CSS injection ────────────────────────────────────────────────────
 function ensureCssLoaded() {
-  if (document.getElementById("pf-stylesheet")) return;
-  const link = document.createElement("link");
-  link.id = "pf-stylesheet";
-  link.rel = "stylesheet";
-  link.href = "/lib/party-finder.css?v=3";
-  document.head.appendChild(link);
+  if (!document.getElementById("pf-stylesheet")) {
+    const link = document.createElement("link");
+    link.id = "pf-stylesheet";
+    link.rel = "stylesheet";
+    link.href = "/lib/party-finder.css?v=3";
+    document.head.appendChild(link);
+  }
+  // House lobby identity (VAULT TEAM pill, themed art tiles, A0/A10
+  // palette split, "OPEN" pill, disclosure copy). Lives in a separate
+  // file so the v198 surface keeps an unchanged primary stylesheet
+  // and the House-only rules can be revved independently if we need
+  // a quick visual rollback.
+  if (!document.getElementById("pf-house-stylesheet")) {
+    const houseLink = document.createElement("link");
+    houseLink.id = "pf-house-stylesheet";
+    houseLink.rel = "stylesheet";
+    houseLink.href = "/lib/party-finder-house.css?v=1";
+    document.head.appendChild(houseLink);
+  }
 }
 
 // ── Scaffolding ──────────────────────────────────────────────────────
@@ -190,8 +209,8 @@ function ensureBetaRoot() {
     <section class="pf-live" id="pf-live" aria-labelledby="pf-live-title">
       <div class="pf-section-head">
         <div>
-          <h3 id="pf-live-title">Live Parties <span class="pf-count" id="pf-live-count">0</span></h3>
-          <p class="pf-section-sub">Structured LFG rooms from the community.</p>
+          <h3 id="pf-live-title">Open rooms <span class="pf-count" id="pf-live-count">0</span></h3>
+          <p class="pf-section-sub">Open STS2 co-op rooms hosted by the community.</p>
         </div>
         <div class="pf-section-actions">
           <button type="button" class="pf-btn pf-btn--primary" data-pf-action="open-host">+ Host a Room</button>
@@ -525,6 +544,50 @@ function hostStatusLabel(s, sid) {
   return "active now";
 }
 
+// ── House lobby helpers ────────────────────────────────────────────────
+//
+// SpireVault House lobbies are operator-seeded ambient rooms (see
+// Backend/src/coop-house-lobbies.ts). They use a synthetic Steam ID
+// in the reserved range 76561190000000000+ and surface a `isHouseLobby`
+// flag on every lobby record. Treat them visually as a separate concept
+// from real player-hosted rooms — the disclosure copy "Ambient open
+// room — first player to join takes it over" is non-negotiable.
+function isHouseLobby(l) {
+  return !!(l && l.isHouseLobby === true);
+}
+function houseSlugOf(l) {
+  return (l && typeof l.houseSlug === "string") ? l.houseSlug : "";
+}
+function houseTheme(l) {
+  const slug = houseSlugOf(l);
+  if (slug === "house-a10-heart" || /a10/i.test(l?.title || "") || /heart/i.test(l?.title || "")) {
+    return {
+      key: "a10-heart",
+      eyebrow: "High ascension · Heart hunters",
+      flavor: "Bring your favorite hero — Heart attempts running.",
+      stamp: "Heart Hunters",
+      tint: "ember",
+    };
+  }
+  return {
+    key: "a0-casual",
+    eyebrow: "Casual climb · all welcome",
+    flavor: "Drop in for a chill A0 run. New to co-op? Start here.",
+    stamp: "Casual Climb",
+    tint: "azure",
+  };
+}
+// "VAULT TEAM" pill markup — replaces the LevelBadge rep slot on House
+// lobby cards. Synthetic Steam IDs would otherwise render as "Lv 1
+// Initiate," which is dishonest about who's behind the room.
+function houseVaultTeamPillHtml() {
+  return `<span class="pf-house-pill" data-pf-house-pill="vault-team" title="Operator-seeded room (SpireVault Team)"><span class="pf-house-pill-shield" aria-hidden="true">✦</span><span class="pf-house-pill-label">VAULT TEAM</span></span>`;
+}
+// Disclosure subtitle. Shown once per House row directly under the
+// host strip so visitors understand the room is ambient and joining
+// it makes them the host.
+const HOUSE_DISCLOSURE_TEXT = "Ambient open room — first player to join takes it over.";
+
 function characterFit(l, s) {
   const my = myPreferredCharacter(s);
   const h = hostCharacterOf(l);
@@ -616,6 +679,44 @@ function applyScenarioOverride(state) {
 }
 
 // ── Render ───────────────────────────────────────────────────────────
+// v196 — three-stage page gate. Matches the bucket used by
+// party-finder-scene.js (stored on document.documentElement) so every
+// surface agrees on what the page should show right now.
+//
+//   a = 0 open lobbies → minimal page. Hero only. Nothing below.
+//   b = 1-2            → simple "Open rooms" list. No toolbar, no
+//                        "Best party for you" wrapper.
+//   c = 3+             → full UI. Best party + filter sheet.
+function pfStageBucket(state) {
+  // Trust scene.js's resolver when present so the rules stay in
+  // lockstep. Falls back to a local count when scene.js boots after
+  // party-finder.js (rare but possible cold-paint race).
+  try {
+    if (typeof window.__pfStageBucket === "function") {
+      return window.__pfStageBucket(state || {});
+    }
+  } catch (_) {}
+  const list = (state?.openLobbies || []).filter(
+    (l) => l && l.status !== "closed" && l.status !== "expired"
+  );
+  if (list.length === 0) return "a";
+  if (list.length <= 2) return "b";
+  return "c";
+}
+
+function applyStageRootBucket(bucket) {
+  try {
+    const $root = document.getElementById("pf-root");
+    if ($root && $root.getAttribute("data-pf-stage-bucket") !== bucket) {
+      $root.setAttribute("data-pf-stage-bucket", bucket);
+    }
+    const html = document.documentElement;
+    if (html.getAttribute("data-pf-stage-bucket") !== bucket) {
+      html.setAttribute("data-pf-stage-bucket", bucket);
+    }
+  } catch (_) {}
+}
+
 function render(rawState) {
   if (!rawState) return;
   const state = applyScenarioOverride(rawState);
@@ -635,11 +736,36 @@ function render(rawState) {
     return;
   }
 
-  renderPrefsPanel(state);
+  const bucket = pfStageBucket(state);
+  applyStageRootBucket(bucket);
+
+  // Stages A and B suppress the run-preferences chip strip and the
+  // "Best party for you" wrapper. Both are noise when there's nothing
+  // (or barely anything) to recommend. Stage C runs the full render.
+  if (bucket === "c") {
+    renderPrefsPanel(state);
+  }
   const visible = visibleOpenLobbies(state);
   const best = pickBestLobby(state, visible);
-  renderBestParty(state, best);
-  renderLiveParties(state, visible, best);
+  if (bucket === "c") {
+    renderBestParty(state, best);
+  } else {
+    // Stage A/B: clear the best card so a stale render from a prior
+    // bucket can't ghost into the new layout.
+    const $bestCard = document.getElementById("pf-best-card");
+    if ($bestCard) $bestCard.innerHTML = "";
+  }
+  // Stage A: don't render the Live Parties list at all. The hero +
+  // Showtime strip own the whole page. CSS hides the surrounding
+  // section by reading [data-pf-stage-bucket="a"] on #pf-root.
+  if (bucket === "a") {
+    const $list = document.getElementById("pf-live-list");
+    const $count = document.getElementById("pf-live-count");
+    if ($list) $list.innerHTML = "";
+    if ($count) $count.textContent = "0";
+  } else {
+    renderLiveParties(state, visible, best);
+  }
   applyRoomDeepLink();
   if (pendingFindMeFocus) {
     pendingFindMeFocus = false;
@@ -693,7 +819,7 @@ function renderBestParty(state, best) {
           <div class="pf-best-actions-empty">
             <button type="button" class="pf-btn pf-btn--primary pf-btn--lg" data-pf-action="open-host">Host a Room</button>
             <button type="button" class="pf-btn pf-btn--ghost" data-pf-action="open-prefs">Change Preferences</button>
-            <button type="button" class="pf-btn pf-btn--ghost" data-pf-action="browse-live">Browse all Live Parties</button>
+            <button type="button" class="pf-btn pf-btn--ghost" data-pf-action="browse-live">Browse all rooms</button>
           </div>
         </div>
       </article>`;
@@ -717,13 +843,44 @@ function renderBestParty(state, best) {
   const charBad = characterFit(best, state).tone === "bad";
   const stampLabel = isGreat ? "Best Fit" : isGood ? "Good Fit" : "Pick";
   const dotBg = idle ? "var(--pf-muted)" : "var(--pf-ok)";
+  // House identity treatment for the Best Party card. The hero art
+  // becomes the SpireVault crest (no character portrait to fall back
+  // on for a synthetic host), the host strip carries the VAULT TEAM
+  // pill instead of a fake Lv1 Initiate badge, and the disclosure
+  // copy sits directly under the host line so visitors know joining
+  // makes them the host.
+  const isHouse = isHouseLobby(best);
+  const theme = isHouse ? houseTheme(best) : null;
+  const repPill = isHouse
+    ? houseVaultTeamPillHtml()
+    : `<span class="pf-rep-slot pf-rep-slot--inline-coop" data-pf-rep-slot data-host-steam-id="${esc(best.hostSteamId || "")}"></span>`;
+  const houseDisclosure = isHouse
+    ? `<p class="pf-house-disclosure">${esc(HOUSE_DISCLOSURE_TEXT)}</p>`
+    : "";
+  const hostStatusText = isHouse ? "always open" : hostStatusLabel(state, best.hostSteamId);
+  const hostStrong = isHouse ? "SpireVault House" : (best.hostPersonaName || "Host");
+  const hostImg = isHouse ? "/assets/vault-mark.svg" : (best.hostAvatarUrl || "/assets/vault-mark.svg");
+  const artInner = isHouse
+    ? `<div class="pf-best-art-house" data-pf-house-art="${esc(theme?.key || "")}">
+         <img class="pf-best-art-crest" src="/assets/vault-mark.svg" alt="" />
+         <span class="pf-best-art-eyebrow">${esc(theme?.eyebrow || "")}</span>
+       </div>`
+    : `${hostArt ? `<img class="pf-best-art-img" src="${esc(hostArt)}" alt="" />` : ""}
+       <div class="pf-best-art-veil"></div>`;
+  const artStampLabel = isHouse ? (theme?.stamp || "Vault Team") : stampLabel;
+  const artCharName = isHouse
+    ? ""
+    : (hostChar ? `<span class="pf-best-art-charname">${esc(characterLabel(hostChar))}</span>` : "");
+  const cardClass = ["pf-best-card",
+    isHouse ? "pf-best-card--house" : "",
+    isHouse && theme ? `pf-best-card--house-${theme.key}` : "",
+  ].filter(Boolean).join(" ");
   $card.innerHTML = `
-    <article class="pf-best-card" data-lobby-id="${esc(best.lobbyId)}">
+    <article class="${cardClass}" data-lobby-id="${esc(best.lobbyId)}"${isHouse ? ` data-pf-house-row="1" data-pf-house-slug="${esc(theme?.key || "")}"` : ""}>
       <div class="pf-best-art">
-        ${hostArt ? `<img class="pf-best-art-img" src="${esc(hostArt)}" alt="" />` : ""}
-        <div class="pf-best-art-veil"></div>
-        <span class="pf-best-art-stamp"><span class="pf-dot" style="width:7px;height:7px;border-radius:999px;background:${dotBg};"></span>${stampLabel}</span>
-        ${hostChar ? `<span class="pf-best-art-charname">${esc(characterLabel(hostChar))}</span>` : ""}
+        ${artInner}
+        <span class="pf-best-art-stamp"><span class="pf-dot" style="width:7px;height:7px;border-radius:999px;background:${dotBg};"></span>${esc(artStampLabel)}</span>
+        ${artCharName}
       </div>
       <div class="pf-best-meta">
         <div class="pf-best-titlerow">
@@ -739,10 +896,12 @@ function renderBestParty(state, best) {
           ${micPillHtml(best.voicePreference)}
         </div>
         <div class="pf-host-line">
-          <img src="${esc(best.hostAvatarUrl || "/assets/vault-mark.svg")}" alt="" />
-          <strong>${esc(best.hostPersonaName || "Host")}</strong>
-          <span class="pf-muted">is hosting · ${esc(hostStatusLabel(state, best.hostSteamId))}</span>
+          <img src="${esc(hostImg)}" class="${isHouse ? "pf-host-line-img--house" : ""}" alt="" />
+          <strong>${esc(hostStrong)}</strong>
+          ${repPill}
+          <span class="pf-muted">${isHouse ? "" : "is hosting · "}${esc(hostStatusText)}</span>
         </div>
+        ${houseDisclosure}
         ${slotsHtml}
         <div class="pf-seats"><strong>${filled} of ${cap} filled</strong> · ${open} open ${open === 1 ? "seat" : "seats"}</div>
         <div class="pf-why">
@@ -909,6 +1068,8 @@ function renderLiveRow(l, state, best) {
   const isFull = open <= 0;
   const fit = characterFit(l, state);
   const mismatch = fit.tone === "bad";
+  const isHouse = isHouseLobby(l);
+  const theme = isHouse ? houseTheme(l) : null;
   const seatsText = isFull
     ? `<span class="pf-seats pf-seats--full"><strong>${filled} of ${cap} filled</strong> · 0 open seats · Full</span>`
     : `<span class="pf-seats"><strong>${filled} of ${cap} filled</strong> · ${open} open seats</span>`;
@@ -917,20 +1078,49 @@ function renderLiveRow(l, state, best) {
     isBest ? "pf-live-row--highlight" : "",
     mismatch ? "pf-live-row--mismatch" : "",
     isFull ? "pf-live-row--full" : "",
+    isHouse ? "pf-live-row--house" : "",
+    isHouse && theme ? `pf-live-row--house-${theme.key}` : "",
   ].filter(Boolean).join(" ");
+  // House lobbies replace the LevelBadge rep slot with a "VAULT TEAM"
+  // pill so visitors don't see the synthetic Steam ID render as a
+  // dishonest Lv1 Initiate badge. We also drop the data-host-steam-id
+  // attribute on the rep slot so party-finder-reputation-rt.js skips
+  // the fetch entirely (synthetic IDs return null reputation anyway).
+  const repPill = isHouse
+    ? houseVaultTeamPillHtml()
+    : `<span class="pf-rep-slot" data-pf-rep-slot data-host-steam-id="${esc(l.hostSteamId || "")}"></span>`;
+  // House lobbies declare their nature in plain copy. Keeps the
+  // disclosure visible on every row — the renewer extends/recreates
+  // them every 15 minutes so any "this isn't a real player" surprise
+  // happens at the card, not in the lobby they just joined.
+  const houseDisclosure = isHouse
+    ? `<p class="pf-house-disclosure">${esc(HOUSE_DISCLOSURE_TEXT)}</p>`
+    : "";
+  // House rooms have no real heartbeat — the synthetic host never
+  // updates `lastHeartbeatAt`. Render "always open" instead of the
+  // legacy "active Nm ago" stamp so the row reads as eternal-open
+  // rather than abandoned. The enrich pass in party-finder-globals.js
+  // respects [data-pf-house-row] and skips its "active Nm ago" rewrite.
+  const statusText = isHouse ? "always open" : hostStatusLabel(state, l.hostSteamId);
+  const dotIdle = !isHouse && hostStatusLabel(state, l.hostSteamId) === "idle";
+  const hostStrong = isHouse ? "SpireVault House" : (l.hostPersonaName || "Host");
+  const dataHouseAttrs = isHouse
+    ? ` data-pf-house-row="1" data-pf-house-slug="${esc(theme?.key || "")}"`
+    : "";
   return `
-    <article class="${cls}" data-lobby-id="${esc(l.lobbyId)}" data-host-steam-id="${esc(l.hostSteamId || "")}">
+    <article class="${cls}" data-lobby-id="${esc(l.lobbyId)}" data-host-steam-id="${esc(l.hostSteamId || "")}"${dataHouseAttrs}>
       <div class="pf-live-meta">
         <div class="pf-live-titlerow">
           <h4 class="pf-live-title">${esc(l.title || "Co-op room")}${isMine ? ' <span class="pf-fit-pill pf-fit-pill--good">Your Room</span>' : ""}</h4>
         </div>
         <div class="pf-host-strip" data-pf-host-strip>
-          <img src="${esc(l.hostAvatarUrl || "/assets/vault-mark.svg")}" alt="" />
-          <strong>${esc(l.hostPersonaName || "Host")}</strong>
-          <span class="pf-rep-slot" data-pf-rep-slot data-host-steam-id="${esc(l.hostSteamId || "")}"></span>
-          <span class="pf-dot ${hostStatusLabel(state, l.hostSteamId) === "idle" ? "pf-dot--idle" : ""}"></span>
-          <span>${esc(hostStatusLabel(state, l.hostSteamId))}</span>
+          <img src="${esc(isHouse ? "/assets/vault-mark.svg" : (l.hostAvatarUrl || "/assets/vault-mark.svg"))}" class="${isHouse ? "pf-host-strip-img pf-host-strip-img--house" : ""}" alt="" />
+          <strong>${esc(hostStrong)}</strong>
+          ${repPill}
+          <span class="pf-dot${dotIdle ? " pf-dot--idle" : ""}${isHouse ? " pf-dot--house" : ""}"></span>
+          <span class="${isHouse ? "pf-host-status pf-host-status--house" : ""}">${esc(statusText)}</span>
         </div>
+        ${houseDisclosure}
         <div class="pf-attrs">
           <span>${esc(branchLabelOf(l))}</span>
           <span class="pf-sep">·</span>
@@ -953,6 +1143,7 @@ function renderLiveRow(l, state, best) {
       <div class="pf-live-actions">
         ${joinButtonHtml(l, state, { primary: true })}
         <button type="button" class="pf-btn pf-btn--ghost" data-pf-action="details" data-lobby-id="${esc(l.lobbyId)}">Details</button>
+        ${isMine ? `<button type="button" class="pf-btn pf-btn--ghost pf-btn--danger" data-pf-action="close-room" data-lobby-id="${esc(l.lobbyId)}">Close Room</button>` : ""}
       </div>
     </article>`;
 }
@@ -1181,6 +1372,30 @@ async function submitHost() {
   };
   const $btn = document.querySelector('[data-pf-action="host-submit"]');
   if ($btn) { $btn.disabled = true; $btn.textContent = "Hosting…"; }
+  // v196 — kick off the matchmaker card-flip in parallel with the POST.
+  // The third card reveals the host's chosen character (or a generic
+  // sparkle if they left the field on "Open to any"). Animation
+  // duration is ~1500ms which usually overlaps the network round-trip,
+  // so the user reads the reveal as the cause of the room becoming
+  // real. Reduced-motion users get a 200ms fade instead. The
+  // animation promise is fired-and-merged with the network promise
+  // so we don't double-await and stall the UI when the server is
+  // fast.
+  let matchmakerPromise = Promise.resolve();
+  try {
+    const matchmaker = window.__pfMatchmaker;
+    if (matchmaker && typeof matchmaker.run === "function") {
+      const heroSlug = normalizeCharacterId(hostForm.hostCharacter);
+      const heroImage = heroSlug ? characterAssetSrc(heroSlug) : "/assets/vault-mark.svg";
+      const heroLabel = heroSlug ? characterLabel(heroSlug) : "Your room";
+      matchmakerPromise = matchmaker.run({
+        reason: "host",
+        heroImage,
+        heroLabel,
+        caption: "Dealing your room\u2026",
+      });
+    }
+  } catch (_) { /* never block submit on animation */ }
   const r = await jsonFetch("/coop/lobbies", { body });
   if ($btn) { $btn.disabled = false; $btn.textContent = "Host Room"; }
   if (!r.ok) {
@@ -1207,6 +1422,11 @@ async function submitHost() {
     if (voiceLabel) writeVoiceOverride(newId, voiceLabel);
   }
   writeMyPrefsExt({ branch: hostForm.branch });
+  // Let the matchmaker animation breathe before the room exists in the
+  // UI. If the POST returned in <1500ms (the typical case), we wait
+  // for the cards to finish flipping; if it took longer, this is a
+  // no-op (Promise already resolved).
+  try { await matchmakerPromise; } catch (_) {}
   bootCtx?.deps?.toast?.("Room hosted.");
   hideModal("pf-modal-host");
   hostForm.title = "";
@@ -1237,7 +1457,7 @@ function openDetailsModal(lobbyId) {
     <div class="pf-why"><span class="pf-why-title">Fit for you</span>
       <ul class="pf-why-list">${reasons.map((r) => `<li class="${r.bad ? "pf-why-bad" : ""}">${esc(r.text)}</li>`).join("")}</ul></div>
     <div class="pf-details-grid">
-      <div class="pf-details-row"><span class="pf-details-key">Host</span><span class="pf-details-val">${esc(l.hostPersonaName || "Host")}</span></div>
+      <div class="pf-details-row"><span class="pf-details-key">Host</span><span class="pf-details-val">${esc(l.hostPersonaName || "Host")} <span class="pf-rep-slot pf-rep-slot--inline-coop" data-pf-rep-slot data-host-steam-id="${esc(l.hostSteamId || "")}"></span></span></div>
       <div class="pf-details-row"><span class="pf-details-key">Branch</span><span class="pf-details-val">${esc(branchLabelOf(l))}</span></div>
       <div class="pf-details-row"><span class="pf-details-key">Mode</span><span class="pf-details-val">${esc(modeLabel(l))}</span></div>
       <div class="pf-details-row"><span class="pf-details-key">Ascension</span><span class="pf-details-val">${esc(ascensionBucketLabel(l.ascensionMin, l.ascensionMax))}</span></div>
@@ -1376,6 +1596,67 @@ function hideModal(id) {
   if (!any) document.body.style.overflow = "";
 }
 
+// CSS.escape wrapper that falls back to a minimal manual escape on
+// browsers without CSS.escape. Lobby IDs are server-generated and
+// shouldn't contain CSS-meta chars, but the proxy targets a DOM
+// rendered by coop-lobbies.js that we don't own — so we treat the id
+// as untrusted at the selector boundary.
+function cssEscapeId(id) {
+  const s = String(id == null ? "" : id);
+  if (typeof CSS !== "undefined" && typeof CSS.escape === "function") {
+    return CSS.escape(s);
+  }
+  return s.replace(/["\\]/g, "\\$&");
+}
+
+// Proxy a party-finder.js click to a coop-lobbies.js delegated handler
+// by synthesizing a click on the matching button. Polls for the button
+// because both surfaces mount independently and party-finder.js can
+// paint its UI before coop-lobbies.js completes its first /coop/state
+// poll. Without the wait, a fast user click on a cold page lands on
+// the giveUp branch and looks like a dead button — the exact symptom
+// reported as "Manage Your Room does nothing."
+//
+// Timing: 8 attempts × 200ms = 1.6s total wait. coop-lobbies.js fires
+// its first refreshState synchronously inside mountCoopLobbies; on a
+// warm connection it completes well under 500ms.
+function proxyToCoopLobbiesButton({ action, lobbyId, selectors, fallback, giveUpMessage }) {
+  const maxAttempts = 8;
+  const intervalMs = 200;
+  let attempt = 0;
+  const tick = () => {
+    for (const sel of selectors) {
+      const btn = document.querySelector(sel);
+      if (btn) {
+        btn.click();
+        return;
+      }
+    }
+    attempt += 1;
+    if (attempt < maxAttempts) {
+      setTimeout(tick, intervalMs);
+      return;
+    }
+    // Last-resort fallback (e.g. close-room's #coop-lobby-close modal
+    // button which lives in the DOM as soon as the edit modal markup
+    // is parsed, regardless of state).
+    if (typeof fallback === "function") {
+      try {
+        if (fallback() === true) return;
+      } catch (err) {
+        console.warn(`pf-proxy ${action} fallback threw`, err);
+      }
+    }
+    try {
+      if (typeof window !== "undefined" && typeof window.toast === "function") {
+        window.toast(giveUpMessage);
+      }
+    } catch { /* no-op */ }
+    console.warn(`pf-proxy ${action} could not find handler for lobby ${lobbyId} after ${maxAttempts * intervalMs}ms`);
+  };
+  tick();
+}
+
 function wireDelegatedClicks() {
   document.addEventListener("click", async (e) => {
     const close = e.target.closest?.("[data-pf-modal-close]");
@@ -1418,7 +1699,65 @@ function wireDelegatedClicks() {
       case "browse-live": document.getElementById("pf-live")?.scrollIntoView({ behavior: "smooth", block: "start" }); return;
       case "details": openDetailsModal(btn.dataset.lobbyId); return;
       case "join-room": void doJoinRoom(btn.dataset.lobbyId); return;
-      case "manage-room": document.getElementById("pf-live")?.scrollIntoView({ behavior: "smooth", block: "start" }); return;
+      case "close-room": {
+        // Delegate to coop-lobbies.js's close-lobby handler. See the
+        // manage-room case below for the polling rationale; the same
+        // cold-paint race applies to close.
+        const lobbyId = btn.dataset.lobbyId || "";
+        if (!lobbyId) return;
+        proxyToCoopLobbiesButton({
+          action: "close-room",
+          lobbyId,
+          // Two selectors to try, in priority order. coop-lobbies.js
+          // renders an inline Close button on its hosting primary card
+          // (case "hosting_lobby" — data-coop-action="close-lobby"
+          // with data-id). The edit modal also has a permanent Close
+          // Room button (#coop-lobby-close) that we have to stamp
+          // with data-id when used as the fallback path.
+          selectors: [`[data-coop-action="close-lobby"][data-id="${cssEscapeId(lobbyId)}"]`],
+          fallback: () => {
+            const $modal = document.getElementById("coop-lobby-close");
+            if ($modal) {
+              $modal.dataset.id = lobbyId;
+              $modal.click();
+              return true;
+            }
+            return false;
+          },
+          giveUpMessage: "Couldn't find the close action — refresh and try again.",
+        });
+        return;
+      }
+      case "manage-room": {
+        // The party-finder.js prototype shipped without its own
+        // edit-lobby flow; the original handler was a scrollIntoView
+        // placeholder that the user nicknamed "Manage Your Room does
+        // nothing." coop-lobbies.js owns the real `openEditLobbyModal`
+        // and exposes it via `[data-coop-action="open-edit-lobby"]`
+        // event delegation. Delegate by synthesizing a click on that
+        // button.
+        //
+        // Cold-paint race: both party-finder.js AND coop-lobbies.js
+        // mount on /tab=coop and each runs its own `/coop/state` poll.
+        // If a user clicks Manage before coop-lobbies.js's first poll
+        // resolves, `document.querySelector` returns null and the
+        // synchronous fallback used to fire — landing on the
+        // "Manage Your Room does nothing" report. The poller below
+        // waits up to ~1.6s for the button to appear, then gives up
+        // gracefully. coop-lobbies.js's first refreshState fires
+        // synchronously at mount time so in practice the button is
+        // present within one network round-trip.
+        const lobbyId = btn.dataset.lobbyId || "";
+        if (!lobbyId) return;
+        proxyToCoopLobbiesButton({
+          action: "manage-room",
+          lobbyId,
+          selectors: [`[data-coop-action="open-edit-lobby"][data-id="${cssEscapeId(lobbyId)}"]`],
+          fallback: null,
+          giveUpMessage: "Couldn't open room editor — refresh and try again.",
+        });
+        return;
+      }
       case "refresh": void refreshState({ force: true }); return;
       case "net-retry": void refreshState({ force: true }); return;
       case "live-more": {

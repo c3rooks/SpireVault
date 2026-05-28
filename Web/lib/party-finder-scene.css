@@ -116,7 +116,14 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(260px, 320px);
   gap: 32px;
-  align-items: end;
+  /* Stretch (default) instead of `end` so the right-column "Pick your
+   * hero" card grows to match the full height of the left column. The
+   * card was previously bottom-anchored, which orphaned it in the
+   * corner whenever the left column was tall (title + bullets + CTAs
+   * + 4 stat tiles). With stretch, the card fills the row and the
+   * character art inside grows with it via the flex setup below.
+   * Result: no dead whitespace above the card. */
+  align-items: stretch;
 }
 .pf-stage-copy { min-width: 0; }
 .pf-stage-eyebrow {
@@ -420,6 +427,12 @@
   backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
   width: 100%;
   min-height: 220px;
+  /* Cap so a very tall left column doesn't make this card 600px+ tall
+   * (which leaves the portrait character looking small inside a giant
+   * frame). With max-height 380px the art frame stays around 300px
+   * tall, which is the sweet spot for 2:3 portrait character renders
+   * to read as full-body without pillarboxing. */
+  max-height: 380px;
   overflow: hidden;
   isolation: isolate;
 }
@@ -632,57 +645,65 @@
   padding: 12px 14px;
   flex: 0 0 auto;
 }
+/* Firepit — SVG version.
+ *
+ * Previously drawn with four CSS shapes (flame, inner flame, logs, glow)
+ * which read as a tall yellow torch flame on brown blocks. Replaced with
+ * a single inline SVG that has three groups: glow ellipse, two crossed
+ * logs (rotated rects), and a Lucide flame path on top. The glow and
+ * flame are animated independently so the campfire feels alive without
+ * overdoing it. The whole thing scales by container size — the rest of
+ * the layout doesn't need to change. */
 .pf-stage-presence-firepit {
   position: relative;
   width: 56px; height: 56px;
   pointer-events: none;
   align-self: center;
+  /* The SVG fills the container; absolute positioning isn't needed. */
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
-.pf-stage-presence-glow {
-  position: absolute; inset: -16px;
-  background: radial-gradient(50% 60% at 50% 75%, rgba(255, 139, 58, 0.55), transparent 70%);
-  filter: blur(8px);
+.pf-firepit-svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible; /* glow can spill outside the viewBox */
+}
+.pf-firepit-svg-glow {
+  fill: rgba(255, 139, 58, 0.55);
+  filter: blur(2.5px);
+  transform-origin: 12px 19.5px;
   animation: pfs-fire-flicker 1.6s ease-in-out infinite alternate;
-  pointer-events: none;
 }
-.pf-stage-presence-flame {
-  position: absolute; left: 50%; top: 8px; transform: translateX(-50%);
-  width: 26px; height: 36px;
-  border-radius: 50% 50% 24px 24px / 60% 60% 40% 40%;
-  background:
-    radial-gradient(50% 60% at 50% 70%, #ffd28b 0%, var(--pfs-fire-warm) 35%, var(--pfs-fire-deep) 75%, transparent 100%);
-  box-shadow: 0 0 14px var(--pfs-fire-warm);
-  animation: pfs-flame-dance 1.4s ease-in-out infinite alternate;
+.pf-firepit-svg-logs rect {
+  fill: #4a2e1a;
 }
-.pf-stage-presence-flame--inner {
-  position: absolute; left: 50%; top: 12px; transform: translateX(-50%);
-  width: 12px; height: 22px;
-  background: radial-gradient(50% 60% at 50% 70%, #fff7d6 0%, #ffd28b 50%, rgba(255, 139, 58, 0.5) 100%);
-  animation: pfs-flame-dance 1.0s ease-in-out infinite alternate-reverse;
+.pf-firepit-svg-logs rect + rect {
+  fill: #5a3a20;
 }
-.pf-stage-presence-logs {
-  position: absolute; left: 50%; bottom: 4px; transform: translateX(-50%);
-  width: 50px; height: 10px;
-  border-radius: 4px;
-  background: linear-gradient(180deg, #4a2e1a 0%, #2a190f 100%);
-  box-shadow: inset 0 -3px 6px rgba(0, 0, 0, 0.5);
+.pf-firepit-svg-flame {
+  fill: var(--pfs-fire-warm, #ff8b3a);
+  /* Layered radial gradient via filter to give the flame a hot core
+     without needing a defs block. drop-shadow stacks visually. */
+  filter:
+    drop-shadow(0 0 4px rgba(255, 174, 94, 0.85))
+    drop-shadow(0 0 1.5px #fff7d6);
+  transform-origin: 12px 14px;
+  animation: pfs-flame-dance-svg 1.4s ease-in-out infinite alternate;
 }
-.pf-stage-presence-logs::before, .pf-stage-presence-logs::after {
-  content: ""; position: absolute; top: -3px;
-  width: 22px; height: 5px; border-radius: 4px;
-  background: linear-gradient(180deg, #6b3f24 0%, #3d2210 100%);
-}
-.pf-stage-presence-logs::before { left: 3px; transform: rotate(-6deg); }
-.pf-stage-presence-logs::after  { right: 3px; transform: rotate(8deg); }
 @keyframes pfs-fire-flicker {
-  0%   { opacity: 0.85; transform: scale(1);    }
+  0%   { opacity: 0.78; transform: scale(0.96); }
   50%  { opacity: 1;    transform: scale(1.06); }
-  100% { opacity: 0.78; transform: scale(0.98); }
+  100% { opacity: 0.82; transform: scale(1.00); }
 }
-@keyframes pfs-flame-dance {
-  0%   { transform: translateX(-50%) scale(0.96, 1.0)  rotate(-2deg); }
-  50%  { transform: translateX(-48%) scale(1.04, 0.96) rotate(1deg); }
-  100% { transform: translateX(-52%) scale(0.98, 1.05) rotate(2deg); }
+@keyframes pfs-flame-dance-svg {
+  0%   { transform: scale(0.96, 1.00) rotate(-1.5deg); }
+  50%  { transform: scale(1.02, 0.97) rotate(1deg);    }
+  100% { transform: scale(0.98, 1.04) rotate(1.8deg);  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pf-firepit-svg-glow,
+  .pf-firepit-svg-flame { animation: none !important; }
 }
 
 .pf-stage-presence-text {
@@ -1492,7 +1513,20 @@
   text-transform: uppercase; color: #ffb072;
   flex-wrap: wrap;
 }
-.pf-coop-log-flame { font-size: 12px; filter: drop-shadow(0 0 4px rgba(255, 178, 102, 0.6)); }
+.pf-coop-log-flame {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  color: var(--pfs-fire-warm, #ff8b3a);
+  filter: drop-shadow(0 0 4px rgba(255, 178, 102, 0.6));
+  vertical-align: -2px;
+}
+.pf-coop-log-flame svg {
+  width: 100%;
+  height: 100%;
+}
 .pf-coop-log-dot { color: rgba(255, 178, 102, 0.45); margin: 0 2px; letter-spacing: 0; }
 .pf-coop-log-persona {
   color: #fff5e8;
@@ -1521,6 +1555,47 @@
   min-height: 76px;
 }
 .pf-coop-log-stat-icon { font-size: 20px; line-height: 1; }
+
+/* SVG variant — the four campfire-log stat icons (Rank/Parties/Hearts/
+ * Friends) now ship as inline SVG instead of emoji. We size by `width`
+ * on the wrapper (not font-size on a glyph) and tint via currentColor.
+ * Each tile-specific color is set on .pf-coop-log-stat--<kind> below
+ * so the icons feel like a coordinated family, not four emojis pasted
+ * together. */
+.pf-coop-log-stat-icon--svg {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  color: rgba(255, 215, 170, 0.92); /* warm gold default */
+  filter: drop-shadow(0 1px 0 rgba(0, 0, 0, 0.35));
+}
+.pf-coop-log-stat-icon--svg svg {
+  width: 100%;
+  height: 100%;
+}
+/* Per-tile tinting so the row reads as a coordinated icon family. */
+.pf-coop-log-stat--lvl     .pf-coop-log-stat-icon--svg { color: #ffd9b0; }
+.pf-coop-log-stat--parties .pf-coop-log-stat-icon--svg { color: #ffb98a; }
+.pf-coop-log-stat--hearts  .pf-coop-log-stat-icon--svg { color: #ff9aa8; }
+.pf-coop-log-stat--friends .pf-coop-log-stat-icon--svg { color: #b8a4ff; }
+
+/* My Co-op modal eyebrow flame — same treatment as the ribbon flame. */
+.pf-mycoop-eyebrow-flame {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  color: var(--pfs-fire-warm, #ff8b3a);
+  filter: drop-shadow(0 0 4px rgba(255, 178, 102, 0.6));
+  vertical-align: -2px;
+}
+.pf-mycoop-eyebrow-flame svg {
+  width: 100%;
+  height: 100%;
+}
 .pf-coop-log-stat-num  { font-size: 22px; font-weight: 900; color: #fff5e8; line-height: 1.05; letter-spacing: -0.01em; }
 .pf-coop-log-stat-lbl  { font-size: 10px; color: rgba(232, 226, 255, 0.62); letter-spacing: 0.10em; text-transform: uppercase; font-weight: 700; }
 .pf-coop-log-stat--lvl {
@@ -1596,6 +1671,7 @@
   .pf-coop-log-stats { gap: 6px; }
   .pf-coop-log-stat { padding: 10px 4px; min-height: 68px; }
   .pf-coop-log-stat-icon { font-size: 18px; }
+  .pf-coop-log-stat-icon--svg { width: 18px; height: 18px; }
   .pf-coop-log-stat-num { font-size: 18px; }
   .pf-coop-log-foot { flex-direction: column; align-items: flex-start; gap: 6px; }
   .pf-coop-log-hint { text-align: left; }

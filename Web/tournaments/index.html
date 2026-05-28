@@ -1,0 +1,408 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <title>SpireVault Tournaments · STS2 co-op brackets</title>
+  <meta name="description" content="Run weekend Slay the Spire 2 co-op tournaments with SpireVault. Free, cosmetic-only prizes, real brackets." />
+  <meta name="theme-color" content="#0c0a14" />
+  <link rel="icon" type="image/svg+xml" href="/assets/vault-mark.svg" />
+  <meta property="og:title" content="SpireVault Tournaments" />
+  <meta property="og:description" content="Run STS2 co-op tournaments with real brackets. 4-team or 8-team. Cosmetic-only prizes." />
+  <meta property="og:image" content="https://app.spirevault.app/assets/og.png?v=1" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Playfair+Display:wght@700;900&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/assets/showtime.css?v=3" />
+</head>
+<body>
+  <div class="sv-shell">
+    <div class="sv-topbar">
+      <a class="sv-back" href="/">← SpireVault</a>
+      <div class="sv-brand">SpireVault Tournaments</div>
+    </div>
+
+    <div id="state-list" hidden>
+      <header class="sv-hero sv-rise sv-rise--1" id="t-hero">
+        <div>
+          <div class="sv-hero-eyebrow"><span class="sv-dot" aria-hidden="true"></span> Bracket events</div>
+          <h1 class="sv-hero-title" id="t-hero-title">Run a tournament</h1>
+          <p class="sv-hero-sub" id="t-hero-sub">4- or 8-team single-elimination brackets. Free, cosmetic-only prizes, organized by the community. Open events accept team registrations until the organizer locks the bracket.</p>
+          <div class="sv-hero-actions">
+            <button class="sv-btn sv-btn--primary" id="btn-create">Create tournament</button>
+            <a class="sv-btn sv-btn--ghost" href="/coop">Find teammates →</a>
+          </div>
+        </div>
+        <aside class="sv-hero-side">
+          <div class="sv-hero-metrics">
+            <div class="sv-hero-metric">
+              <div class="sv-hero-metric-label">Open</div>
+              <div class="sv-hero-metric-value" id="t-hero-open">—</div>
+            </div>
+            <div class="sv-hero-metric">
+              <div class="sv-hero-metric-label">Running</div>
+              <div class="sv-hero-metric-value" id="t-hero-running">—</div>
+            </div>
+          </div>
+        </aside>
+      </header>
+
+      <div class="sv-helper-row sv-rise sv-rise--2">
+        <h2>All tournaments</h2>
+        <div class="sv-helper-meta"><span class="sv-dot" aria-hidden="true"></span> live · refreshes on join</div>
+      </div>
+
+      <div class="sv-card">
+        <div id="list-rows" class="sv-stagger">
+          <div class="sv-skel sv-skel--row" aria-hidden="true"></div>
+          <div class="sv-skel sv-skel--row" aria-hidden="true"></div>
+          <div class="sv-skel sv-skel--row" aria-hidden="true"></div>
+        </div>
+        <div id="list-empty" hidden>
+          <div class="sv-empty-ill">
+            <svg viewBox="0 0 96 96" fill="none" aria-hidden="true">
+              <path d="M30 18h36v8h6v6a8 8 0 01-8 8h-1a11 11 0 01-9 9v6h6v6H36v-6h6v-6a11 11 0 01-9-9h-1a8 8 0 01-8-8v-6h6v-8z" stroke="#d4af37" stroke-width="2" fill="rgba(212,175,55,0.06)"/>
+            </svg>
+            <div class="sv-empty-head">No tournaments yet</div>
+            <p class="sv-empty-line">Be the first organizer. <a href="/coop">Find teammates</a> on Co-op or in the <a href="https://discord.gg/spirevault" target="_blank" rel="noopener">Discord LFG mirrors</a>, then spin up a 4- or 8-team bracket.</p>
+            <button id="btn-create-empty" class="sv-btn sv-btn--primary" type="button">Host the first tournament</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="state-create" hidden>
+      <h1 class="sv-h1">Create tournament</h1>
+      <p class="sv-sub">Cosmetic-only prizes (no Stripe yet). 4 or 8 teams, single elimination.</p>
+      <form id="form-create" class="sv-form sv-card">
+        <label>URL slug
+          <input class="sv-coach-input" name="slug" required pattern="[a-z0-9-]{3,40}" placeholder="weekend-cup-1" />
+        </label>
+        <label>Title
+          <input class="sv-coach-input" name="title" required maxlength="96" placeholder="SpireVault Weekend Cup #1" />
+        </label>
+        <label>Size
+          <select class="sv-coach-input" name="size" required>
+            <option value="4">4 teams (single elim, 2 rounds)</option>
+            <option value="8">8 teams (single elim, 3 rounds)</option>
+          </select>
+        </label>
+        <div class="sv-row">
+          <label>Registration closes (ISO)
+            <input class="sv-coach-input" name="registrationClosesAt" type="datetime-local" required />
+          </label>
+          <label>Starts at (ISO)
+            <input class="sv-coach-input" name="startsAt" type="datetime-local" required />
+          </label>
+        </div>
+        <label>Prize description
+          <input class="sv-coach-input" name="prize" maxlength="200" placeholder="Bragging rights and a SpireVault leaderboard pin" />
+        </label>
+        <label>Description
+          <textarea class="sv-coach-input" name="description" rows="4" maxlength="1200" placeholder="Rules, ascension constraints, format details…"></textarea>
+        </label>
+        <div class="sv-row">
+          <button type="submit" class="sv-btn sv-btn--primary">Create</button>
+          <button type="button" id="cancel-create" class="sv-btn sv-btn--ghost">Cancel</button>
+        </div>
+      </form>
+    </div>
+
+    <div id="state-detail" hidden>
+      <a class="sv-back" href="/tournaments" id="back-to-list">← All tournaments</a>
+      <div class="sv-card" style="margin-top:8px">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+          <div>
+            <h1 class="sv-h1" id="t-title" style="margin-bottom:4px">—</h1>
+            <p class="sv-sub" id="t-meta" style="margin:0"></p>
+          </div>
+          <div id="t-status"></div>
+        </div>
+        <p id="t-description" style="margin-top:8px;color:var(--sv-text-dim)"></p>
+        <p style="margin-top:8px;color:var(--sv-gold);font-weight:600" id="t-prize"></p>
+
+        <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap" id="t-actions"></div>
+      </div>
+
+      <div class="sv-card" style="margin-top:16px">
+        <h2>Teams</h2>
+        <div id="t-teams"></div>
+      </div>
+
+      <div class="sv-card" style="margin-top:16px" id="t-bracket-card" hidden>
+        <h2>Bracket</h2>
+        <div id="t-bracket" class="sv-bracket"></div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { api, esc, getSession, fmtRel, lastPathSegment, qs } from "/lib/showtime-shared.js?v=2";
+
+    const stateList   = document.getElementById("state-list");
+    const stateCreate = document.getElementById("state-create");
+    const stateDetail = document.getElementById("state-detail");
+    let session = null;
+    let activeTournament = null;
+
+    function show(which) {
+      stateList.hidden   = which !== "list";
+      stateCreate.hidden = which !== "create";
+      stateDetail.hidden = which !== "detail";
+    }
+
+    async function init() {
+      session = await getSession();
+      // Canonical: /tournaments?slug=<slug>. Legacy /tournaments/<slug>
+      // path also works for backwards-compat with already-shared links.
+      const qsSlug = qs("slug");
+      if (qsSlug && /^[a-z0-9-]{3,40}$/.test(qsSlug)) {
+        await loadTournament(qsSlug);
+        return;
+      }
+      const seg = lastPathSegment();
+      if (seg && seg !== "tournaments" && seg !== "tournaments.html" && /^[a-z0-9-]{3,40}$/.test(seg)) {
+        await loadTournament(seg);
+        return;
+      }
+      await loadList();
+    }
+
+    async function loadList() {
+      show("list");
+      const r = await api("/coop/tournaments");
+      const empty = document.getElementById("list-empty");
+      const rows = document.getElementById("list-rows");
+      const tournaments = r.data?.tournaments || [];
+      const heroTitle = document.getElementById("t-hero-title");
+      const heroSub = document.getElementById("t-hero-sub");
+      const openCt = tournaments.filter((t) => t.status === "open").length;
+      const runCt  = tournaments.filter((t) => t.status === "running").length;
+      document.getElementById("t-hero-open").textContent = String(openCt);
+      document.getElementById("t-hero-running").textContent = String(runCt);
+      if (tournaments.length === 0) {
+        empty.hidden = false;
+        rows.innerHTML = "";
+        heroTitle.textContent = "Host the first tournament";
+        heroSub.textContent = "Nobody has organized a bracket yet. Pick a date, pick a size (4 or 8 teams), and the URL is yours to share.";
+      } else {
+        empty.hidden = true;
+        rows.innerHTML = "";
+        const live = tournaments.find((t) => t.status === "open" || t.status === "running") || tournaments[0];
+        if (live) {
+          heroTitle.textContent = live.title || "Tournaments";
+          heroSub.textContent = `${live.size}-team bracket · ${live.teams.length}/${live.size} registered · organized by ${live.organizerPersona}`;
+        }
+        for (const t of tournaments) {
+          const row = document.createElement("a");
+          row.className = "sv-race-row";
+          row.style.textDecoration = "none";
+          row.style.gridTemplateColumns = "1fr auto auto";
+          row.href = "/tournaments?slug=" + encodeURIComponent(t.slug);
+          const statusPill = t.status === "open"
+            ? `<span class="sv-pill sv-pill--green">open</span>`
+            : t.status === "running"
+              ? `<span class="sv-pill sv-pill--blue">running</span>`
+              : t.status === "complete"
+                ? `<span class="sv-pill">complete</span>`
+                : `<span class="sv-pill sv-pill--gray">${esc(t.status)}</span>`;
+          row.innerHTML = `
+            <div>
+              <div class="sv-race-name">${esc(t.title)}</div>
+              <div class="sv-race-meta">${t.size} teams · ${t.teams.length}/${t.size} registered · org. ${esc(t.organizerPersona)}</div>
+            </div>
+            <div>${statusPill}</div>
+            <div class="sv-race-meta">${fmtRel(t.createdAt)}</div>
+          `;
+          rows.appendChild(row);
+        }
+      }
+      document.getElementById("btn-create").onclick = () => show("create");
+      document.getElementById("btn-create-empty").onclick = () => show("create");
+    }
+
+    document.getElementById("cancel-create").onclick = () => show("list");
+    document.getElementById("form-create").onsubmit = async (ev) => {
+      ev.preventDefault();
+      if (!session) {
+        alert("Sign in on the SpireVault home page to create tournaments.");
+        return;
+      }
+      const fd = new FormData(ev.target);
+      const body = Object.fromEntries(fd.entries());
+      body.size = Number(body.size);
+      body.registrationClosesAt = new Date(body.registrationClosesAt).toISOString();
+      body.startsAt = new Date(body.startsAt).toISOString();
+      const r = await api("/coop/tournaments", { method: "POST", body: JSON.stringify(body) });
+      if (!r.ok) { alert(r.message || r.error); return; }
+      location.href = "/tournaments?slug=" + encodeURIComponent(r.data.tournament.slug);
+    };
+
+    async function loadTournament(slug) {
+      const r = await api("/coop/tournaments/" + slug);
+      if (!r.ok || !r.data?.tournament) {
+        document.getElementById("list-empty").hidden = false;
+        show("list");
+        return;
+      }
+      activeTournament = r.data.tournament;
+      renderTournament();
+    }
+
+    function renderTournament() {
+      const t = activeTournament;
+      show("detail");
+      document.getElementById("t-title").textContent = t.title;
+      document.getElementById("t-meta").textContent = `${t.size}-team bracket · organized by ${t.organizerPersona} · created ${fmtRel(t.createdAt)}`;
+      document.getElementById("t-description").textContent = t.description || "";
+      document.getElementById("t-prize").textContent = "Prize: " + (t.prize || "Bragging rights.");
+      const statusPill = t.status === "open"
+        ? `<span class="sv-pill sv-pill--green">accepting registrations</span>`
+        : t.status === "running"
+          ? `<span class="sv-pill sv-pill--blue">running</span>`
+          : t.status === "complete"
+            ? `<span class="sv-pill">complete</span>`
+            : `<span class="sv-pill sv-pill--gray">${esc(t.status)}</span>`;
+      document.getElementById("t-status").innerHTML = statusPill;
+
+      // Actions
+      const actions = document.getElementById("t-actions");
+      actions.innerHTML = "";
+      if (t.status === "open") {
+        const reg = document.createElement("button");
+        reg.className = "sv-btn sv-btn--primary";
+        reg.textContent = "Register a team";
+        reg.onclick = registerTeamPrompt;
+        actions.appendChild(reg);
+      }
+      if (session && t.organizerSteamId === session.steamID) {
+        if (t.status === "open" && t.teams.length >= 2) {
+          const seed = document.createElement("button");
+          seed.className = "sv-btn";
+          seed.textContent = "Lock registration & seed bracket";
+          seed.onclick = seedBracket;
+          actions.appendChild(seed);
+        }
+        if (t.status === "running") {
+          const note = document.createElement("span");
+          note.className = "sv-sub";
+          note.style.alignSelf = "center";
+          note.textContent = "Click a match below to report the result.";
+          actions.appendChild(note);
+        }
+      }
+
+      // Teams
+      const teamsWrap = document.getElementById("t-teams");
+      teamsWrap.innerHTML = "";
+      if (t.teams.length === 0) {
+        teamsWrap.innerHTML = `<p class="sv-sub" style="margin:0">No teams registered yet.</p>`;
+      } else {
+        for (const team of t.teams) {
+          const node = document.createElement("div");
+          node.className = "sv-bracket-team";
+          node.innerHTML = `
+            <span><strong>${esc(team.name)}</strong> — ${team.memberSteamIds.length} player${team.memberSteamIds.length === 1 ? "" : "s"}</span>
+            <span class="sv-race-meta">${esc(team.contact || "")}</span>
+          `;
+          teamsWrap.appendChild(node);
+        }
+      }
+
+      // Bracket
+      const bracketCard = document.getElementById("t-bracket-card");
+      const bracketWrap = document.getElementById("t-bracket");
+      const matches = t.matches || [];
+      if (matches.length === 0) {
+        bracketCard.hidden = true;
+      } else {
+        bracketCard.hidden = false;
+        bracketWrap.innerHTML = "";
+        const teamById = new Map(t.teams.map((tm) => [tm.teamId, tm]));
+        const totalRounds = Math.log2(t.size);
+        for (let round = 0; round < totalRounds; round++) {
+          const col = document.createElement("div");
+          col.className = "sv-bracket-round";
+          const heading = round === totalRounds - 1
+            ? "Final"
+            : round === totalRounds - 2
+              ? "Semifinals"
+              : "Round " + (round + 1);
+          col.innerHTML = `<h3>${heading}</h3>`;
+          const slotsThisRound = matches.filter((m) => m.round === round).sort((a, b) => a.slot - b.slot);
+          for (const m of slotsThisRound) {
+            const matchEl = document.createElement("div");
+            matchEl.className = "sv-bracket-match";
+            const tA = m.teamA ? teamById.get(m.teamA) : null;
+            const tB = m.teamB ? teamById.get(m.teamB) : null;
+            const aWin = m.winner && m.winner === m.teamA;
+            const bWin = m.winner && m.winner === m.teamB;
+            matchEl.innerHTML = `
+              <div class="sv-bracket-team ${aWin ? "is-winner" : ""} ${!tA ? "is-tba" : ""}">
+                <span>${tA ? esc(tA.name) : "TBA"}</span>${aWin ? `<span>✓</span>` : ""}
+              </div>
+              <div class="sv-bracket-team ${bWin ? "is-winner" : ""} ${!tB ? "is-tba" : ""}">
+                <span>${tB ? esc(tB.name) : "TBA"}</span>${bWin ? `<span>✓</span>` : ""}
+              </div>
+              ${m.score ? `<div class="sv-race-meta">${esc(m.score)}</div>` : ""}
+            `;
+            if (
+              session && t.organizerSteamId === session.steamID &&
+              t.status === "running" && m.teamA && m.teamB && !m.winner
+            ) {
+              matchEl.style.cursor = "pointer";
+              matchEl.title = "Report result";
+              matchEl.onclick = () => reportMatch(m, tA, tB);
+            }
+            col.appendChild(matchEl);
+          }
+          bracketWrap.appendChild(col);
+        }
+      }
+    }
+
+    async function registerTeamPrompt() {
+      if (!session) { alert("Sign in to register."); return; }
+      const name = prompt("Team name?");
+      if (!name) return;
+      const idsStr = prompt("Comma-separated Steam IDs (17-digit) on the team. Include yours.", session.steamID);
+      if (!idsStr) return;
+      const memberSteamIds = idsStr.split(",").map((s) => s.trim()).filter(Boolean);
+      const contact = prompt("Optional Discord/contact handle for the team?", "") || undefined;
+      const r = await api(`/coop/tournaments/${activeTournament.slug}/register`, {
+        method: "POST",
+        body: JSON.stringify({ name, memberSteamIds, contact }),
+      });
+      if (!r.ok) { alert(r.message || r.error); return; }
+      activeTournament = r.data.tournament;
+      renderTournament();
+    }
+
+    async function seedBracket() {
+      if (!confirm("Lock registration and seed the bracket randomly?")) return;
+      const r = await api(`/coop/tournaments/${activeTournament.slug}/seed`, { method: "POST" });
+      if (!r.ok) { alert(r.message || r.error); return; }
+      activeTournament = r.data.tournament;
+      renderTournament();
+    }
+
+    async function reportMatch(m, tA, tB) {
+      const which = prompt(`Who won?\n\nA = ${tA.name}\nB = ${tB.name}\n\nType A or B:`);
+      if (!which) return;
+      const winnerTeamId = which.trim().toUpperCase() === "A" ? m.teamA : which.trim().toUpperCase() === "B" ? m.teamB : null;
+      if (!winnerTeamId) { alert("Type A or B."); return; }
+      const score = prompt("Score / note (optional, e.g. '3-1' or 'Boss kill on F50')") || undefined;
+      const r = await api(`/coop/tournaments/${activeTournament.slug}/report`, {
+        method: "POST",
+        body: JSON.stringify({ round: m.round, slot: m.slot, winnerTeamId, score }),
+      });
+      if (!r.ok) { alert(r.message || r.error); return; }
+      activeTournament = r.data.tournament;
+      renderTournament();
+    }
+
+    init();
+  </script>
+</body>
+</html>

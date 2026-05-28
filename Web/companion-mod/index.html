@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <title>SpireVault Companion Mod · Future opt-in upgrade</title>
+  <meta name="description" content="The Companion mod is a future opt-in upgrade for streamers and power users. SpireVault works end-to-end in your browser without it." />
+  <meta name="theme-color" content="#0c0a14" />
+  <link rel="icon" type="image/svg+xml" href="/assets/vault-mark.svg" />
+  <meta property="og:title" content="SpireVault Companion Mod · Future" />
+  <meta property="og:description" content="A future opt-in upgrade. SpireVault works in your browser today without any install." />
+  <meta property="og:image" content="https://app.spirevault.app/assets/og.png?v=1" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Playfair+Display:wght@700;900&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/assets/showtime.css?v=3" />
+</head>
+<body>
+  <div class="sv-shell">
+    <div class="sv-topbar">
+      <a class="sv-back" href="/">← SpireVault</a>
+      <div class="sv-brand">Companion Mod</div>
+    </div>
+
+    <section class="sv-quiet-hero sv-rise sv-rise--1">
+      <div class="sv-hero-eyebrow">Coming later · optional</div>
+      <h1 class="sv-hero-title">A future power-user upgrade</h1>
+      <p class="sv-hero-sub">
+        SpireVault works end-to-end in your browser today. You don't need any install to share runs, race the daily, ask Coach, or run a tournament.
+      </p>
+      <p class="sv-hero-sub">
+        The Companion mod is a future opt-in upgrade that will unlock live spectator data and live AI coaching for streamers. It's not the way you use SpireVault — it's the upgrade for the people who want their stream to read their hand in real time.
+      </p>
+      <div class="sv-hero-actions">
+        <a class="sv-btn" href="/watch">Browse replays</a>
+        <a class="sv-btn sv-btn--ghost" href="/race">Race today's daily</a>
+      </div>
+    </section>
+
+    <div class="sv-card sv-rise sv-rise--2" style="margin-top:24px">
+      <h2>What you can already do without it</h2>
+      <ul class="sv-coach-bullets" style="margin-top:6px">
+        <li><strong>Share runs</strong> — drop your <code>.run</code> save on the home page and your run lands in <a href="/watch">Replays</a> and your profile feed.</li>
+        <li><strong>Race the daily</strong> — submit today's run on <a href="/race">/race</a> straight from the browser. No install.</li>
+        <li><strong>Ask Coach</strong> — screenshot a card reward and <a href="/coach">Coach</a> grades each pick, no game state required.</li>
+        <li><strong>Run a tournament</strong> — spin up a 4- or 8-team bracket on <a href="/tournaments">/tournaments</a> and share the link.</li>
+      </ul>
+    </div>
+
+    <div class="sv-card sv-rise sv-rise--3" style="margin-top:16px">
+      <h2>What the mod will add (later)</h2>
+      <div class="sv-feature-grid">
+        <div class="sv-feature">
+          <h3>Live spectator URLs</h3>
+          <p>Share a <code>/watch</code> link that updates in real time as you play — deck, hand, HP, party state. For streamers who want their chat to see what's in their hand.</p>
+        </div>
+        <div class="sv-feature">
+          <h3>Live AI coaching</h3>
+          <p>Coach reads the live game state instead of a screenshot. Useful for runback streams and tournament casters.</p>
+        </div>
+        <div class="sv-feature">
+          <h3>OBS Browser Source overlay</h3>
+          <p>One URL into OBS, a polished animated overlay out. Lower-third style, no Twitch handshake.</p>
+        </div>
+        <div class="sv-feature">
+          <h3>Cloud damage meter</h3>
+          <p>Skada-style damage breakdown readable from your phone or a second monitor.</p>
+        </div>
+      </div>
+    </div>
+
+    <details class="sv-card" style="margin-top:16px">
+      <summary style="cursor:pointer;font-weight:700">For developers · build it from source</summary>
+      <p class="sv-sub" style="margin:12px 0 0">
+        The Companion mod source lives in the SpireVault repo under <code>Mod/SpireVaultCompanion</code>. .NET 9.0, depends on
+        <a href="https://www.nexusmods.com/slaythespire2/mods/3" target="_blank" rel="noopener">BaseLib-StS2</a>. The
+        <a href="https://github.com/elliotttate/sts2-modding-mcp" target="_blank" rel="noopener">sts2-modding-mcp</a>
+        is wired into the project for AI-assisted contributions. Public Nexus / Steam Workshop releases are pending the v0.1 signing checklist.
+      </p>
+      <ul class="sv-coach-bullets" style="margin-top:10px">
+        <li><strong>v0.1</strong> · Steam Rich Presence sync + damage meter (in progress)</li>
+        <li><strong>v0.2</strong> · teammate decks + live party hub mirror</li>
+        <li><strong>v0.3</strong> · auto-share post-run + Discord LFG auto-post</li>
+      </ul>
+      <p class="sv-sub" style="margin-top:10px">
+        Privacy posture: the mod streams the current run state only (deck, hand, HP, floor, party). Nothing leaves your machine until you sign in and start a run with the mod enabled. You can disable streaming for any single run from the in-game ModConfig tab. Run state expires from the SpireVault cloud automatically — live in 90 seconds, post-run replay window 30 minutes.
+      </p>
+    </details>
+  </div>
+</body>
+</html>

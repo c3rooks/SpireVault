@@ -1,1 +1,9 @@
+# SpireVault Showtime — Innovation 2 (live spectator + tournaments + race)
+# Each new feature lives at <feature>/index.html so Cloudflare Pages
+# auto-serves it on /<feature> (with a 308 to /<feature>/). Deep-link
+# share URLs use query params (?runId=, ?slug=, ?date=) instead of
+# path segments — Pages's _redirects splat rules with status 200
+# don't reliably override the SPA fallback for unknown nested paths,
+# so the canonical share format stays in querystring-land.
+
 /overlay   /index.html   200

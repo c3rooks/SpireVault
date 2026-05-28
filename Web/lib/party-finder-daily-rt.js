@@ -131,19 +131,33 @@
   }
 
   function ensureMount() {
-    // Anchor under the hero stat tiles. The scene module renders the
-    // stats row inside the hero card; we attach our tile in an adjacent
-    // slot that the scene module already creates (`pf-stage-prop` area),
-    // or fall back to a new wrapper inside the hero.
+    // 1. Reuse existing slot if present (idempotent across re-pumps).
     var slot = document.querySelector("[data-pf-daily-host]");
     if (slot) return slot;
+
+    // 2. Production default surface: coop-lobbies.js v23 Beta UI.
+    //    Anchor the tile inside `.coop-work-main` at the top, ABOVE the
+    //    invites/lobbies/recs sections so it's the first thing under the
+    //    `.coop-bar` stat row. This is what real signed-in users see —
+    //    the party-finder.js Scene below is only mounted on a deeper
+    //    sandbox panel.
+    var coopMain = document.querySelector(".coop-work-main");
+    if (coopMain) {
+      var wrap = document.createElement("div");
+      wrap.className = "pf-daily-wrap pf-daily-wrap--coop-lobbies";
+      wrap.setAttribute("data-pf-daily-host", "1");
+      coopMain.insertBefore(wrap, coopMain.firstChild);
+      return wrap;
+    }
+
+    // 3. Deeper party-finder.js Scene surface (sandbox / prototype).
     var hero = document.querySelector(".pf-stage, #pf-hero, #pf-root .pf-hero, #pf-stats");
     if (!hero) return null;
-    var wrap = document.createElement("div");
-    wrap.className = "pf-daily-wrap";
-    wrap.setAttribute("data-pf-daily-host", "1");
-    hero.appendChild(wrap);
-    return wrap;
+    var wrap2 = document.createElement("div");
+    wrap2.className = "pf-daily-wrap";
+    wrap2.setAttribute("data-pf-daily-host", "1");
+    hero.appendChild(wrap2);
+    return wrap2;
   }
 
   function pump() {

@@ -1,0 +1,616 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <title>SpireVault Replays · Recent shared Slay the Spire 2 runs</title>
+  <meta name="description" content="Browse the most recent shared Slay the Spire 2 runs. Drop a .run save on spirevault.app to share yours." />
+  <meta name="theme-color" content="#0c0a14" />
+  <link rel="icon" type="image/svg+xml" href="/assets/vault-mark.svg" />
+
+  <meta property="og:title" content="SpireVault Replays · Recent shared STS2 runs" />
+  <meta property="og:description" content="Browse the most recent shared Slay the Spire 2 runs. Cards, relics, floor reached, and how it ended." />
+  <meta property="og:image" content="https://app.spirevault.app/assets/og.png?v=1" />
+  <meta property="og:type" content="website" />
+  <meta name="twitter:card" content="summary_large_image" />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Playfair+Display:wght@700;900&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/assets/showtime.css?v=3" />
+</head>
+<body>
+  <div class="sv-shell">
+    <div class="sv-topbar">
+      <a class="sv-back" href="/">← SpireVault</a>
+      <div class="sv-brand">SpireVault Replays</div>
+    </div>
+
+    <!-- DEFAULT (no runId): replays-first browse view ============= -->
+    <div id="state-list">
+      <header class="sv-hero sv-rise sv-rise--1" id="replays-hero">
+        <div>
+          <div class="sv-hero-eyebrow"><span class="sv-dot" aria-hidden="true"></span> Featured replay</div>
+          <h1 class="sv-hero-title" id="hero-title">Pulling latest runs</h1>
+          <p class="sv-hero-sub" id="hero-sub">Recent shared Slay the Spire 2 runs from the SpireVault community. Open any card to scrub through the deck, relics, and final floor.</p>
+          <div class="sv-hero-actions">
+            <a class="sv-btn sv-btn--primary" href="/" id="hero-share-cta">Share your run</a>
+            <a class="sv-btn sv-btn--ghost" href="/race">Today's race →</a>
+          </div>
+        </div>
+        <aside class="sv-hero-side" id="hero-side" aria-hidden="true">
+          <div class="sv-hero-metrics">
+            <div class="sv-hero-metric">
+              <div class="sv-hero-metric-label">Shared runs</div>
+              <div class="sv-hero-metric-value" id="hero-count">—</div>
+            </div>
+            <div class="sv-hero-metric">
+              <div class="sv-hero-metric-label">Most recent</div>
+              <div class="sv-hero-metric-value" id="hero-recent">—</div>
+            </div>
+          </div>
+        </aside>
+      </header>
+
+      <div class="sv-helper-row sv-rise sv-rise--2">
+        <h2>Recent shared runs</h2>
+        <div class="sv-helper-meta"><span class="sv-dot" aria-hidden="true"></span> updates as new runs are shared</div>
+      </div>
+
+      <div id="replay-grid" class="sv-replay-grid sv-stagger" aria-live="polite">
+        <!-- skeleton placeholders until /api/highlights resolves -->
+        <div class="sv-skel sv-skel--card" aria-hidden="true"></div>
+        <div class="sv-skel sv-skel--card" aria-hidden="true"></div>
+        <div class="sv-skel sv-skel--card" aria-hidden="true"></div>
+        <div class="sv-skel sv-skel--card" aria-hidden="true"></div>
+        <div class="sv-skel sv-skel--card" aria-hidden="true"></div>
+        <div class="sv-skel sv-skel--card" aria-hidden="true"></div>
+      </div>
+
+      <div id="replay-empty" hidden>
+        <div class="sv-empty-ill sv-card">
+          <svg viewBox="0 0 96 96" fill="none" aria-hidden="true">
+            <rect x="14" y="22" width="68" height="52" rx="8" stroke="#d4af37" stroke-width="2" fill="rgba(212,175,55,0.06)"/>
+            <path d="M30 46l10 8 14-18 14 18" stroke="#d4af37" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+            <circle cx="68" cy="36" r="4" fill="#d4af37"/>
+          </svg>
+          <div class="sv-empty-head">Quiet right now</div>
+          <p class="sv-empty-line">No shared runs yet. Drop your STS2 save folder on <a href="/">spirevault.app</a> to share your runs and seed the first replay.</p>
+          <a class="sv-btn sv-btn--primary" href="/">Share a run →</a>
+        </div>
+      </div>
+    </div>
+
+    <!-- DETAIL (runId or shareId in URL) ========================== -->
+    <div id="state-run" hidden>
+      <div class="sv-card" id="run-summary">
+        <div class="sv-run-header">
+          <img id="run-avatar" class="sv-run-avatar" src="/assets/vault-mark.svg" alt="" />
+          <div class="sv-run-meta">
+            <div id="run-name" class="sv-run-name">—</div>
+            <div id="run-line" class="sv-run-line">Pulling run details</div>
+          </div>
+          <div style="margin-left:auto;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <span class="sv-pill" id="run-mode-pill" hidden></span>
+            <button id="copy-link" class="sv-btn sv-btn--ghost" title="Copy replay link">Copy link</button>
+            <button id="copy-obs"  class="sv-btn sv-btn--ghost" title="Copy OBS Browser Source URL (live only)" hidden>Copy OBS link</button>
+            <a id="open-coach" class="sv-btn" href="#">Coach this run</a>
+          </div>
+        </div>
+        <div class="sv-stat-row">
+          <div id="stat-hp"></div>
+          <div id="stat-floor"></div>
+          <div id="stat-gold"></div>
+          <div id="stat-status"></div>
+        </div>
+      </div>
+
+      <div class="sv-grid-2" style="margin-top:16px">
+        <div class="sv-card">
+          <h2>Deck (<span id="deck-count">0</span>)</h2>
+          <div id="deck" class="sv-deck-grid"></div>
+        </div>
+        <div class="sv-card">
+          <h2>Relics</h2>
+          <div id="relics" class="sv-relics"></div>
+          <h2 style="margin-top:16px">Combat</h2>
+          <div id="combat" class="sv-run-line">Map / event screen</div>
+          <div id="hand" class="sv-deck-grid" style="margin-top:8px"></div>
+          <div id="enemies" style="margin-top:8px"></div>
+        </div>
+      </div>
+
+      <div class="sv-card" id="party-card" style="margin-top:16px" hidden>
+        <h2>Party</h2>
+        <div id="party" class="sv-party"></div>
+      </div>
+
+      <p class="sv-sub" style="margin-top:18px;text-align:center">
+        <a class="sv-back" href="/watch">← All replays</a>
+      </p>
+    </div>
+
+    <!-- EMPTY DETAIL (runId looked up, nothing found) ============= -->
+    <div id="state-empty" hidden>
+      <div class="sv-empty-ill sv-card">
+        <svg viewBox="0 0 96 96" fill="none" aria-hidden="true">
+          <circle cx="48" cy="48" r="34" stroke="#d4af37" stroke-width="2" fill="rgba(212,175,55,0.06)"/>
+          <path d="M32 48h32M48 32v32" stroke="#d4af37" stroke-width="2" stroke-linecap="round" opacity="0.4"/>
+          <path d="M38 38l20 20M58 38L38 58" stroke="#ff5d6c" stroke-width="2.2" stroke-linecap="round"/>
+        </svg>
+        <div class="sv-empty-head">Run not found</div>
+        <p class="sv-empty-line">That runId or share link has expired, or the run was never shared. Browse recent replays instead.</p>
+        <a class="sv-btn sv-btn--primary" href="/watch">See recent replays →</a>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { api, esc, statTile, renderDeck, poll, lastPathSegment, fmtRel, qs, track } from "/lib/showtime-shared.js?v=2";
+
+    const STEAM_ID_RE = /^\d{17}$/;
+    const RUN_ID_RE = /^[A-Za-z0-9_-]{6,40}$/;
+    const SHARE_ID_RE = /^[a-f0-9]{8,64}$/i;
+    const IS_OVERLAY = qs("overlay") === "1" || qs("theme") === "streamer";
+
+    if (IS_OVERLAY) {
+      // OBS Browser Source variant: transparent background, no shell
+      // chrome. Only meaningful for live mod streams; for non-live we
+      // intentionally render a minimal empty card with no mod-pushing
+      // copy.
+      document.body.classList.add("sv-overlay");
+      document.body.innerHTML = `
+        <div class="sv-overlay-wrap">
+          <div class="sv-overlay-card">
+            <div class="sv-overlay-bar">
+              <span id="ov-name">Pulling run</span>
+              <span class="sv-pill"><span class="sv-live-dot"></span>LIVE</span>
+            </div>
+            <div id="ov-line" class="sv-run-line">—</div>
+            <div id="ov-deck" class="sv-overlay-deck"></div>
+          </div>
+        </div>
+      `;
+    }
+
+    const stateList  = document.getElementById("state-list");
+    const stateRun   = document.getElementById("state-run");
+    const stateEmpty = document.getElementById("state-empty");
+    const partyCard  = document.getElementById("party-card");
+
+    function show(which) {
+      if (stateList)  stateList.hidden  = which !== "list";
+      if (stateRun)   stateRun.hidden   = which !== "run";
+      if (stateEmpty) stateEmpty.hidden = which !== "empty";
+    }
+
+    // ─── ID resolution ──────────────────────────────────────────────
+    function resolveRequestedId() {
+      // Canonical: ?runId / ?shareId / ?steamId. Path fallback for
+      // legacy /watch/<id> links shared before query-param canon.
+      const qsRun = qs("runId");
+      if (qsRun && RUN_ID_RE.test(qsRun)) return { kind: "run", id: qsRun };
+      const qsShare = qs("shareId");
+      if (qsShare && SHARE_ID_RE.test(qsShare)) return { kind: "share", id: qsShare };
+      const qsSteam = qs("steamId");
+      if (qsSteam && STEAM_ID_RE.test(qsSteam)) return { kind: "steam", id: qsSteam };
+
+      const seg = lastPathSegment();
+      if (!seg || seg === "watch" || seg === "watch.html") return null;
+      if (RUN_ID_RE.test(seg))   return { kind: "run", id: seg };
+      if (SHARE_ID_RE.test(seg)) return { kind: "share", id: seg };
+      if (STEAM_ID_RE.test(seg)) return { kind: "steam", id: seg };
+      return null;
+    }
+
+    // ─── Replays landing ────────────────────────────────────────────
+    function fmtCharLine(run) {
+      const char = (run.character || "—").replace(/^\w/, (c) => c.toUpperCase());
+      const asc = run.ascension != null ? ` · A${run.ascension}` : "";
+      const status = run.won ? "cleared" : (run.floorReached ? `floor ${run.floorReached}` : (run.wasAbandoned ? "abandoned" : "—"));
+      return `${esc(char)}${asc} · ${esc(status)}`;
+    }
+
+    function renderReplayCard(h, { featured = false } = {}) {
+      const a = document.createElement("a");
+      a.className = "sv-replay-card" + (featured ? " is-featured" : "");
+      a.href = "/watch?runId=" + encodeURIComponent(h.id);
+      a.setAttribute("data-runid", h.id);
+      const caption = h.caption || (h.run.won
+        ? `Cleared as ${h.run.character} on Ascension ${h.run.ascension ?? 0}.`
+        : `Reached floor ${h.run.floorReached ?? 0} as ${h.run.character} on Ascension ${h.run.ascension ?? 0}.`);
+      const pill = h.run.won
+        ? `<span class="sv-pill sv-pill--green">cleared</span>`
+        : (h.run.wasAbandoned
+          ? `<span class="sv-pill sv-pill--gray">abandoned</span>`
+          : `<span class="sv-pill sv-pill--red">f${h.run.floorReached ?? 0}</span>`);
+      const featuredPill = featured ? `<span class="sv-pill" style="margin-right:6px">Featured</span>` : "";
+      a.innerHTML = `
+        <div class="sv-replay-top">
+          <img class="sv-replay-avatar" src="${esc(h.authorAvatar || "/assets/vault-mark.svg")}" alt="" />
+          <div style="min-width:0;flex:1">
+            <div class="sv-replay-name">${esc(h.authorPersona || "Steam User")}</div>
+            <div class="sv-replay-meta">${fmtCharLine(h.run)} · ${esc(fmtRel(h.run.endedAt) || "recent")}</div>
+          </div>
+          <div>${featuredPill}${pill}</div>
+        </div>
+        <div class="sv-replay-caption">${esc(caption)}</div>
+      `;
+      return a;
+    }
+
+    async function loadReplays() {
+      show("list");
+      const r = await api("/highlights");
+      const items = Array.isArray(r.data?.items) ? r.data.items : [];
+      const grid = document.getElementById("replay-grid");
+      const empty = document.getElementById("replay-empty");
+      const heroTitle = document.getElementById("hero-title");
+      const heroSub = document.getElementById("hero-sub");
+      const heroCount = document.getElementById("hero-count");
+      const heroRecent = document.getElementById("hero-recent");
+
+      if (!items.length) {
+        // Empty: hero becomes a quote-style invitation; grid hides.
+        grid.hidden = true;
+        empty.hidden = false;
+        heroTitle.textContent = "No replays yet";
+        heroSub.textContent = "Be the first. Drop your STS2 save folder on spirevault.app and your run lands here.";
+        heroCount.textContent = "0";
+        heroRecent.textContent = "—";
+        return;
+      }
+
+      grid.innerHTML = "";
+      grid.hidden = false;
+      empty.hidden = true;
+      const [featured, ...rest] = items;
+      grid.appendChild(renderReplayCard(featured, { featured: true }));
+      for (const h of rest.slice(0, 23)) grid.appendChild(renderReplayCard(h));
+
+      // Hero copy/metrics
+      heroTitle.textContent = featured.run.won
+        ? `${cap(featured.run.character)} cleared on A${featured.run.ascension ?? 0}`
+        : `${cap(featured.run.character)} fell on floor ${featured.run.floorReached ?? 0}`;
+      heroSub.textContent = featured.caption ||
+        `Most recent shared run from ${featured.authorPersona || "the community"}. Open the featured card below to step through the deck.`;
+      heroCount.textContent = String(items.length);
+      heroRecent.textContent = fmtRel(featured.run.endedAt) || "just now";
+    }
+
+    function cap(s) { return String(s || "—").replace(/^\w/, (c) => c.toUpperCase()); }
+
+    // ─── Detail view ────────────────────────────────────────────────
+    function renderHand(snap) {
+      const handEl = document.getElementById("hand");
+      const enemiesEl = document.getElementById("enemies");
+      const combatEl = document.getElementById("combat");
+      handEl.innerHTML = "";
+      enemiesEl.innerHTML = "";
+      const c = snap.combat;
+      if (!c || c.scene !== "in_combat") {
+        combatEl.textContent = c?.scene
+          ? c.scene.replace(/_/g, " ").replace(/^\w/, (s) => s.toUpperCase()) + " screen"
+          : "Map / event screen";
+        return;
+      }
+      combatEl.textContent = `Combat · turn ${c.turn ?? 0} · ⚡ ${c.energy ?? 0}/${c.energyMax ?? 0}${c.block ? ` · 🛡 ${c.block} block` : ""}`;
+      renderDeck(handEl, c.hand || []);
+      for (const e of (c.enemies || [])) {
+        const row = document.createElement("div");
+        row.className = "sv-bracket-team";
+        row.style.background = "rgba(255,93,108,0.08)";
+        row.innerHTML = `
+          <span>${esc(e.name)} · ${e.hp}/${e.maxHp}</span>
+          <span style="color:var(--sv-yellow)">${esc(e.intent || "")}${e.intentDamage ? ` (${e.intentDamage})` : ""}</span>
+        `;
+        enemiesEl.appendChild(row);
+      }
+    }
+
+    function renderOverlay(snap) {
+      const nameEl = document.getElementById("ov-name");
+      const lineEl = document.getElementById("ov-line");
+      const deckEl = document.getElementById("ov-deck");
+      if (!nameEl || !lineEl || !deckEl) return;
+      nameEl.textContent = `${snap.hostPersonaName} · ${snap.characterId} A${snap.ascension}`;
+      const c = snap.combat;
+      const phase = c?.scene === "in_combat"
+        ? `Combat T${c.turn ?? 0} · ⚡${c.energy ?? 0}/${c.energyMax ?? 0}${c.block ? ` · 🛡${c.block}` : ""}`
+        : (c?.scene ? c.scene.replace(/_/g, " ") : "map");
+      lineEl.textContent = `Floor ${snap.floor} · ${snap.hp}/${snap.maxHp} HP · ${snap.gold}g · ${phase}`;
+      const cards = (c?.scene === "in_combat" && c.hand) ? c.hand : (snap.deck || []).slice(0, 12);
+      deckEl.innerHTML = "";
+      for (const card of cards) {
+        const node = document.createElement("span");
+        node.className = card.upgrades > 0 ? "is-upgrade" : "";
+        node.textContent = card.name + (card.upgrades > 0 ? "+" : "");
+        deckEl.appendChild(node);
+      }
+    }
+
+    function renderLiveRun(snap) {
+      if (IS_OVERLAY) { renderOverlay(snap); return; }
+      show("run");
+      document.title = `${snap.hostPersonaName} · ${snap.characterId} A${snap.ascension} · SpireVault Replays`;
+      document.getElementById("run-avatar").src = snap.hostAvatarUrl || "/assets/vault-mark.svg";
+      document.getElementById("run-name").textContent = snap.hostPersonaName;
+      document.getElementById("run-line").textContent =
+        `${snap.characterId} on Ascension ${snap.ascension} · live · updated ${fmtRel(snap.updatedAt)}`;
+      const pill = document.getElementById("run-mode-pill");
+      pill.textContent = "LIVE";
+      pill.classList.remove("sv-pill--gray"); pill.classList.add("sv-pill");
+      pill.style.background = "rgba(255,93,108,0.14)"; pill.style.color = "var(--sv-red)";
+      pill.hidden = false;
+      document.getElementById("copy-obs").hidden = false;
+
+      const stats = [
+        ["stat-hp", "HP", `${snap.hp}/${snap.maxHp}`, (snap.hp / Math.max(1, snap.maxHp)) * 100],
+        ["stat-floor", "Floor", `${snap.floor}`],
+        ["stat-gold", "Gold", `${snap.gold}`],
+        ["stat-status", "Status", snap.status === "active" ? "live" : snap.status],
+      ];
+      for (const [id, label, value, pct] of stats) {
+        const tile = statTile(label, value, pct != null ? { fillPct: pct } : {});
+        document.getElementById(id).replaceWith(Object.assign(tile, { id }));
+      }
+      document.getElementById("deck-count").textContent = String(snap.deck?.length ?? 0);
+      renderDeck(document.getElementById("deck"), snap.deck || []);
+      const relicsEl = document.getElementById("relics");
+      relicsEl.innerHTML = "";
+      for (const r of (snap.relics || [])) {
+        const node = document.createElement("span");
+        node.className = "sv-relic";
+        node.title = r.description || r.name;
+        node.textContent = r.name;
+        relicsEl.appendChild(node);
+      }
+      renderHand(snap);
+
+      const party = snap.party || [];
+      partyCard.hidden = party.length === 0;
+      const pwrap = document.getElementById("party");
+      pwrap.innerHTML = "";
+      for (const m of party) {
+        const node = document.createElement("div");
+        node.className = "sv-party-member";
+        node.innerHTML = `
+          <div class="sv-pmem-name">${esc(m.personaName || "Teammate")}</div>
+          <div class="sv-pmem-line">${esc(m.characterId || "?")} · ${m.hp ?? "?"}/${m.maxHp ?? "?"} HP · ${m.deckSize ?? "?"} cards</div>
+        `;
+        pwrap.appendChild(node);
+      }
+
+      wireDetailButtons({
+        runId: snap.runId,
+        coachLink: `/coach?runId=${encodeURIComponent(snap.runId)}`,
+        shareUrl: `${location.origin}/watch?runId=${encodeURIComponent(snap.runId)}`,
+        obsUrl: `${location.origin}/watch?runId=${encodeURIComponent(snap.runId)}&theme=streamer&overlay=1`,
+      });
+    }
+
+    function renderShareCard(card) {
+      // We can be handed either a highlight-style card (id, run,
+      // authorPersona — sanitized by highlights.ts) or a party-style
+      // post-run share card (shareId, members, caption — from
+      // /coop/share/<id>). Detect by presence of `members` and dispatch.
+      show("run");
+      if (Array.isArray(card.members)) {
+        renderPartyShare(card);
+        return;
+      }
+      const run = card.run || {};
+      const persona = card.authorPersona || "Steam User";
+      document.title = `${persona} · ${run.character || "—"} · SpireVault Replays`;
+      document.getElementById("run-avatar").src = card.authorAvatar || "/assets/vault-mark.svg";
+      document.getElementById("run-name").textContent = persona;
+      document.getElementById("run-line").textContent =
+        `${cap(run.character)} on Ascension ${run.ascension ?? 0} · ${fmtRel(run.endedAt) || "recent"}`;
+
+      const pill = document.getElementById("run-mode-pill");
+      pill.textContent = run.won ? "VICTORY" : (run.wasAbandoned ? "ABANDONED" : "DEFEAT");
+      pill.classList.add("sv-pill"); pill.hidden = false;
+      pill.style.background = run.won ? "rgba(108,224,169,0.14)" : "rgba(255,255,255,0.08)";
+      pill.style.color = run.won ? "var(--sv-green)" : "var(--sv-text-dim)";
+      document.getElementById("copy-obs").hidden = true;
+
+      const stats = [
+        ["stat-hp", "Result", run.won ? "Victory" : (run.wasAbandoned ? "Abandoned" : "Defeat")],
+        ["stat-floor", "Floor", `${run.floorReached ?? "—"}`],
+        ["stat-gold", "Play time", run.playTimeSeconds != null ? fmtMin(run.playTimeSeconds) : "—"],
+        ["stat-status", "Ascension", `${run.ascension ?? 0}`],
+      ];
+      for (const [id, label, value] of stats) {
+        const tile = statTile(label, value);
+        document.getElementById(id).replaceWith(Object.assign(tile, { id }));
+      }
+
+      const deck = (run.deckHighlights || []).map((name) => ({ name, cost: "", upgrades: name.endsWith("+") ? 1 : 0 }));
+      document.getElementById("deck-count").textContent = String(deck.length);
+      renderDeck(document.getElementById("deck"), deck);
+
+      const relicsEl = document.getElementById("relics");
+      relicsEl.innerHTML = "";
+      for (const r of (run.relics || [])) {
+        const node = document.createElement("span");
+        node.className = "sv-relic";
+        node.textContent = String(r).replace(/_/g, " ");
+        relicsEl.appendChild(node);
+      }
+
+      document.getElementById("combat").textContent =
+        run.killedBy ? `Killed by ${String(run.killedBy).replace(/_/g, " ")}` : (run.won ? "Spire cleared." : "Run ended.");
+      document.getElementById("hand").innerHTML = "";
+      document.getElementById("enemies").innerHTML = "";
+      partyCard.hidden = true;
+
+      wireDetailButtons({
+        runId: card.id,
+        coachLink: card.id ? `/coach?shareId=${encodeURIComponent(card.id)}` : "/coach",
+        shareUrl: `${location.origin}/watch?runId=${encodeURIComponent(card.id)}`,
+        obsUrl: null,
+      });
+    }
+
+    function renderPartyShare(card) {
+      // Party-shape share card from /coop/share/<id>. No deck/relics on
+      // the wire — just roster, daily date, caption. Reuse the same
+      // detail layout but fold deck/combat into a roster card.
+      const host = (card.members || []).find((m) => m.role === "host") || card.members?.[0] || { personaName: "Host" };
+      const memberCount = card.members?.length || 0;
+      document.title = `${host.personaName}'s party · SpireVault Replays`;
+      document.getElementById("run-avatar").src = "/assets/vault-mark.svg";
+      document.getElementById("run-name").textContent = `${host.personaName}'s party`;
+      document.getElementById("run-line").textContent =
+        `${memberCount}-player co-op · ${card.dailyDate ? "daily " + card.dailyDate + " · " : ""}${fmtRel(card.endedAt) || "recent"}`;
+
+      const pill = document.getElementById("run-mode-pill");
+      pill.textContent = card.dailyDate ? "DAILY CO-OP" : "CO-OP RECAP";
+      pill.classList.add("sv-pill"); pill.hidden = false;
+      pill.style.background = "rgba(108,182,255,0.14)"; pill.style.color = "var(--sv-blue)";
+      document.getElementById("copy-obs").hidden = true;
+
+      const stats = [
+        ["stat-hp", "Players", String(memberCount)],
+        ["stat-floor", "Mode", card.dailyDate ? "Daily" : "Co-op"],
+        ["stat-gold", "Started", card.startedAt ? fmtRel(card.startedAt) : "—"],
+        ["stat-status", "Ended", fmtRel(card.endedAt) || "—"],
+      ];
+      for (const [id, label, value] of stats) {
+        const tile = statTile(label, value);
+        document.getElementById(id).replaceWith(Object.assign(tile, { id }));
+      }
+
+      // Fold deck card into a roster.
+      const deckHost = document.getElementById("deck").parentElement;
+      const h2 = deckHost.querySelector("h2");
+      if (h2) h2.innerHTML = `Roster (${memberCount})`;
+      const deckEl = document.getElementById("deck");
+      deckEl.classList.remove("sv-deck-grid");
+      deckEl.style.display = "flex";
+      deckEl.style.flexDirection = "column";
+      deckEl.style.gap = "8px";
+      deckEl.innerHTML = "";
+      for (const m of (card.members || [])) {
+        const row = document.createElement("div");
+        row.className = "sv-bracket-team";
+        row.innerHTML = `
+          <span><strong>${esc(m.personaName)}</strong> ${m.role === "host" ? "<span class=\"sv-pill sv-pill--gray\" style=\"margin-left:6px;font-size:10px;padding:2px 6px\">host</span>" : ""}</span>
+          <span class="sv-race-meta">${m.character ? esc(cap(m.character)) : "—"} · ${esc(m.outcome || "")}</span>
+        `;
+        deckEl.appendChild(row);
+      }
+      document.getElementById("deck-count").textContent = String(memberCount);
+
+      const relicsEl = document.getElementById("relics");
+      relicsEl.innerHTML = card.caption ? `<p style="margin:0;color:var(--sv-text)">${esc(card.caption)}</p>` : `<p class="sv-sub" style="margin:0">No caption.</p>`;
+      const combatEl = document.getElementById("combat");
+      combatEl.textContent = card.dailyDate ? `Daily challenge · ${card.dailyDate}` : "Post-run recap";
+      document.getElementById("hand").innerHTML = "";
+      document.getElementById("enemies").innerHTML = "";
+      partyCard.hidden = true;
+
+      const shareId = card.shareId || card.id;
+      wireDetailButtons({
+        runId: shareId,
+        coachLink: shareId ? `/coach?shareId=${encodeURIComponent(shareId)}` : "/coach",
+        shareUrl: `${location.origin}/watch?runId=${encodeURIComponent(shareId)}`,
+        obsUrl: null,
+      });
+    }
+
+    function fmtMin(sec) {
+      if (!Number.isFinite(sec)) return "—";
+      const m = Math.floor(sec / 60), s = Math.floor(sec % 60);
+      return `${m}m ${String(s).padStart(2, "0")}s`;
+    }
+
+    function wireDetailButtons({ runId, coachLink, shareUrl, obsUrl }) {
+      const coachA = document.getElementById("open-coach");
+      coachA.href = coachLink;
+
+      const linkBtn = document.getElementById("copy-link");
+      linkBtn.onclick = async () => copyAndFlash(linkBtn, shareUrl);
+
+      const obsBtn = document.getElementById("copy-obs");
+      if (obsUrl) {
+        obsBtn.onclick = async () => copyAndFlash(obsBtn, obsUrl, () => track("showtime_copy_obs", { runId }));
+      }
+    }
+
+    async function copyAndFlash(btn, text, onOk) {
+      try {
+        await navigator.clipboard.writeText(text);
+        const orig = btn.textContent;
+        btn.classList.add("is-ok");
+        btn.textContent = "Copied ✓";
+        setTimeout(() => { btn.textContent = orig; btn.classList.remove("is-ok"); }, 1500);
+        onOk?.();
+      } catch { window.prompt("Copy this link:", text); }
+    }
+
+    // ─── Resolve and render ────────────────────────────────────────
+    async function loadRunOrShare(req) {
+      // Try live mod stream first when the id looks like a runId. If
+      // 404 OR the id is share-shaped, fall back to /coop/share/<id>.
+      if (req.kind === "run") {
+        const r = await api("/coop/mod/run/" + req.id);
+        if (r.ok && r.data?.run) { renderLiveRun(r.data.run); track("replay_view_live", { runId: req.id }); return true; }
+        // Fall through to share lookup with the same id (highlight ids
+        // and share ids can both be the canonical replay handle).
+        const s = await api("/coop/share/" + req.id);
+        if (s.ok && s.data?.card) { renderShareCard(s.data.card); track("replay_view_share", { shareId: req.id }); return true; }
+        // Final fallback: maybe it's a highlight id (md5 hex). Highlights
+        // expose run data directly via /highlights/<id>.
+        const h = await api("/highlights/" + req.id);
+        if (h.ok && h.data?.highlight) {
+          renderShareCard({ id: req.id, run: h.data.highlight.run, authorPersona: h.data.highlight.authorPersona, authorAvatar: h.data.highlight.authorAvatar });
+          track("replay_view_highlight", { id: req.id });
+          return true;
+        }
+        return false;
+      }
+      if (req.kind === "share") {
+        const s = await api("/coop/share/" + req.id);
+        if (s.ok && s.data?.card) { renderShareCard(s.data.card); return true; }
+        return false;
+      }
+      if (req.kind === "steam") {
+        const r = await api("/coop/mod/host/" + req.id);
+        if (r.ok && r.data?.runId) {
+          const r2 = await api("/coop/mod/run/" + r.data.runId);
+          if (r2.ok && r2.data?.run) { renderLiveRun(r2.data.run); return true; }
+        }
+        return false;
+      }
+      return false;
+    }
+
+    (async () => {
+      const req = resolveRequestedId();
+      if (!req) {
+        await loadReplays();
+        return;
+      }
+      const ok = await loadRunOrShare(req);
+      if (!ok) {
+        if (IS_OVERLAY) {
+          // Overlay must be empty rather than blast empty-state copy
+          // into a stream. Leave the minimal card alone.
+          return;
+        }
+        show("empty");
+        return;
+      }
+      // Live runs poll every 2s; shared cards are static.
+      if (req.kind === "run") {
+        poll(async () => {
+          const r = await api("/coop/mod/run/" + req.id);
+          if (r.ok && r.data?.run) renderLiveRun(r.data.run);
+        }, 2000);
+      }
+    })();
+  </script>
+</body>
+</html>

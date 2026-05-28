@@ -1,0 +1,333 @@
+/* SpireVault House lobby identity — v199.
+ *
+ * Visual treatment for the operator-seeded ambient rooms surfaced by
+ * Backend/src/coop-house-lobbies.ts. The goal is to read as a curated
+ * SpireVault room, not a bot — every change in this file is in service
+ * of distinguishing the two House lobbies from each other and from
+ * real player-hosted rooms, AND of disclosing the room's nature in
+ * plain text (no surprise after a joiner takes the seat).
+ *
+ * The three identity hooks the JS layer applies:
+ *
+ *   .pf-live-row--house              — every House live row
+ *   .pf-live-row--house-a0-casual    — A0 Casual room (azure / chill)
+ *   .pf-live-row--house-a10-heart    — A10 Heart Attempts (ember / hot)
+ *   .pf-best-card--house             — Best Party card variant
+ *   .pf-row-art--house-{slug}        — themed art tile (replaces "OPEN TO ANY")
+ *   .pf-row-badge--open              — honest "OPEN" pill (replaces "GO NOW"
+ *                                      when zero real humans have joined)
+ *   .pf-house-pill                   — "VAULT TEAM" pill (replaces Lv1)
+ *   .pf-house-disclosure             — ambient-room disclosure subtitle
+ *
+ * Everything else is unchanged so non-House rooms render exactly as
+ * they did in v198.
+ */
+
+/* ── House row chrome ───────────────────────────────────────────────── */
+
+.pf-live-row.pf-live-row--house {
+  border-color: rgba(245, 197, 95, 0.32);
+  background:
+    linear-gradient(180deg, rgba(245, 197, 95, 0.04), var(--pf-fill));
+}
+.pf-live-row.pf-live-row--house:hover {
+  border-color: rgba(245, 197, 95, 0.55);
+  box-shadow: 0 1px 0 rgba(255,255,255,0.05) inset,
+              0 28px 60px -32px rgba(176, 122, 36, 0.45);
+}
+
+/* A0 Casual — chill / blue-tinted, "everyone is welcome" energy. */
+.pf-live-row.pf-live-row--house-a0-casual {
+  border-color: rgba(96, 165, 250, 0.32);
+  background:
+    linear-gradient(180deg, rgba(96, 165, 250, 0.05), var(--pf-fill));
+}
+.pf-live-row.pf-live-row--house-a0-casual:hover {
+  border-color: rgba(96, 165, 250, 0.55);
+  box-shadow: 0 1px 0 rgba(255,255,255,0.05) inset,
+              0 28px 60px -32px rgba(56, 113, 217, 0.45);
+}
+
+/* A10 Heart Attempts — aggressive / red-tinted, "endgame" energy. */
+.pf-live-row.pf-live-row--house-a10-heart {
+  border-color: rgba(248, 113, 113, 0.32);
+  background:
+    linear-gradient(180deg, rgba(248, 113, 113, 0.05), var(--pf-fill));
+}
+.pf-live-row.pf-live-row--house-a10-heart:hover {
+  border-color: rgba(248, 113, 113, 0.55);
+  box-shadow: 0 1px 0 rgba(255,255,255,0.05) inset,
+              0 28px 60px -32px rgba(180, 50, 50, 0.45);
+}
+
+/* ── "VAULT TEAM" pill — replaces the LevelBadge rep slot ───────────── */
+
+.pf-house-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px 3px 6px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  background:
+    linear-gradient(135deg, rgba(245, 197, 95, 0.95), rgba(176, 122, 36, 0.95));
+  border: 1px solid rgba(245, 197, 95, 0.55);
+  color: #1a0f04;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.18) inset,
+    0 0 0 1px rgba(176, 122, 36, 0.30);
+  text-transform: uppercase;
+  user-select: none;
+}
+.pf-house-pill-shield {
+  font-size: 12px;
+  line-height: 1;
+  color: #1a0f04;
+}
+.pf-house-pill-label {
+  letter-spacing: 0.08em;
+}
+
+/* ── Disclosure subtitle ────────────────────────────────────────────── */
+
+.pf-house-disclosure {
+  margin: 2px 0 0;
+  font-size: 11.5px;
+  line-height: 1.35;
+  color: rgba(245, 197, 95, 0.78);
+  font-style: italic;
+  font-weight: 500;
+}
+.pf-live-row--house-a0-casual .pf-house-disclosure {
+  color: rgba(147, 197, 253, 0.82);
+}
+.pf-live-row--house-a10-heart .pf-house-disclosure {
+  color: rgba(252, 165, 165, 0.82);
+}
+
+/* ── Host strip avatar (House crest) ────────────────────────────────── */
+
+.pf-host-strip-img--house {
+  border: 1px solid rgba(245, 197, 95, 0.55) !important;
+  background: rgba(245, 197, 95, 0.06) !important;
+  padding: 2px;
+  box-shadow:
+    0 0 0 1px rgba(245, 197, 95, 0.25),
+    0 0 8px -2px rgba(245, 197, 95, 0.40);
+}
+.pf-live-row--house-a0-casual .pf-host-strip-img--house {
+  border-color: rgba(96, 165, 250, 0.55) !important;
+  box-shadow:
+    0 0 0 1px rgba(96, 165, 250, 0.25),
+    0 0 8px -2px rgba(96, 165, 250, 0.40);
+}
+.pf-live-row--house-a10-heart .pf-host-strip-img--house {
+  border-color: rgba(248, 113, 113, 0.55) !important;
+  box-shadow:
+    0 0 0 1px rgba(248, 113, 113, 0.25),
+    0 0 8px -2px rgba(248, 113, 113, 0.40);
+}
+
+/* House lobbies show "always open" instead of a stale "active 33m ago"
+ * heartbeat. The host status text gets a muted-italic treatment so it
+ * reads as a state, not a timestamp. */
+.pf-host-status--house {
+  font-style: italic;
+  color: rgba(245, 197, 95, 0.75);
+}
+.pf-live-row--house-a0-casual .pf-host-status--house {
+  color: rgba(147, 197, 253, 0.80);
+}
+.pf-live-row--house-a10-heart .pf-host-status--house {
+  color: rgba(252, 165, 165, 0.80);
+}
+.pf-dot--house {
+  background: rgba(245, 197, 95, 0.95) !important;
+  box-shadow: 0 0 0 2px rgba(245, 197, 95, 0.22) !important;
+  animation: pf-house-dot-pulse 2.4s ease-in-out infinite;
+}
+.pf-live-row--house-a0-casual .pf-dot--house {
+  background: rgba(96, 165, 250, 0.95) !important;
+  box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.22) !important;
+}
+.pf-live-row--house-a10-heart .pf-dot--house {
+  background: rgba(248, 113, 113, 0.95) !important;
+  box-shadow: 0 0 0 2px rgba(248, 113, 113, 0.22) !important;
+}
+@keyframes pf-house-dot-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%      { opacity: 0.65; transform: scale(0.85); }
+}
+
+/* ── Themed art tile (replaces the "OPEN TO ANY" grey card) ────────── */
+
+.pf-row-art--house {
+  position: relative;
+  overflow: hidden;
+  /* Override the rules in party-finder-lobby-bar.css that paint the
+   * generic art column dark gray. House art gets its own background
+   * via .pf-row-art-house-bg below. */
+  background: transparent !important;
+}
+.pf-row-art-house-bg {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+}
+.pf-row-art--house-a0-casual .pf-row-art-house-bg {
+  background:
+    radial-gradient(120% 120% at 30% 0%, rgba(147, 197, 253, 0.22), rgba(15, 23, 42, 0.10) 60%),
+    radial-gradient(80% 100% at 80% 100%, rgba(96, 165, 250, 0.18), rgba(15, 23, 42, 0) 70%),
+    linear-gradient(180deg, rgba(30, 58, 138, 0.40), rgba(7, 13, 30, 0.85));
+  border: 1px solid rgba(96, 165, 250, 0.32);
+  border-radius: 14px;
+}
+.pf-row-art--house-a10-heart .pf-row-art-house-bg {
+  background:
+    radial-gradient(120% 120% at 30% 0%, rgba(252, 165, 165, 0.22), rgba(30, 6, 6, 0.10) 60%),
+    radial-gradient(80% 100% at 80% 100%, rgba(248, 113, 113, 0.20), rgba(30, 6, 6, 0) 70%),
+    linear-gradient(180deg, rgba(127, 29, 29, 0.55), rgba(20, 6, 6, 0.92));
+  border: 1px solid rgba(248, 113, 113, 0.32);
+  border-radius: 14px;
+}
+.pf-row-art-house-crest {
+  position: absolute;
+  z-index: 1;
+  width: 56%;
+  height: auto;
+  max-height: 64%;
+  top: 14%;
+  left: 22%;
+  object-fit: contain;
+  filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.45));
+  opacity: 0.92;
+}
+.pf-row-art--house-a0-casual .pf-row-art-house-crest {
+  filter: drop-shadow(0 4px 12px rgba(96, 165, 250, 0.55))
+          drop-shadow(0 0 2px rgba(191, 219, 254, 0.65));
+}
+.pf-row-art--house-a10-heart .pf-row-art-house-crest {
+  filter: drop-shadow(0 4px 12px rgba(248, 113, 113, 0.65))
+          drop-shadow(0 0 2px rgba(254, 202, 202, 0.75));
+}
+.pf-row-art-house-stamp {
+  position: absolute;
+  z-index: 2;
+  left: 0; right: 0;
+  bottom: 22px;
+  text-align: center;
+  font-size: 11.5px;
+  font-weight: 800;
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.96);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+.pf-row-art-house-sub {
+  position: absolute;
+  z-index: 2;
+  left: 0; right: 0;
+  bottom: 6px;
+  text-align: center;
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.62);
+}
+
+/* ── "OPEN" replacement for the deceptive "GO NOW" pill ────────────── */
+
+.pf-row-badge--open {
+  color: rgba(245, 197, 95, 0.95);
+  background: rgba(245, 197, 95, 0.12);
+  border-color: rgba(245, 197, 95, 0.40);
+}
+.pf-live-row--house-a0-casual .pf-row-badge--open {
+  color: rgba(147, 197, 253, 0.98);
+  background: rgba(96, 165, 250, 0.14);
+  border-color: rgba(96, 165, 250, 0.42);
+}
+.pf-live-row--house-a10-heart .pf-row-badge--open {
+  color: rgba(252, 165, 165, 0.98);
+  background: rgba(248, 113, 113, 0.14);
+  border-color: rgba(248, 113, 113, 0.42);
+}
+
+/* ── Best Party card — House variant ────────────────────────────────── */
+
+.pf-best-card--house {
+  border-color: rgba(245, 197, 95, 0.32);
+}
+.pf-best-card--house-a0-casual {
+  border-color: rgba(96, 165, 250, 0.32);
+}
+.pf-best-card--house-a10-heart {
+  border-color: rgba(248, 113, 113, 0.32);
+}
+.pf-best-card--house .pf-best-art {
+  background: transparent;
+}
+.pf-best-art-house {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  border-radius: var(--pf-radius-card);
+  overflow: hidden;
+}
+.pf-best-art-house[data-pf-house-art="a0-casual"] {
+  background:
+    radial-gradient(120% 120% at 30% 0%, rgba(147, 197, 253, 0.22), rgba(15, 23, 42, 0.10) 60%),
+    radial-gradient(80% 100% at 80% 100%, rgba(96, 165, 250, 0.18), rgba(15, 23, 42, 0) 70%),
+    linear-gradient(180deg, rgba(30, 58, 138, 0.55), rgba(7, 13, 30, 0.95));
+}
+.pf-best-art-house[data-pf-house-art="a10-heart"] {
+  background:
+    radial-gradient(120% 120% at 30% 0%, rgba(252, 165, 165, 0.22), rgba(30, 6, 6, 0.10) 60%),
+    radial-gradient(80% 100% at 80% 100%, rgba(248, 113, 113, 0.20), rgba(30, 6, 6, 0) 70%),
+    linear-gradient(180deg, rgba(127, 29, 29, 0.62), rgba(20, 6, 6, 0.97));
+}
+.pf-best-art-crest {
+  width: 38%;
+  max-width: 110px;
+  height: auto;
+  filter: drop-shadow(0 6px 16px rgba(0, 0, 0, 0.55));
+  opacity: 0.95;
+}
+.pf-best-art-house[data-pf-house-art="a0-casual"] .pf-best-art-crest {
+  filter: drop-shadow(0 6px 16px rgba(96, 165, 250, 0.50))
+          drop-shadow(0 0 3px rgba(191, 219, 254, 0.65));
+}
+.pf-best-art-house[data-pf-house-art="a10-heart"] .pf-best-art-crest {
+  filter: drop-shadow(0 6px 16px rgba(248, 113, 113, 0.55))
+          drop-shadow(0 0 3px rgba(254, 202, 202, 0.70));
+}
+.pf-best-art-eyebrow {
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.85);
+  font-weight: 700;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+.pf-host-line-img--house {
+  border-radius: 50%;
+  border: 1px solid rgba(245, 197, 95, 0.55);
+  background: rgba(245, 197, 95, 0.06);
+  padding: 2px;
+}
+
+/* Mobile — narrow viewports already collapse the grid; just make sure
+ * the House art tile keeps its themed background instead of falling
+ * back to the generic gray. */
+@media (max-width: 768px) {
+  .pf-row-art--house {
+    min-height: 132px;
+  }
+}

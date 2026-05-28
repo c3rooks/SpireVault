@@ -1,0 +1,346 @@
+/* =====================================================================
+ * Empty State v2 — styling for the cold-start launch pad that replaces
+ * the default "No live parties yet" stub.
+ *
+ * Design rationale:
+ *
+ *   The original empty state was tiny center-aligned text inside a
+ *   dashed border. Functional but inert — read as "this is broken"
+ *   rather than "this is the bootstrap moment." V2 reframes it as the
+ *   actual showpiece of the page when no lobbies exist, with:
+ *
+ *     - A large animated campfire so the visual hierarchy matches the
+ *       hero stage's identity card (consistent design language)
+ *     - A confident headline that names the social act ("be the first
+ *       to host tonight") with reassurance immediately below
+ *     - A SINGLE primary CTA that visually dominates — no competing
+ *       buttons, no "or use Discord" hedge
+ *     - The Discord LFG auto-post pitch as a callout — the killer
+ *       feature of v0.11.0, reframed as a reason to host HERE first
+ *     - A divider + the Daily Challenge fallback for visitors who
+ *       arrive without a partner and don't want to be the host
+ *
+ * Width: matches the parent .pf-section card so it sits flush. Padding
+ * is generous to make the card feel like a deliberate landing zone,
+ * not a placeholder.
+ * ===================================================================== */
+
+/* Reset the default stub chrome when v2 takes over. The base style
+ * file sets a dashed border + text-align: center on #pf-live-empty;
+ * v2 has its own card so we strip those out. */
+#pf-live-empty.pf-empty--v2 {
+  text-align: left;
+  border: none;
+  padding: 0;
+  background: transparent;
+}
+
+.pf-empty-v2 {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 18px;
+  padding: 32px clamp(20px, 4vw, 40px) 28px;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 178, 102, 0.22);
+  background:
+    radial-gradient(80% 60% at 50% 0%, rgba(255, 139, 58, 0.10), transparent 70%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.025), rgba(0, 0, 0, 0.42));
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.03),
+    0 12px 36px rgba(0, 0, 0, 0.32);
+  /* Subtle ember pulse on the whole card so it reads as alive even
+   * when the lobby list around it is quiet. Slow + low-amplitude so
+   * it doesn't compete with the campfire animation. */
+  animation: pf-empty-card-pulse 6s ease-in-out infinite alternate;
+}
+@keyframes pf-empty-card-pulse {
+  0%   { box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.03), 0 12px 36px rgba(0, 0, 0, 0.32); }
+  100% { box-shadow: inset 0 0 0 1px rgba(255, 178, 102, 0.08), 0 12px 40px rgba(255, 100, 40, 0.10); }
+}
+
+/* ── Campfire icon (large, animated) ──────────────────────────────── */
+.pf-empty-campfire {
+  width: 72px;
+  height: 72px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.pf-empty-campfire-svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.pf-empty-campfire-glow {
+  fill: rgba(255, 139, 58, 0.55);
+  filter: blur(2.5px);
+  transform-origin: 12px 19.5px;
+  animation: pf-empty-flicker 1.6s ease-in-out infinite alternate;
+}
+.pf-empty-campfire-logs rect {
+  fill: #4a2e1a;
+}
+.pf-empty-campfire-logs rect + rect {
+  fill: #5a3a20;
+}
+.pf-empty-campfire-flame {
+  fill: #ff8b3a;
+  filter:
+    drop-shadow(0 0 6px rgba(255, 174, 94, 0.85))
+    drop-shadow(0 0 2px #fff7d6);
+  transform-origin: 12px 14px;
+  animation: pf-empty-dance 1.4s ease-in-out infinite alternate;
+}
+@keyframes pf-empty-flicker {
+  0%   { opacity: 0.78; transform: scale(0.96); }
+  50%  { opacity: 1;    transform: scale(1.08); }
+  100% { opacity: 0.82; transform: scale(1.00); }
+}
+@keyframes pf-empty-dance {
+  0%   { transform: scale(0.96, 1.00) rotate(-1.5deg); }
+  50%  { transform: scale(1.02, 0.97) rotate(1deg);    }
+  100% { transform: scale(0.98, 1.04) rotate(1.8deg);  }
+}
+
+/* ── Headline + sub copy ──────────────────────────────────────────── */
+.pf-empty-headline {
+  margin: 0;
+  font-family: var(--font-display, ui-serif, Georgia, "Times New Roman", serif);
+  font-size: clamp(22px, 3vw, 28px);
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  color: #fff5e8;
+  line-height: 1.15;
+}
+.pf-empty-sub {
+  margin: 0;
+  max-width: 480px;
+  font-size: 14px;
+  line-height: 1.55;
+  color: rgba(232, 226, 255, 0.78);
+}
+
+/* ── Primary CTA — the whole empty state collapses to this button ──
+ * Generous size, ember gradient, breathing animation. The single most
+ * important visual element on the empty state. */
+.pf-empty-cta-row {
+  margin-top: 4px;
+  display: flex;
+  gap: 12px;
+}
+.pf-empty-cta-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 22px 14px 18px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 178, 102, 0.55);
+  background: linear-gradient(135deg, #ff8b3a 0%, #d05a1f 100%);
+  color: #1a0e02;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 15px;
+  text-align: left;
+  box-shadow:
+    0 10px 28px rgba(255, 139, 58, 0.30),
+    inset 0 1px 0 rgba(255, 255, 255, 0.20);
+  transition: transform 150ms ease, box-shadow 150ms ease;
+  animation: pf-empty-cta-breathe 2.6s ease-in-out infinite alternate;
+}
+.pf-empty-cta-primary:hover {
+  transform: translateY(-1px);
+  box-shadow:
+    0 14px 34px rgba(255, 139, 58, 0.38),
+    inset 0 1px 0 rgba(255, 255, 255, 0.28);
+}
+.pf-empty-cta-primary:active {
+  transform: translateY(0);
+}
+@keyframes pf-empty-cta-breathe {
+  0%   { box-shadow: 0 10px 28px rgba(255, 139, 58, 0.30), inset 0 1px 0 rgba(255, 255, 255, 0.20); }
+  100% { box-shadow: 0 14px 34px rgba(255, 139, 58, 0.42), inset 0 1px 0 rgba(255, 255, 255, 0.28); }
+}
+.pf-empty-cta-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: rgba(26, 14, 2, 0.92);
+  color: #ffd9b0;
+  font-size: 11px;
+  font-weight: 900;
+  flex-shrink: 0;
+}
+.pf-empty-cta-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.15;
+}
+.pf-empty-cta-text strong {
+  font-size: 17px;
+  font-weight: 900;
+  color: #1a0e02;
+  letter-spacing: -0.005em;
+}
+.pf-empty-cta-text small {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: rgba(26, 14, 2, 0.72);
+  letter-spacing: 0.01em;
+}
+
+/* ── Discord pitch callout ────────────────────────────────────────── */
+.pf-empty-discord-pitch {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  max-width: 540px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: rgba(88, 101, 242, 0.08); /* Discord blurple, low alpha */
+  border: 1px solid rgba(88, 101, 242, 0.22);
+  color: rgba(232, 226, 255, 0.86);
+  font-size: 13px;
+  line-height: 1.55;
+  text-align: left;
+}
+.pf-empty-discord-pitch strong {
+  color: #ffd9b0;
+  font-weight: 800;
+}
+.pf-empty-discord-icon {
+  font-size: 18px;
+  line-height: 1.2;
+  flex-shrink: 0;
+}
+
+/* ── OR divider ──────────────────────────────────────────────────── */
+.pf-empty-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  max-width: 360px;
+  margin: 4px 0;
+  color: rgba(232, 226, 255, 0.45);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.pf-empty-divider::before,
+.pf-empty-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(232, 226, 255, 0.18), transparent);
+}
+
+/* ── Daily Challenge pitch ───────────────────────────────────────── */
+.pf-empty-daily-pitch {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: 540px;
+  padding: 12px 16px;
+  border-radius: 12px;
+  background: rgba(255, 178, 102, 0.06);
+  border: 1px solid rgba(255, 178, 102, 0.18);
+  color: rgba(232, 226, 255, 0.86);
+  font-size: 13px;
+  line-height: 1.5;
+  text-align: left;
+}
+.pf-empty-daily-pitch strong {
+  color: #ffd9b0;
+  font-weight: 800;
+}
+.pf-empty-daily-icon {
+  font-size: 18px;
+  line-height: 1.2;
+  flex-shrink: 0;
+}
+.pf-empty-daily-link {
+  display: inline-block;
+  margin-left: 6px;
+  color: #ffb266;
+  font-weight: 800;
+  text-decoration: none;
+  border-bottom: 1px dashed rgba(255, 178, 102, 0.5);
+  transition: color 150ms ease, border-color 150ms ease;
+}
+.pf-empty-daily-link:hover {
+  color: #ffd9b0;
+  border-color: #ffd9b0;
+}
+
+/* Brief highlight ring on the Daily tile when the user clicks "See
+ * today's daily" — pulses for ~1.5s so they don't miss what landed
+ * in view. Class is added/removed by the runtime module. */
+.pf-daily-tile--flash {
+  animation: pf-daily-tile-flash 1.8s ease-out;
+}
+@keyframes pf-daily-tile-flash {
+  0%   { box-shadow: 0 0 0 0 rgba(255, 178, 102, 0.65); }
+  40%  { box-shadow: 0 0 0 10px rgba(255, 178, 102, 0.25); }
+  100% { box-shadow: 0 0 0 0 rgba(255, 178, 102, 0); }
+}
+
+/* ── Footer row — small secondary actions ───────────────────────── */
+.pf-empty-foot {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  justify-content: center;
+  margin-top: 4px;
+}
+.pf-empty-foot-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: transparent;
+  border: 1px solid rgba(232, 226, 255, 0.16);
+  color: rgba(232, 226, 255, 0.72);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 150ms ease, color 150ms ease, border-color 150ms ease;
+}
+.pf-empty-foot-btn:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: #fff5e8;
+  border-color: rgba(232, 226, 255, 0.30);
+}
+
+/* ── Mobile ──────────────────────────────────────────────────────── */
+@media (max-width: 640px) {
+  .pf-empty-v2 { padding: 24px 16px 22px; gap: 14px; }
+  .pf-empty-campfire { width: 56px; height: 56px; }
+  .pf-empty-headline { font-size: 20px; }
+  .pf-empty-sub { font-size: 13px; }
+  .pf-empty-cta-primary { padding: 12px 16px 12px 14px; }
+  .pf-empty-cta-text strong { font-size: 15px; }
+  .pf-empty-discord-pitch,
+  .pf-empty-daily-pitch { font-size: 12.5px; padding: 12px 14px; }
+  .pf-empty-foot { gap: 8px; }
+  .pf-empty-foot-btn { font-size: 11px; }
+}
+
+/* ── Reduced motion ──────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .pf-empty-v2,
+  .pf-empty-cta-primary,
+  .pf-empty-campfire-glow,
+  .pf-empty-campfire-flame,
+  .pf-daily-tile--flash { animation: none !important; }
+}

@@ -11,6 +11,29 @@
   padding: 8px 12px 0 12px;
 }
 
+/* Variant for the coop-lobbies.js v23 Beta surface — the production
+   default. Mounted at the top of `.coop-work-main`, ABOVE invites/lobbies.
+   Full-bleed inside the work column, slight bottom margin so the
+   "Open Rooms" section heading reads clearly underneath. */
+.pf-daily-wrap--coop-lobbies {
+  display: block;
+  padding: 0 0 16px 0;
+}
+.pf-daily-wrap--coop-lobbies .pf-daily-tile {
+  width: 100%;
+  display: grid;
+  grid-template-columns: auto 1fr auto auto auto;
+  gap: 14px;
+  padding: 14px 18px;
+  border-radius: 12px;
+}
+@media (max-width: 720px) {
+  .pf-daily-wrap--coop-lobbies .pf-daily-tile {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+}
+
 .pf-daily-tile {
   display: grid;
   grid-template-columns: auto auto auto auto auto;

@@ -32,10 +32,10 @@ import {
   filterOpenLobbiesForViewer,
   filterRecommendationsForViewer,
   isSandboxSteamId,
-} from "./coop-sandbox.js?v=6";
+} from "./coop-sandbox.js?v=8";
 import { decodeStart } from "./party-finder-startsoon.js?v=1";
 
-export { ensureCoopSandboxMounted, isCoopSandboxEnabled } from "./coop-sandbox.js?v=6";
+export { ensureCoopSandboxMounted, isCoopSandboxEnabled } from "./coop-sandbox.js?v=8";
 
 const GAME_CONFIG = Object.freeze({
   game: "Slay the Spire 2",
@@ -172,6 +172,40 @@ let ageTickerTimer = null;
 let isMounted = false;
 let pendingActions = new Set();
 
+// =========================================================================
+// Quick-host module state
+// -------------------------------------------------------------------------
+// One-click host: skips the full form modal and POSTs /coop/lobbies with
+// permissive defaults so the time-to-first-lobby drops from "fill a form"
+// to "click one button." All form-aware paths (Advanced disclosure,
+// modal-driven "+ Host a Room" buttons) keep working bit-for-bit; this is
+// strictly an additional path with its own state-aware label.
+// =========================================================================
+let quickHostBusy = false;
+let quickHostRateLimitUntil = 0;
+let quickHostCountdownTimer = null;
+let quickHostMountedAt = 0;
+
+/** Wide-open one-click host defaults. Tuned to be the most permissive
+ *  permutation the worker accepts without rejecting on validation. The
+ *  selected character is intentionally omitted so the host can pick at
+ *  Party Hub time; preferredCharacters is left empty (all welcome). */
+const QUICK_HOST_DEFAULTS = Object.freeze({
+  title: "Open co-op room",
+  goal: "any",
+  lobbySize: 4,
+  ascensionMin: 0,
+  ascensionMax: 20,
+  voicePreference: "optional",
+  voicePreset: "any",
+  approvalRequired: false,
+  preferredCharacters: [],
+  note: "",
+  discordHandle: undefined,
+});
+
+function quickHostTimeoutMs() { return 8000; }
+
 // Tracks the active session id we last rendered. When this is set
 // and the next render reveals the session is gone, we infer the
 // partner ended the pairing and surface a one-line toast so the
@@ -205,26 +239,55 @@ function lobbyModeLabel(lobby) {
   return { standard: "Standard", daily: "Daily", custom: "Custom" }[m] || m;
 }
 
-function renderLobbySeatRow(lobby) {
+function renderLobbySeatRow(lobby, party) {
   const cap = lobbySizeOf(lobby);
   const members = lobbyMembers(lobby);
   const hostUrl = lobby.hostAvatarUrl || "/assets/vault-mark.svg";
-  const slots = [
-    `<span class="coop-seat-slot coop-seat-slot--filled" title="${esc(lobby.hostPersonaName || "Host")}"><img src="${esc(hostUrl)}" alt="" /></span>`,
-  ];
-  const guests = members.filter((sid) => sid !== lobby.hostSteamId);
-  for (let i = 0; i < guests.length; i++) {
-    slots.push('<span class="coop-seat-slot coop-seat-slot--filled coop-seat-slot--guest" aria-label="Filled seat"></span>');
+  // Build a steamId -> party-member lookup. The lobby payload only carries
+  // steamIds for accepted members; the personaName / avatarUrl that the
+  // seat row wants live on the party object. Before this enhancement the
+  // host had no way to tell who joined without opening the Party Hub —
+  // the row was anonymous filled circles.
+  const partyById = new Map();
+  if (party?.members?.length) {
+    for (const m of party.members) {
+      if (m?.steamId) partyById.set(m.steamId, m);
+    }
+  }
+  const renderSeat = (sid, isHost) => {
+    if (isHost) {
+      return `<span class="coop-seat-slot coop-seat-slot--filled" title="${esc(lobby.hostPersonaName || "Host")}"><img src="${esc(hostUrl)}" alt="" /></span>`;
+    }
+    const m = partyById.get(sid);
+    if (m && (m.avatarUrl || m.personaName)) {
+      const title = m.personaName || "Joined";
+      const img = m.avatarUrl
+        ? `<img src="${esc(m.avatarUrl)}" alt="" />`
+        : `<span class="coop-seat-slot-initial" aria-hidden="true">${esc((m.personaName || "?").charAt(0).toUpperCase())}</span>`;
+      return `<span class="coop-seat-slot coop-seat-slot--filled coop-seat-slot--guest" title="${esc(title)}">${img}</span>`;
+    }
+    return '<span class="coop-seat-slot coop-seat-slot--filled coop-seat-slot--guest" aria-label="Filled seat"></span>';
+  };
+  const slots = [renderSeat(lobby.hostSteamId, true)];
+  for (const sid of members.filter((s) => s !== lobby.hostSteamId)) {
+    slots.push(renderSeat(sid, false));
   }
   const empty = Math.max(0, cap - members.length);
   for (let i = 0; i < empty; i++) {
     slots.push('<span class="coop-seat-slot coop-seat-slot--empty" aria-hidden="true"></span>');
   }
   const need = openSeats(lobby);
+  const joinerNames = members
+    .filter((s) => s !== lobby.hostSteamId)
+    .map((s) => partyById.get(s)?.personaName)
+    .filter(Boolean);
+  const withSummary = joinerNames.length
+    ? ` · with ${joinerNames.map(esc).join(", ")}`
+    : "";
   return `
     <div class="coop-seat-row">
       <div class="coop-seat-slots">${slots.join("")}</div>
-      <span class="coop-seat-summary">${members.length}/${cap} seats${need > 0 ? ` · Need +${need}` : ""}</span>
+      <span class="coop-seat-summary">${members.length}/${cap} seats${need > 0 ? ` · Need +${need}` : ""}${withSummary}</span>
     </div>`;
 }
 
@@ -351,6 +414,19 @@ export function mountCoopLobbies(ctx) {
   bootCtx = ctx;
   if (isMounted) return;
   isMounted = true;
+  // Bridge the state-aware quick-host pipeline to party-finder-scene.js
+  // so the existing pf-stage "Quick Play" button can drive the same
+  // sign-in / reopen / leave-and-host / one-click POST behaviour the
+  // v194 orange hero used to. The orange hero DOM is gone in v195 but
+  // the underlying logic still lives in this module.
+  if (typeof window !== "undefined") {
+    window.__coopQuickHost = Object.freeze({
+      run: runQuickHost,
+      resolveMode: getQuickHostMode,
+      getStatus: getQuickHostStatus,
+    });
+  }
+  mountShowtimeStrip();
   wireDelegatedClicks();
   wireModalCloseHandlers();
   wireIntentForm();
@@ -381,6 +457,437 @@ export function setCoopTabActive() {
     onReseed: () => void refreshState({ force: true }),
   });
   void refreshState({ force: true });
+}
+
+// =========================================================================
+// Showtime / Coach discoverability strip
+// =========================================================================
+// Four tiles linking out to the standalone Showtime surfaces (/watch,
+// /race, /tournaments, /coach). Mounted once at the top of
+// #coop-page-root so signed-in users browsing the Co-op tab can find
+// the new pages without us having to redesign the side nav. The strip
+// is the cold-start liquidity fix for /watch and /race — empty live-run
+// + ghost lists go away once players actually share runs, but nobody
+// shares unless they know these surfaces exist.
+//
+// The Companion mod is intentionally NOT advertised here. It is a
+// future, optional power-user upgrade (see /companion-mod) and every
+// Showtime surface must deliver value to a tier-1 web visitor (no
+// download, screenshot + .run drop + Steam OAuth) without it.
+//
+// Tile config is intentionally co-located here (not pulled from a
+// JSON) — four hard-coded entries, no fancy data layer, no I/O.
+// =========================================================================
+const SHOWTIME_TILES = Object.freeze([
+  {
+    href: "/watch",
+    title: "Replays",
+    sub: "Recent shared runs",
+    track: "showtime_strip_watch",
+    iconPath: "M2 12s3.5-6.5 10-6.5S22 12 22 12s-3.5 6.5-10 6.5S2 12 2 12zm10 3a3 3 0 100-6 3 3 0 000 6z",
+  },
+  {
+    href: "/race",
+    title: "Race",
+    sub: "Today's daily ghosts",
+    track: "showtime_strip_race",
+    iconPath: "M5 3v18l7-4 7 4V3H5zm2 2h10v12.4l-5-2.86-5 2.86V5z",
+  },
+  {
+    href: "/tournaments",
+    title: "Tournaments",
+    sub: "Bracket events",
+    track: "showtime_strip_tournaments",
+    iconPath: "M7 4h10v2h3v3a4 4 0 01-4 4h-.34A5 5 0 0113 15.9V18h3v3H8v-3h3v-2.1A5 5 0 017.34 13H7a4 4 0 01-4-4V6h4V4zm0 4H5v1a2 2 0 002 2V8zm10 0v3a2 2 0 002-2V8h-2z",
+  },
+  {
+    href: "/coach",
+    title: "Coach",
+    sub: "Drop a screenshot, get a read",
+    track: "showtime_strip_coach",
+    iconPath: "M12 3a4 4 0 014 4v1a4 4 0 11-8 0V7a4 4 0 014-4zm-7 18v-1.5a5 5 0 015-5h4a5 5 0 015 5V21H5z",
+  },
+]);
+
+function buildShowtimeStripMarkup() {
+  const tiles = SHOWTIME_TILES.map((t) => {
+    const featured = t.featured ? " coop-showtime-tile--featured" : "";
+    const badge = t.badge
+      ? `<span class="coop-showtime-badge">${t.badge}</span>`
+      : "";
+    return `
+      <a class="coop-showtime-tile${featured}" href="${t.href}" data-coop-showtime="${t.track}">
+        <span class="coop-showtime-icon" aria-hidden="true">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="${t.iconPath}"/></svg>
+        </span>
+        <span class="coop-showtime-text">
+          <span class="coop-showtime-title">${t.title}${badge}</span>
+          <span class="coop-showtime-sub">${t.sub}</span>
+        </span>
+        <span class="coop-showtime-arrow" aria-hidden="true">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"/></svg>
+        </span>
+      </a>`;
+  }).join("");
+  return `
+    <section class="coop-showtime-strip" aria-label="Showtime · Replays, Race, Tournaments, Coach">
+      <header class="coop-showtime-head">
+        <span class="coop-showtime-eyebrow">SpireVault Showtime</span>
+        <span class="coop-showtime-helper">Replays, daily race, brackets, and the AI Coach — all from the browser.</span>
+      </header>
+      <div class="coop-showtime-grid">
+        ${tiles}
+      </div>
+    </section>`;
+}
+
+function mountShowtimeStrip() {
+  // Idempotent: bail if it's already in the DOM.
+  if (document.getElementById("coop-showtime-strip")) return;
+  const $root = document.getElementById("coop-page-root");
+  if (!$root) return;
+  const wrap = document.createElement("div");
+  wrap.id = "coop-showtime-strip";
+  wrap.innerHTML = buildShowtimeStripMarkup();
+  // Mount as the first child so it sits above the discovery banner,
+  // command bar, and the workspace — exactly where the spec asks.
+  $root.insertBefore(wrap, $root.firstChild);
+  // GA: emit a single click event per tile so we can see which Showtime
+  // surface drove the most cross-tab navigation.
+  wrap.addEventListener("click", (e) => {
+    const tile = e.target instanceof Element ? e.target.closest("[data-coop-showtime]") : null;
+    if (!tile) return;
+    try {
+      if (typeof window.gtag === "function") {
+        window.gtag("event", tile.getAttribute("data-coop-showtime"), {
+          event_category: "showtime_strip",
+        });
+      }
+    } catch { /* analytics never blocks navigation */ }
+  });
+}
+
+// =========================================================================
+// Quick-host helpers — state-aware "host a room now" pipeline.
+// -------------------------------------------------------------------------
+// v195 collapsed the duplicate orange hero into the existing pf-stage
+// Quick Play button. The DOM hero was deleted (markup, CSS, mount call)
+// but the underlying state-aware logic — Sign in to host / Reopen your
+// lobby / Leave current party to host / one-click POST /coop/lobbies
+// with permissive defaults — is preserved here so party-finder-scene.js
+// can drive it via window.__coopQuickHost when the Quick Play button
+// resolves to a hosting-shaped UX mode.
+// =========================================================================
+
+/** Resolve the current quick-host UX mode from state.
+ *  Returns one of: "default" | "signed_out" | "hosting" | "in_other_party". */
+function resolveQuickHostMode(state) {
+  if (!bootCtx?.session?.steamID) return "signed_out";
+  const sid = state?.presence?.steamId || bootCtx.session.steamID;
+  const lobby = state?.lobby;
+  if (
+    lobby &&
+    lobby.hostSteamId === sid &&
+    lobby.status === "open"
+  ) {
+    return "hosting";
+  }
+  const party = state?.party;
+  if (party && party.status === "active" && party.hostSteamId && party.hostSteamId !== sid) {
+    return "in_other_party";
+  }
+  return "default";
+}
+
+function setQuickHostBusy(busy, labelText) {
+  quickHostBusy = !!busy;
+  // The orange hero was removed in v195; the Quick Play button in
+  // party-finder-scene.js drives its own busy visuals via the public
+  // window.__coopQuickHost.onBusyChange hook below. We just stash the
+  // label here so the hook payload can mirror it.
+  const payload = { busy: !!busy, labelText: labelText || "" };
+  try {
+    if (typeof window !== "undefined" && typeof window.__coopQuickHostBusyHook === "function") {
+      window.__coopQuickHostBusyHook(payload);
+    }
+  } catch { /* hook never blocks */ }
+}
+
+function fireQuickHostTelemetry(name, payload) {
+  try {
+    if (typeof window === "undefined") return;
+    if (typeof window.gtag !== "function") return;
+    window.gtag("event", name, { event_category: "coop_quick_host", ...(payload || {}) });
+  } catch { /* analytics never blocks the UI */ }
+}
+
+function startQuickHostRateLimitCountdown(seconds) {
+  quickHostRateLimitUntil = Date.now() + Math.max(1, seconds) * 1000;
+  if (quickHostCountdownTimer) clearInterval(quickHostCountdownTimer);
+  quickHostCountdownTimer = setInterval(() => {
+    if (Date.now() >= quickHostRateLimitUntil) {
+      clearInterval(quickHostCountdownTimer);
+      quickHostCountdownTimer = null;
+      quickHostRateLimitUntil = 0;
+    }
+    notifyQuickHostBusyHook();
+  }, 1000);
+  notifyQuickHostBusyHook();
+}
+
+/** Push a rate-limit / busy snapshot to scene.js so the Quick Play button
+ *  in the pf-stage hero can paint a "Try again in Ns" label without
+ *  importing module-private state. Safe no-op when the hook isn't wired. */
+function notifyQuickHostBusyHook() {
+  try {
+    if (typeof window === "undefined") return;
+    if (typeof window.__coopQuickHostBusyHook !== "function") return;
+    window.__coopQuickHostBusyHook({
+      busy: quickHostBusy,
+      rateLimitedUntil: quickHostRateLimitUntil,
+    });
+  } catch { /* hook never blocks */ }
+}
+
+/** Public state snapshot for the pf-stage Quick Play button. */
+export function getQuickHostStatus() {
+  return {
+    busy: quickHostBusy,
+    rateLimitedUntil: quickHostRateLimitUntil,
+    rateLimitedSecondsLeft: quickHostRateLimitUntil > Date.now()
+      ? Math.ceil((quickHostRateLimitUntil - Date.now()) / 1000)
+      : 0,
+  };
+}
+
+/** Pure function — resolve the hosting-shaped UX mode for the current
+ *  state snapshot. Exposed for party-finder-scene.js so the Quick Play
+ *  button can pick the right label and click handler. */
+export function getQuickHostMode(state) {
+  return resolveQuickHostMode(state || lastState || {});
+}
+
+/** Public entry point — runs the same state-aware quick-host pipeline
+ *  the deleted orange hero button used to drive (sign-in / scroll-to-
+ *  existing-lobby / leave-and-host / one-click POST /coop/lobbies). The
+ *  Quick Play button in pf-stage calls this for non-default modes.
+ *
+ *  Returns a Promise that resolves to a discriminated result so callers
+ *  (specifically the v197 one-tap mega CTA in party-finder-scene.js) can
+ *  decide whether to fall back to the multi-step Host modal when the
+ *  underlying POST fails. The result shape is:
+ *    { ok: true,  action: "created",         lobbyId }
+ *    { ok: true,  action: "signin_handoff" } (user routed to Steam sign-in)
+ *    { ok: true,  action: "hosting_scroll" } (already hosting → highlight)
+ *    { ok: false, action: "create_failed",   error, status }
+ *    { ok: false, action: "leave_canceled" } (user dismissed confirm)
+ *    { ok: false, action: "leave_failed",    error }
+ *  Only `create_failed` should trigger the Host-modal fallback in the
+ *  scene — the other branches have already navigated the user somewhere
+ *  useful or surfaced their own toast. */
+export function runQuickHost() {
+  return handleQuickHostClick();
+}
+
+/** Lightweight modal-style confirm. The existing `window.confirm` is what
+ *  every other coop confirm uses, but the spec asks for an on-brand
+ *  modal here. Built ad-hoc so we don't have to thread a new HTML
+ *  template into index.html for one prompt. */
+function quickHostConfirm({ title, body, confirmLabel, cancelLabel }) {
+  return new Promise((resolve) => {
+    const $backdrop = document.createElement("div");
+    $backdrop.className = "modal-backdrop coop-modal-backdrop coop-quick-host-confirm-backdrop";
+    $backdrop.setAttribute("role", "dialog");
+    $backdrop.setAttribute("aria-modal", "true");
+    $backdrop.setAttribute("aria-label", title || "Confirm");
+    $backdrop.innerHTML = `
+      <div class="modal coop-modal coop-quick-host-confirm" role="document">
+        <header class="modal-head">
+          <h2>${esc(title || "Confirm")}</h2>
+        </header>
+        <div class="modal-body coop-modal-body">
+          <p class="coop-quick-host-confirm-body">${esc(body || "")}</p>
+          <div class="coop-form-actions">
+            <button type="button" class="btn-primary" data-quick-host-confirm-ok>${esc(confirmLabel || "Confirm")}</button>
+            <button type="button" class="btn-ghost" data-quick-host-confirm-cancel>${esc(cancelLabel || "Cancel")}</button>
+          </div>
+        </div>
+      </div>`;
+    const cleanup = (result) => {
+      document.removeEventListener("keydown", onKey);
+      $backdrop.remove();
+      // Restore body scroll if no other coop modal is open. Same logic
+      // as closeModal — modal-backdrop on the stack means we keep it
+      // locked; otherwise unlock.
+      const anyOpen = document.querySelectorAll(".modal-backdrop:not([hidden])").length;
+      if (!anyOpen) document.body.style.overflow = "";
+      resolve(result);
+    };
+    const onKey = (e) => { if (e.key === "Escape") cleanup(false); };
+    $backdrop.addEventListener("click", (e) => {
+      if (e.target === $backdrop) { cleanup(false); return; }
+      if (e.target.closest("[data-quick-host-confirm-ok]")) { cleanup(true); return; }
+      if (e.target.closest("[data-quick-host-confirm-cancel]")) { cleanup(false); return; }
+    });
+    document.addEventListener("keydown", onKey);
+    document.body.style.overflow = "hidden";
+    document.body.appendChild($backdrop);
+    setTimeout(() => $backdrop.querySelector("[data-quick-host-confirm-ok]")?.focus?.(), 30);
+  });
+}
+
+/** Scroll-and-highlight the user's existing lobby card. Reuses the same
+ *  CSS class (`.coop-lobby-card--highlight`) and timeout the URL-based
+ *  deep link uses, so the visual feels identical. */
+function scrollHighlightMyLobby(lobbyId) {
+  if (!lobbyId) return;
+  // Defer one frame so any pending re-render finishes first.
+  requestAnimationFrame(() => {
+    const card = document.querySelector(`[data-lobby-id="${lobbyId}"]`);
+    if (!card) return;
+    card.scrollIntoView({ behavior: "smooth", block: "center" });
+    card.classList.add("coop-lobby-card--highlight");
+    setTimeout(() => card.classList.remove("coop-lobby-card--highlight"), 3200);
+  });
+}
+
+async function handleQuickHostClick() {
+  fireQuickHostTelemetry("lobby_quick_host_click", {
+    mode: resolveQuickHostMode(lastState || {}),
+    since_mount_ms: quickHostMountedAt ? Date.now() - quickHostMountedAt : undefined,
+  });
+
+  const mode = resolveQuickHostMode(lastState || {});
+
+  if (mode === "signed_out") {
+    // Hand off to the global signin-cta delegated handler in script.js.
+    // We just synthesize the click since the handler reads the closest
+    // `[data-action="signin-cta"]` ancestor.
+    try {
+      const startFn = typeof window !== "undefined" ? window.startSteamSignIn : null;
+      if (typeof startFn === "function") { startFn(); return { ok: true, action: "signin_handoff" }; }
+    } catch { /* fall through */ }
+    // Fallback: dispatch a synthetic signin-cta click event.
+    const synthetic = document.createElement("button");
+    synthetic.setAttribute("data-action", "signin-cta");
+    synthetic.style.display = "none";
+    document.body.appendChild(synthetic);
+    synthetic.click();
+    synthetic.remove();
+    return { ok: true, action: "signin_handoff" };
+  }
+
+  if (mode === "hosting") {
+    const lobbyId = lastState?.lobby?.lobbyId;
+    scrollHighlightMyLobby(lobbyId);
+    bootCtx?.deps?.toast?.("Your room is open \u2014 jumping to it.");
+    return { ok: true, action: "hosting_scroll", lobbyId };
+  }
+
+  if (mode === "in_other_party") {
+    const partyId = lastState?.party?.partyId;
+    if (!partyId) {
+      bootCtx?.deps?.toast?.("Couldn't find the party to leave.");
+      return { ok: false, action: "leave_failed", error: "no_party_id" };
+    }
+    const ok = await quickHostConfirm({
+      title: "Leave the current party?",
+      body: "You're in another player's party right now. Leaving will drop your seat, then SpireVault opens a brand new room with you as the host.",
+      confirmLabel: "Leave and host new room",
+      cancelLabel: "Stay in this party",
+    });
+    if (!ok) return { ok: false, action: "leave_canceled" };
+    // Best-effort leave, then create. If leave fails surface its error
+    // and don't auto-host (better than ghosting the host).
+    setQuickHostBusy(true, "Leaving party\u2026");
+    try {
+      const leaveResp = await jsonFetch(`/coop/parties/${partyId}/leave`, { body: {} });
+      if (!leaveResp.ok) {
+        bootCtx?.deps?.toast?.(leaveResp.message || "Couldn't leave the party.");
+        return { ok: false, action: "leave_failed", error: leaveResp.error || "leave_http_error" };
+      }
+    } finally {
+      setQuickHostBusy(false);
+    }
+    await refreshState({ force: true });
+    // Fall through to default-mode create flow.
+  }
+
+  return await performQuickHostCreate();
+}
+
+async function performQuickHostCreate() {
+  if (quickHostBusy) return { ok: false, action: "create_failed", error: "busy", status: 0 };
+  if (quickHostRateLimitUntil > Date.now()) {
+    const secs = Math.ceil((quickHostRateLimitUntil - Date.now()) / 1000);
+    bootCtx?.deps?.toast?.(`Hosting too fast \u2014 try again in ${secs}s.`);
+    return { ok: false, action: "create_failed", error: "rate_limited", status: 429 };
+  }
+  const startedAt = Date.now();
+  setQuickHostBusy(true, "Creating room\u2026");
+
+  // Race the fetch against an 8s timeout so a stuck worker never wedges
+  // the button forever. We rely on jsonFetch returning a structured
+  // error on network failure but it doesn't time out by itself.
+  let timeoutHandle = null;
+  const timeoutP = new Promise((resolve) => {
+    timeoutHandle = setTimeout(
+      () => resolve({ ok: false, status: 0, error: "timeout", message: "Couldn't create the room \u2014 try again." }),
+      quickHostTimeoutMs(),
+    );
+  });
+  const fetchP = jsonFetch("/coop/lobbies", { body: { ...QUICK_HOST_DEFAULTS } });
+
+  let r;
+  try {
+    r = await Promise.race([fetchP, timeoutP]);
+  } finally {
+    if (timeoutHandle) clearTimeout(timeoutHandle);
+  }
+
+  setQuickHostBusy(false);
+
+  if (!r || !r.ok) {
+    const elapsedMs = Date.now() - startedAt;
+    const status = r?.status ?? 0;
+    const errorCode = r?.error || "unknown";
+    fireQuickHostTelemetry("lobby_quick_host_error", {
+      error_code: errorCode,
+      http_status: status,
+      elapsed_ms: elapsedMs,
+    });
+
+    if (status === 429) {
+      startQuickHostRateLimitCountdown(30);
+      bootCtx?.deps?.toast?.("You're hosting too fast \u2014 try again in 30 seconds.");
+      return { ok: false, action: "create_failed", error: errorCode, status };
+    }
+    if (errorCode === "timeout") {
+      bootCtx?.deps?.toast?.("Couldn't create the room \u2014 try again.");
+      return { ok: false, action: "create_failed", error: errorCode, status };
+    }
+    if (status === 400 && r.message) {
+      // Worker tells us which field failed; surface that directly.
+      bootCtx?.deps?.toast?.(r.message);
+      return { ok: false, action: "create_failed", error: errorCode, status };
+    }
+    bootCtx?.deps?.toast?.(r.message || "Couldn't create the room \u2014 try again.");
+    return { ok: false, action: "create_failed", error: errorCode, status };
+  }
+
+  const elapsedMs = Date.now() - startedAt;
+  const lobbyId = r.lobbyId || r.lobby?.lobbyId;
+  fireQuickHostTelemetry("lobby_quick_host_success", {
+    lobby_id: lobbyId || "",
+    elapsed_ms: elapsedMs,
+  });
+  bootCtx?.deps?.toast?.("Room created \u2014 you're hosting.");
+  await refreshState({ force: true });
+  // After refresh the new lobby card is rendered; scroll + highlight so
+  // the host sees exactly which card is theirs and that joiners can
+  // request a seat now.
+  scrollHighlightMyLobby(lobbyId || lastState?.lobby?.lobbyId);
+  return { ok: true, action: "created", lobbyId: lobbyId || lastState?.lobby?.lobbyId || "" };
 }
 
 export function getLastState() { return lastState; }
@@ -507,6 +1014,38 @@ async function refreshState({ force = false } = {}) {
   }
   consecutiveStateFailures = 0;
   setNetworkBanner("online");
+  // Compare against the previous snapshot to fire a "Foo joined your
+  // room" toast for the host. Until this, the host had to keep
+  // watching the seat row to notice somebody arrived — no toast, no
+  // audio, no badge. We diff member IDs on the host's own party,
+  // de-dup against the previous render, and skip the very first
+  // refresh after mount to avoid a spurious "joined" toast for
+  // people who were already in the room when the page loaded.
+  try {
+    const prev = lastState;
+    const mySid = bootCtx?.session?.steamID;
+    const prevParty = prev?.party;
+    const nextParty = r?.party;
+    if (
+      prev &&
+      mySid &&
+      nextParty?.status === "active" &&
+      nextParty.hostSteamId === mySid &&
+      Array.isArray(nextParty.members)
+    ) {
+      const prevIds = new Set(
+        (prevParty?.status === "active" ? prevParty.members : [])
+          .filter((m) => m && m.status !== "left")
+          .map((m) => m.steamId),
+      );
+      const arrivals = nextParty.members
+        .filter((m) => m && m.status !== "left" && m.steamId !== mySid && !prevIds.has(m.steamId));
+      for (const a of arrivals) {
+        const name = a.personaName || "A new player";
+        bootCtx?.deps?.toast?.(`${name} joined your room.`);
+      }
+    }
+  } catch { /* best-effort */ }
   lastState = r;
   // Honor a server-pushed Beta kill flag the moment we see it. The
   // backend can drop `flags.coopLobbyBetaKill = true` (or
@@ -889,6 +1428,26 @@ function renderPrimaryState(state, ux) {
         ? `<a class="btn-primary btn-sm" href="/party/${esc(lobby.partyId)}">Open Party Hub</a>`
         : "";
       const discordBtn = `<button type="button" class="btn-ghost btn-sm" data-coop-action="copy-discord-lfg" data-id="${esc(lobby.lobbyId)}">Copy Discord LFG Post</button>`;
+      // Visibility indicator. The single most common silent failure prior
+      // to the v186 backend fix was: host opens a room, their Steam shows
+      // Invisible → server auto-AFKs them → /coop/state filter hides the
+      // lobby from every other user → host sits there assuming the world
+      // can see them. After the v186 fix, hosting an open lobby pins the
+      // user to "looking" on every heartbeat, but we still surface the
+      // resolved state here so the host has confirmation, not guesswork.
+      // (See Backend/src/coop-engine.ts heartbeatPresence "Priority 0".)
+      const presence = state?.presence;
+      const status = String(presence?.status || "").toLowerCase();
+      const isVisible = status === "looking" || status === "solo";
+      const visibilityHtml = isVisible
+        ? `<div class="coop-primary-visibility coop-primary-visibility--public" role="status">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><polyline points="8 12 11 15 16 9"/></svg>
+            <span>Visible in Live Parties &mdash; anyone signed in can see and join this room.</span>
+          </div>`
+        : `<div class="coop-primary-visibility coop-primary-visibility--hidden" role="status">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12" y2="16"/></svg>
+            <span>Hidden &mdash; your status is <strong>${esc(status || "unknown")}</strong>. Set yourself to <em>Looking</em> so others can find this room.</span>
+          </div>`;
       $mount.innerHTML = `
         <article class="coop-primary-card coop-primary-card--hosting">
           <div class="coop-primary-meta">
@@ -896,7 +1455,8 @@ function renderPrimaryState(state, ux) {
             <h2 class="coop-primary-title">${esc(lobby.title)}</h2>
             <p class="coop-primary-sub">${memberCount}/${cap} seats filled · Need +${need}</p>
           </div>
-          ${renderLobbySeatRow(lobby)}
+          ${visibilityHtml}
+          ${renderLobbySeatRow(lobby, data.party)}
           ${renderCharacterStrip(preferredCharactersOf(lobby))}
           ${pendingHtml}
           <div class="coop-primary-actions">
@@ -1295,6 +1855,11 @@ function renderEmptyLobbies() {
   // card so it inherits the panel's width and feels like part of a
   // real matchmaking surface, not a separate placeholder. Must not
   // wrap a single word per line at any desktop width.
+  //
+  // While-you-wait line is the cold-start liquidity fix: when nobody
+  // is hosting an STS2 lobby right now, point users at the three
+  // standalone surfaces that DO have something to look at — live
+  // runs, daily ghosts, and the AI coach. They're one click away.
   return `
     <div class="coop-empty-card coop-empty-card--openruns">
       <div class="coop-empty-card-text">
@@ -1304,6 +1869,12 @@ function renderEmptyLobbies() {
           <button class="btn-primary btn-sm" type="button" data-coop-action="open-create-lobby">+ Host a Room</button>
           <button class="btn-ghost btn-sm" type="button" data-coop-action="quick-match">⚡ Quick Match</button>
         </div>
+        <p class="coop-empty-while-wait">
+          While you wait,
+          <a href="/watch" data-coop-showtime="empty_watch">watch a live run</a>,
+          <a href="/coach" data-coop-showtime="empty_coach">grade a screenshot with Coach</a>,
+          or <a href="/race" data-coop-showtime="empty_race">browse today's race</a>.
+        </p>
         <div class="coop-empty-examples">
           <span class="coop-empty-examples-label">Example Run Lobbies</span>
           <div class="coop-empty-examples-row">
@@ -1467,7 +2038,14 @@ function renderLobbyCard(lobby, mySid, pendingByLobby, state, compact = false) {
     const partyBtn = lobby.partyId
       ? `<a class="btn-primary btn-sm" href="/party/${esc(lobby.partyId)}">Party Hub</a>`
       : "";
-    action = `${partyBtn}<span class="coop-badge coop-badge--players">You&rsquo;re in</span>`;
+    // Joiners need a one-click leave path on the lobby row itself —
+    // before this they could only leave from inside Party Hub. A user
+    // who closes the hub tab and lands back on the Co-op feed had no
+    // visible way to back out of a lobby they accidentally joined.
+    const leaveBtn = lobby.partyId
+      ? `<button class="btn-ghost btn-sm" data-coop-action="leave-party" data-id="${esc(lobby.partyId)}">Leave Room</button>`
+      : "";
+    action = `${partyBtn}${leaveBtn}<span class="coop-badge coop-badge--players">You&rsquo;re in</span>`;
   } else if (isPaired) {
     action = `<span class="coop-badge">Paired</span>`;
   } else if (pendingReq) {
@@ -1492,7 +2070,7 @@ function renderLobbyCard(lobby, mySid, pendingByLobby, state, compact = false) {
         </div>
         <div class="coop-lobby-card-meta">${statusBadge}</div>
       </div>
-      ${renderLobbySeatRow(lobby)}
+      ${renderLobbySeatRow(lobby, state?.party?.lobbyId === lobby.lobbyId ? state.party : null)}
       ${renderCharacterStrip(preferredCharactersOf(lobby))}
       <div class="coop-badge-row">${badges}</div>
       ${(() => { const n = decodeStart(lobby.note).cleanNote; return n ? `<p class="coop-lobby-note">&ldquo;${esc(n)}&rdquo;</p>` : ""; })()}
@@ -2065,6 +2643,12 @@ function openCreateLobbyModal() {
   }
   document.getElementById("coop-modal-lobby-title").textContent = "Host a Room";
   document.getElementById("coop-lobby-save").textContent = "Host Room";
+  // Reset the Close Room button — only the edit path should reveal it.
+  const $closeBtnHost = document.getElementById("coop-lobby-close");
+  if ($closeBtnHost) {
+    $closeBtnHost.hidden = true;
+    delete $closeBtnHost.dataset.id;
+  }
   renderLobbyPreviewFromForm();
   openModal("coop-modal-lobby");
 }
@@ -2090,6 +2674,20 @@ function openEditLobbyModal(lobbyId) {
   }
   document.getElementById("coop-modal-lobby-title").textContent = "Edit Posted Run";
   document.getElementById("coop-lobby-save").textContent = "Save changes";
+  // Reveal the in-modal "Close Room" button. The Beta party-finder
+  // surface replaces the primary "Your room is open" hosting card
+  // (which has its own Close Room button) with its own hero, so a
+  // host who clicks Manage from the Beta view had no visible way to
+  // close the lobby. Surfacing the destructive action here means
+  // every entry-path to the lobby management modal can also exit
+  // the lobby. The button uses data-id which we stamp now so the
+  // single global delegated handler (case "close-lobby") can route
+  // it through the normal /coop/lobbies/:id/close path.
+  const $closeBtn = document.getElementById("coop-lobby-close");
+  if ($closeBtn) {
+    $closeBtn.hidden = false;
+    $closeBtn.dataset.id = lobbyId;
+  }
   renderLobbyPreviewFromForm();
   openModal("coop-modal-lobby");
 }
@@ -2132,12 +2730,42 @@ function wireLobbyForm() {
       discordHandle: String(fd.get("discordHandle") || "").trim() || undefined,
       note: String(fd.get("note") || "").trim() || undefined,
     };
+    // Legacy "Host a Room" form submission GA event. Paired with
+    // lobby_quick_host_success so we can A/B which path actually
+    // creates rooms in production. Edit submissions are excluded.
+    const isCreate = !editingLobbyId;
+    const formStartedAt = Date.now();
+    if (isCreate) {
+      fireQuickHostTelemetry("lobby_host_form_submit", {
+        goal: body.goal,
+        lobby_size: body.lobbySize,
+        has_voice: body.voicePreference ? 1 : 0,
+        has_character: (body.preferredCharacters || []).length > 0 ? 1 : 0,
+        has_note: body.note ? 1 : 0,
+      });
+    }
     setBusy($btn, true);
     const r = editingLobbyId
       ? await jsonFetch(`/coop/lobbies/${editingLobbyId}`, { method: "PATCH", body })
       : await jsonFetch("/coop/lobbies", { body });
     setBusy($btn, false);
-    if (!r.ok) { showFormError("coop-modal-lobby", r.message || "Could not save your room."); return; }
+    if (!r.ok) {
+      if (isCreate) {
+        fireQuickHostTelemetry("lobby_host_form_error", {
+          error_code: r.error || "unknown",
+          http_status: r.status ?? 0,
+          elapsed_ms: Date.now() - formStartedAt,
+        });
+      }
+      showFormError("coop-modal-lobby", r.message || "Could not save your room.");
+      return;
+    }
+    if (isCreate) {
+      fireQuickHostTelemetry("lobby_host_form_success", {
+        lobby_id: r.lobbyId || r.lobby?.lobbyId || "",
+        elapsed_ms: Date.now() - formStartedAt,
+      });
+    }
     bootCtx.deps?.toast?.(editingLobbyId ? "Room updated." : "Room hosted.");
     editingLobbyId = null;
     closeModal("coop-modal-lobby");
@@ -2400,6 +3028,9 @@ function wireDelegatedClicks() {
     const key = `${action}:${btn.dataset.id || ""}:${btn.dataset.lobby || ""}:${btn.dataset.from || ""}`;
 
     switch (action) {
+      case "quick-host":
+        await handleQuickHostClick();
+        return;
       case "open-intent": closeAllCoopModals(); openIntentModal(); return;
       case "open-create-lobby": closeAllCoopModals(); openCreateLobbyModal(); return;
       case "open-edit-lobby": closeAllCoopModals(); openEditLobbyModal(btn.dataset.id); return;
@@ -2444,9 +3075,30 @@ function wireDelegatedClicks() {
         localEndPairingPending = true;
         await doAction(key, btn, () => jsonFetch(`/coop/sessions/${btn.dataset.id}/end`, { body: {} }), "Pairing ended.");
         return;
-      case "close-lobby":
-        await doAction(key, btn, () => jsonFetch(`/coop/lobbies/${btn.dataset.id}/close`, { body: {} }), "Room closed.");
+      case "close-lobby": {
+        // Confirm before destroying the lobby. Easy to mis-click the red
+        // button inside the edit modal otherwise. The native `confirm`
+        // dialog is intentional — no custom modal stacking on top of an
+        // already-open edit modal.
+        const confirmed = window.confirm(
+          "Close this room? Any pending join requests will be cancelled and the lobby will be deleted.",
+        );
+        if (!confirmed) return;
+        // Drop the edit modal first if it's the source of the click —
+        // refreshState fires inside doAction and will repaint the page
+        // against a now-deleted lobby. Closing the modal up front keeps
+        // the user from staring at a form for a lobby that no longer
+        // exists. Safe to call when the modal isn't open.
+        editingLobbyId = null;
+        closeModal("coop-modal-lobby");
+        await doAction(
+          key,
+          btn,
+          () => jsonFetch(`/coop/lobbies/${btn.dataset.id}/close`, { body: {} }),
+          "Room closed.",
+        );
         return;
+      }
       case "join-seat":
         closeAllCoopModals();
         openJoinCharacterModal(btn.dataset.id, "join-seat", btn);

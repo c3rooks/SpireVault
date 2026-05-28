@@ -24,7 +24,7 @@
 // closure card.
 // =========================================================================
 
-import { isSandboxSteamId } from "./coop-sandbox.js?v=6";
+import { isSandboxSteamId } from "./coop-sandbox.js?v=8";
 import { decodeStart } from "./party-finder-startsoon.js?v=1";
 
 const PF_CHARACTERS = Object.freeze([

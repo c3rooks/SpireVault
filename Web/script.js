@@ -17,8 +17,8 @@ import * as Stats from "/lib/stats-engine.js?v=4";
 import * as HistoryStore from "/lib/history-store.js?v=8";
 import * as InviteAPI from "/lib/invites.js?v=4";
 import * as HighlightsAPI from "/lib/highlights.js?v=1";
-import * as CoopLobbies from "/lib/coop-lobbies.js?v=23";
-import { isCoopSandboxEnabled, openCoopSandboxPanel } from "/lib/coop-sandbox.js?v=6";
+import * as CoopLobbies from "/lib/coop-lobbies.js?v=32";
+import { isCoopSandboxEnabled, openCoopSandboxPanel } from "/lib/coop-sandbox.js?v=8";
 import * as PartyRoom from "/lib/party-room.js?v=4";
 import * as AscInfo from "/lib/ascension-info.js?v=1";
 import * as CharInfo from "/lib/character-info.js?v=1";
@@ -71,7 +71,7 @@ const STS2_APP_ID = "2868840";
  * on an old client — instruct hard refresh. If it DOES match, the
  * bug is real and we can stop chasing cache ghosts.
  */
-const VAULT_BUILD = "v184-2026-05-26-coop-disable-duplicate-party-finder-mount";
+const VAULT_BUILD = "v200-2026-05-27-run-import-fix";
 
 /** True on wrangler pages dev / local loopback — not production hostnames. */
 function isLocalDevHost() {
@@ -238,7 +238,11 @@ function setCoopLobbyBetaEnabled(on) {
   renderCoopBetaHeaderControls();
   try { renderCoopDiscoveryBanner(); } catch {}
   try { if (window.RunCoach?.renderBetaTab) window.RunCoach.renderBetaTab(); } catch {}
-  if (on && isCoopSandboxEnabled()) {
+  if (on) {
+    // Sister fix to the unconditional call in setActiveTab(): when
+    // the user flips the Beta toggle on, boot the runtime loader so
+    // prod users get the v0.11+ augmentations even without the
+    // LS_SANDBOX dev flag. The function itself is dev-vs-prod aware.
     try {
       CoopLobbies.ensureCoopSandboxMounted({
         api: API_BASE,
@@ -2890,6 +2894,11 @@ async function boot() {
 function wireGuestCoop() {
   const $body = document.querySelector('.tab-panel[data-tab="coop"] .panel-body');
   if (!$body) return;
+  // v195: the duplicate orange "Sign in to host" hero block was deleted
+  // here too. Signed-out users now land directly on the guest-coop card
+  // below, which already has the Steam sign-in CTA and the live "who's
+  // around" count. The pf-stage purple hero in party-finder-scene.js
+  // continues to drive the headline visual for signed-in users.
   $body.innerHTML = `
     <div class="guest-coop">
       <div class="guest-coop-card">
@@ -3127,15 +3136,29 @@ function switchTab(tab) {
     try { CoopLobbies.setCoopTabActive?.(); } catch {}
     try { renderCoopBetaHeaderControls(); } catch {}
     try { renderCoopDiscoveryBanner(); } catch {}
-    if (isCoopSandboxEnabled()) {
-      try {
-        CoopLobbies.ensureCoopSandboxMounted({
-          api: API_BASE,
-          session,
-          deps: { toast: (msg) => { if (msg) toast(msg); } },
-        });
-      } catch { /* non-fatal */ }
-    }
+    // Always boot ensureCoopSandboxMounted on coop tab activation. The
+    // function itself is dev-vs-prod aware: it unconditionally loads
+    // the runtime augmentation scripts (daily-rt, reputation-rt,
+    // share-rt, readyup-rt, empty-rt, mirror-rt, etc.) which target
+    // the production coop-lobbies.js DOM, but only mounts the dev
+    // sandbox panel + party-finder.js prototype when
+    // `isCoopSandboxEnabled()` returns true.
+    //
+    // Pre-fix history: this call was wrapped in `if (isCoopSandboxEnabled())`,
+    // which meant production users (no LS_SANDBOX flag, not on a
+    // local dev host) never loaded the runtime scripts AT ALL —
+    // every v0.11+ augmentation (Discord LFG cross-post, Daily
+    // Challenge tile, reputation badges, share cards, ready-up
+    // sync) and v0.12 (Discord LFG bridge cards, Empty State v2)
+    // shipped invisibly. The dev's own browser had the LS flag set
+    // from prior testing so the bug went unnoticed for two releases.
+    try {
+      CoopLobbies.ensureCoopSandboxMounted({
+        api: API_BASE,
+        session,
+        deps: { toast: (msg) => { if (msg) toast(msg); } },
+      });
+    } catch { /* non-fatal */ }
   }
   try { renderActiveTab(); } catch (e) {
     console.warn("renderActiveTab failed", e);
@@ -6775,7 +6798,17 @@ function wireDropOverlay() {
     $ov.hidden = false;
   });
   window.addEventListener("dragover", (e) => {
-    if (hasFiles(e) && isDropOverlayAllowedHere()) e.preventDefault();
+    // v200 fix (Solo_mag, Windows): we MUST preventDefault on every
+    // file-bearing dragover regardless of the active tab. The previous
+    // gating on isDropOverlayAllowedHere() meant that if the user
+    // happened to be on a non-allow-listed tab (or a future tab we
+    // forget to add to the set), the browser handled the drop natively
+    // and the user saw "drag-drop is broken — nothing happens". The
+    // tab-gating now only governs whether we show the overlay UI and
+    // ingest; the drop handler below still swallows the file on
+    // non-allowed tabs with a toast instead of navigating away.
+    if (!hasFiles(e)) return;
+    e.preventDefault();
   });
   window.addEventListener("dragleave", () => {
     dragDepth = Math.max(0, dragDepth - 1);
@@ -6805,28 +6838,56 @@ function wireDropOverlay() {
     // We try (1) first if any item is a directory; otherwise fall through
     // to (2) so a single dropped `history.json` still works one-click.
     const items = e.dataTransfer?.items;
+    const files = e.dataTransfer?.files;
+    // Diagnostic: Windows drops from system-attributed folders can
+    // produce items where webkitGetAsEntry() returns null. Log enough
+    // to triage future "drag-drop did nothing" reports.
+    console.info(
+      "[Vault import] drop fired:",
+      `items=${items?.length || 0}`,
+      `files=${files?.length || 0}`
+    );
     if (items && items.length > 0) {
       const entries = [];
+      let nullEntries = 0;
       for (let i = 0; i < items.length; i++) {
         const it = items[i];
         if (it.kind !== "file") continue;
         const entry = it.webkitGetAsEntry?.();
         if (entry) entries.push(entry);
+        else nullEntries++;
       }
       if (entries.some((en) => en.isDirectory)) {
+        sendBeacon("ingest-drop-folder", `entries=${entries.length}`);
         void collectFilesFromEntries(entries).then((files) => {
           if (files.length === 0) {
-            toast("No .run or .json files found in that folder.");
+            toast("No .run or .json files found in that folder. Open it and drag the inner history/ folder instead, or use the Pick files button.", { duration: 10000 });
             return;
           }
           void ingestHistoryFiles(files);
         });
         return;
       }
+      // v200 fix (Solo_mag, Windows): if every webkitGetAsEntry()
+      // returned null (Chromium on Windows occasionally does this for
+      // items sourced from system-attributed folders) AND dataTransfer
+      // .files is also empty, surface a recoverable diagnostic instead
+      // of silently dying. We still try the .files fallback below first
+      // in case the browser populated one and not the other.
+      if (nullEntries > 0 && entries.length === 0 && (!files || files.length === 0)) {
+        console.warn("[Vault import] drop: all webkitGetAsEntry() returned null and dataTransfer.files is empty", { nullEntries });
+        sendBeacon("ingest-drop-null-entries", `nullEntries=${nullEntries}`);
+        toast("The browser couldn't read that folder via drag-drop. Click 'Find my STS2 saves' (Windows) or 'Pick files' to import via the file picker instead.", { duration: 12000 });
+        return;
+      }
     }
     // Plain file(s) drop — pass them all to the multi-file ingest.
-    const files = e.dataTransfer?.files;
+    // Note: for Chromium folder drops, dataTransfer.files is typically
+    // empty (folders surface only via items[].webkitGetAsEntry()), so
+    // this branch primarily catches plain file drops or browser quirks
+    // where files arrived without item entries.
     if (files && files.length > 0) {
+      sendBeacon("ingest-drop-files", `count=${files.length}`);
       void ingestHistoryFiles(files);
     }
   });
@@ -7008,9 +7069,32 @@ function scanForHistory() {
   // The silent re-read of saved handles still happens on page boot via
   // autoReloadHistoryIfPermitted() — this entry point is just for the
   // explicit Import button.
+  const platform = detectPlatform();
+  // WINDOWS QUIRK (fixed in v200, reported by Solo_mag on v0.9.9):
+  // Chromium's File System Access API enforces a "well-known directory"
+  // blocklist via FileSystemAccessPermissionContextImpl. %APPDATA%
+  // (base::DIR_ROAMING_APP_DATA) is registered with kBlockAllChildren,
+  // and STS2 saves its runs at %APPDATA%\SlayTheSpire2\…. So when a
+  // Windows user picks that folder via showDirectoryPicker(), Chrome
+  // pops its stock modal "Can't open this folder because it contains
+  // system files" and the call rejects with AbortError — leaving the
+  // user staring at a scary OS dialog with no way forward. The legacy
+  // <input type="file" webkitdirectory> path goes through Chromium's
+  // FileSelectHelper which has NO blocklist, so it can read the saves
+  // folder cleanly. We lose the FileSystemDirectoryHandle (no silent
+  // re-read on next visit) but Windows users never had a working
+  // picker to begin with, so this is +∞× over the previous experience.
+  if (platform === "windows") {
+    sendBeacon("ingest-picker-opened", "webkitdirectory-windows-blocklist");
+    console.info(
+      "[Vault import] platform=windows → using webkitdirectory (skips Chromium's %APPDATA% blocklist)"
+    );
+    triggerFolderPicker();
+    return;
+  }
   if (typeof window.showDirectoryPicker === "function") {
     sendBeacon("ingest-picker-opened", "directory");
-    console.info("[Vault import] using showDirectoryPicker (Chromium)");
+    console.info("[Vault import] using showDirectoryPicker (Chromium, non-Windows)");
     void scanForHistoryViaDirectoryPicker();
     return;
   }
@@ -7105,9 +7189,29 @@ async function scanForHistoryViaDirectoryPicker() {
       startIn: "documents",
     });
   } catch (e) {
-    if (e?.name !== "AbortError") {
+    // AbortError is fired both when the user cancels AND when Chromium's
+    // "Can't open this folder because it contains system files" modal is
+    // dismissed (the latter triggered by the File System Access blocklist
+    // on %APPDATA% etc.). We can't distinguish them from the error alone,
+    // so we always surface a recovery toast with the drag-drop hint —
+    // the worst case for a legit cancel is a single dismissable nudge,
+    // which is far better than the pre-v200 "scary OS modal + silent
+    // dead-end" experience reported by Solo_mag on v0.9.9.
+    if (e?.name === "AbortError") {
+      console.info("[Vault import] showDirectoryPicker aborted (cancel or system-files block)", e);
+      sendBeacon("ingest-picker-abort", `platform=${platform}`);
+      const where =
+        platform === "windows" ? HISTORY_PATH_WIN_FULL
+        : platform === "linux" ? HISTORY_PATH_LINUX_FULL
+        : HISTORY_PATH_MAC_FULL;
+      toast(
+        `Picker was cancelled or blocked by the browser. If you saw "Can't open this folder because it contains system files", drag the SlayTheSpire2 folder onto this page instead — it bypasses that block. Your saves: ${where}`,
+        { duration: 14000 }
+      );
+    } else {
       console.warn("directory picker failed", e);
-      toast("Couldn't open the folder picker. Try Import as a fallback.");
+      sendBeacon("ingest-picker-error", `platform=${platform} name=${e?.name || "Error"}`);
+      toast("Couldn't open the folder picker. Drag your SlayTheSpire2 folder onto this page instead, or click Pick files as a fallback.", { duration: 12000 });
     }
     return;
   }
@@ -12628,9 +12732,24 @@ function renderProfileDock() {
     $pillBtn.classList.add("is-actionable");
   }
 
-  const status = getEffectiveStatus();
-  $pill.dataset.status = status;
-  $pill.textContent = PROFILE_STATUS_LABELS[status] || status;
+  let status = getEffectiveStatus();
+  // v196 — self-row pill softening. When the user is actively viewing
+  // the page right now (document is visible), claiming they're "Away"
+  // on their own pill reads as gaslighting — they're literally looking
+  // at the screen. Either the heartbeat hasn't flipped back to
+  // "looking" yet, or the auto-AFK kicked in while they had another
+  // tab focused. Either way, surface "Online" (quiet) on the self
+  // row while the page is visible. The server-side status is
+  // unchanged — this is purely the label on the user's own pill.
+  let displayStatus = status;
+  if (status === "afk" && typeof document !== "undefined"
+      && document.visibilityState === "visible") {
+    displayStatus = "online";
+  }
+  $pill.dataset.status = displayStatus;
+  $pill.textContent = (displayStatus === "online")
+    ? "Online"
+    : (PROFILE_STATUS_LABELS[displayStatus] || displayStatus);
 
   const pendingCount = (lastInbox || []).filter((i) => i?.status === "pending").length;
   if (pendingCount > 0) {

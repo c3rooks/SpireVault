@@ -1,0 +1,280 @@
+/* =====================================================================
+ * Discord LFG Mirror — styling for bridged Discord posts that appear
+ * in the SpireVault lobby list with a "via Discord" badge.
+ *
+ * Visual brief:
+ *
+ *   - Distinct accent: Discord blurple (#5865F2) used as the dominant
+ *     accent so users instantly recognize the bridge. Native lobby
+ *     cards use ember/orange — mirrors use blurple. No ambiguity.
+ *   - Card shape matches native lobby cards (same radius, padding,
+ *     hover lift) so the mixed list still feels cohesive.
+ *   - Click-affordance is loud: dashed underline + "Open in Discord →"
+ *     footer. We never want a user to think this is a "join" button.
+ *   - Header strip above the list explains the bridge in one line so
+ *     a first-time visitor isn't confused why some cards link out.
+ * ===================================================================== */
+
+.pf-mirror-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0 0 14px;
+}
+
+/* The wrapper used on the Beta surface gets a subtle leading divider
+ * so it doesn't feel like it's stealing the "Live Parties" header.
+ * The production-surface variant has no parent header so it stands
+ * alone with its own pf-mirror-head. */
+.pf-mirror-wrap--beta {
+  padding-top: 6px;
+  border-top: 1px solid rgba(232, 226, 255, 0.06);
+}
+
+/* Guest surface — signed-out visitors. The wrap sits BELOW the
+ * Steam sign-in card. Give it generous top spacing + a "live from
+ * Discord" framing so it reads as social proof, not a duplicate
+ * lobby list. */
+.pf-mirror-wrap--guest {
+  margin-top: 20px;
+  padding: 16px 14px;
+  border-radius: 16px;
+  background: linear-gradient(180deg, rgba(88, 101, 242, 0.04), rgba(88, 101, 242, 0.01));
+  border: 1px solid rgba(88, 101, 242, 0.16);
+}
+.pf-mirror-wrap--guest .pf-mirror-head {
+  background: transparent;
+  border: none;
+  padding: 0 4px 8px;
+  border-bottom: 1px solid rgba(88, 101, 242, 0.18);
+}
+.pf-mirror-wrap--guest .pf-mirror-head-title {
+  font-size: 14px;
+}
+
+/* ── Header strip ────────────────────────────────────────────────── */
+.pf-mirror-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: rgba(88, 101, 242, 0.10);
+  border: 1px solid rgba(88, 101, 242, 0.24);
+  color: #cdd2ff;
+}
+.pf-mirror-head-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  color: #8b95ff;
+}
+.pf-mirror-head-icon svg { width: 100%; height: 100%; }
+.pf-mirror-head-title {
+  font-size: 13px;
+  font-weight: 800;
+  color: #e8ecff;
+  letter-spacing: 0.01em;
+}
+.pf-mirror-head-sub {
+  font-size: 12px;
+  color: rgba(205, 210, 255, 0.65);
+}
+
+/* ── Card list ───────────────────────────────────────────────────── */
+.pf-mirror-list {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+@media (min-width: 720px) {
+  .pf-mirror-list {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+/* ── Card ────────────────────────────────────────────────────────── */
+.pf-mirror-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(88, 101, 242, 0.30);
+  background: linear-gradient(180deg, rgba(88, 101, 242, 0.06), rgba(88, 101, 242, 0.02));
+  color: inherit;
+  text-decoration: none;
+  cursor: pointer;
+  transition: transform 150ms ease, box-shadow 150ms ease, border-color 150ms ease, background 150ms ease;
+  position: relative;
+  overflow: hidden;
+}
+.pf-mirror-card::before {
+  /* Subtle blurple corner accent so the Discord identity reads even
+   * at a glance — like a dog-eared corner. */
+  content: "";
+  position: absolute;
+  top: 0; right: 0;
+  width: 60px;
+  height: 60px;
+  background: radial-gradient(circle at top right, rgba(88, 101, 242, 0.25), transparent 70%);
+  pointer-events: none;
+}
+.pf-mirror-card:hover {
+  transform: translateY(-1px);
+  border-color: rgba(88, 101, 242, 0.55);
+  background: linear-gradient(180deg, rgba(88, 101, 242, 0.10), rgba(88, 101, 242, 0.04));
+  box-shadow: 0 12px 28px rgba(88, 101, 242, 0.18);
+}
+.pf-mirror-card:focus-visible {
+  outline: 2px solid #8b95ff;
+  outline-offset: 2px;
+}
+
+/* Card head — avatar + author + badge */
+.pf-mirror-card-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.pf-mirror-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  object-fit: cover;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(88, 101, 242, 0.30);
+}
+.pf-mirror-avatar--fallback {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  color: #e8ecff;
+  background: linear-gradient(135deg, #5865f2, #4752c4);
+}
+.pf-mirror-card-id {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.pf-mirror-author {
+  font-size: 14px;
+  font-weight: 800;
+  color: #f3f1ff;
+  letter-spacing: -0.005em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pf-mirror-source {
+  font-size: 11.5px;
+  color: rgba(232, 226, 255, 0.55);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pf-mirror-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(88, 101, 242, 0.18);
+  color: #cdd2ff;
+  border: 1px solid rgba(88, 101, 242, 0.35);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  flex-shrink: 0;
+}
+.pf-mirror-badge-icon { width: 12px; height: 12px; color: currentColor; }
+
+/* Message text */
+.pf-mirror-message {
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: rgba(232, 226, 255, 0.86);
+  /* Clamp to ~3 lines so a verbose LFG post doesn't dominate the card. */
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  line-clamp: 3;
+  overflow: hidden;
+  word-break: break-word;
+}
+
+/* Chip row */
+.pf-mirror-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.pf-mirror-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  border: 1px solid rgba(232, 226, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(232, 226, 255, 0.86);
+}
+.pf-mirror-chip--asc {
+  border-color: rgba(255, 178, 102, 0.45);
+  color: #ffd9b0;
+  background: rgba(255, 139, 58, 0.12);
+}
+.pf-mirror-chip--char {
+  border-color: rgba(140, 200, 255, 0.45);
+  color: #d8edff;
+  background: rgba(80, 150, 220, 0.12);
+}
+.pf-mirror-chip--voice {
+  border-color: rgba(170, 230, 170, 0.45);
+  color: #d4f1d4;
+  background: rgba(110, 200, 110, 0.10);
+}
+.pf-mirror-chip--seats {
+  border-color: rgba(232, 226, 255, 0.30);
+  color: #f1edff;
+  background: rgba(255, 255, 255, 0.06);
+}
+.pf-mirror-chip--daily {
+  border-color: rgba(255, 215, 100, 0.5);
+  color: #ffe9a8;
+  background: rgba(255, 200, 60, 0.10);
+}
+
+/* Footer — explicit click affordance */
+.pf-mirror-foot {
+  display: flex;
+  justify-content: flex-end;
+}
+.pf-mirror-foot-cta {
+  font-size: 11.5px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  color: #8b95ff;
+  border-bottom: 1px dashed rgba(139, 149, 255, 0.55);
+  padding-bottom: 1px;
+  transition: color 150ms ease, border-color 150ms ease;
+}
+.pf-mirror-card:hover .pf-mirror-foot-cta {
+  color: #b6bcff;
+  border-bottom-color: #b6bcff;
+}
+
+/* ── Reduced motion ──────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .pf-mirror-card,
+  .pf-mirror-foot-cta { transition: none; }
+}

@@ -1,0 +1,396 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <title>SpireVault Daily Race · Today's STS2 ghost leaderboard</title>
+  <meta name="description" content="Race today's Slay the Spire 2 daily seed. Drop your .run save in the browser to submit a ghost — no install required." />
+  <meta name="theme-color" content="#0c0a14" />
+  <link rel="icon" type="image/svg+xml" href="/assets/vault-mark.svg" />
+  <meta property="og:title" content="SpireVault Daily Race" />
+  <meta property="og:description" content="Today's STS2 daily seed. Every submitted run becomes a ghost — see who finished, on what floor, in what time." />
+  <meta property="og:image" content="https://app.spirevault.app/assets/og.png?v=1" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Playfair+Display:wght@700;900&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/assets/showtime.css?v=3" />
+</head>
+<body>
+  <div class="sv-shell">
+    <div class="sv-topbar">
+      <a class="sv-back" href="/">← SpireVault</a>
+      <div class="sv-brand">SpireVault Race</div>
+    </div>
+
+    <!-- HERO ===================================================== -->
+    <header class="sv-hero sv-rise sv-rise--1">
+      <div>
+        <div class="sv-hero-eyebrow"><span class="sv-dot" aria-hidden="true"></span> Today's daily race</div>
+        <h1 class="sv-hero-title" id="hero-title">Race today's seed</h1>
+        <p class="sv-hero-sub" id="hero-sub">Every player on today's daily challenge gets the same seed. Drop your <code>.run</code> save in the browser to add a ghost — fastest victory wins, deepest run wins on ties.</p>
+        <div class="sv-hero-actions">
+          <button class="sv-btn sv-btn--primary" id="open-submit">Submit your daily run</button>
+          <a class="sv-btn sv-btn--ghost" href="/watch">Browse replays →</a>
+        </div>
+      </div>
+      <aside class="sv-hero-side">
+        <div class="sv-hero-metrics">
+          <div class="sv-hero-metric">
+            <div class="sv-hero-metric-label">Seed (UTC)</div>
+            <div class="sv-hero-metric-value" id="hero-seed">—</div>
+          </div>
+          <div class="sv-hero-metric">
+            <div class="sv-hero-metric-label">Character</div>
+            <div class="sv-hero-metric-value" id="hero-char">—</div>
+          </div>
+          <div class="sv-hero-metric">
+            <div class="sv-hero-metric-label">Ascension</div>
+            <div class="sv-hero-metric-value" id="hero-asc">—</div>
+          </div>
+          <div class="sv-hero-metric">
+            <div class="sv-hero-metric-label">Ghosts</div>
+            <div class="sv-hero-metric-value" id="hero-count">—</div>
+          </div>
+        </div>
+      </aside>
+    </header>
+
+    <!-- SUBMIT PANEL (slide-down) ================================ -->
+    <div class="sv-slide sv-rise sv-rise--2" id="submit-panel" aria-hidden="true">
+      <div class="sv-card" style="margin-top:16px">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap">
+          <h2 style="margin:0">Submit your daily run</h2>
+          <button class="sv-btn sv-btn--ghost" id="close-submit" type="button">Close</button>
+        </div>
+        <p class="sv-sub" style="margin:8px 0 12px">
+          Drop a single <code>.run</code> file. SpireVault reads it in your browser — your save never leaves your device unsigned. Only daily-mode runs on today's seed count.
+        </p>
+
+        <div class="sv-drop" id="run-drop" tabindex="0" role="button" aria-label="Drop or pick your .run save">
+          <svg class="sv-drop-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M12 3v12m0 0l-4-4m4 4l4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+          <div class="sv-drop-title">Drop your .run file</div>
+          <div class="sv-drop-sub">From <code>…/Slay the Spire 2/profile1/saves/history/&lt;timestamp&gt;.run</code> · max 1 MB</div>
+          <input type="file" id="run-file" accept=".run,application/json" />
+        </div>
+
+        <div id="submit-status" style="margin-top:14px" aria-live="polite"></div>
+
+        <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap">
+          <button class="sv-btn sv-btn--primary" id="submit-btn" type="button" disabled>Submit to today's race</button>
+          <span class="sv-sub" style="margin:0;align-self:center;font-size:12px">Rate limit: 30 submits / hour.</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- LEADERBOARD ============================================== -->
+    <div class="sv-helper-row sv-rise sv-rise--3">
+      <h2>Today's leaderboard</h2>
+      <div class="sv-helper-meta" id="board-meta"><span class="sv-dot" aria-hidden="true"></span> live · refreshes after each submit</div>
+    </div>
+
+    <div class="sv-card">
+      <div id="race-list" class="sv-race-list sv-stagger" aria-live="polite">
+        <!-- skeleton rows -->
+        <div class="sv-skel sv-skel--row" aria-hidden="true"></div>
+        <div class="sv-skel sv-skel--row" aria-hidden="true"></div>
+        <div class="sv-skel sv-skel--row" aria-hidden="true"></div>
+        <div class="sv-skel sv-skel--row" aria-hidden="true"></div>
+      </div>
+
+      <div id="race-empty" hidden>
+        <div class="sv-empty-ill">
+          <svg viewBox="0 0 96 96" fill="none" aria-hidden="true">
+            <path d="M20 70l10-32 12 24 10-44 12 34 12-12" stroke="#d4af37" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+            <circle cx="78" cy="40" r="3" fill="#d4af37"/>
+          </svg>
+          <div class="sv-empty-head">First ghost of the day</div>
+          <p class="sv-empty-line">No one has submitted today yet. Run the daily challenge and drop your <code>.run</code> here — your ghost seeds the leaderboard.</p>
+          <button class="sv-btn sv-btn--primary" id="empty-submit-cta" type="button">Submit your daily run</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="sv-card" style="margin-top:16px">
+      <h2>Detail view</h2>
+      <p class="sv-sub" style="margin:0">Click any run above to scrub through floor-by-floor checkpoints. Compare HP, deck size, and key cards at the same floor across players.</p>
+      <div id="ghost-detail"></div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { api, esc, fmtTime, fmtRel, qs, getSession } from "/lib/showtime-shared.js?v=2";
+    import { parseSTS2Run, looksLikeSTS2Run } from "/lib/sts2-run-parser.js?v=1";
+
+    // ─── Date key ───────────────────────────────────────────────────
+    const dateOverride = qs("date");
+    function asKey(d) {
+      return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
+    }
+    const dateKey = dateOverride && /^\d{4}-\d{2}-\d{2}$/.test(dateOverride) ? dateOverride : asKey(new Date());
+
+    // ─── Hero: dailyChallenge ───────────────────────────────────────
+    let todaysChallenge = null;
+    async function loadDailyHero() {
+      document.getElementById("hero-seed").textContent = dateKey;
+      try {
+        const r = await api("/coop/daily-challenge");
+        if (r.ok && r.data?.challenge) {
+          todaysChallenge = r.data.challenge;
+          const c = todaysChallenge;
+          if (c.seed) document.getElementById("hero-seed").textContent = String(c.seed).slice(0, 12);
+          if (c.character) document.getElementById("hero-char").textContent = cap(c.character);
+          if (c.ascension != null) document.getElementById("hero-asc").textContent = "A" + c.ascension;
+        }
+      } catch { /* hero stays as date-only on failure */ }
+    }
+    function cap(s) { return String(s || "—").replace(/^\w/, (c) => c.toUpperCase()); }
+
+    // ─── Leaderboard ────────────────────────────────────────────────
+    async function loadBoard() {
+      const r = await api(`/coop/race/${dateKey}`);
+      renderList(r.ok && Array.isArray(r.data?.ghosts) ? r.data.ghosts : []);
+    }
+
+    function renderList(ghosts) {
+      const list = document.getElementById("race-list");
+      const empty = document.getElementById("race-empty");
+      list.innerHTML = "";
+      document.getElementById("hero-count").textContent = String(ghosts.length);
+      if (!ghosts.length) {
+        list.hidden = true;
+        empty.hidden = false;
+        return;
+      }
+      list.hidden = false;
+      empty.hidden = true;
+      ghosts.forEach((g, i) => {
+        const row = document.createElement("a");
+        row.className = "sv-race-row" + (g.status === "victory" ? " is-victory" : "");
+        row.href = `?date=${dateKey}#${g.runId}`;
+        row.style.textDecoration = "none";
+        row.dataset.runId = g.runId;
+        const pill = g.status === "victory"
+          ? `<span class="sv-pill sv-pill--green">cleared</span>`
+          : g.status === "death"
+            ? `<span class="sv-pill sv-pill--red">f${g.endFloor}</span>`
+            : `<span class="sv-pill sv-pill--gray">left</span>`;
+        row.innerHTML = `
+          <div class="sv-race-rank">${i + 1}</div>
+          <div>
+            <div class="sv-race-name">${esc(g.hostPersonaName)}</div>
+            <div class="sv-race-meta">${esc(cap(g.characterId))} · A${g.ascension} · ${esc(fmtRel(g.submittedAt))}</div>
+          </div>
+          <div>${pill}</div>
+          <div class="sv-race-meta">${esc(fmtTime(g.totalSec))}</div>
+          <div class="sv-race-meta">f${g.endFloor}</div>
+        `;
+        row.addEventListener("click", (ev) => { ev.preventDefault(); showDetail(g); });
+        list.appendChild(row);
+      });
+      const hashId = (location.hash || "").slice(1);
+      const hit = ghosts.find((g) => g.runId === hashId) || ghosts[0];
+      if (hit) showDetail(hit);
+    }
+
+    function showDetail(g) {
+      const wrap = document.getElementById("ghost-detail");
+      wrap.innerHTML = "";
+      if (!g) return;
+      const head = document.createElement("div");
+      head.style.marginTop = "12px";
+      head.innerHTML = `
+        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+          <img src="${esc(g.hostAvatarUrl || "/assets/vault-mark.svg")}" alt="" style="width:36px;height:36px;border-radius:50%"/>
+          <div>
+            <div style="font-weight:700">${esc(g.hostPersonaName)}</div>
+            <div class="sv-race-meta">${esc(cap(g.characterId))} A${g.ascension} · ${g.status} on f${g.endFloor} · ${fmtTime(g.totalSec)}</div>
+          </div>
+        </div>
+      `;
+      wrap.appendChild(head);
+
+      const milestones = g.milestones || [];
+      if (!milestones.length) {
+        const empty = document.createElement("p");
+        empty.className = "sv-sub";
+        empty.style.marginTop = "12px";
+        empty.textContent = "No floor checkpoints recorded for this run.";
+        wrap.appendChild(empty);
+        return;
+      }
+      const grid = document.createElement("div");
+      grid.style.display = "grid";
+      grid.style.gridTemplateColumns = "60px 80px 80px 80px 1fr";
+      grid.style.gap = "6px 12px";
+      grid.style.marginTop = "12px";
+      grid.style.fontSize = "13px";
+      grid.innerHTML = `
+        <div class="sv-stat-label">Floor</div>
+        <div class="sv-stat-label">Time</div>
+        <div class="sv-stat-label">HP</div>
+        <div class="sv-stat-label">Deck</div>
+        <div class="sv-stat-label">Top cards</div>
+      `;
+      for (const m of milestones) {
+        const row = document.createElement("div");
+        row.style.display = "contents";
+        row.innerHTML = `
+          <div>${m.floor}</div>
+          <div>${fmtTime(m.elapsedSec)}</div>
+          <div>${m.hp}</div>
+          <div>${m.deckSize}</div>
+          <div class="sv-race-meta">${(m.topCards || []).map(esc).join(", ")}</div>
+        `;
+        grid.appendChild(row);
+      }
+      wrap.appendChild(grid);
+    }
+
+    // ─── Submit panel ──────────────────────────────────────────────
+    const panel = document.getElementById("submit-panel");
+    const openBtn = document.getElementById("open-submit");
+    const closeBtn = document.getElementById("close-submit");
+    const emptyCta = document.getElementById("empty-submit-cta");
+    function openPanel() {
+      panel.classList.add("is-open");
+      panel.setAttribute("aria-hidden", "false");
+      panel.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+    function closePanel() {
+      panel.classList.remove("is-open");
+      panel.setAttribute("aria-hidden", "true");
+    }
+    openBtn.addEventListener("click", openPanel);
+    closeBtn.addEventListener("click", closePanel);
+    emptyCta.addEventListener("click", openPanel);
+
+    // ─── .run parsing + submission ─────────────────────────────────
+    const drop = document.getElementById("run-drop");
+    const fileInput = document.getElementById("run-file");
+    const statusBox = document.getElementById("submit-status");
+    const submitBtn = document.getElementById("submit-btn");
+    let parsedRun = null;
+
+    drop.addEventListener("click", () => fileInput.click());
+    drop.addEventListener("keydown", (ev) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); fileInput.click(); } });
+    ;["dragenter", "dragover"].forEach((evt) => drop.addEventListener(evt, (e) => { e.preventDefault(); drop.classList.add("is-dragover"); }));
+    ;["dragleave", "drop"].forEach((evt) => drop.addEventListener(evt, (e) => { e.preventDefault(); drop.classList.remove("is-dragover"); }));
+    drop.addEventListener("drop", (e) => {
+      const f = e.dataTransfer?.files?.[0];
+      if (f) handleFile(f);
+    });
+    fileInput.addEventListener("change", (e) => {
+      const f = e.target.files?.[0];
+      if (f) handleFile(f);
+    });
+
+    async function handleFile(file) {
+      parsedRun = null;
+      submitBtn.disabled = true;
+      if (file.size > 1024 * 1024) {
+        return setStatus("warn", `That file is ${(file.size / 1024).toFixed(0)} KB — over the 1 MB cap. Pick a single .run, not a folder zip.`);
+      }
+      setStatus("info", `<span class="sv-loading"></span> Parsing ${esc(file.name)}…`);
+      let text;
+      try { text = await file.text(); } catch { return setStatus("warn", "Could not read that file."); }
+      let json;
+      try { json = JSON.parse(text); } catch { return setStatus("warn", "That file is not valid JSON. Drop a raw .run save, not a screenshot."); }
+      if (!looksLikeSTS2Run(json)) {
+        return setStatus("warn", "Looks like a profile or settings save, not a run. Pick a file from <code>profile1/saves/history/</code>.");
+      }
+      const parsed = parseSTS2Run(json, file.name);
+      if (!parsed) {
+        return setStatus("warn", "Couldn't parse that run.");
+      }
+      const verdict = verifyAgainstToday(parsed);
+      if (!verdict.ok) {
+        return setStatus("warn", verdict.message);
+      }
+      parsedRun = { parsed, file: file.name };
+      submitBtn.disabled = false;
+      const charLabel = cap(parsed.character || "—");
+      const status = parsed.won ? "Victory" : (parsed.wasAbandoned ? "Abandoned" : "Defeat");
+      setStatus("ok", `Ready: <strong>${esc(charLabel)} A${parsed.ascension ?? 0}</strong> · ${esc(status)} on floor ${parsed.floorReached} · ${fmtTime(parsed.playTimeSeconds || 0)}`);
+    }
+
+    function verifyAgainstToday(parsed) {
+      // Day-only check by default: if the run's start_time falls in the
+      // current UTC day, treat it as "from today's daily window." We
+      // ALSO honor an exact daily-seed match when the daily endpoint
+      // gives us a concrete seed — that's stricter and beats false
+      // positives from custom-seed runs the player happened to play
+      // today.
+      if (parsed.gameMode && parsed.gameMode !== "daily") {
+        return { ok: false, message: "That run isn't on the daily mode. Pick a daily-challenge run." };
+      }
+      if (todaysChallenge?.seed && parsed.seed) {
+        const a = String(todaysChallenge.seed).trim().toUpperCase();
+        const b = String(parsed.seed).trim().toUpperCase();
+        if (a && b && a !== b) {
+          return { ok: false, message: "This run isn't on today's daily seed — try today's daily and submit again." };
+        }
+      }
+      const start = parsed.startedAt instanceof Date ? parsed.startedAt.getTime() : null;
+      if (start) {
+        const today = new Date();
+        today.setUTCHours(0, 0, 0, 0);
+        const tomorrow = today.getTime() + 24 * 60 * 60 * 1000;
+        if (start < today.getTime() - 24 * 60 * 60 * 1000 || start > tomorrow) {
+          return { ok: false, message: "This run is from a different day. Submit a run started today (UTC)." };
+        }
+      }
+      return { ok: true };
+    }
+
+    function setStatus(kind, html) {
+      const cls = kind === "warn" ? "sv-warning" : kind === "ok" ? "sv-pill sv-pill--green" : "sv-sub";
+      statusBox.innerHTML = `<div class="${cls}" style="display:inline-block;padding:8px 12px;border-radius:8px">${html}</div>`;
+    }
+
+    submitBtn.addEventListener("click", async () => {
+      if (!parsedRun) return;
+      const session = await getSession();
+      if (!session) {
+        setStatus("warn", `Sign in on the <a href="/">SpireVault home page</a> first — submissions are tied to your Steam account.`);
+        return;
+      }
+      submitBtn.disabled = true;
+      setStatus("info", `<span class="sv-loading"></span> Submitting…`);
+      const p = parsedRun.parsed;
+      const status = p.won ? "victory" : (p.wasAbandoned ? "abandoned" : "death");
+      // Submission runId: prefer the run's stable id (sts2-<start_time>);
+      // collapse to a safe charset and clamp to the backend regex.
+      const runId = (p.id || `web-${Date.now()}-${Math.floor(Math.random() * 1e6)}`).replace(/[^A-Za-z0-9_-]/g, "-").slice(0, 40);
+      const body = {
+        runId,
+        dateKey,
+        characterId: p.character || "unknown",
+        ascension: p.ascension ?? 0,
+        status,
+        endFloor: p.floorReached ?? 0,
+        totalSec: p.playTimeSeconds ?? 0,
+        milestones: [],
+      };
+      const r = await api("/coop/race/submit", { method: "POST", body: JSON.stringify(body) });
+      if (!r.ok) {
+        submitBtn.disabled = false;
+        return setStatus("warn", `Could not submit: ${esc(r.message || r.error || "unknown error")}`);
+      }
+      setStatus("ok", `Submitted ✓ — your ghost is on today's board.`);
+      submitBtn.classList.add("is-ok");
+      submitBtn.textContent = "Submitted ✓";
+      await loadBoard();
+      setTimeout(() => closePanel(), 1200);
+    });
+
+    // ─── Boot ──────────────────────────────────────────────────────
+    (async () => {
+      await Promise.all([loadDailyHero(), loadBoard()]);
+    })();
+  </script>
+</body>
+</html>

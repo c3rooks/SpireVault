@@ -31,7 +31,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Playfair+Display:wght@700;900&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/styles.css?v=140" />
+  <link rel="stylesheet" href="/styles.css?v=146" />
 
   <!-- Google tag (gtag.js) — Spire Vault GA4 stream G-09LEQ247HN.
        Loaded async so it never blocks the critical rendering path; the
@@ -1033,109 +1033,40 @@
 
             <!-- ====== Post 003 — May 9 2026 — STS2 v0.105.0 content support ====== -->
             <!-- ====== Post 006 — May 10 2026 — Desktop / cloud parity rebuild ====== -->
-            <!-- ====== Post 007 — May 26 2026 — Co-op Lobby v2 default ============ -->
-            <!-- ====== Post 008 — May 26 2026 — v0.11.0 five-feature ship ========= -->
-            <article class="news-post" id="news-008" data-news-id="008" data-news-eyebrow="Update · May 26, 2026" data-news-tags="Update,Co-op,Reputation" aria-labelledby="news-008-title">
-              <header class="news-post-head">
-                <span class="news-post-eyebrow">Update &middot; May 26, 2026</span>
-                <h3 class="news-post-title" id="news-008-title">v0.11.0 &mdash; five co-op features in one ship, and the start of the lock-in</h3>
-                <p class="news-post-byline">
-                  Corey
-                  <span class="news-post-byline-sep">&middot;</span>
-                  <span class="news-post-byline-meta">~4 min read</span>
-                </p>
-              </header>
-
-              <div class="news-post-body">
-                <p class="news-lede">
-                  v0.10.0 shipped the lobby surface earlier today. v0.11.0 is the follow-up the lobby surface needed. Five features, all motivated by the same question: <em>which of these does Discord literally not do?</em> The big one &mdash; verified co-op reputation &mdash; is the first SpireVault feature that&rsquo;s strictly impossible without our save data, and it&rsquo;s the start of the lock-in.
-                </p>
-
-                <h4 class="news-post-section">1. Verified Co-op Reputation</h4>
-
-                <p>
-                  Every host on the live-parties list now has a small tier dot next to their name. Five tiers, server-derived, computed from <code>runs:&lt;steamID&gt;</code> (your uploaded run history) and a new server-authored co-op event log (<code>rep:hist:v1:&lt;steamID&gt;</code>) that records every party you&rsquo;ve hosted, joined, completed, or abandoned. Tiers go Newcomer &rarr; Regular &rarr; Trusted &rarr; Veteran &rarr; Ascended. Up to four optional badges show alongside: heart kill, A20 clear, host reliable, active recent.
-                </p>
-                <p>
-                  The public <code>/coop/reputation/:steamID</code> endpoint returns a redacted shape &mdash; tier, badges, and a bucketed <code>partiesCompletedBucket</code> &mdash; so the formula isn&rsquo;t directly farmable. Your own <code>/coop/reputation/me</code> shows the raw counters. Newcomers render no dot &mdash; a fresh account shouldn&rsquo;t get a colored badge that reads as a downgrade.
-                </p>
-                <p>
-                  This is the answer to "can I tell whether this person finishes runs or bails at floor 5?" Discord cannot answer that. The data lives in SpireVault. Now it shows up where it matters.
-                </p>
-
-                <h4 class="news-post-section">2. Daily Co-op Challenge</h4>
-
-                <p>
-                  Every UTC day, SpireVault picks a deterministic seed + a suggested character + a suggested ascension. Every player in the world sees the same daily. A new gold-bordered tile under the hero stats shows today&rsquo;s seed; tap it and the seed is on your clipboard with a toast telling you to type it into STS2&rsquo;s seed field on character select. Hosts who tag their lobby note with <code>[daily=YYYY-MM-DD]</code> show up in the day&rsquo;s joined count.
-                </p>
-                <p>
-                  We don&rsquo;t enforce the seed (no game-side mod), and we don&rsquo;t make it a leaderboard. The challenge is a coordination signal &mdash; "if you want to play the same board as someone else right now, this is it."
-                </p>
-
-                <h4 class="news-post-section">3. Synced Ready-up + Auto-advance</h4>
-
-                <p>
-                  The existing party engine already accepts <code>joined &rarr; ready &rarr; character_select &rarr; in_game</code>. v0.11.0 adds the coordinated UI: a single Ready pill on your own party row, an <code>X / Y ready</code> count, and an auto-advance to <code>in_game</code> the moment all live members are ready and the planned start time has passed. Frontend-only, no leader election &mdash; each client makes its own decision against observable state. Opt-out per browser via <code>localStorage["pf.readyup.autoAdvance.v1"] = "off"</code>.
-                </p>
-
-                <h4 class="news-post-section">4. Post-run Shared Report (v1 API + button)</h4>
-
-                <p>
-                  After any member of your party reaches <code>in_game</code>, a "Share this run" button appears next to Ready. Click, give it an optional one-line caption, and the server captures a snapshot of the party (display names, characters, roles, status &mdash; no Steam IDs) into a 30-day KV blob. The URL <code>https://app.spirevault.app/share/coop/&lt;shareId&gt;</code> gets copied to your clipboard for Discord / X / Reddit. The pretty HTML render of that URL lands in v0.11.1 next week (it works as a JSON endpoint today &mdash; ugly but functional).
-                </p>
-
-                <h4 class="news-post-section">5. Steam Rich Presence &mdash; web endpoint</h4>
-
-                <p>
-                  This is the half-ship. The <code>POST /coop/rich-presence/ingest</code> endpoint is live, audited, rate-limited, and ready for the native helper that watches Steam&rsquo;s own <code>RunningAppID</code> and flips your SpireVault status to "Looking" when STS2 boots. The native helper itself (signed pkg for macOS, MSI for Windows, tarball for Linux) is 2&ndash;4 weeks of work that lives in <code>VaultApp/App/Helpers/</code> and ships in v0.12.0. The endpoint is up <em>now</em> so the helper team can develop against a real production target on day 1.
-                </p>
-                <p>
-                  This is the feature that changes SpireVault from "tab you remember to open" to "daemon running when you boot the game."
-                </p>
-
-                <h4 class="news-post-section">What this means</h4>
-
-                <p>
-                  v0.10.0 made the lobby surface the default. v0.11.0 makes it useful in ways nothing else can be. The lock-in features land here: verified reputation, daily seed coordination, synced GO, share cards. v0.12.0 hands you the helper that means you don&rsquo;t have to open SpireVault at all &mdash; it&rsquo;s already running. That&rsquo;s the version where "should I open SpireVault" stops being a question.
-                </p>
-
-                <p class="news-post-signoff">
-                  &mdash; Corey
-                </p>
-              </div>
-
-              <footer class="news-post-foot">
-                <div class="news-post-foot-meta">
-                  <span class="news-post-tag">Update</span>
-                  <span class="news-post-tag">Co-op</span>
-                  <span class="news-post-tag">v0.11.0</span>
-                </div>
-                <div class="news-post-foot-actions">
-                  <a class="action-link" href="https://app.spirevault.app/?tab=coop" target="_blank" rel="noopener">Open the Co-op Lobby &rarr;</a>
-                  <a class="action-link" href="https://github.com/c3rooks/SpireVault/blob/main/CHANGELOG.md#v0110--2026-05-26" target="_blank" rel="noopener">Full changelog &rarr;</a>
-                </div>
-              </footer>
-            </article>
-            <article class="news-post" id="news-007" data-news-id="007" data-news-eyebrow="Update · May 26, 2026" data-news-tags="Update,Co-op,Beta" aria-labelledby="news-007-title">
+            <!-- ====== Post 007 — May 26 2026 — Co-op Lobby v2 default + v0.11.0 ===== -->
+            <!--                                                                         -->
+            <!-- Single launch post. Folded what used to be a separate news-008 (the     -->
+            <!-- v0.11.0 five-feature ship) into this article because both shipped       -->
+            <!-- the same day; two same-day entries read as broken/duplicate. The        -->
+            <!-- v0.11.0 content is the "Five more things..." section below.             -->
+            <article class="news-post" id="news-007" data-news-id="007" data-news-eyebrow="Update · May 26, 2026" data-news-tags="Update,Co-op,Beta,Reputation" aria-labelledby="news-007-title">
               <figure class="news-post-banner">
                 <picture>
-                  <source media="(max-width: 720px)" srcset="/assets/news/post-007-banner-1x.webp" />
-                  <img src="/assets/news/post-007-banner.webp" alt="Painted illustration of a glowing campfire on a high stone outpost, with four hooded travelers seated around it. In the foreground a wooden notice board pinned with parchment scraps that read like handwritten lobby listings, and a small brass hourglass on a stand beside it. Behind, a vast dark spire rises against a violet-and-ember dusk sky." decoding="async" />
+                  <!-- ?v=2 query: the first deploy that referenced these URLs hit
+                       Cloudflare Pages before the webp files were actually uploaded,
+                       so the CDN cached the SPA fallback (HTML) at this path with
+                       `Cache-Control: public, max-age=31536000, immutable` from
+                       /assets/* — meaning every visitor saw a broken-image icon
+                       for a year. Reving the query string changes the CDN cache
+                       key and forces a fresh origin fetch where the file now
+                       exists. If you replace the asset later, bump to ?v=3. -->
+                  <source media="(max-width: 720px)" srcset="/assets/news/post-007-banner-1x.webp?v=3" />
+                  <img src="/assets/news/post-007-banner.webp?v=3" alt="Painted illustration of a glowing campfire on a high stone outpost, with four hooded travelers seated around it. In the foreground a wooden notice board pinned with parchment scraps that read like handwritten lobby listings, and a small brass hourglass on a stand beside it. Behind, a vast dark spire rises against a violet-and-ember dusk sky." decoding="async" />
                 </picture>
               </figure>
               <header class="news-post-head">
                 <span class="news-post-eyebrow">Update &middot; May 26, 2026</span>
-                <h3 class="news-post-title" id="news-007-title">The Co-op Lobby is the default now &mdash; and it does a few things Discord can&rsquo;t</h3>
+                <h3 class="news-post-title" id="news-007-title">The Co-op Lobby is the default now &mdash; and it does eight things Discord can&rsquo;t</h3>
                 <p class="news-post-byline">
                   Corey
                   <span class="news-post-byline-sep">&middot;</span>
-                  <span class="news-post-byline-meta">~5 min read</span>
+                  <span class="news-post-byline-meta">~8 min read</span>
                 </p>
               </header>
 
               <div class="news-post-body">
                 <p class="news-lede">
-                  Open the Co-op tab today and you&rsquo;ll land on the new lobby surface instead of the live roster. Same Steam OpenID sign-in, same friend-gated invite at the end &mdash; the middle is what changed. The big bet: a co-op tool earns its real estate by doing things the Slay the Spire 2 Discord <em>can&rsquo;t</em> do, not by being a prettier version of the same thing. Three of those landed in this release.
+                  Open the Co-op tab today and you&rsquo;ll land on the new lobby surface instead of the live roster. Same Steam OpenID sign-in, same friend-gated invite at the end &mdash; the middle is what changed. The big bet: a co-op tool earns its real estate by doing things the Slay the Spire 2 Discord <em>can&rsquo;t</em> do, not by being a prettier version of the same thing. Eight of those landed today, in two back-to-back releases (v0.10.0 and v0.11.0). The biggest of them &mdash; <strong>verified co-op reputation</strong> &mdash; is the first SpireVault feature that&rsquo;s strictly impossible without the save data we already have, and it&rsquo;s the start of the lock-in.
                 </p>
 
                 <h4 class="news-post-section">What you&rsquo;ll see when you open it</h4>
@@ -1144,7 +1075,7 @@
                   Hero card with two large buttons in the same row above the fold: <strong>Quick Play</strong> (auto-match into the best open room) and <strong>Host a Room</strong> (3-step modal &mdash; goal &amp; timing, party shape, review). Below it, four stat tiles: online now, hosting rooms, looking for group, and a new <strong>starting soon</strong> tile that lights up green when somebody&rsquo;s countdown is &le;30 minutes out. Below the stats, your <strong>Campfire Log</strong> ribbon &mdash; rank, parties, hearts, friends, and an XP bar showing how close you are to the next rank. Tap it for the full personal-history sheet (friends roster, run timeline, send-a-heart). Below the log, the <strong>Live Parties</strong> list, sorted soonest-first.
                 </p>
 
-                <h4 class="news-post-section">The three things Discord can&rsquo;t do</h4>
+                <h4 class="news-post-section">The eight Discord-impossible features</h4>
 
                 <div class="news-feature-block">
                   <h5>1. Live-updating Discord LFG posts</h5>
@@ -1164,6 +1095,50 @@
                   <h5>3. A play-again memory that survives the run</h5>
                   <p>
                     Discord doesn&rsquo;t remember who you played with last week. The Campfire Log does. Every party you join gets logged locally; every teammate becomes a friend with a count and a last-played stamp. Open <em>My Co-op</em> and you can send any of them a heart (one per teammate per 24 hours, so it stays meaningful). The XP curve is real &mdash; party joined: +10 XP, completed: +15, heart-run goal: +25, heart sent: +5 &mdash; and the bar inside the Rank tile fills smoothly as you accumulate. Two-tab open? A heart sent in tab A updates tab B inside ~250ms via <code>BroadcastChannel</code>.
+                  </p>
+                </div>
+
+                <div class="news-feature-block">
+                  <h5>4. Verified Co-op Reputation <span class="news-feature-tag">the lock-in feature</span></h5>
+                  <p>
+                    Every host on the live-parties list now has a small tier dot next to their name. Five tiers, server-derived from <em>actual save data</em>: your uploaded run history plus a co-op event log the server keeps for every party you&rsquo;ve hosted, joined, completed, or bailed on. Newcomer &rarr; Regular &rarr; Trusted &rarr; Veteran &rarr; Ascended. Up to four optional badges show alongside &mdash; Heart kill, A20 clear, Host reliable, Active recent.
+                  </p>
+                  <p>
+                    The public endpoint (<code>/coop/reputation/:steamID</code>) returns a redacted shape &mdash; tier, badges, and a bucketed completion count &mdash; so the formula isn&rsquo;t directly farmable. Your own <code>/coop/reputation/me</code> shows the raw counters. Newcomers render no dot &mdash; a fresh account shouldn&rsquo;t wear a colored badge that reads as a downgrade.
+                  </p>
+                  <p>
+                    This is the answer to &ldquo;can I tell whether this person finishes runs or bails at floor 5?&rdquo; Discord cannot answer that. The data lives in SpireVault. Now it shows up where it matters.
+                  </p>
+                </div>
+
+                <div class="news-feature-block">
+                  <h5>5. Daily Co-op Challenge</h5>
+                  <p>
+                    Every UTC day, SpireVault picks a deterministic seed plus a suggested character and ascension. Every player in the world sees the same daily. A gold-bordered tile under the hero stats shows today&rsquo;s seed; tap it and the seed is on your clipboard with a toast telling you to type it into STS2&rsquo;s seed field on character select. Hosts who tag their lobby note <code>[daily=YYYY-MM-DD]</code> show up in the day&rsquo;s joined count. We don&rsquo;t enforce the seed (no game-side mod) and we don&rsquo;t make it a leaderboard &mdash; the challenge is a coordination signal: &ldquo;if you want to play the same board as someone else right now, this is it.&rdquo;
+                  </p>
+                </div>
+
+                <div class="news-feature-block">
+                  <h5>6. Synced Ready-up + Auto-advance</h5>
+                  <p>
+                    Extends the synced GO above: a single Ready pill on your own party row, an <code>X / Y ready</code> count visible to every member, and an auto-advance to <code>in_game</code> the moment all live members are ready <em>and</em> the planned start has passed. Frontend-only, no leader election &mdash; each client makes its own decision against observable state, so two clients arrive at the same conclusion from opposite corners of the world. When you&rsquo;re the last one not-ready, the rest of the lobby sees &ldquo;Waiting on <em>your name</em>&rdquo; instead of guessing. Opt-out per browser: <code>localStorage["pf.readyup.autoAdvance.v1"] = "off"</code>.
+                  </p>
+                </div>
+
+                <div class="news-feature-block">
+                  <h5>7. Post-run Shared Report</h5>
+                  <p>
+                    Once anyone in the party reaches <code>in_game</code>, a <strong>Share this run</strong> button shows up next to Ready on your own party row. Click, give it an optional one-line caption, and the server captures a 30-day snapshot of the party (display names, characters, roles, status &mdash; no Steam IDs) into a public-readable KV blob. The URL <code>app.spirevault.app/share/coop/&lt;shareId&gt;</code> goes to your clipboard, pre-formatted for Discord / X / Reddit. The pretty HTML render of that URL with OG cards ships in v0.11.1 alongside this post.
+                  </p>
+                </div>
+
+                <div class="news-feature-block">
+                  <h5>8. Steam Rich Presence &mdash; web endpoint live, helper next</h5>
+                  <p>
+                    Half-shipped on purpose. The <code>POST /coop/rich-presence/ingest</code> endpoint is live, audited, rate-limited, and ready for the native helper that watches Steam&rsquo;s own <code>RunningAppID</code> on your machine and flips your SpireVault status to &ldquo;Looking&rdquo; the moment STS2 boots. The macOS helper is a SwiftPM <code>LaunchAgent</code> that&rsquo;s already buildable in <code>VaultApp/Helpers/SteamRichPresence/</code>; signed pkg / MSI / tarball ship in v0.12.0. The endpoint is up <em>now</em> so the helper can talk to a real production target on day one.
+                  </p>
+                  <p>
+                    This is the feature that changes SpireVault from &ldquo;tab you remember to open&rdquo; to &ldquo;daemon running when you boot the game.&rdquo;
                   </p>
                 </div>
 
@@ -1200,7 +1175,7 @@
                 </p>
 
                 <p>
-                  The next move is the part Discord literally can&rsquo;t replicate: <strong>verified co-op reputation</strong>. SpireVault already has your save data. We can show real ascensions cleared, real Heart kills, real co-op completion rate, and a reliability score (&ldquo;this player has hosted 14 runs, 12 finished&rdquo;) at host time and at join time &mdash; numbers nobody on Discord can boast their way into. That&rsquo;s the lock-in feature, and that&rsquo;s the next sprint. Steam Rich Presence integration sits right behind it &mdash; the version of this where you launch STS2 and your status flips to &ldquo;looking&rdquo; without you opening a tab.
+                  The next move is the half of feature 8 that&rsquo;s still on the bench: the signed native helper that runs in your tray when STS2 boots and flips your status to &ldquo;Looking&rdquo; without you opening a tab. v0.11.0 shipped the server endpoint and the macOS Swift skeleton; v0.12.0 ships the signed packages for macOS / Windows / Linux. That&rsquo;s the version of SpireVault where &ldquo;should I open the tab&rdquo; stops being a question because it&rsquo;s already running.
                 </p>
 
                 <h4 class="news-post-section">Try it</h4>
@@ -1222,9 +1197,11 @@
                   <span class="news-post-tag">Update</span>
                   <span class="news-post-tag">Co-op</span>
                   <span class="news-post-tag">v0.10.0</span>
+                  <span class="news-post-tag">v0.11.0</span>
                 </div>
                 <div class="news-post-foot-actions">
                   <a class="action-link" href="https://app.spirevault.app/?tab=coop" target="_blank" rel="noopener">Open the Co-op Lobby &rarr;</a>
+                  <a class="action-link" href="https://github.com/c3rooks/SpireVault/blob/main/CHANGELOG.md#v0110--2026-05-26" target="_blank" rel="noopener">Full changelog &rarr;</a>
                   <a class="action-link" href="https://github.com/c3rooks/SpireVault/issues/new" target="_blank" rel="noopener">Report something off &rarr;</a>
                 </div>
               </footer>
@@ -2023,6 +2000,12 @@
           <div class="coop-form-actions">
             <button type="submit" class="btn-primary" id="coop-lobby-save">Host Room</button>
             <button type="button" class="btn-ghost" data-coop-modal-close>Cancel</button>
+            <!-- Close Room — only shown when editing an existing lobby
+                 (not during initial host). coop-lobbies.js flips this on
+                 inside openEditLobbyModal so the host has a one-click
+                 path out of an open room without having to find the Close
+                 button elsewhere on the page. -->
+            <button type="button" class="btn-danger" id="coop-lobby-close" data-coop-action="close-lobby" hidden>Close Room</button>
           </div>
         </form>
       </div>
@@ -2201,6 +2184,7 @@
       <div class="footer-links">
         <a href="https://spirevault.app">Marketing site</a>
         <a href="https://github.com/c3rooks/SpireVault">GitHub</a>
+        <a href="/companion-mod">About the Companion mod (future)</a>
         <a href="https://apps.apple.com/us/app/ascension-companion/id6761977581" target="_blank" rel="noopener">iOS · Ascension Companion</a>
         <a href="https://coreycrooks.com" target="_blank" rel="noopener">coreycrooks.com</a>
       </div>
@@ -2262,6 +2246,11 @@
   })();
   </script>
   <script src="/run-coach.js?v=2" defer></script>
-  <script src="/script.js?v=184" type="module"></script>
+  <!-- Lightweight bounce analytics for the /coop landing experience.
+       Self-initializing, defensive, no-ops when window.gtag is absent.
+       Pinned with its own ?v= cache key so it does NOT require bumping
+       script.js / styles.css when only this module changes. -->
+  <script src="/lib/analytics-coop.js?v=1" defer></script>
+  <script src="/script.js?v=200" type="module"></script>
 </body>
 </html>
