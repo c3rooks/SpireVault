@@ -14791,10 +14791,17 @@ body.coop-lobby-beta-off [data-tab="coop"] .coop-page {
 
 /* =========================================================================
    SHOWTIME STRIP — discoverability for /watch, /race, /tournaments,
-   /coach, /companion-mod. Mounted by coop-lobbies.js at the top of
-   #coop-page-root. Five tiles in a 5-up grid on desktop; collapses to
-   2 columns under 720px and 1 column under 480px so it never wraps
-   into something ugly.
+   /coach. Mounted by coop-lobbies.js at the top of #coop-page-root.
+   Four tiles in a 4-up grid on desktop (Replays / Race / Tournaments /
+   Coach). Collapses to a 2x2 grid under 640px (tap-target friendly,
+   no horizontal scroll) and 1 column under 380px on the narrowest
+   phones so it never wraps into something ugly.
+
+   v203 (2026-05-28): demoted from 5 columns to 4 after the Companion
+   tile was removed during the web-only pivot. Earlier CSS still had
+   `repeat(5, ...)` hardcoded which left visible dead space on the
+   right side of the strip at desktop widths. Mobile breakpoints were
+   reworked to 2x2 (≤640px) → stack (≤380px) at the same time.
    ========================================================================= */
 .coop-showtime-strip {
   display: flex;
@@ -14830,7 +14837,7 @@ body.coop-lobby-beta-off [data-tab="coop"] .coop-page {
 }
 .coop-showtime-grid {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 10px;
 }
 .coop-showtime-tile {
@@ -14916,8 +14923,11 @@ body.coop-lobby-beta-off [data-tab="coop"] .coop-page {
   background: rgba(212,175,55,0.10);
   text-transform: uppercase;
 }
-/* Featured (Companion) tile — gold-leaning gradient + slightly stronger
-   border so it reads as the headline drop without breaking the row. */
+/* Featured tile — gold-leaning gradient + slightly stronger border so
+   it reads as a headline drop without breaking the row. Unused as of
+   v203 (the Companion tile that used this was demoted during the
+   web-only pivot) but kept around so future strip tiles can opt in
+   via `featured: true` in SHOWTIME_TILES without re-introducing CSS. */
 .coop-showtime-tile--featured {
   border-color: rgba(212,175,55,0.45);
   background:
@@ -14931,19 +14941,33 @@ body.coop-lobby-beta-off [data-tab="coop"] .coop-page {
 }
 .coop-showtime-tile--featured .coop-showtime-arrow { color: var(--gold); }
 
+/* Mid-desktop → narrow-tablet: 4-in-a-row stays, but pad the tiles a
+   bit tighter and shrink the subtitle so the "Drop a screenshot, get
+   a read" Coach copy still fits two lines without ellipsing. */
 @media (max-width: 1180px) {
-  .coop-showtime-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
+  .coop-showtime-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
   .coop-showtime-tile { padding: 10px 10px; }
   .coop-showtime-sub { font-size: 11px; }
 }
-@media (max-width: 920px) {
-  .coop-showtime-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+/* Tablet / large phone: 2x2 grid. Below ~640px the 4-in-a-row tap
+   targets get too small (icon + title + chevron crammed into ~140px
+   each), so reflow to two rows of two. Keeps tap targets ≥44px tall
+   and avoids horizontal scroll. */
+@media (max-width: 640px) {
+  .coop-showtime-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .coop-showtime-tile { padding: 12px 12px; }
+  .coop-showtime-sub { font-size: 11.5px; }
 }
-@media (max-width: 720px) {
-  .coop-showtime-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+/* Mid phone: drop the helper sentence to reclaim vertical space. The
+   eyebrow ("SPIREVAULT SHOWTIME") is enough section context once the
+   tiles themselves are the dominant content. */
+@media (max-width: 480px) {
   .coop-showtime-helper { display: none; }
 }
-@media (max-width: 480px) {
+/* Narrowest phones (iPhone SE / Android compact): even a 2x2 gets
+   cramped because the chevron crowds the title. Stack vertically so
+   each tile gets full width and the title can breathe. */
+@media (max-width: 380px) {
   .coop-showtime-grid { grid-template-columns: 1fr; }
 }
 

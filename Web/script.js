@@ -71,7 +71,7 @@ const STS2_APP_ID = "2868840";
  * on an old client — instruct hard refresh. If it DOES match, the
  * bug is real and we can stop chasing cache ghosts.
  */
-const VAULT_BUILD = "v204-2026-05-28-real-host-stats";
+const VAULT_BUILD = "v205-2026-05-28-showtime-strip-and-leave-fix";
 
 /** True on wrangler pages dev / local loopback — not production hostnames. */
 function isLocalDevHost() {
