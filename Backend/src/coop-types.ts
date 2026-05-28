@@ -179,6 +179,31 @@ export interface RunLobby {
   pendingJoinRequestSteamIds: string[];
   /** Party minted after first accept, when applicable. */
   partyId?: string;
+  /**
+   * SpireVault House lobby marker (added by `coop-house-lobbies.ts`).
+   *
+   * Two persistent operator-hosted lobbies ambient on the live board so the
+   * page never looks dead at low-traffic hours. They are renewed by a cron
+   * tick under the lobby's 35-min `expiresAt` and survive across deploys.
+   *
+   * When `true`, the lobby:
+   *  - Is always visible on `/coop/state.openLobbies` regardless of the
+   *    synthetic `hostSteamId`'s presence row freshness (the host is a
+   *    placeholder, not a real human).
+   *  - Bypasses the host-presence freshness check inside join paths so
+   *    `joinLobbySeat` can succeed without a real heartbeat.
+   *  - Is rendered with a "House" badge on the frontend (badge wiring is
+   *    out of scope — this flag is the data hook the next frontend pass
+   *    reads).
+   */
+  isHouseLobby?: boolean;
+  /**
+   * Stable identifier for the House lobby template (e.g. `house-a0-casual`,
+   * `house-a10-heart`). Maps back to `HOUSE_LOBBIES` in
+   * `coop-house-lobbies.ts`. Used by the renewer to dedup and by the
+   * frontend to render template-specific copy.
+   */
+  houseSlug?: string;
   createdAt: string;
   updatedAt: string;
   expiresAt: string;

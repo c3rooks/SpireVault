@@ -36,6 +36,23 @@ ALLOWED_RETURN_HOSTS = "spirevault.app,vault-web-e90.pages.dev,vault-site-3ki.pa
 # leaves user choice (per-browser localStorage) intact.
 COOP_LOBBY_BETA_ENABLED = "1"
 
+# Scheduled triggers.
+#
+# Every 15 minutes the SpireVault House Lobby renewer runs (see
+# `Backend/src/coop-house-lobbies.ts`). With a 35-min lobby TTL and a
+# 10-min "extend if expiring within" margin, this gives 2x safety on
+# never letting the two ambient lobbies disappear from the live board.
+#
+# The renewer is idempotent and KV-mutex-locked, so a duplicate
+# delivery is safe. The same handler is invoked manually by the
+# `POST /admin/house-lobbies/run-now` admin endpoint.
+#
+# The renewer is the ONLY consumer of this cron — branch on
+# `event.cron` in `src/index.ts.scheduled` if a second trigger is
+# ever added.
+[triggers]
+crons = ["*/15 * * * *"]
+
 # Local-dev environment override. Activated by running
 #   `npx wrangler dev --env localdev`
 # which flips on the `_debug/*` test routes used by

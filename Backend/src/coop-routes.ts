@@ -16,9 +16,16 @@ import {
 import {
   COOP_REP_PUBLIC_FRESH_MS,
   COOP_REP_SELF_FRESH_MS,
+  type ReputationTier,
 } from "./coop-reputation-types";
 import { getTodayChallenge } from "./coop-daily";
 import { captureShareCard, readShareCard } from "./coop-share";
+import {
+  createMirror,
+  deleteMirror,
+  listMirrors,
+  type CreateMirrorInput,
+} from "./coop-mirror";
 import {
   logRichPresenceIngest,
   planRichPresenceUpdate,
@@ -68,6 +75,29 @@ import {
 import { recommendMatches } from "./coop-recommendations";
 import { checkAndConsume, clientIP, hashID } from "./ratelimit";
 import { requireSession } from "./auth";
+import { getSessionProfile } from "./presence";
+import {
+  ingestModSnapshot,
+  listLiveRuns,
+  readHostLatestRunId,
+  readLiveRun,
+} from "./coop-mod-stream";
+import { runCoach } from "./coop-coach";
+import {
+  createTournament,
+  listTournaments,
+  readTournament,
+  registerTeam,
+  reportMatch,
+  seedBracket,
+} from "./coop-tournament";
+import {
+  listRaceGhosts,
+  readRaceGhost,
+  submitRaceGhost,
+  todayDateKey,
+} from "./coop-race";
+import { generateClipBundle } from "./coop-clip";
 
 /**
  * Co-op route surface. Mounted under `/coop/*`. Every write goes
@@ -235,6 +265,91 @@ export async function handleCoopRoute(
       { ok: true, challenge },
       { headers: { "cache-control": "public, max-age=300" } },
     );
+  }
+
+  // ----- Discord LFG Mirror (v0.12.0+) -----
+  //
+  // Bridges an existing Discord LFG channel into SpireVault's lobby
+  // surface as ephemeral, read-only "via Discord" cards. The bot
+  // hits POST /coop/mirror with a shared secret + message metadata
+  // from an approved channel; the frontend reads GET /coop/mirrors
+  // every poll. Mirrors expire after 30 min by default.
+  //
+  // Auth model:
+  //
+  //   - POST /coop/mirror requires header `X-Bot-Secret: <secret>`
+  //     equal to env.DISCORD_BOT_SECRET. This is the minimum trust
+  //     boundary so a random script can't flood the mirror namespace.
+  //     A future revision will replace this with the Ed25519 verify
+  //     on `/discord/interactions` (Discord-native), but the shared-
+  //     secret path stays because slash-command UX is friction-y
+  //     compared to a Discord.js bot that auto-mirrors approved
+  //     channels.
+  //
+  //   - GET /coop/mirrors is PUBLIC (no auth). Mirror data is
+  //     intentionally observable so signed-out visitors landing on
+  //     the empty lobby page see real Discord activity and bounce
+  //     less. The data itself contains nothing private — it's the
+  //     same info a logged-in Discord user could see in the channel.
+  //
+  //   - DELETE /coop/mirror/:id requires `X-Bot-Secret` (same trust
+  //     boundary as create). The bot calls this when the source
+  //     Discord message is deleted upstream.
+  if (method === "POST" && pathname === "/coop/mirror") {
+    const expected = env.DISCORD_BOT_SECRET;
+    const provided = req.headers.get("x-bot-secret");
+    if (!expected || provided !== expected) {
+      return errResp(401, "unauthorized", "Bot secret missing or invalid.");
+    }
+    const limited = await rateLimit(env, req, "coop-mirror-write", 120, 60);
+    if (limited) return limited;
+    const body = (await readJson(req)) as Partial<CreateMirrorInput> | null;
+    if (!body || typeof body !== "object") {
+      return errResp(400, "invalid_body", "Missing body.");
+    }
+    const required: (keyof CreateMirrorInput)[] = [
+      "discordMessageId",
+      "discordChannelId",
+      "discordChannelName",
+      "discordGuildId",
+      "discordGuildName",
+      "discordJumpUrl",
+      "authorName",
+      "rawMessage",
+    ];
+    for (const k of required) {
+      if (typeof body[k] !== "string" || (body[k] as string).length === 0) {
+        return errResp(400, "invalid_body", `Missing or empty: ${k}`);
+      }
+    }
+    const lobby = await createMirror(env, body as CreateMirrorInput);
+    return json({ ok: true, mirror: lobby });
+  }
+
+  if (method === "GET" && pathname === "/coop/mirrors") {
+    const limited = await rateLimit(env, req, "coop-mirror-read", 120, 60);
+    if (limited) return limited;
+    const mirrors = await listMirrors(env);
+    return json(
+      { ok: true, mirrors },
+      // Short cache so signed-out visitors hitting the empty state
+      // get fresh-ish data without thrashing the worker on hot pages.
+      { headers: { "cache-control": "public, max-age=15" } },
+    );
+  }
+
+  if (method === "DELETE" && pathname.startsWith("/coop/mirror/")) {
+    const expected = env.DISCORD_BOT_SECRET;
+    const provided = req.headers.get("x-bot-secret");
+    if (!expected || provided !== expected) {
+      return errResp(401, "unauthorized", "Bot secret missing or invalid.");
+    }
+    const mirrorId = pathname.slice("/coop/mirror/".length);
+    if (!mirrorId || mirrorId.length < 4 || mirrorId.length > 64) {
+      return errResp(400, "invalid_id", "Invalid mirror id.");
+    }
+    await deleteMirror(env, mirrorId);
+    return json({ ok: true });
   }
 
   // Stop TypeScript noticing the unused COOP_REP_SELF_FRESH_MS import in
@@ -466,6 +581,269 @@ export async function handleCoopRoute(
     return json({ ok: true, ...r.value });
   }
 
+  // ────────────────────────────────────────────────────────────────
+  // Companion Mod stream — POST /coop/mod/ingest
+  //
+  // The SpireVault Companion mod posts here every ~2s with the
+  // latest RunLiveSnapshot. Auth: a real Steam session (cookie or
+  // bearer) AND, optionally, the COMPANION_MOD_SECRET header for
+  // defence-in-depth. The bound steamID off the session is the
+  // authoritative host id; the body's hostSteamId must match.
+  // ────────────────────────────────────────────────────────────────
+  if (method === "POST" && pathname === "/coop/mod/ingest") {
+    const auth = await requireSession(req, env);
+    if (auth instanceof Response) return auth;
+    // Optional second factor — a token shared with mod builds. Lets
+    // operators kill-switch all live ingest if a session token leaks
+    // by rotating the secret without rotating every user's session.
+    const expectedSecret = env.COMPANION_MOD_SECRET;
+    if (expectedSecret) {
+      const provided = req.headers.get("x-mod-token") ?? "";
+      if (provided !== expectedSecret) {
+        return errResp(401, "unauthorized", "Companion mod secret mismatch.");
+      }
+    }
+    // 60 writes/min/IP — generous for one mod (~30/min cadence).
+    const rl = await rateLimit(env, req, "coop-mod-ingest", 60, 60);
+    if (rl) return rl;
+    const body = await readJson(req);
+    const r = await ingestModSnapshot(env, auth.steamID, body);
+    if (!r.ok) return errResp(r.status, r.error, r.message);
+    return json({ ...r.result });
+  }
+
+  // GET /coop/mod/runs — public list of currently-live runs.
+  if (method === "GET" && pathname === "/coop/mod/runs") {
+    const rl = await rateLimit(env, req, "coop-mod-list", 120, 60);
+    if (rl) return rl;
+    const runs = await listLiveRuns(env);
+    return json(
+      { ok: true, runs },
+      { headers: { "cache-control": "public, max-age=10" } },
+    );
+  }
+
+  // GET /coop/mod/run/:runId — public read of a live run snapshot.
+  // Used by the spectator surface, OBS overlay, Coach v2.
+  const liveRunMatch = pathname.match(/^\/coop\/mod\/run\/([A-Z0-9_-]{6,40})$/i);
+  if (liveRunMatch && method === "GET") {
+    const rl = await rateLimit(env, req, "coop-mod-read", 240, 60);
+    if (rl) return rl;
+    const snap = await readLiveRun(env, liveRunMatch[1]!);
+    if (!snap) return errResp(404, "not_found", "No live run for that id.");
+    return json(
+      { ok: true, run: snap },
+      // Short edge cache — every spectator sharing a colo collapses
+      // onto one upstream read. With 50 viewers we typically pay 5-10
+      // KV reads/min for the whole run.
+      { headers: { "cache-control": "public, max-age=2" } },
+    );
+  }
+
+  // GET /coop/mod/host/:steamId — latest run for a given host. Lets
+  // a spectator URL like /watch/:steamId resolve to a runId without
+  // needing the mod's local id first.
+  const hostLatestMatch = pathname.match(/^\/coop\/mod\/host\/(\d{17})$/);
+  if (hostLatestMatch && method === "GET") {
+    const rl = await rateLimit(env, req, "coop-mod-host-read", 120, 60);
+    if (rl) return rl;
+    const runId = await readHostLatestRunId(env, hostLatestMatch[1]!);
+    if (!runId) return errResp(404, "not_found", "No live run for that host.");
+    return json({ ok: true, runId });
+  }
+
+  // GET /coop/mod/clips/:runId — auto-generated post-run highlight
+  // bundle (built from the closed snapshot). 30-min replay window.
+  const clipMatch = pathname.match(/^\/coop\/mod\/clips\/([A-Z0-9_-]{6,40})$/i);
+  if (clipMatch && method === "GET") {
+    const rl = await rateLimit(env, req, "coop-mod-clip-read", 120, 60);
+    if (rl) return rl;
+    const bundle = await generateClipBundle(env, clipMatch[1]!);
+    if (!bundle) return errResp(404, "not_found", "No closed run for that id.");
+    return json(
+      { ok: true, bundle },
+      { headers: { "cache-control": "public, max-age=30" } },
+    );
+  }
+
+  // ────────────────────────────────────────────────────────────────
+  // Coach — POST /coop/coach/analyze
+  // ────────────────────────────────────────────────────────────────
+  if (method === "POST" && pathname === "/coop/coach/analyze") {
+    const auth = await requireSession(req, env);
+    if (auth instanceof Response) return auth;
+    // Coach is expensive (LLM tokens). Tight per-user cap.
+    const rlPerUser = await checkAndConsume(env, {
+      bucket: "coop-coach",
+      id: auth.steamID,
+      max: 10,
+      windowSeconds: 60 * 60,
+    });
+    if (!rlPerUser.allowed) {
+      return errResp(429, "rate_limited", `Coach limit hit. Try again in ${rlPerUser.retryAfterSec}s.`);
+    }
+    const body = (await readJson(req)) as
+      | { mode?: string; runId?: string; imageRef?: string; question?: string }
+      | null;
+    if (!body) return errResp(400, "invalid_body", "Missing JSON body.");
+    const mode =
+      body.mode === "snapshot" || body.mode === "screenshot" || body.mode === "narrative"
+        ? body.mode
+        : "snapshot";
+    const result = await runCoach(env, {
+      mode,
+      steamId: auth.steamID,
+      runId: typeof body.runId === "string" ? body.runId : undefined,
+      imageRef: typeof body.imageRef === "string" ? body.imageRef : undefined,
+      question: typeof body.question === "string" ? body.question.slice(0, 400) : undefined,
+    });
+    return json({ ok: true, analysis: result });
+  }
+
+  // ────────────────────────────────────────────────────────────────
+  // Tournaments
+  // ────────────────────────────────────────────────────────────────
+  if (method === "GET" && pathname === "/coop/tournaments") {
+    const rl = await rateLimit(env, req, "coop-tournament-list", 60, 60);
+    if (rl) return rl;
+    const tournaments = await listTournaments(env);
+    return json(
+      { ok: true, tournaments },
+      { headers: { "cache-control": "public, max-age=30" } },
+    );
+  }
+  if (method === "POST" && pathname === "/coop/tournaments") {
+    const auth = await requireSession(req, env);
+    if (auth instanceof Response) return auth;
+    const rl = await rateLimit(env, req, "coop-tournament-create", 5, 60 * 60);
+    if (rl) return rl;
+    const profile = await getSessionProfile(env, auth.steamID);
+    const body = (await readJson(req)) as Parameters<typeof createTournament>[3] | null;
+    if (!body) return errResp(400, "invalid_body", "Missing body.");
+    const r = await createTournament(env, auth.steamID, profile?.personaName ?? "Steam User", body);
+    if (!r.ok) return errResp(r.status, r.error, r.message);
+    return json({ ok: true, tournament: r.tournament });
+  }
+  const tournamentReadMatch = pathname.match(/^\/coop\/tournaments\/([a-z0-9-]{3,40})$/);
+  if (tournamentReadMatch && method === "GET") {
+    const rl = await rateLimit(env, req, "coop-tournament-read", 120, 60);
+    if (rl) return rl;
+    const t = await readTournament(env, tournamentReadMatch[1]!);
+    if (!t) return errResp(404, "not_found", "Tournament not found.");
+    return json(
+      { ok: true, tournament: t },
+      { headers: { "cache-control": "public, max-age=10" } },
+    );
+  }
+  const tournamentRegisterMatch = pathname.match(
+    /^\/coop\/tournaments\/([a-z0-9-]{3,40})\/register$/,
+  );
+  if (tournamentRegisterMatch && method === "POST") {
+    const auth = await requireSession(req, env);
+    if (auth instanceof Response) return auth;
+    const rl = await rateLimit(env, req, "coop-tournament-write", 20, 60);
+    if (rl) return rl;
+    const t = await readTournament(env, tournamentRegisterMatch[1]!);
+    if (!t) return errResp(404, "not_found", "Tournament not found.");
+    const body = (await readJson(req)) as Parameters<typeof registerTeam>[3] | null;
+    if (!body) return errResp(400, "invalid_body", "Missing body.");
+    const r = await registerTeam(env, t.tournamentId, auth.steamID, body);
+    if (!r.ok) return errResp(r.status, r.error, r.message);
+    return json({ ok: true, tournament: r.tournament });
+  }
+  const tournamentSeedMatch = pathname.match(
+    /^\/coop\/tournaments\/([a-z0-9-]{3,40})\/seed$/,
+  );
+  if (tournamentSeedMatch && method === "POST") {
+    const auth = await requireSession(req, env);
+    if (auth instanceof Response) return auth;
+    const rl = await rateLimit(env, req, "coop-tournament-write", 20, 60);
+    if (rl) return rl;
+    const t = await readTournament(env, tournamentSeedMatch[1]!);
+    if (!t) return errResp(404, "not_found", "Tournament not found.");
+    const r = await seedBracket(env, t.tournamentId, auth.steamID);
+    if (!r.ok) return errResp(r.status, r.error, r.message);
+    return json({ ok: true, tournament: r.tournament });
+  }
+  const tournamentReportMatch = pathname.match(
+    /^\/coop\/tournaments\/([a-z0-9-]{3,40})\/report$/,
+  );
+  if (tournamentReportMatch && method === "POST") {
+    const auth = await requireSession(req, env);
+    if (auth instanceof Response) return auth;
+    const rl = await rateLimit(env, req, "coop-tournament-write", 60, 60);
+    if (rl) return rl;
+    const t = await readTournament(env, tournamentReportMatch[1]!);
+    if (!t) return errResp(404, "not_found", "Tournament not found.");
+    const body = (await readJson(req)) as
+      | { round?: number; slot?: number; winnerTeamId?: string; score?: string }
+      | null;
+    if (!body || typeof body.round !== "number" || typeof body.slot !== "number" || typeof body.winnerTeamId !== "string") {
+      return errResp(400, "invalid_body", "Need round, slot, winnerTeamId.");
+    }
+    const r = await reportMatch(env, t.tournamentId, auth.steamID, {
+      round: body.round,
+      slot: body.slot,
+      winnerTeamId: body.winnerTeamId,
+      score: body.score,
+    });
+    if (!r.ok) return errResp(r.status, r.error, r.message);
+    return json({ ok: true, tournament: r.tournament });
+  }
+
+  // ────────────────────────────────────────────────────────────────
+  // Daily Race
+  // ────────────────────────────────────────────────────────────────
+  if (method === "GET" && pathname === "/coop/race/today") {
+    const rl = await rateLimit(env, req, "coop-race-list", 120, 60);
+    if (rl) return rl;
+    const dateKey = todayDateKey();
+    const ghosts = await listRaceGhosts(env, dateKey);
+    return json(
+      { ok: true, dateKey, ghosts },
+      { headers: { "cache-control": "public, max-age=30" } },
+    );
+  }
+  const raceListMatch = pathname.match(/^\/coop\/race\/(\d{4}-\d{2}-\d{2})$/);
+  if (raceListMatch && method === "GET") {
+    const rl = await rateLimit(env, req, "coop-race-list", 120, 60);
+    if (rl) return rl;
+    const ghosts = await listRaceGhosts(env, raceListMatch[1]!);
+    return json(
+      { ok: true, dateKey: raceListMatch[1], ghosts },
+      { headers: { "cache-control": "public, max-age=60" } },
+    );
+  }
+  const raceReadMatch = pathname.match(/^\/coop\/race\/(\d{4}-\d{2}-\d{2})\/([A-Z0-9_-]{6,40})$/i);
+  if (raceReadMatch && method === "GET") {
+    const rl = await rateLimit(env, req, "coop-race-read", 240, 60);
+    if (rl) return rl;
+    const ghost = await readRaceGhost(env, raceReadMatch[1]!, raceReadMatch[2]!);
+    if (!ghost) return errResp(404, "not_found", "Ghost not found.");
+    return json(
+      { ok: true, ghost },
+      { headers: { "cache-control": "public, max-age=60" } },
+    );
+  }
+  if (method === "POST" && pathname === "/coop/race/submit") {
+    const auth = await requireSession(req, env);
+    if (auth instanceof Response) return auth;
+    const rl = await rateLimit(env, req, "coop-race-write", 30, 60 * 60);
+    if (rl) return rl;
+    const profile = await getSessionProfile(env, auth.steamID);
+    const body = (await readJson(req)) as Parameters<typeof submitRaceGhost>[4] | null;
+    if (!body) return errResp(400, "invalid_body", "Missing body.");
+    const r = await submitRaceGhost(
+      env,
+      auth.steamID,
+      profile?.personaName ?? "Steam User",
+      profile?.avatarURL,
+      body,
+    );
+    if (!r.ok) return errResp(r.status, r.error, r.message);
+    return json({ ok: true, ghost: r.ghost });
+  }
+
   return null;
 }
 
@@ -584,12 +962,34 @@ async function buildStateBundle(
     // Host's own lobby is returned separately as `lobby`; the main board
     // merges it client-side so hosts still see Manage/Close on the board.
     if (l.hostSteamId === steamID) return false;
+    // SpireVault House lobbies are ambient operator-hosted rooms with
+    // a synthetic Steam ID — no real human heartbeats, so the
+    // host-presence freshness check below would unconditionally hide
+    // them. The renewer (`coop-house-lobbies.ts`) is the authority on
+    // whether a House lobby is live; if `lobby.isHouseLobby` is true
+    // and the lobby's own `expiresAt` is still in the future
+    // (`listLobbies` already filtered expired rows out), it stays on
+    // the board. See module doc on `runHouseLobbyRenewer` for the
+    // lifecycle that backs this bypass.
+    if (l.isHouseLobby) return true;
     const host = allPresence.find((p) => p.steamId === l.hostSteamId);
     if (!host) return false;
     if (!isPresenceActive(host, now)) return false;
-    if (host.status === "afk" || host.status === "offline" || host.status === "paired") {
-      return false;
-    }
+    // "paired" hosts are already in another live session — drop them.
+    if (host.status === "paired") return false;
+    // For "offline" we still drop. For "afk" we now SHOW the lobby as long
+    // as the host's heartbeat is fresh. Rationale: Steam Invisible / Offline
+    // / private-profile users get personastate=0 from the Web API and the
+    // heartbeat handler used to auto-flip them to AFK. Their lobby still
+    // exists, they're still actively at the keyboard (heartbeat is firing
+    // every 30s while the tab is visible), but the prior filter hid them
+    // from everyone else. With the matching fix in heartbeatPresence (host
+    // of an open lobby cannot be auto-AFK'd), the only remaining way to
+    // be "afk" while hosting is to have manually toggled the status pill.
+    // Even in that case, a fresh heartbeat means the host is at the
+    // keyboard and could respond — show the lobby but the client UI
+    // surfaces an "Idle host" hint.
+    if (host.status === "offline") return false;
     return true;
   });
 
@@ -609,9 +1009,55 @@ async function buildStateBundle(
     );
     return m.length > 0 ? labelToNumeric(m[0]!.label) : 0;
   };
+
+  // Verified-host bump — v0.11.x rank-transparency pass.
+  //
+  // The PRD ("Make the SpireVault rank/level/reputation system transparent
+  // and motivating") promises joiners that "Verified hosts get pinned
+  // higher — joiners trust them more and seats fill faster." This block
+  // delivers that promise honestly: we look up the rep tier for every
+  // real (non-House) host on the visible page, then add a tier-keyed
+  // boost on top of the existing match score.
+  //
+  // Boost values are deliberately smaller than a "Strong match" delta
+  // (Strong=100, Good=60), so a perfect-fit newcomer is NOT buried under
+  // a Heart-Slayer with the wrong goal. A Trusted host with a Good match
+  // (60+25=85) still loses to a newcomer with a Strong match (100+0=100),
+  // but a Trusted Good match (85) beats a newcomer Good match (60). That
+  // is the consequence we promise the joiner in the LevelBadge popover.
+  //
+  // KV reads here are cached for 5 minutes (`COOP_REP_PUBLIC_FRESH_MS`)
+  // and bounded by the number of unique hosts on the visible board (≤
+  // OPEN_LOBBIES_CAP=50). House lobbies skip the lookup — operator-hosted
+  // synthetic Steam IDs have no rep blob and shouldn't be boosted.
+  const realHostSids = Array.from(
+    new Set(
+      openLobbiesAll
+        .filter((l) => !l.isHouseLobby && l.hostSteamId)
+        .map((l) => l.hostSteamId),
+    ),
+  );
+  const hostTier = new Map<string, ReputationTier>();
+  await Promise.all(
+    realHostSids.map(async (sid) => {
+      try {
+        const blob = await getReputation(env, sid, { freshMs: COOP_REP_PUBLIC_FRESH_MS });
+        if (blob?.tier) hostTier.set(sid, blob.tier);
+      } catch {
+        /* swallow — sort falls through to the existing relevance score */
+      }
+    }),
+  );
+  const tierBoost = (sid: string): number => {
+    const t = hostTier.get(sid);
+    if (t === "ascended") return 50;
+    if (t === "veteran")  return 35;
+    if (t === "trusted")  return 25;
+    return 0;
+  };
   openLobbiesAll.sort((a, b) => {
-    const sa = scoreFor(a.hostSteamId);
-    const sb = scoreFor(b.hostSteamId);
+    const sa = scoreFor(a.hostSteamId) + tierBoost(a.hostSteamId);
+    const sb = scoreFor(b.hostSteamId) + tierBoost(b.hostSteamId);
     if (sb !== sa) return sb - sa;
     return Date.parse(b.createdAt) - Date.parse(a.createdAt);
   });

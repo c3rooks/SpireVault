@@ -134,4 +134,73 @@ export interface Env {
    * Production deploys must leave this unset.
    */
   DEV_COOP_SANDBOX?: string;
+
+  /**
+   * Shared secret for the Discord LFG bridge bot. The bot sends this
+   * value in the `X-Bot-Secret` header on POST /coop/mirror and
+   * DELETE /coop/mirror/:id. When unset, both write endpoints return
+   * 401 — the GET /coop/mirrors read path remains public and unaffected.
+   *
+   * Rotate with `wrangler secret put DISCORD_BOT_SECRET` whenever a
+   * mod changes hands, the bot is redeployed to a new host, or any
+   * leak is suspected. The secret never leaves the bot process and
+   * the worker; it does NOT need to be shared with Discord itself.
+   *
+   * Production deploys SHOULD set this; without it the bot can't
+   * mirror anything and the bridge is effectively kill-switched off.
+   */
+  DISCORD_BOT_SECRET?: string;
+
+  /**
+   * Discord application public key — used by `/discord/interactions`
+   * to verify incoming webhook signatures (Ed25519). Set from the
+   * Discord Developer Portal → General Information → Public Key.
+   * Unset → /discord/interactions returns 401.
+   */
+  DISCORD_PUBLIC_KEY?: string;
+
+  /**
+   * Anthropic API key for the SpireVault Coach (text + vision). When
+   * unset, Coach falls back to deterministic heuristics that still
+   * produce a useful panel — the experience degrades gracefully.
+   * Set with `wrangler secret put ANTHROPIC_API_KEY`.
+   */
+  ANTHROPIC_API_KEY?: string;
+
+  /**
+   * OpenAI API key — alternate Coach backend. When ANTHROPIC_API_KEY
+   * is unset but OPENAI_API_KEY is set, text Coach uses gpt-4o-mini.
+   * Vision Coach currently requires Anthropic; OpenAI vision can be
+   * added later if needed.
+   */
+  OPENAI_API_KEY?: string;
+
+  /**
+   * Shared secret the SpireVault Companion mod sends with every
+   * /coop/mod/ingest call. Unlike the bot secret, this is OPTIONAL —
+   * we still require a real Steam session via cookie/bearer, so the
+   * mod token only adds defence-in-depth against a leaked session
+   * being used to spoof run state. Production deploys can leave it
+   * unset until the mod ships its own auth flow.
+   */
+  COMPANION_MOD_SECRET?: string;
+
+  /**
+   * Bearer token that unlocks the SpireVault House Lobby admin surface
+   * (`/admin/house-lobbies/*`). Operator-only — used to force a
+   * renewer pass, snapshot the current state, or kill-switch every
+   * House lobby in an emergency.
+   *
+   * Provision with `wrangler secret put HOUSE_LOBBY_ADMIN_SECRET` so
+   * it never lands in the repo. When unset (or any request supplies
+   * the wrong value), the admin endpoints respond 401 — they do NOT
+   * fall through to the route's 404 path because the routes are
+   * already namespaced under `/admin/house-lobbies/*` and a 401 is
+   * the precise signal to the operator that their token is wrong.
+   *
+   * The cron-driven renewer itself runs WITHOUT this token — the
+   * scheduled handler invokes `runHouseLobbyRenewer` directly with
+   * the worker `env`. The token only gates manual operator triggers.
+   */
+  HOUSE_LOBBY_ADMIN_SECRET?: string;
 }

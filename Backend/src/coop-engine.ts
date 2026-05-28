@@ -29,6 +29,7 @@ import {
 } from "./coop-lobby-utils";
 import { appendCoopHistory } from "./coop-reputation";
 import { extractDailyTag, recordDailyJoin } from "./coop-daily";
+import { promoteHouseJoinerToHost } from "./coop-house-lobbies";
 import {
   COOP_INVITE_TTL_S,
   COOP_JOIN_REQUEST_TTL_S,
@@ -271,9 +272,38 @@ export async function upsertPresenceV2(
   const now = Date.now();
   const nowIso = new Date(now).toISOString();
 
-  const status: CoopPresenceStatus = isValidStatus(body.status)
+  let status: CoopPresenceStatus = isValidStatus(body.status)
     ? body.status
     : prev?.status ?? "looking";
+
+  // Host-of-open-lobby clamp.
+  //
+  // We look up the user's hosted lobby via the by-host index rather than
+  // relying on `prev.currentLobbyId`. The by-host index is the source of
+  // truth — `currentLobbyId` on the presence row can lag (or, as observed
+  // in production, get inexplicably cleared by some upstream caller, and
+  // we cannot rely on it for the clamp). If the user owns an open lobby
+  // we always:
+  //   1. Force-restore `currentLobbyId` onto the presence row so future
+  //      reads can take the fast path.
+  //   2. Clamp status away from "afk" / "offline" — hosting an open lobby
+  //      IS the explicit "I'm here, accepting joiners" declaration and
+  //      must not be silently overridden by a stale UI radio button.
+  const hostedLobbyId = await getActiveLobbyIdForHost(env, steamId);
+  let hostedOpenLobby: RunLobby | null = null;
+  if (hostedLobbyId) {
+    const candidate = await readLobby(env, hostedLobbyId);
+    if (
+      candidate &&
+      candidate.hostSteamId === steamId &&
+      candidate.status === "open"
+    ) {
+      hostedOpenLobby = candidate;
+    }
+  }
+  if (hostedOpenLobby && (status === "afk" || status === "offline")) {
+    status = "looking";
+  }
 
   const { ascensionMin, ascensionMax } = sanitizeAscensionRange(
     body.ascensionMin ?? prev?.ascensionMin,
@@ -306,7 +336,10 @@ export async function upsertPresenceV2(
     goal,
     voicePreference,
     preferredCharacters,
-    currentLobbyId: prev?.currentLobbyId,
+    // If they host an open lobby, the by-host index is authoritative —
+    // restore the currentLobbyId pointer so the rest of the system
+    // (rendering, joins) takes the fast path.
+    currentLobbyId: hostedOpenLobby?.lobbyId ?? prev?.currentLobbyId,
     currentSessionId: prev?.currentSessionId,
     // User explicitly set their status — clear the auto-set flag.
     statusAutoSet: false,
@@ -337,21 +370,71 @@ export async function heartbeatPresence(
   let statusAutoSet: boolean = prev?.statusAutoSet ?? false;
   let forceStatus: CoopPresenceStatus | undefined;
 
-  // --- Steam-based auto-status logic ---
-  // Priority 1: Steam offline → push to "afk" (skip if already afk/offline/paired)
-  if (!steamInfo.steamOnline) {
+  // --- Hosting override (PRIORITY 0, runs BEFORE Steam-based logic) ---
+  //
+  // If the user is actively hosting an OPEN lobby, that explicit declaration
+  // overrides any Steam personastate signal. Hosting a lobby IS the "I'm
+  // looking to play" signal — Steam Invisible / Offline / private profiles
+  // must not be allowed to silently hide the host's own lobby from the
+  // global feed (which is exactly what was happening prior to this fix).
+  //
+  // Without this branch: a host playing in Steam Invisible mode (common
+  // among privacy-aware gamers) would heartbeat → fetchSteamPlayerInfo
+  // returns personastate=0 → auto-flip to "afk" → /coop/state listing
+  // excludes their lobby → join attempts return host_stale. The host sees
+  // their own lobby on their dashboard and assumes the world can see it;
+  // nobody else can.
+  //
+  // We resolve this by reading the host's open lobby first and clamping
+  // status to "looking" when one exists. Bonus: a single new heartbeat is
+  // sufficient to unstick anyone currently trapped in the AFK state.
+  // We look up the user's hosted lobby via the by-host index, not
+  // `prev.currentLobbyId`, because the by-host index is authoritative
+  // and the presence pointer has been observed to get cleared by some
+  // upstream caller in production. See upsertPresenceV2 for the same
+  // logic and rationale.
+  let hostsOpenLobby = false;
+  let hostedLobbyId: string | undefined;
+  {
+    const candidateId = await getActiveLobbyIdForHost(env, steamId);
+    if (candidateId) {
+      const candidate = await readLobby(env, candidateId);
+      if (
+        candidate &&
+        candidate.hostSteamId === steamId &&
+        candidate.status === "open"
+      ) {
+        hostsOpenLobby = true;
+        hostedLobbyId = candidate.lobbyId;
+      }
+    }
+  }
+
+  if (hostsOpenLobby) {
+    // Pin to "looking" while a hosted lobby is open. Only the user's
+    // explicit POST /coop/presence can override (since that path can
+    // legitimately switch them to "paired" / "solo" via game state),
+    // and even there the matching clamp in upsertPresenceV2 refuses
+    // to accept "afk" / "offline" while hosting.
+    if (status !== "looking") {
+      status = "looking";
+      statusAutoSet = true;
+      forceStatus = "looking";
+    }
+  } else if (!steamInfo.steamOnline) {
+    // Priority 1: Steam offline → push to "afk" (skip if already afk/offline/paired)
     if (status !== "afk" && status !== "offline" && status !== "paired") {
       status = "afk";
       statusAutoSet = true;
       forceStatus = "afk";
     }
-  // Priority 2: In STS2 while looking → auto-flip to "solo"
   } else if (steamInfo.inSTS2 && status === "looking") {
+    // Priority 2: In STS2 while looking → auto-flip to "solo"
     status = "solo";
     statusAutoSet = true;
     forceStatus = "solo";
-  // Priority 3: Left STS2 after server auto-set to "solo" → restore "looking"
   } else if (!steamInfo.inSTS2 && status === "solo" && statusAutoSet) {
+    // Priority 3: Left STS2 after server auto-set to "solo" → restore "looking"
     status = "looking";
     statusAutoSet = false;
     forceStatus = "looking";
@@ -371,7 +454,9 @@ export async function heartbeatPresence(
     goal: prev?.goal,
     voicePreference: prev?.voicePreference,
     preferredCharacters: prev?.preferredCharacters,
-    currentLobbyId: prev?.currentLobbyId,
+    // If they host an open lobby, by-host index is authoritative —
+    // restore the pointer so downstream reads take the fast path.
+    currentLobbyId: hostedLobbyId ?? prev?.currentLobbyId,
     currentSessionId: prev?.currentSessionId,
     statusAutoSet,
     lastHeartbeatAt: nowIso,
@@ -583,9 +668,18 @@ export async function createLobby(
   };
 
   await writeLobby(env, lobby);
+  // Hosting an open lobby is an explicit "I'm looking to play" declaration,
+  // so force-clamp the host's status to "looking" even if a prior heartbeat
+  // had auto-AFK'd them via Steam Invisible/Offline mode. The matching
+  // heartbeatPresence change keeps them pinned to "looking" on every
+  // subsequent tick. Without this clamp, a user who hosts immediately after
+  // signing in (status defaulted to afk via Steam) would see their own
+  // lobby up but it would be invisible to everyone else until the next
+  // heartbeat reconciled.
   await setPresenceField(env, hostSteamId, {
     currentLobbyId: lobby.lobbyId,
     status: "looking",
+    statusAutoSet: true,
   });
   return ok(lobby);
 }
@@ -788,21 +882,37 @@ export async function requestToJoinLobby(
   if (await getActivePartyIdForUser(env, fromSteamId)) {
     return err(409, "in_party", "You're already in a party.");
   }
-  // Block stale targets
-  const hostPresence = await readPresence(env, lobby.hostSteamId);
-  if (!hostPresence || !isPresenceActive(hostPresence)) {
-    return err(409, "host_stale", "They went offline.");
-  }
-  if (hostPresence.status === "afk" || hostPresence.status === "offline") {
-    return err(409, "host_stale", "They went offline.");
-  }
-  if (hostPresence.status === "paired") {
-    return err(409, "host_paired", "They're already paired.");
-  }
+  // Block stale targets. "afk" alone is no longer a hard block — see the
+  // heartbeatPresence + /coop/state filter notes. We only reject when the
+  // host's heartbeat itself is expired (genuinely gone) or explicitly
+  // "offline" (a manual shutdown signal). Steam Invisible / private-profile
+  // hosts whose Steam personastate=0 still have a fresh heartbeat and a
+  // hosted lobby that says "I'm looking".
+  //
+  // SpireVault House lobbies bypass the host-presence check entirely:
+  // the synthetic House Steam ID never heartbeats, so a presence-row
+  // freshness gate would unconditionally reject every join. The
+  // renewer (`coop-house-lobbies.ts`) is the authority on whether a
+  // House lobby is alive; if the lobby's own `expiresAt` is still in
+  // the future (already enforced by the lobby read), the lobby is
+  // joinable. No decline-cooldown either — there is no human host
+  // who could have declined this user.
+  if (!lobby.isHouseLobby) {
+    const hostPresence = await readPresence(env, lobby.hostSteamId);
+    if (!hostPresence || !isPresenceActive(hostPresence)) {
+      return err(409, "host_stale", "They went offline.");
+    }
+    if (hostPresence.status === "offline") {
+      return err(409, "host_stale", "They went offline.");
+    }
+    if (hostPresence.status === "paired") {
+      return err(409, "host_paired", "They're already paired.");
+    }
 
-  // Block self under pair cooldown
-  if (await isUnderDeclineCooldown(env, fromSteamId, lobby.hostSteamId)) {
-    return err(429, "decline_cooldown", "Give them a moment before trying again.");
+    // Block self under pair cooldown
+    if (await isUnderDeclineCooldown(env, fromSteamId, lobby.hostSteamId)) {
+      return err(429, "decline_cooldown", "Give them a moment before trying again.");
+    }
   }
 
   // Cap pending join requests per user
@@ -857,6 +967,17 @@ export async function requestToJoinLobby(
 
 /**
  * Open join: atomically claim a seat, mint/update party, return partyId.
+ *
+ * SpireVault House lobbies use this same path, with one extra branch:
+ * the FIRST real human to join flips ownership of the lobby via
+ * `promoteHouseJoinerToHost` (Option C). The synthetic SpireVault
+ * operator steps out, the joiner becomes the actual host, the House
+ * flags clear, and the registry pointer is invalidated so the next
+ * renewer pass mints a fresh House lobby. See the helper's docstring
+ * for the full invariant list. The flip happens after the "are you
+ * eligible to join" checks below (no session, no party) but BEFORE
+ * the seat-claim writes, so a successful claim observes the promoted
+ * lobby as if it had always been a normal player-hosted room.
  */
 export async function joinLobbySeat(
   env: Env,
@@ -864,7 +985,7 @@ export async function joinLobbySeat(
   lobbyId: string,
   body: { selectedCharacter?: unknown } = {},
 ): Promise<CoopResult<{ lobby: RunLobby; party: CoopParty; partyId: string }>> {
-  const lobby = await readLobby(env, lobbyId);
+  let lobby = await readLobby(env, lobbyId);
   if (!lobby) return err(404, "not_found", "This room expired.");
   if (lobby.status !== "open") {
     return err(409, "lobby_closed", "This room is no longer open.");
@@ -872,7 +993,7 @@ export async function joinLobbySeat(
   if (lobby.hostSteamId === fromSteamId) {
     return err(400, "self_lobby", "You can't join your own room.");
   }
-  const norm = normalizeRunLobby(lobby);
+  let norm = normalizeRunLobby(lobby);
   if (norm.approvalRequired) {
     return err(
       409,
@@ -895,18 +1016,67 @@ export async function joinLobbySeat(
   if (await getActivePartyIdForUser(env, fromSteamId)) {
     return err(409, "in_party", "You're already in a party.");
   }
-  const hostPresence = await readPresence(env, lobby.hostSteamId);
-  if (!hostPresence || !isPresenceActive(hostPresence)) {
-    return err(409, "host_stale", "They went offline.");
+  // See requestToJoinLobby above for the rationale: "afk" alone is not a
+  // hard block now that hosting an open lobby pins the host's status back
+  // to "looking" on every heartbeat. We still reject if the heartbeat is
+  // expired (genuinely gone) or status is explicitly "offline".
+  //
+  // SpireVault House lobbies bypass this whole block — the renewer
+  // (`coop-house-lobbies.ts`) is the authority on liveness for
+  // operator-hosted ambient rooms. See requestToJoinLobby for the
+  // matching bypass and the rationale.
+  if (!lobby.isHouseLobby) {
+    const hostPresence = await readPresence(env, lobby.hostSteamId);
+    if (!hostPresence || !isPresenceActive(hostPresence)) {
+      return err(409, "host_stale", "They went offline.");
+    }
+    if (hostPresence.status === "offline") {
+      return err(409, "host_stale", "They went offline.");
+    }
+    if (hostPresence.status === "paired") {
+      return err(409, "host_paired", "They're already paired.");
+    }
+    if (await isUnderDeclineCooldown(env, fromSteamId, lobby.hostSteamId)) {
+      return err(429, "decline_cooldown", "Give them a moment before trying again.");
+    }
   }
-  if (hostPresence.status === "afk" || hostPresence.status === "offline") {
-    return err(409, "host_stale", "They went offline.");
-  }
-  if (hostPresence.status === "paired") {
-    return err(409, "host_paired", "They're already paired.");
-  }
-  if (await isUnderDeclineCooldown(env, fromSteamId, lobby.hostSteamId)) {
-    return err(429, "decline_cooldown", "Give them a moment before trying again.");
+
+  // House lobby promotion (Option C). Flip ownership BEFORE the
+  // seat-claim writes so the join lands on a promoted, normal lobby
+  // with no House residue. The helper handles the synth→real handoff,
+  // tears down any stale synthetic-host party, and clears the slug
+  // pointer for the next renewer tick. Idempotent under contention:
+  // a parallel joiner that beat us to the lock receives the promoted
+  // lobby on the next read, and we continue as a normal second-seat
+  // joiner instead.
+  if (lobby.isHouseLobby) {
+    const promoted = await promoteHouseJoinerToHost(env, lobby, fromSteamId);
+    if (promoted) {
+      lobby = promoted;
+      norm = normalizeRunLobby(lobby);
+    } else {
+      // Someone else already promoted — re-read so the rest of this
+      // function operates on the current state, not the stale snapshot.
+      const fresh = await readLobby(env, lobbyId);
+      if (fresh) {
+        lobby = fresh;
+        norm = normalizeRunLobby(lobby);
+        if (lobby.status !== "open") {
+          return err(409, "lobby_closed", "This room is no longer open.");
+        }
+        if (lobby.hostSteamId === fromSteamId) {
+          // We were the one who won the promotion in a parallel
+          // invocation. Treat as the success path.
+          const party =
+            (lobby.partyId && (await readParty(env, lobby.partyId))) ||
+            (await ensurePartyForLobby(env, lobby, fromSteamId));
+          return ok({ lobby, party, partyId: party.partyId });
+        }
+        if (lobbyIsFull(lobby)) {
+          return err(409, "lobby_full", "This room is full.");
+        }
+      }
+    }
   }
 
   const joinerCharacter = sanitizeSelectedCharacter(body.selectedCharacter);
@@ -920,6 +1090,10 @@ export async function joinLobbySeat(
     return err(409, "character_claimed", "That character is already claimed.");
   }
 
+  // If we just promoted, the joiner is already the sole accepted
+  // member (we are the host). The Array.from(new Set([...])) below
+  // de-dupes them so the result is still `[fromSteamId]`. Keep the
+  // single-path code so the non-promotion case behaves identically.
   const accepted = Array.from(
     new Set([...(norm.acceptedMemberSteamIds ?? [lobby.hostSteamId]), fromSteamId]),
   );
@@ -1391,13 +1565,20 @@ async function memberRowFor(
   selectedCharacter?: CoopCharacter,
 ): Promise<CoopPartyMember> {
   const profile = await profileFor(env, steamId);
+  const nowIso = new Date().toISOString();
   return {
     steamId,
     personaName: profile.personaName,
     avatarUrl: profile.avatarUrl,
     selectedCharacter,
     status,
-    updatedAt: new Date().toISOString(),
+    updatedAt: nowIso,
+    // Stamp readyAt at construction time when the row is born `ready`.
+    // Today that path is exercised exclusively by synthetic House
+    // lobby hosts (see `ensurePartyForLobby`); we keep the timestamp
+    // honest so the frontend's "ready Xs ago" copy reads correctly
+    // for the synthetic seat without any special-casing on the wire.
+    ...(status === "ready" ? { readyAt: nowIso } : {}),
   };
 }
 
@@ -1441,6 +1622,19 @@ async function ensurePartyForLobby(
   const nowIso = new Date(now).toISOString();
   const cap = lobbyCapacity(norm) as RunLobbySize;
 
+  // Per-seat starting status. Synthetic SpireVault House hosts (the
+  // `hostSteamId` slot on a `isHouseLobby` lobby) are born `ready`
+  // because there is no real client behind them to ever tap "Ready
+  // up". Without this seed the frontend ready-up runtime
+  // (`Web/lib/party-finder-readyup-rt.js`) reads
+  //   liveMembers.every(m => m.status === "ready" || m.status === "in_game")
+  // and the synthetic host's stuck-on-"joined" row makes the party
+  // un-launchable forever ("Waiting on SpireVault House" copy).
+  // Real human hosts (and every joiner) keep the legacy "joined"
+  // default.
+  const startingStatusFor = (sid: string): CoopPartyMemberStatus =>
+    lobby.isHouseLobby && sid === lobby.hostSteamId ? "ready" : "joined";
+
   if (existingId) {
     const existing = await readParty(env, existingId);
     if (existing && existing.status === "active") {
@@ -1449,11 +1643,35 @@ async function ensurePartyForLobby(
       for (const sid of norm.acceptedMemberSteamIds ?? []) {
         if (!ids.has(sid)) {
           const selected = selectedBySid.get(sid) || (sid === lobby.hostSteamId ? hostCharacter : undefined);
-          existing.members.push(await memberRowFor(env, sid, "joined", selected));
+          existing.members.push(
+            await memberRowFor(env, sid, startingStatusFor(sid), selected),
+          );
         } else {
           const member = existing.members.find((m) => m.steamId === sid);
           const selected = selectedBySid.get(sid) || (sid === lobby.hostSteamId ? hostCharacter : undefined);
           if (member && selected && !member.selectedCharacter) member.selectedCharacter = selected;
+        }
+      }
+      // Retroactive synthetic-host-ready patch. Parties minted before
+      // the v0.2 House-host fix shipped have the synthetic seat stuck
+      // on "joined". Whenever ensurePartyForLobby touches the party
+      // (typically: a fresh joiner triggers it from `joinLobbySeat`),
+      // idempotently bump the synthetic host to "ready" so the
+      // frontend launch gate clears on the next poll. Skip the bump
+      // if the host has already advanced (in_game) — never regress
+      // forward progress.
+      if (lobby.isHouseLobby) {
+        const hostMember = existing.members.find(
+          (m) => m.steamId === lobby.hostSteamId,
+        );
+        if (
+          hostMember &&
+          hostMember.status !== "ready" &&
+          hostMember.status !== "in_game"
+        ) {
+          hostMember.status = "ready";
+          hostMember.readyAt = nowIso;
+          hostMember.updatedAt = nowIso;
         }
       }
       existing.updatedAt = nowIso;
@@ -1466,10 +1684,9 @@ async function ensurePartyForLobby(
   const members: CoopPartyMember[] = [];
   const hostCharacter = hostCharacterForLobby(lobby);
   for (const sid of norm.acceptedMemberSteamIds ?? []) {
-    const st: CoopPartyMemberStatus =
-      sid === newestMemberSteamId ? "joined" : "joined";
+    void newestMemberSteamId; // every seat starts "joined" today; kept for future "new-member" badges
     const selected = selectedBySid.get(sid) || (sid === lobby.hostSteamId ? hostCharacter : undefined);
-    members.push(await memberRowFor(env, sid, st, selected));
+    members.push(await memberRowFor(env, sid, startingStatusFor(sid), selected));
   }
 
   const party: CoopParty = {
@@ -1485,6 +1702,50 @@ async function ensurePartyForLobby(
   };
   await writeParty(env, party);
   return party;
+}
+
+/**
+ * Idempotently flip the synthetic SpireVault House host's seat in the
+ * lobby's active party to `status: "ready"`. Safe to call on:
+ *  - Non-House lobbies (no-op via the early bail).
+ *  - House lobbies with no party yet (no joiner has triggered
+ *    `ensurePartyForLobby` so the lobby has no `partyId` — no-op).
+ *  - Parties whose synthetic host is already ready or has advanced to
+ *    `in_game` (no-op — never regress forward progress).
+ *
+ * The renewer in `coop-house-lobbies.ts` calls this on every pass so
+ * parties minted before this patch shipped get retroactively unstuck
+ * without operator intervention. Returns `{ patched }` so the renewer
+ * can surface a per-slug breadcrumb in its log line.
+ *
+ * Implementation note: this exists as a standalone export rather than
+ * being inlined into the renewer because `coop-house-lobbies.ts` does
+ * not import party-shaped types — keeping the read/write of the
+ * `CoopParty` record contained in the engine module preserves the
+ * single-writer invariant for that record.
+ */
+export async function ensureHouseHostReadyInParty(
+  env: Env,
+  lobby: RunLobby,
+): Promise<{ patched: boolean }> {
+  if (!lobby.isHouseLobby) return { patched: false };
+  const partyId =
+    lobby.partyId ?? (await getPartyIdForLobby(env, lobby.lobbyId));
+  if (!partyId) return { patched: false };
+  const party = await readParty(env, partyId);
+  if (!party || party.status !== "active") return { patched: false };
+  const hostMember = party.members.find((m) => m.steamId === lobby.hostSteamId);
+  if (!hostMember) return { patched: false };
+  if (hostMember.status === "ready" || hostMember.status === "in_game") {
+    return { patched: false };
+  }
+  const nowIso = new Date().toISOString();
+  hostMember.status = "ready";
+  hostMember.readyAt = nowIso;
+  hostMember.updatedAt = nowIso;
+  party.updatedAt = nowIso;
+  await writeParty(env, party);
+  return { patched: true };
 }
 
 export async function readPartyForUser(

@@ -35,6 +35,12 @@ export function normalizeRunLobby(lobby: RunLobby): RunLobby {
     pendingJoinRequestSteamIds: pending,
     approvalRequired: lobby.approvalRequired === true,
     voicePreset: lobby.voicePreset ?? "any",
+    // Preserve House-lobby identity through every normalize pass so the
+    // by-host index + /coop/state filter both see the flag. Legacy KV
+    // rows written before this field existed read back as `undefined`,
+    // which is the correct "not a House lobby" answer for old data.
+    isHouseLobby: lobby.isHouseLobby === true ? true : undefined,
+    houseSlug: lobby.houseSlug,
   };
 }
 

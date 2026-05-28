@@ -50,6 +50,12 @@ import { checkAndConsume, clientIP, hashID } from "./ratelimit";
 import { handleNotifySignup } from "./notify";
 import { handleCoopRoute } from "./coop-routes";
 import { handleCoopSandboxRoute } from "./coop-sandbox";
+import { handleDiscordInteractions } from "./discord-interactions";
+import {
+  closeAllHouseLobbies,
+  getHouseLobbyStatus,
+  runHouseLobbyRenewer,
+} from "./coop-house-lobbies";
 
 /**
  * Origins allowed to make credentialed cross-origin requests to the worker.
@@ -138,6 +144,39 @@ export default {
     const cors = corsHeadersFor(req);
     return withCORS(await handle(req, env, ctx, cors), cors);
   },
+
+  /**
+   * Cron entry point — Cloudflare invokes this on every trigger
+   * listed under `[triggers]` in wrangler.toml. The current schedule
+   * is `*\/15 * * * *` (every 15 minutes) which is the SpireVault
+   * House Lobby renewer cadence.
+   *
+   * The renewer is wrapped in `ctx.waitUntil` so the runtime keeps
+   * the promise alive for the full pass; Cloudflare otherwise tears
+   * the isolate down right after this handler returns.
+   *
+   * If you add a second cron in the future (e.g. analytics rollup),
+   * branch on `event.cron` to dispatch — every trigger pattern fires
+   * this same handler.
+   */
+  async scheduled(
+    event: ScheduledController,
+    env: Env,
+    ctx: ExecutionContext,
+  ): Promise<void> {
+    ctx.waitUntil(
+      runHouseLobbyRenewer(env).catch((err) => {
+        console.log(
+          `[house-lobbies] scheduled pass crashed: ${
+            (err as Error)?.message ?? err
+          }`,
+        );
+      }),
+    );
+    // Reference `event.cron` so the parameter isn't reported as unused
+    // and so log greps for the cron pattern resolve to a real string.
+    console.log(`[house-lobbies] scheduled fired cron=${event.cron}`);
+  },
 } satisfies ExportedHandler<Env>;
 
 /**
@@ -181,6 +220,25 @@ async function handle(
       // keep working unchanged while new clients use the lobby model.
       if (pathname.startsWith("/coop/")) {
         const resp = await handleCoopRoute(req, env, pathname, method);
+        if (resp) return resp;
+      }
+
+      // ----- Discord interactions webhook (v0.12.0+) -----
+      //
+      // The LFG bridge bot can run in one of two configurations:
+      //
+      //   (a) Discord-native — Discord POSTs interaction events
+      //       directly to this worker at /discord/interactions.
+      //       Ed25519-verified using env.DISCORD_PUBLIC_KEY.
+      //
+      //   (b) Bot-process — a separate Node.js Discord.js process
+      //       listens via the Discord Gateway and calls
+      //       /coop/mirror with a shared secret.
+      //
+      // Both terminate at coop-mirror.createMirror() so the mirror
+      // surface is identical regardless of which transport ships first.
+      if (pathname === "/discord/interactions") {
+        const resp = await handleDiscordInteractions(req, env);
         if (resp) return resp;
       }
 
@@ -650,6 +708,24 @@ async function handle(
         return handleAdmin(req, env);
       }
 
+      // ----- House Lobby admin surface -----
+      //
+      // Three operator-only endpoints for managing the ambient
+      // SpireVault House Lobbies (see coop-house-lobbies.ts). Each
+      // requires `Authorization: Bearer <HOUSE_LOBBY_ADMIN_SECRET>`;
+      // anything else returns 401.
+      //
+      // These return a real 401 (not the silent 404 the /admin surface
+      // uses) because operators need a precise signal that their
+      // token is wrong, AND because the renewer endpoints are
+      // already namespaced under /admin/house-lobbies/* which
+      // doesn't appear anywhere in the public surface; we're not
+      // hiding their existence from a curious scraper.
+      if (pathname.startsWith("/admin/house-lobbies/")) {
+        const houseResp = await handleHouseLobbyAdmin(req, env, pathname, method);
+        if (houseResp) return houseResp;
+      }
+
       return notFound();
     } catch (err: any) {
       return json(
@@ -733,6 +809,85 @@ async function getPresenceCached(_req: Request, env: Env, ctx: ExecutionContext)
   // Best-effort cache write; never fail a user response on a cache miss.
   try { await cache.put(PRESENCE_FEED_CACHE_KEY, resp.clone()); } catch {}
   return resp;
+}
+
+/**
+ * Bearer-gate the House Lobby admin surface and dispatch to the
+ * appropriate helper. Returns `null` if the path matched the prefix
+ * but the verb/route didn't, so the caller falls through to the
+ * route-level 404.
+ *
+ * Auth model: `Authorization: Bearer <env.HOUSE_LOBBY_ADMIN_SECRET>`.
+ * Anything else returns 401 — see the comment at the call site for
+ * why we use a real 401 instead of the silent 404 pattern.
+ */
+async function handleHouseLobbyAdmin(
+  req: Request,
+  env: Env,
+  pathname: string,
+  method: string,
+): Promise<Response | null> {
+  const expected = env.HOUSE_LOBBY_ADMIN_SECRET;
+  if (!expected || expected.length < 16) {
+    // Secret not provisioned. Refuse — operator must `wrangler secret
+    // put HOUSE_LOBBY_ADMIN_SECRET` before this surface is usable.
+    return new Response(
+      JSON.stringify({
+        ok: false,
+        error: "secret_not_set",
+        message:
+          "HOUSE_LOBBY_ADMIN_SECRET is not configured on this worker. " +
+          "Run `wrangler secret put HOUSE_LOBBY_ADMIN_SECRET` to enable this endpoint.",
+      }),
+      { status: 503, headers: { "content-type": "application/json" } },
+    );
+  }
+  const header = req.headers.get("authorization") ?? "";
+  const m = header.match(/^Bearer\s+(.+)$/i);
+  const provided = m ? m[1]! : "";
+  if (!constantTimeStringEq(provided, expected)) {
+    return new Response(
+      JSON.stringify({
+        ok: false,
+        error: "unauthorized",
+        message: "Invalid HOUSE_LOBBY_ADMIN_SECRET bearer token.",
+      }),
+      { status: 401, headers: { "content-type": "application/json" } },
+    );
+  }
+
+  if (method === "POST" && pathname === "/admin/house-lobbies/run-now") {
+    const summary = await runHouseLobbyRenewer(env, { force: true });
+    return new Response(JSON.stringify({ ok: true, summary }, null, 2), {
+      headers: { "content-type": "application/json" },
+    });
+  }
+  if (method === "POST" && pathname === "/admin/house-lobbies/close-all") {
+    const result = await closeAllHouseLobbies(env);
+    return new Response(JSON.stringify({ ok: true, ...result }, null, 2), {
+      headers: { "content-type": "application/json" },
+    });
+  }
+  if (method === "GET" && pathname === "/admin/house-lobbies/status") {
+    const status = await getHouseLobbyStatus(env);
+    return new Response(JSON.stringify({ ok: true, ...status }, null, 2), {
+      headers: { "content-type": "application/json" },
+    });
+  }
+  return null;
+}
+
+/**
+ * Length-aware constant-time-ish equality for short secrets. We
+ * deliberately short-circuit on length mismatch (timing leaks length,
+ * which is fine — a leaked secret-length is much weaker than a leaked
+ * secret) but compare all character codes for equal-length inputs.
+ */
+function constantTimeStringEq(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
 }
 
 /**
