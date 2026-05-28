@@ -2285,155 +2285,18 @@
     }
   }
 
-  // ── Host Run History Strip ──────────────────────────────────────
-  // Per-host social-proof strip rendered above each row's attribute
-  // line. Format: `⚔️ ▰▰▰▱▰▰ · 5W 1L · 83% Heart · 🔥 W3`.
-  //
-  // Data sources (preferred to fallback):
-  //   1. lobby.hostRecentRuns[] — when the backend ships it. Shape:
-  //      { won: bool, character: string, ascension: number, goal: string }
-  //      ordered most-recent-first, capped at 6.
-  //   2. Deterministic synthetic stats seeded by hostSteamId — so
-  //      the same host shows the same pips across reloads and
-  //      different viewers. Skill tier comes from the steam id hash
-  //      (45–80% win rate); dominant character/asc/goal pull from
-  //      the lobby's own preferences. This is a *placeholder* that
-  //      makes the showcase feel alive while the backend catches up,
-  //      and is flagged in the DOM with data-synthetic="1" so a real
-  //      data path can replace it without touching CSS.
-  function hashSeed(str) {
-    var h = 2166136261 >>> 0;
-    var s = String(str || "anon");
-    for (var i = 0; i < s.length; i++) {
-      h ^= s.charCodeAt(i);
-      h = Math.imul(h, 16777619) >>> 0;
-    }
-    return h;
-  }
-  function mulberry32(seed) {
-    var t = seed >>> 0;
-    return function () {
-      t = (t + 0x6D2B79F5) >>> 0;
-      var r = t;
-      r = Math.imul(r ^ (r >>> 15), r | 1);
-      r ^= r + Math.imul(r ^ (r >>> 7), r | 61);
-      return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
-    };
-  }
-  function synthHostRunStats(lobby) {
-    if (!lobby) return null;
-    // Forward-compat — use backend data when it lands.
-    if (Array.isArray(lobby.hostRecentRuns) && lobby.hostRecentRuns.length) {
-      var pips = [];
-      var wins = 0;
-      var rs = lobby.hostRecentRuns.slice(0, 6);
-      for (var i = 0; i < rs.length; i++) {
-        var r = rs[i] || {};
-        var w = r.won === true || r.won === 1;
-        pips.push(w ? "W" : "L");
-        if (w) wins++;
-      }
-      return {
-        pips: pips, wins: wins, total: pips.length,
-        dominantChar: (lobby.preferredCharacters && lobby.preferredCharacters[0]) || (rs[0] && rs[0].character) || "",
-        dominantGoal: lobby.goal || (rs[0] && rs[0].goal) || "",
-        dominantAsc:  ascBandLabel(lobby.ascensionMin, lobby.ascensionMax),
-        streak: 0,
-        synthetic: false,
-      };
-    }
-    // Deterministic synthetic generation.
-    var seed = hashSeed(lobby.hostSteamId || lobby.lobbyId || "host");
-    var rng = mulberry32(seed);
-    var skill = 0.45 + Math.floor(rng() * 256) / 256 * 0.35;          // 45–80%
-    var pips2 = []; var w2 = 0;
-    for (var k = 0; k < 6; k++) {
-      var won = rng() < skill;
-      pips2.push(won ? "W" : "L");
-      if (won) w2++;
-    }
-    // Streak — count consecutive same-kind from index 0 (most recent).
-    var streak = 0; var streakKind = pips2[0] === "W";
-    for (var s = 0; s < pips2.length; s++) {
-      if (pips2[s] === (streakKind ? "W" : "L")) streak++;
-      else break;
-    }
-    return {
-      pips: pips2, wins: w2, total: pips2.length,
-      dominantChar: (lobby.preferredCharacters && lobby.preferredCharacters[0]) || "",
-      dominantGoal: lobby.goal || "any",
-      dominantAsc:  ascBandLabel(lobby.ascensionMin, lobby.ascensionMax),
-      streak: streak, streakWin: streakKind,
-      synthetic: true,
-    };
-  }
-  function buildRunStripHtml(stats) {
-    if (!stats) return "";
-    var pct = stats.total ? Math.round(stats.wins / stats.total * 100) : 0;
-    var pips = "";
-    for (var i = 0; i < stats.pips.length; i++) {
-      var p = stats.pips[i];
-      pips += '<span class="pf-row-runs-pip pf-row-runs-pip--' + (p === "W" ? "win" : "loss") + '" '
-            + 'data-ord="' + i + '" aria-label="' + (p === "W" ? "Win" : "Loss") + '"></span>';
-    }
-    var dom = String(stats.dominantGoal || "").toLowerCase();
-    var goalShort = dom === "heart" ? "Heart" : dom === "winstreak" ? "Streak" : dom === "daily" ? "Daily" : "";
-    var summary = stats.wins + "W " + (stats.total - stats.wins) + "L · " + pct + "%";
-    if (goalShort) summary += " " + goalShort;
-    if (stats.dominantAsc && !/Any level/i.test(stats.dominantAsc)) summary += " · " + stats.dominantAsc;
-    var streakHtml = "";
-    if (stats.streak >= 3) {
-      streakHtml = '<span class="pf-row-runs-streak" data-kind="' + (stats.streakWin ? "win" : "loss") + '">'
-                 +    (stats.streakWin ? "🔥" : "💀") + ' ' + (stats.streakWin ? "W" : "L") + stats.streak
-                 + '</span>';
-    }
-    var charEmoji = characterEmoji(stats.dominantChar);
-    return ''
-      + '<span class="pf-row-runs-char" aria-hidden="true">' + charEmoji + '</span>'
-      + '<span class="pf-row-runs-pips" aria-label="Last ' + stats.total + ' runs, most recent first">' + pips + '</span>'
-      + '<span class="pf-row-runs-summary">' + esc(summary) + '</span>'
-      + streakHtml;
-  }
-  function decorateHostRunStrips() {
-    var list = document.getElementById("pf-live-list");
-    if (!list) return;
-    var state = readState();
-    if (!state || !Array.isArray(state.openLobbies)) return;
-    var byId = {};
-    for (var i = 0; i < state.openLobbies.length; i++) {
-      var l = state.openLobbies[i];
-      if (l && l.lobbyId) byId[l.lobbyId] = l;
-    }
-    var rows = list.querySelectorAll(":scope > .pf-live-row[data-lobby-id]");
-    for (var r = 0; r < rows.length; r++) {
-      var row = rows[r];
-      var lid = row.getAttribute("data-lobby-id") || "";
-      var lobby = byId[lid];
-      if (!lobby) continue;
-      var stats = synthHostRunStats(lobby);
-      if (!stats) continue;
-      var hostStrip = row.querySelector(".pf-host-strip");
-      if (!hostStrip) continue;
-      var strip = row.querySelector(":scope .pf-row-runs");
-      if (!strip) {
-        strip = document.createElement("div");
-        strip.className = "pf-row-runs";
-        // Insert AFTER the host-strip line so the social proof
-        // sits directly under the host's name.
-        if (hostStrip.parentNode) hostStrip.parentNode.insertBefore(strip, hostStrip.nextSibling);
-      }
-      // Idempotent — fingerprint the stats so we don't thrash DOM
-      // (rng output is stable per host but we still recompute on
-      // every poll; cheap to compare).
-      var fp = stats.pips.join("") + "|" + stats.wins + "|" + stats.total + "|"
-             + stats.streak + "|" + (stats.streakWin ? "w" : "l") + "|"
-             + (stats.dominantChar || "") + "|" + (stats.dominantGoal || "") + "|" + (stats.dominantAsc || "");
-      if (strip.getAttribute("data-fp") === fp) continue;
-      strip.setAttribute("data-fp", fp);
-      strip.setAttribute("data-synthetic", stats.synthetic ? "1" : "0");
-      strip.innerHTML = buildRunStripHtml(stats);
-    }
-  }
+  // ── Host Run History Strip — REMOVED (v203 integrity fix) ────────
+  // This strip ("⚔️ ▰▰▰▱▰▰ · 5W 1L · 83% Heart · 🔥 W3") was a seeded-RNG
+  // placeholder synthesized from hostSteamId — the backend never ships
+  // `hostRecentRuns`, so every host saw fabricated win/loss pips,
+  // streaks, and finish percentages. Fabricated reputation data is an
+  // integrity violation: the cards must only ever show REAL data, and
+  // there is no public per-lobby run-history contract to show. The
+  // honest host signal is the v198 LevelBadge (real tier + bucket from
+  // /coop/reputation). The synth path, helpers (hashSeed/mulberry32),
+  // and the decorator are intentionally gone — do NOT reintroduce a
+  // placeholder/random stat here. When a real `hostRecentRuns` contract
+  // ships, render it from that data only.
 
   // Copy polish — replace the awkward "Main or Beta OK" display
   // string with a friendlier "Either branch" everywhere it appears
@@ -2462,104 +2325,25 @@
     }
   }
 
-  // ── Host Reputation Card ─────────────────────────────────────────
-  // The genuine "uncontested vs Discord" feature. Discord can't show
-  // host history inline; SpireVault can. Each Live Parties row gets
-  // a compact reputation bar:
-  //   🏆 Lv 12 · 🎯 67 runs · ❤️ 12 Hearts · 89% finish · 👥 played 2x
+  // ── Host Reputation Card — REMOVED (v203 integrity fix) ──────────
+  // This inline chip ("🏆 Lv 12 · 🎯 67 runs · ❤️ 12 Hearts · 89% finish")
+  // was synthesized by a seeded RNG keyed on hostSteamId because the
+  // backend never ships `lobby.hostStats`. Every host — including the
+  // operator-seeded House lobbies and real players — showed stable but
+  // ENTIRELY FABRICATED level/runs/hearts/finish numbers. Worse, it
+  // contradicted the REAL v198 LevelBadge on the same card (chip said
+  // "Lv 3 · 121 runs" while the badge popover said "Initiate · newcomer
+  // · <5 parties").
   //
-  // Data source priority:
-  //   1) lobby.hostStats         (real backend stats, future)
-  //   2) lobby.hostVault.*       (Vault-side metrics, future)
-  //   3) deterministic synthesis (current — seeded by hostSteamId)
-  //
-  // "played 2x" uses purely-local memory: every time the user joins
-  // a party, we stash the host's steamId in localStorage and bump a
-  // counter. No network call, no privacy concern, no backend
-  // dependency. Replaces itself when real backend stats land.
-  function synthHostReputation(lobby) {
-    if (lobby && lobby.hostStats && typeof lobby.hostStats === "object") {
-      return {
-        level:    lobby.hostStats.level    | 0,
-        runs:     lobby.hostStats.runs     | 0,
-        hearts:   lobby.hostStats.hearts   | 0,
-        finishPct: lobby.hostStats.finishPct | 0,
-      };
-    }
-    var seed = (function (s) {
-      s = String(s || "host"); var h = 0x811c9dc5 >>> 0;
-      for (var i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; }
-      return h >>> 0;
-    })((lobby && (lobby.hostSteamId || lobby.lobbyId)) || "host");
-    var rng = (function (a) { return function () {
-      a |= 0; a = (a + 0x6D2B79F5) | 0;
-      var t = Math.imul(a ^ (a >>> 15), 1 | a);
-      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-    }; })(seed);
-    var level     = 3 + Math.floor(rng() * 22);  // 3-24
-    var runs      = 8 + Math.floor(rng() * 120); // 8-127
-    var hearts    = Math.floor(runs * (0.10 + rng() * 0.15));
-    var finishPct = 55 + Math.floor(rng() * 40);
-    return { level: level, runs: runs, hearts: hearts, finishPct: finishPct };
-  }
-  function readPlayedWithCount(hostSteamId) {
-    if (!hostSteamId) return 0;
-    try {
-      var raw = localStorage.getItem("pf.playedWith.v1") || "{}";
-      var map = JSON.parse(raw);
-      var entry = map && map[String(hostSteamId)];
-      return (entry && entry.count) | 0;
-    } catch (_) { return 0; }
-  }
-  function buildReputationHtml(rep, playedWith) {
-    var parts = [
-      '<span class="pf-row-rep-chip pf-row-rep-chip--level">🏆 <strong>Lv ' + rep.level + '</strong></span>',
-      '<span class="pf-row-rep-chip">🎯 ' + rep.runs + ' runs</span>',
-      '<span class="pf-row-rep-chip">❤️ ' + rep.hearts + '</span>',
-      '<span class="pf-row-rep-chip">' + rep.finishPct + '% finish</span>',
-    ];
-    if (playedWith > 0) {
-      parts.push('<span class="pf-row-rep-chip pf-row-rep-chip--played">👥 played ' + playedWith + '×</span>');
-    }
-    return parts.join('');
-  }
-  function decorateHostReputation() {
-    var rows = document.querySelectorAll(".pf-live-row, [data-pf-row], [data-lobby-id]");
-    for (var i = 0; i < rows.length; i++) {
-      var row = rows[i];
-      var lobbyId = row.getAttribute("data-lobby-id") || row.getAttribute("data-pf-row");
-      if (!lobbyId) continue;
-      var state = null;
-      try { if (typeof window.__pfGetLastState === "function") state = window.__pfGetLastState(); } catch (_) {}
-      if (!state) state = window.__VAULT_COOP_STATE__ || window.__pfLastState__ || null;
-      var lobby = null;
-      if (state && Array.isArray(state.openLobbies)) {
-        for (var k = 0; k < state.openLobbies.length; k++) {
-          if (state.openLobbies[k] && state.openLobbies[k].lobbyId === lobbyId) { lobby = state.openLobbies[k]; break; }
-        }
-      }
-      if (!lobby) continue;
-      var rep = synthHostReputation(lobby);
-      var playedWith = readPlayedWithCount(lobby.hostSteamId);
-      var fp = rep.level + ":" + rep.runs + ":" + rep.hearts + ":" + rep.finishPct + ":" + playedWith;
-      var bar = row.querySelector(".pf-row-rep");
-      if (bar && bar.getAttribute("data-fp") === fp) continue;
-      if (!bar) {
-        // Anchor next to the host-strip (same column as the run-strip
-        // social-proof line). Insert immediately AFTER .pf-host-strip
-        // so the row reads: host-strip → reputation → run history.
-        var hostStrip = row.querySelector(".pf-host-strip");
-        if (!hostStrip || !hostStrip.parentNode) continue;
-        bar = document.createElement("div");
-        bar.className = "pf-row-rep";
-        bar.setAttribute("data-host", lobby.hostSteamId || "");
-        hostStrip.parentNode.insertBefore(bar, hostStrip.nextSibling);
-      }
-      bar.setAttribute("data-fp", fp);
-      bar.innerHTML = buildReputationHtml(rep, playedWith);
-    }
-  }
+  // The public reputation contract (/coop/reputation/<sid>) is
+  // intentionally privacy-bucketed: it exposes only `tier`, `badges[]`,
+  // and `partiesCompletedBucket` — NOT raw run counts, hearts, or finish
+  // %. So those numbers cannot be shown truthfully and must not be
+  // shown at all. The honest, single source of truth is the v198
+  // LevelBadge (party-finder-reputation-rt.js), which already mounts on
+  // these rows via the `[data-pf-rep-slot]` annotation and renders the
+  // real tier + popover. The synth chip is gone with no fallback — do
+  // NOT reintroduce any synthesized/placeholder/random stat here.
 
   // ═══════════════════════════════════════════════════════════════
   // Personal Co-op History — the player-profile layer.
@@ -3344,8 +3128,9 @@
     try { tintLiveRows(); } catch (_) {}
     try { decorateLiveRowBadges(); } catch (_) {}
     try { decorateMatchScores(); } catch (_) {}
-    try { decorateHostRunStrips(); } catch (_) {}
-    try { decorateHostReputation(); } catch (_) {}
+    // v203: decorateHostRunStrips()/decorateHostReputation() removed —
+    // they rendered fabricated seeded-RNG host stats. The real host
+    // signal is the v198 LevelBadge (party-finder-reputation-rt.js).
     try { pollActivityTicker(); } catch (_) {}
     try { relabelBranchCopy(); } catch (_) {}
     try { refreshCampfireLog(); } catch (_) {}

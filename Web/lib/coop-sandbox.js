@@ -554,7 +554,7 @@ function ensurePartyFinderGlobalsScript() {
         if (!document.getElementById("pf-scene-script")) {
           const s3 = document.createElement("script");
           s3.id = "pf-scene-script";
-          s3.src = "/lib/party-finder-scene.js?v=30";
+          s3.src = "/lib/party-finder-scene.js?v=31";
           s3.async = false;
           document.head.appendChild(s3);
         }
@@ -593,7 +593,7 @@ function ensurePartyFinderGlobalsScript() {
         if (!document.getElementById("pf-reputation-rt-script")) {
           const s5 = document.createElement("script");
           s5.id = "pf-reputation-rt-script";
-          s5.src = "/lib/party-finder-reputation-rt.js?v=3";
+          s5.src = "/lib/party-finder-reputation-rt.js?v=4";
           s5.async = false;
           document.head.appendChild(s5);
         }

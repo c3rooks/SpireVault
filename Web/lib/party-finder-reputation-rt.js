@@ -137,7 +137,15 @@
     }
     var pending = inflight.get(steamID);
     if (pending) return pending;
-    var url = "/coop/reputation/" + encodeURIComponent(steamID);
+    // v203 integrity fix: hit the same-origin /api proxy (Pages Function
+    // functions/api/[[path]].js → worker /coop/reputation). The bare
+    // /coop/reputation/<sid> path is NOT proxied at app.spirevault.app —
+    // it falls through to the SPA index.html, so r.json() always threw
+    // and the badge silently rendered the "newcomer" fallback for EVERY
+    // host (real veterans included). Routing through /api returns the
+    // real { tier, badges, partiesCompletedBucket } so the LevelBadge
+    // now shows genuinely-fetched reputation instead of a stub.
+    var url = "/api/coop/reputation/" + encodeURIComponent(steamID);
     var p = fetch(url, { credentials: "include", headers: { accept: "application/json" } })
       .then(function (r) {
         if (!r.ok) throw new Error("rep_" + r.status);
