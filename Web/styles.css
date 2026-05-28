@@ -3223,6 +3223,298 @@ main.main-public,
   font-size: 11.5px;
 }
 
+/* ─── v201 layered import hints ────────────────────────────────────
+ * Three new pieces stack between the platform path callout and the
+ * existing "I still can't find them" disclosure:
+ *   1. .empty-state-drag-nudge — gold-accent inline nudge that the
+ *      drag-drop path works from any disk / portable install.
+ *   2. .alt-paths-panel — disclosure listing common alternate paths
+ *      (D:\, E:\, Program Files, Documents).
+ *   3. .alt-paths-paste — paste field that personalizes the next
+ *      "Step 1 / Step 2" instructions for power users with a
+ *      genuinely custom save location. Honest about not reading the
+ *      filesystem — that's a real security boundary in pure web.
+ * Sized supplementary on purpose: the primary CTAs and the platform
+ * default path callout stay the headline; these only earn attention
+ * when the default path didn't resolve.
+ */
+.empty-state-drag-nudge {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  text-align: left;
+  max-width: 720px;
+  margin: 4px auto 14px;
+  padding: 12px 16px;
+  border-radius: 10px;
+  background: linear-gradient(120deg, rgba(212, 175, 55, 0.08), rgba(255, 160, 92, 0.05));
+  border: 1px solid rgba(212, 175, 55, 0.35);
+  color: var(--text-2);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.empty-state-drag-nudge .drag-nudge-icon {
+  color: var(--gold);
+  flex: 0 0 auto;
+  margin-top: 1px;
+  display: inline-flex;
+}
+.empty-state-drag-nudge .drag-nudge-strong {
+  display: inline;
+  color: var(--gold);
+  font-weight: 700;
+}
+.empty-state-drag-nudge .drag-nudge-strong code {
+  background: rgba(212, 175, 55, 0.15);
+  border: 1px solid rgba(212, 175, 55, 0.5);
+  color: var(--gold);
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.alt-paths-panel {
+  max-width: 720px;
+  margin: 0 auto 14px;
+  text-align: left;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.alt-paths-summary {
+  cursor: pointer;
+  padding: 10px 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-2);
+  list-style: none;
+  user-select: none;
+}
+.alt-paths-summary::-webkit-details-marker { display: none; }
+.alt-paths-summary::before {
+  content: "▸";
+  color: var(--text-3);
+  font-size: 11px;
+  transition: transform 0.18s ease;
+  display: inline-block;
+}
+.alt-paths-panel[open] .alt-paths-summary::before {
+  transform: rotate(90deg);
+}
+.alt-paths-summary-icon { font-size: 14px; }
+.alt-paths-summary-hint {
+  color: var(--text-3);
+  font-weight: 400;
+  font-size: 12px;
+}
+.alt-paths-body {
+  padding: 4px 14px 14px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-deep);
+}
+.alt-paths-lede {
+  margin: 10px 0 12px;
+  font-size: 12px;
+  line-height: 1.55;
+}
+.alt-paths-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.alt-paths-row {
+  display: grid;
+  grid-template-columns: 150px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.alt-paths-row-label {
+  font-size: 11px;
+  color: var(--text-3);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 700;
+}
+.alt-paths-row-path {
+  font-size: 12px;
+  color: var(--text-2);
+  background: var(--bg-deep);
+  padding: 4px 8px;
+  border-radius: 5px;
+  border: 1px solid var(--border);
+  user-select: all;
+  word-break: break-all;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+.alt-paths-row .btn-sm {
+  font-size: 11px;
+  padding: 4px 10px;
+}
+.alt-paths-row .is-copied {
+  background: rgba(109, 217, 124, 0.15);
+  border-color: rgba(109, 217, 124, 0.45);
+  color: var(--win);
+}
+.alt-paths-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 16px 4px 12px;
+  color: var(--text-3);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.alt-paths-divider::before,
+.alt-paths-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+.alt-paths-paste-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-3);
+  margin-bottom: 6px;
+}
+.alt-paths-paste-row {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+.alt-paths-paste-input {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  font-size: 13px;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  color: var(--text);
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 8px 10px;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+.alt-paths-paste-input:focus {
+  border-color: var(--accent-hi);
+  box-shadow: 0 0 0 2px rgba(255, 160, 92, 0.18);
+}
+.alt-paths-paste-input::placeholder {
+  color: var(--text-3);
+  font-style: italic;
+}
+.alt-paths-paste-row .btn-sm {
+  white-space: nowrap;
+  font-size: 12px;
+  padding: 6px 12px;
+}
+.alt-paths-honest {
+  margin: 10px 0 0;
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: var(--text-3);
+}
+.alt-paths-honest strong { color: var(--text-2); }
+.alt-paths-personalized {
+  margin-top: 14px;
+}
+.alt-paths-personalized-card {
+  background: var(--card);
+  border: 1px solid rgba(255, 160, 92, 0.35);
+  border-radius: 8px;
+  padding: 12px 14px;
+  animation: alt-paths-fade-in 0.18s ease both;
+}
+.alt-paths-personalized-title {
+  display: block;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--accent-hi);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 6px;
+}
+.alt-paths-personalized-path {
+  display: block;
+  background: var(--bg-deep);
+  border: 1px solid var(--border);
+  padding: 6px 10px;
+  border-radius: 5px;
+  color: var(--text);
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 12px;
+  word-break: break-all;
+  margin-bottom: 10px;
+  user-select: all;
+}
+.alt-paths-personalized-steps {
+  margin: 0 0 8px;
+  padding-left: 20px;
+  color: var(--text-2);
+  font-size: 12.5px;
+  line-height: 1.65;
+}
+.alt-paths-personalized-steps kbd {
+  background: var(--bg-deep);
+  border: 1px solid var(--border);
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 11px;
+  color: var(--text);
+}
+.alt-paths-personalized-foot {
+  margin: 6px 0 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-3);
+}
+@keyframes alt-paths-fade-in {
+  from { opacity: 0; transform: translateY(2px); }
+  to   { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .alt-paths-personalized-card { animation: none; }
+  .alt-paths-summary::before    { transition: none; }
+}
+@media (max-width: 560px) {
+  .alt-paths-row {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto auto auto;
+    gap: 6px;
+    text-align: left;
+  }
+  .alt-paths-row .btn-sm {
+    justify-self: start;
+  }
+  .alt-paths-paste-row {
+    flex-direction: column;
+  }
+  .alt-paths-paste-row .btn-sm {
+    width: 100%;
+  }
+  .empty-state-drag-nudge {
+    flex-direction: column;
+    gap: 6px;
+  }
+}
+
 /* ─── Stats: hero overview (matches macOS app Overview) ──
  * Three-column grid that fills the panel: ring | run history | side stats.
  * The third column carries Highest Ascension, recent form, and average

@@ -71,7 +71,7 @@ const STS2_APP_ID = "2868840";
  * on an old client — instruct hard refresh. If it DOES match, the
  * bug is real and we can stop chasing cache ghosts.
  */
-const VAULT_BUILD = "v200-2026-05-27-run-import-fix";
+const VAULT_BUILD = "v201-2026-05-28-run-import-rough-edges";
 
 /** True on wrangler pages dev / local loopback — not production hostnames. */
 function isLocalDevHost() {
@@ -7059,7 +7059,30 @@ async function disconnectLinkedSaves() {
   try { renderActiveTab(); } catch { /* defensive */ }
 }
 
+// v201 rough-edge #3 (`?desktop=1` triple-fire):
+// Multiple panel headers in index.html share `data-action="upload"`,
+// and the dynamic empty-state / demo-banner re-renders each wire their
+// own click handler on the freshly rendered buttons. When the desktop
+// host bridge (or any future delegated handler) doesn't swallow the
+// click, the same logical Import gesture can wind up calling
+// scanForHistory() multiple times back-to-back. The native flow is
+// idempotent (the second .click() just races the picker that's already
+// opening), but the console fills with "[Vault import] scanForHistory
+// invoked" repeats and bug reports get noisy. A short module-level
+// debounce window keeps a single user gesture from doing real work
+// more than once. The window is intentionally short (well under any
+// legitimate retry) so the user can still re-click within a second or
+// two if the first picker open was clearly missed.
+let scanInFlight = false;
+
 function scanForHistory() {
+  if (scanInFlight) {
+    console.info("[Vault import] scanForHistory debounced (already in flight)");
+    return;
+  }
+  scanInFlight = true;
+  setTimeout(() => { scanInFlight = false; }, 1500);
+
   console.info("[Vault import] scanForHistory invoked, ua=", navigator.userAgent);
   // CRITICAL: this function MUST run synchronously up to the `.click()`
   // on the hidden input. Safari only honors picker-opening clicks that
@@ -8947,6 +8970,12 @@ function renderStatsTab(tab) {
         }
       });
     });
+    // v201 rough-edge #1 + #2: alt-paths panel (with paste-the-path
+    // field) lives below the platform-default callout. Wire its
+    // controls — same scope as the empty state, scoped to $body so
+    // it doesn't leak handlers onto a future re-render of a
+    // different stats tab.
+    wireAltPathsPanel($body);
     // "Restore my runs from Steam" — manual cloud-pull for signed-in
     // users on a fresh device or after IDB was wiped. Same network
     // path as the boot-time auto-hydrate, just user-triggered with
@@ -9524,6 +9553,225 @@ function renderCurrentRunCard(run) {
     </section>`;
 }
 
+/**
+ * v201 rough-edge #1 — non-standard STS2 paths.
+ *
+ * The default `%APPDATA%\SlayTheSpire2\…` hint covers a vanilla Steam
+ * install on the system drive, but plenty of players have STS2 in a
+ * secondary Steam library (D:/E:/F:), a portable install, or a
+ * non-default save location set by mods / Documents redirection. The
+ * verify worker on v200 flagged that we silently let those users
+ * stare at a path that doesn't resolve.
+ *
+ * We can't enumerate the filesystem from the browser — that's a hard
+ * security boundary — so the answer is to present the most common
+ * alternates as copy-able candidates and to coach the user toward the
+ * drag-drop path (which works regardless of where STS2 actually lives
+ * on disk). Each entry below is rendered once with a Copy button.
+ */
+const ALT_SAVE_PATHS_WIN = [
+  { label: "Steam library on D:",       path: "D:\\Steam\\steamapps\\common\\SlayTheSpire2\\saves\\history" },
+  { label: "Steam library on E:",       path: "E:\\SteamLibrary\\steamapps\\common\\SlayTheSpire2\\saves\\history" },
+  { label: "Default Program Files",     path: "C:\\Program Files (x86)\\Steam\\steamapps\\common\\SlayTheSpire2\\saves\\history" },
+  { label: "Documents (mod-redirected)", path: "%USERPROFILE%\\Documents\\My Games\\SlayTheSpire2\\saves\\history" },
+];
+const ALT_SAVE_PATHS_MAC = [
+  { label: "Steam install dir",   path: "~/Library/Application Support/Steam/steamapps/common/SlayTheSpire2/saves/history" },
+  { label: "iCloud / Documents",  path: "~/Documents/SlayTheSpire2/saves/history" },
+  { label: "Custom Steam library", path: "/Volumes/<your-disk>/SteamLibrary/steamapps/common/SlayTheSpire2/saves/history" },
+];
+const ALT_SAVE_PATHS_LINUX = [
+  { label: "Steam library (HOME)", path: "~/.steam/steam/steamapps/common/SlayTheSpire2/saves/history" },
+  { label: "Proton compatdata",    path: "~/.steam/steam/steamapps/compatdata/2868840/pfx/drive_c/users/steamuser/AppData/Roaming/SlayTheSpire2/steam/<id>/profile1/saves/history" },
+  { label: "Custom SteamLibrary",  path: "/mnt/games/SteamLibrary/steamapps/common/SlayTheSpire2/saves/history" },
+];
+
+/**
+ * Lightweight format check for the paste-the-path field. Returns true
+ * for things that *look* like a filesystem path on any of the three
+ * platforms we ship for. Intentionally permissive — false positives
+ * are cheap (the user just sees the personalized instructions for a
+ * malformed string), false negatives stop a legit power-user dead.
+ */
+function looksLikeSavePath(s) {
+  if (typeof s !== "string") return false;
+  const t = s.trim();
+  if (t.length < 3 || t.length > 1024) return false;
+  return (
+    /^[A-Za-z]:[\\/]/.test(t) ||           // C:\ or D:/ etc.
+    /^%[A-Z_]+%[\\/]/.test(t) ||           // %APPDATA%\ or %USERPROFILE%\
+    /^~[\\/]/.test(t) ||                   // ~/ or ~\
+    /^\//.test(t)                          // /home/... or /Volumes/...
+  );
+}
+
+/** Pick the most likely platform for a pasted path so the personalized
+ *  instructions we render below it actually match the user's OS. */
+function platformOfPath(s) {
+  const t = String(s || "").trim();
+  if (/^[A-Za-z]:[\\/]/.test(t) || /^%[A-Z_]+%/.test(t)) return "windows";
+  if (/^~\/Library\//.test(t) || /^\/Volumes\//.test(t)) return "mac";
+  if (/^~\/\.steam\//.test(t) || /^\/(home|mnt|opt|media)\//.test(t)) return "linux";
+  return null;
+}
+
+/**
+ * Build the markup for the "My saves are somewhere else" disclosure.
+ * Renders a `<details>` so it stays collapsed by default — the hint
+ * UI is supplementary; the primary path callout + CTAs stay visible.
+ * Inside we list 3–4 alternate paths per platform, then a paste field
+ * with honest copy about what the browser can and can't do with it.
+ */
+function renderAltPathsPanel(platform) {
+  const list = platform === "mac"
+    ? ALT_SAVE_PATHS_MAC
+    : platform === "linux"
+      ? ALT_SAVE_PATHS_LINUX
+      : ALT_SAVE_PATHS_WIN;
+  const altRows = list.map((p) => `
+    <li class="alt-paths-row">
+      <span class="alt-paths-row-label">${esc(p.label)}</span>
+      <code class="alt-paths-row-path">${esc(p.path)}</code>
+      <button class="btn-ghost btn-sm" type="button" data-action="copy-alt-path" data-path="${esc(p.path)}" title="Copy this path to the clipboard">Copy</button>
+    </li>`).join("");
+  // TODO(v0.9.10 desktop release): in the Tauri wrapper we can drop
+  // the "browser can't read your filesystem" honesty caveat — register
+  // tauri-plugin-fs with an explicit scope of `**/SlayTheSpire2/**`,
+  // detect `window.__TAURI__` here, and call `readDir(path, …)` to
+  // actually walk the user-supplied folder. That requires Cargo.toml
+  // + tauri.conf.json edits and cutting a new .exe release, so we
+  // ship the web-only UX nudge today and queue the desktop bridge as
+  // a follow-up.
+  return `
+    <details class="alt-paths-panel" data-alt-paths-panel>
+      <summary class="alt-paths-summary">
+        <span class="alt-paths-summary-icon" aria-hidden="true">📁</span>
+        <span>My saves are somewhere else</span>
+        <span class="alt-paths-summary-hint">(portable Steam, secondary library, custom path)</span>
+      </summary>
+      <div class="alt-paths-body">
+        <p class="alt-paths-lede muted small">
+          STS2 can live on any drive Steam knows about. Here are the four most common spots — copy whichever matches your install, then paste it into the picker's address bar.
+        </p>
+        <ul class="alt-paths-list">
+          ${altRows}
+        </ul>
+        <div class="alt-paths-divider" aria-hidden="true">
+          <span>or paste your custom path</span>
+        </div>
+        <div class="alt-paths-paste">
+          <label class="alt-paths-paste-label" for="alt-paths-paste-input">
+            Your STS2 save folder
+          </label>
+          <div class="alt-paths-paste-row">
+            <input
+              id="alt-paths-paste-input"
+              class="alt-paths-paste-input"
+              type="text"
+              spellcheck="false"
+              autocomplete="off"
+              autocapitalize="off"
+              autocorrect="off"
+              placeholder="e.g. F:\\Games\\SlayTheSpire2\\saves\\history"
+              data-alt-paths-input
+            />
+            <button class="btn-primary btn-sm" type="button" data-action="alt-paths-use" disabled>Use this path</button>
+          </div>
+          <p class="alt-paths-honest muted small">
+            <strong>Heads-up:</strong> browsers can't read arbitrary paths from a text field — that's a security boundary we can't cross from the web. We use what you paste to <em>personalize the next step</em>: we copy it to your clipboard, then you paste it into the file picker's address bar (Ctrl+L on Windows / Cmd+Shift+G on macOS) to jump there in one move instead of clicking through folders.
+          </p>
+          <div class="alt-paths-personalized" data-alt-paths-personalized hidden></div>
+        </div>
+      </div>
+    </details>`;
+}
+
+/**
+ * Wire the alt-paths disclosure (copy buttons + paste field).
+ *
+ * Called from any surface that embeds the panel (currently the
+ * stats-tab empty state). Idempotent: querying inside `root` means
+ * re-renders of a sibling region don't double-wire these controls.
+ *
+ * The paste field never actually reads the user's filesystem — it
+ * just lights up a personalized "Step 1: copy this / Step 2: paste
+ * into picker" panel and copies the literal text to the clipboard
+ * so the OS picker dialog opens at (or near) the right folder. The
+ * honest copy in the markup is deliberate; previous one-click
+ * "Open in Explorer" affordances confused users into thinking we
+ * could actually access their disk from the web.
+ */
+function wireAltPathsPanel(root) {
+  if (!root) return;
+  root.querySelectorAll('[data-action="copy-alt-path"]').forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const path = btn.dataset.path || "";
+      if (!path) return;
+      try {
+        await navigator.clipboard.writeText(path);
+        const original = btn.textContent;
+        btn.textContent = "Copied";
+        btn.classList.add("is-copied");
+        setTimeout(() => {
+          btn.textContent = original;
+          btn.classList.remove("is-copied");
+        }, 1500);
+        sendBeacon("import-alt-path-copied", `path=${path.slice(0, 60)}`);
+      } catch {
+        toast("Couldn't copy. Select the path and copy manually.");
+      }
+    });
+  });
+
+  const input = root.querySelector("[data-alt-paths-input]");
+  const useBtn = root.querySelector('[data-action="alt-paths-use"]');
+  const personalized = root.querySelector("[data-alt-paths-personalized]");
+  if (input && useBtn && personalized) {
+    const refreshBtnState = () => {
+      useBtn.disabled = !looksLikeSavePath(input.value);
+    };
+    input.addEventListener("input", refreshBtnState);
+    input.addEventListener("paste", () => setTimeout(refreshBtnState, 0));
+    refreshBtnState();
+
+    useBtn.addEventListener("click", async () => {
+      const raw = (input.value || "").trim();
+      if (!looksLikeSavePath(raw)) {
+        toast("That doesn't look like a save path. Expected something like C:\\… or /Volumes/…");
+        return;
+      }
+      const pathPlatform = platformOfPath(raw) || detectPlatform();
+      let copied = false;
+      try {
+        if (navigator.clipboard?.writeText) {
+          await navigator.clipboard.writeText(raw);
+          copied = true;
+        }
+      } catch { /* clipboard denied — fall through */ }
+      const pickerHint = pathPlatform === "windows"
+        ? "Click the address bar at the top of File Explorer, paste the path, hit <kbd>Enter</kbd>."
+        : pathPlatform === "mac"
+          ? "Press <kbd>Cmd</kbd>+<kbd>Shift</kbd>+<kbd>G</kbd> inside the picker, paste, hit <kbd>Enter</kbd>."
+          : "Press <kbd>Ctrl</kbd>+<kbd>L</kbd> inside the picker, paste, hit <kbd>Enter</kbd>.";
+      personalized.hidden = false;
+      personalized.innerHTML = `
+        <div class="alt-paths-personalized-card">
+          <strong class="alt-paths-personalized-title">${copied ? "✓ Copied to clipboard" : "Your path"}</strong>
+          <code class="alt-paths-personalized-path">${esc(raw)}</code>
+          <ol class="alt-paths-personalized-steps">
+            <li><strong>Click <em>Find my STS2 saves</em> or <em>Pick files</em></strong> above to open the file picker.</li>
+            <li>${pickerHint}</li>
+            <li>Click <strong>Select Folder</strong> when you see <code>SlayTheSpire2</code> (or <code>history</code>) in the breadcrumb — we walk every subfolder for <code>.run</code> files.</li>
+          </ol>
+          <p class="alt-paths-personalized-foot muted small">
+            Reminder: this is a UX nudge — we don't read your filesystem from the browser. The picker still has to open and you click <em>Select</em>. ${copied ? "" : "(Clipboard copy was blocked by the browser — select the path above and copy manually.)"}
+          </p>
+        </div>`;
+      sendBeacon("import-paste-path-used", `platform=${pathPlatform} copied=${copied}`);
+    });
+  }
+}
+
 function renderEmptyState() {
   const platform = detectPlatform();
   const hasDirPicker = typeof window.showDirectoryPicker === "function";
@@ -9532,38 +9780,65 @@ function renderEmptyState() {
   // SlayTheSpire2/ parent on each OS; the directory walker recurses
   // into steam/<your-id>/profile1/saves/history/, so the user never
   // has to know their numeric Steam ID.
+  // v201: surface the FULL deep path (down to history/) as the primary
+  // copy target. The verify worker on v200 flagged that the previous
+  // hint only showed the SlayTheSpire2/ parent, leaving the user to
+  // guess at the nested steam/<id>/profile1/saves/history layout. We
+  // now show the literal full path with a <your-steam-id> placeholder
+  // so the user understands what to replace. The clipboard receives
+  // the same literal so when they paste into the OS picker they land
+  // close enough to the right spot to navigate the last step manually.
+  // (The drag-drop nudge below this block is the zero-effort path.)
   let pathBlock = "";
   if (platform === "mac") {
     pathBlock = `
       <div class="empty-state-path">
         <span class="path-label">Your STS2 save folder on macOS</span>
-        <code class="path-value">${esc(HISTORY_PATH_MAC)}</code>
-        <button class="btn-ghost btn-sm" data-action="copy-path" data-path-key="mac" title="Copy path. Paste with Cmd+Shift+G inside the picker.">Copy path</button>
+        <code class="path-value">${esc(HISTORY_PATH_MAC_FULL)}</code>
+        <button class="btn-ghost btn-sm" type="button" data-action="copy-alt-path" data-path="${esc(HISTORY_PATH_MAC_FULL)}" title="Copy path. Paste with Cmd+Shift+G inside the picker.">Copy path</button>
       </div>
       <p class="empty-state-tip muted">
-        After the picker opens, press <kbd>Cmd</kbd>+<kbd>Shift</kbd>+<kbd>G</kbd>, paste, and hit Enter. Your <code>.run</code> files are inside <code>${esc(HISTORY_PATH_MAC_FULL)}</code> — pick any ancestor and we walk into <code>history/</code> for you.
+        After the picker opens, press <kbd>Cmd</kbd>+<kbd>Shift</kbd>+<kbd>G</kbd>, paste, and hit Enter. Replace <code>&lt;your-steam-id&gt;</code> with your numeric Steam ID, or pick any ancestor and we walk into <code>history/</code> for you.
       </p>`;
   } else if (platform === "windows") {
     pathBlock = `
       <div class="empty-state-path">
         <span class="path-label">Your STS2 save folder on Windows</span>
-        <code class="path-value">${esc(HISTORY_PATH_WIN)}</code>
-        <button class="btn-ghost btn-sm" data-action="copy-path" data-path-key="win" title="Copy path. Paste it into File Explorer's address bar.">Copy path</button>
+        <code class="path-value">${esc(HISTORY_PATH_WIN_FULL)}</code>
+        <button class="btn-ghost btn-sm" type="button" data-action="copy-alt-path" data-path="${esc(HISTORY_PATH_WIN_FULL)}" title="Copy path. Paste it into File Explorer's address bar.">Copy path</button>
       </div>
       <p class="empty-state-tip muted">
-        Paste this path into File Explorer's address bar. Your <code>.run</code> files are in <code>${esc(HISTORY_PATH_WIN_FULL)}</code> — pick the <code>SlayTheSpire2</code> parent and we walk into <code>history\\</code> for you.
+        Paste into File Explorer's address bar. Replace <code>&lt;your-steam-id&gt;</code> with your numeric Steam ID, or pick the <code>SlayTheSpire2</code> parent and we walk into <code>history\\</code> for you.
       </p>`;
   } else if (platform === "linux") {
     pathBlock = `
       <div class="empty-state-path">
         <span class="path-label">Your STS2 save folder on Linux</span>
-        <code class="path-value">${esc(HISTORY_PATH_LINUX)}</code>
-        <button class="btn-ghost btn-sm" data-action="copy-path" data-path-key="linux" title="Copy path. Paste it into your file manager.">Copy path</button>
+        <code class="path-value">${esc(HISTORY_PATH_LINUX_FULL)}</code>
+        <button class="btn-ghost btn-sm" type="button" data-action="copy-alt-path" data-path="${esc(HISTORY_PATH_LINUX_FULL)}" title="Copy path. Paste it into your file manager.">Copy path</button>
       </div>
       <p class="empty-state-tip muted">
-        Your <code>.run</code> files are inside <code>${esc(HISTORY_PATH_LINUX_FULL)}</code> — pick any ancestor and we walk into <code>history/</code> for you.
+        Pick any ancestor and we walk into <code>history/</code> for you.
       </p>`;
   }
+
+  // v201 rough-edge #1: layered hint UI. The primary default path
+  // (above) covers the vanilla Steam install. This middle nudge is
+  // the universal escape hatch — drag-drop works from any path on
+  // any drive on any browser, no permission prompt, so it's the
+  // safest fallback we can offer to the long tail of users with
+  // portable / secondary-library installs.
+  const dragNudge = `
+    <p class="empty-state-drag-nudge" role="note">
+      <span class="drag-nudge-icon" aria-hidden="true">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><polyline points="19 12 12 19 5 12"/></svg>
+      </span>
+      On a different drive or portable install?
+      <strong class="drag-nudge-strong">Drag the <code>SlayTheSpire2</code> folder onto this page</strong>
+      — works from any path, no permission prompt.
+    </p>`;
+
+  const altPathsPanel = renderAltPathsPanel(platform);
 
   // Two CTAs: the smart one (folder picker) for Chromium, and the
   // multi-file picker as a universal fallback. Drag-drop a folder is
@@ -9611,6 +9886,8 @@ function renderEmptyState() {
         Or drag your STS2 <strong>save folder</strong> (or any <code>.run</code> files) anywhere on this page to load them now.
       </p>
       ${pathBlock}
+      ${dragNudge}
+      ${altPathsPanel}
       <div class="empty-state-warning">
         <strong>⚠ Don't use Steam Library → "Browse local files"</strong> — that opens the game's <em>install</em> folder (the .app / .exe), not your saves. Saves live in the path above.
       </div>
