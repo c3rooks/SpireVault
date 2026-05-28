@@ -521,6 +521,23 @@ export async function deleteParty(env: Env, party: CoopParty): Promise<void> {
   }
 }
 
+/**
+ * Drop a single user's party pointer without tearing down the whole
+ * party. Used when one member leaves a still-active party: the party
+ * record keeps them flagged `status: "left"` (so the host can see who
+ * bailed), but their `party-by-user` index must be cleared or
+ * `getActivePartyIdForUser` keeps resolving the party for them —
+ * snapping them back into the Party Hub on the next poll and, worse,
+ * making `createLobby`/`joinLobbySeat` reject them with `409 in_party`
+ * until the 4h party TTL expires.
+ */
+export async function clearActivePartyForUser(
+  env: Env,
+  steamId: string,
+): Promise<void> {
+  await del(env, PARTY_BY_USER_PREFIX + steamId);
+}
+
 export async function getActivePartyIdForUser(
   env: Env,
   steamId: string,

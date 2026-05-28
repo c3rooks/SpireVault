@@ -39,6 +39,7 @@ import {
   COOP_PRESENCE_TTL_S,
   COOP_SESSION_TTL_S,
   COOP_STALE_GRACE_S,
+  clearActivePartyForUser,
   deleteLobby,
   deleteParty,
   getActiveLobbyIdForHost,
@@ -1905,6 +1906,11 @@ export async function leaveParty(
     currentLobbyId: undefined,
     status: "looking",
   });
+  // Clear the leaver's party-by-user pointer so getActivePartyIdForUser
+  // stops resolving this (still-active) party for them. Without this the
+  // member stays "in_party" on their next /coop/state poll and is blocked
+  // from creating/joining a new lobby until the 4h party TTL expires.
+  await clearActivePartyForUser(env, callerSteamId);
   return ok({ left: true });
 }
 
