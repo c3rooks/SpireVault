@@ -6,7 +6,7 @@
 // module avoids touching coop-lobbies.js / script.js / index.html
 // while still wiring the new surface into the existing mount path.
 
-import { mountPartyFinder, getLastState as getPartyFinderState } from "./party-finder.js?v=8";
+import { mountPartyFinder, getLastState as getPartyFinderState } from "./party-finder.js?v=9";
 
 const LS_SANDBOX = "spirevault.dev.coopSandbox";
 const LS_PERSONA = "spirevault.dev.activePersona";
@@ -593,7 +593,7 @@ function ensurePartyFinderGlobalsScript() {
         if (!document.getElementById("pf-reputation-rt-script")) {
           const s5 = document.createElement("script");
           s5.id = "pf-reputation-rt-script";
-          s5.src = "/lib/party-finder-reputation-rt.js?v=2";
+          s5.src = "/lib/party-finder-reputation-rt.js?v=3";
           s5.async = false;
           document.head.appendChild(s5);
         }
@@ -663,7 +663,7 @@ function ensurePartyFinderGlobalsScript() {
         if (!document.getElementById("pf-empty-rt-script")) {
           const s9 = document.createElement("script");
           s9.id = "pf-empty-rt-script";
-          s9.src = "/lib/party-finder-empty-rt.js?v=2";
+          s9.src = "/lib/party-finder-empty-rt.js?v=3";
           s9.async = false;
           document.head.appendChild(s9);
         }

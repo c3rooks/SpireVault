@@ -175,9 +175,30 @@
     // list is still empty. MutationObserver catches the re-renders
     // and re-applies v2 each time, so the user never sees the old
     // stub flash through.
+    //
+    // v202: rAF-coalesce the callback. Even though `enhance` is
+    // idempotent (the data-pf-empty-v2="1" gate skips a second pass),
+    // the *callback itself* was running on every subtree mutation
+    // anywhere under #pf-live-list. With the upstream reconciler the
+    // list stops mutating on no-op polls — but on a poll that DOES
+    // change rows, the row update can still produce many micro-
+    // mutations. Collapsing them to one rAF tick is free perf insurance.
     var target = document.getElementById("pf-live-list") || document.body;
     try {
-      var mo = new MutationObserver(function () { enhance(document); });
+      var pending = false;
+      var mo = new MutationObserver(function () {
+        if (pending) return;
+        pending = true;
+        var run = function () {
+          pending = false;
+          try { enhance(document); } catch (_) {}
+        };
+        if (typeof window.requestAnimationFrame === "function") {
+          window.requestAnimationFrame(run);
+        } else {
+          setTimeout(run, 16);
+        }
+      });
       mo.observe(target, { childList: true, subtree: true });
     } catch (_) { /* old browser, no observer */ }
     // Click delegation for pf-scroll-daily (the only new action we

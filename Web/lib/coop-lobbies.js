@@ -32,10 +32,10 @@ import {
   filterOpenLobbiesForViewer,
   filterRecommendationsForViewer,
   isSandboxSteamId,
-} from "./coop-sandbox.js?v=8";
+} from "./coop-sandbox.js?v=9";
 import { decodeStart } from "./party-finder-startsoon.js?v=1";
 
-export { ensureCoopSandboxMounted, isCoopSandboxEnabled } from "./coop-sandbox.js?v=8";
+export { ensureCoopSandboxMounted, isCoopSandboxEnabled } from "./coop-sandbox.js?v=9";
 
 const GAME_CONFIG = Object.freeze({
   game: "Slay the Spire 2",
@@ -1099,6 +1099,149 @@ function onVisibilityChange() {
 }
 
 // =========================================================================
+// Mutate-in-place reconciliation helpers (v202+ poll-jank fix)
+// -------------------------------------------------------------------------
+// Before this, every state poll (5–15s cadence) called $list.innerHTML =
+// renderAll() on the lobby list, the recommendations list, the invites
+// list, the primary state card, the activity card, and the side intent
+// card. Each innerHTML write detaches/reattaches the entire subtree,
+// triggering reflow + repaint of every card AND firing
+// party-finder-reputation-rt.js's global body MutationObserver — which
+// then ran autoAnnotateProdSurface(document) + scan(document) on every
+// poll. The user saw the page "jump" / "feel laggy" every poll cycle
+// even when no underlying lobby data changed.
+//
+// The fix is to mutate in place. For each $list we render to, we now:
+//   • Compute an array of "blocks" with stable `key` + content `fp` strings.
+//   • Reconcile against existing $list children: skip blocks whose fp
+//     matches (zero DOM ops), replace inner HTML in blocks whose fp
+//     differs (root <article> stays, only inner subtree reflows),
+//     create new blocks not yet in DOM, remove dropped blocks.
+//   • Reorder by walking $list.children once.
+//
+// Net effect: when a poll lands and nothing changed, the lobby cards keep
+// their exact DOM nodes — no reflow, no MutationObserver firestorm, no
+// jump. Decorations injected by party-finder-scene.js (match score ring,
+// host run strip) and party-finder-reputation-rt.js (LevelBadge popover
+// trigger) survive intact across polls, eliminating the flash they used
+// to do every cycle.
+// =========================================================================
+
+/**
+ * Apply a list of {key, fp, render} blocks to $list, preserving existing
+ * DOM nodes whose fp matches and only swapping inner HTML on the ones
+ * that genuinely changed. `key` must be unique per block; `fp` is the
+ * fingerprint string that detects "actual" changes.
+ *
+ * Blocks may also provide `update(node)` instead of `render()` for
+ * fully manual mutation paths — used by the invites list where the
+ * `data-card-fp` attribute is enough.
+ */
+function reconcileChildren($list, blocks) {
+  if (!$list) return;
+  // Index existing children by their data-block-key. Anything without
+  // a key (legacy children or external decorations attached to $list)
+  // is left untouched in its current position.
+  const prev = new Map();
+  for (const child of Array.from($list.children)) {
+    if (child.nodeType !== 1) continue;
+    const key = child.getAttribute("data-block-key");
+    if (key) prev.set(key, child);
+  }
+  const wantedKeys = new Set(blocks.map((b) => b.key));
+  for (const [key, node] of prev) {
+    if (!wantedKeys.has(key)) node.remove();
+  }
+  // Walk through wanted blocks in order. For each one, ensure the node
+  // exists, the fingerprint is current, and the node sits at the right
+  // position in $list. We compare positions by index — moving a node
+  // only when its current index differs from its target index.
+  for (let i = 0; i < blocks.length; i++) {
+    const b = blocks[i];
+    let node = prev.get(b.key);
+    const fp = b.fp == null ? "" : String(b.fp);
+    if (!node) {
+      // Brand-new block — render into a detached div and lift the
+      // first element out. Skips innerHTML on a live $list so we
+      // never blow away other children during the create step.
+      const tmp = document.createElement("div");
+      tmp.innerHTML = b.render();
+      node = tmp.firstElementChild;
+      if (!node) continue;
+      node.setAttribute("data-block-key", b.key);
+      node.setAttribute("data-block-fp", fp);
+    } else if (node.getAttribute("data-block-fp") !== fp) {
+      // Existing node, changed content — mutate this article's
+      // attributes + inner subtree without touching the root node
+      // identity. Anything outside this article (sibling cards,
+      // load-more button, filter stats line) stays put.
+      const tmp = document.createElement("div");
+      tmp.innerHTML = b.render();
+      const fresh = tmp.firstElementChild;
+      if (fresh) {
+        // Sync the root element's own attributes. We collect the
+        // existing attribute names first to avoid mutating while
+        // iterating — and we preserve data-block-key + data-block-fp
+        // since we re-stamp them below.
+        const keepAttrs = new Set(["data-block-key", "data-block-fp"]);
+        for (const a of Array.from(node.attributes)) {
+          if (!keepAttrs.has(a.name) && !fresh.hasAttribute(a.name)) {
+            node.removeAttribute(a.name);
+          }
+        }
+        for (const a of Array.from(fresh.attributes)) {
+          if (keepAttrs.has(a.name)) continue;
+          if (node.getAttribute(a.name) !== a.value) node.setAttribute(a.name, a.value);
+        }
+        // Replace the article's INNER HTML only. The root <article>
+        // stays — its identity is what keeps the MutationObservers
+        // quiet on unchanged-card polls and what lets us hand
+        // stable hooks to external decorators.
+        node.innerHTML = fresh.innerHTML;
+      }
+      node.setAttribute("data-block-fp", fp);
+    }
+    // Ensure the node sits at position `i`. We compare to the live
+    // child list, which already has earlier-positioned blocks in
+    // their final spots from prior iterations of this loop.
+    const expected = $list.children[i];
+    if (expected !== node) {
+      $list.insertBefore(node, expected || null);
+    }
+  }
+}
+
+/**
+ * Fingerprint-guarded innerHTML write for single-card mounts (primary
+ * state card, activity card, side intent card). If the new fingerprint
+ * matches the previous one, the function bails out without touching
+ * the DOM at all. Otherwise it does the standard innerHTML replacement
+ * exactly as before.
+ *
+ * `state` argument is optional and only used by callers that want to
+ * cache derived data on the element itself.
+ */
+function fpGuardedWrite($mount, fp, htmlBuilder) {
+  if (!$mount) return false;
+  const fpStr = fp == null ? "" : String(fp);
+  if ($mount.getAttribute("data-mount-fp") === fpStr) return false;
+  $mount.innerHTML = htmlBuilder();
+  $mount.setAttribute("data-mount-fp", fpStr);
+  return true;
+}
+
+/**
+ * Stable JSON fingerprint of an object. Plain JSON.stringify is good
+ * enough for our payloads — lobby + presence rows are deterministic
+ * order from the backend, so we don't need a deep sort. The cost is
+ * a few hundred microseconds per card; the saving is one full subtree
+ * reflow per poll, which is orders of magnitude more expensive.
+ */
+function fpOf(obj) {
+  try { return JSON.stringify(obj); } catch { return ""; }
+}
+
+// =========================================================================
 // Formatters & small utilities
 // =========================================================================
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({
@@ -1329,6 +1472,29 @@ function renderPrimaryState(state, ux) {
   const meSid = state.presence?.steamId;
   const { data } = ux;
 
+  // Compute the fingerprint once up front and bail out if the rendered
+  // card would be byte-for-byte identical to what's already in the
+  // mount. Saves the dominant primary-card reflow (avatar, pending
+  // requests, character strip, seat row) on every no-op poll.
+  const primaryFp = fpOf({
+    s: ux.state,
+    pres: state.presence ? { st: state.presence.status, sid: state.presence.steamId } : null,
+    lob: data.lobby ? lobbyCardFields(data.lobby) : null,
+    par: data.party ? {
+      id: data.party.partyId,
+      st: data.party.status,
+      sz: data.party.lobbySize,
+      ms: (data.party.members || []).map((m) => ({ s: m.steamId, st: m.status, n: m.personaName })),
+    } : null,
+    req: data.request ? { id: data.request.requestId, lob: data.request.lobbyId, st: data.request.status } : null,
+    sess: data.session ? { id: data.session.sessionId, st: data.session.status } : null,
+    pj: (data.incomingJoinReqs || []).map((r) => ({ id: r.requestId, lob: r.lobbyId, exp: r.expiresAt, ch: r.selectedCharacter, fs: r.fromSteamId, fa: r.fromAvatarUrl, fn: r.fromPersonaName })),
+    me: meSid || "",
+    part: data.partner ? { sid: data.partner.steamId, n: data.partner.personaName } : null,
+  });
+  if ($mount.getAttribute("data-mount-fp") === primaryFp) return;
+  $mount.setAttribute("data-mount-fp", primaryFp);
+
   switch (ux.state) {
     case "away":
       $mount.innerHTML = `
@@ -1520,16 +1686,31 @@ function renderSideStatusCard(state) {
       const stale = isStale(p);
       $live.classList.toggle("is-stale", stale);
       const $txt = $live.querySelector("span:last-child");
-      if ($txt) $txt.textContent = stale ? "Stale" : "Live";
+      const want = stale ? "Stale" : "Live";
+      if ($txt && $txt.textContent !== want) $txt.textContent = want;
     }
   }
 
   const $intent = document.getElementById("coop-strip-intent");
   if (!$intent) return;
   if (!p) {
-    $intent.innerHTML = "";
+    if ($intent.childNodes.length > 0) $intent.innerHTML = "";
+    $intent.removeAttribute("data-mount-fp");
     return;
   }
+  // Single-mount fingerprint guard: skip the innerHTML write whenever
+  // none of the user's preference inputs changed.
+  const intentFp = fpOf({
+    g: p.goal,
+    am: p.ascensionMin,
+    aM: p.ascensionMax,
+    pc: preferredCharactersOf(p),
+    v: p.voicePreference,
+    d: p.discordHandle,
+    n: p.note,
+  });
+  if ($intent.getAttribute("data-mount-fp") === intentFp) return;
+  $intent.setAttribute("data-mount-fp", intentFp);
   const rows = [];
   const preferredCharacter = firstPreferredCharacter(p);
   rows.push(intentRow("Goal", goalLabel(p.goal || "any"), !p.goal));
@@ -1607,6 +1788,11 @@ function setInput(id, value) {
 function renderActivityCard(state, ux) {
   const $section = document.getElementById("coop-active-state");
   if (!$section) return;
+  // Activity card only ever varies by ux.state — fingerprint that
+  // single dimension and bail when unchanged. Cheap and decisive.
+  const activityFp = `act:${ux.state}`;
+  if ($section.getAttribute("data-mount-fp") === activityFp) return;
+  $section.setAttribute("data-mount-fp", activityFp);
 
   const labels = {
     idle: { eyebrow: "Idle", title: "Ready to find a run", sub: "Use the panel above to get started." },
@@ -1655,18 +1841,33 @@ function renderInvites(state, ux) {
   const outgoing = state.outgoingInvites || [];
   const legacyTotal = incoming.length + outgoing.length;
 
-  $count.textContent = String(legacyTotal);
+  if ($count.textContent !== String(legacyTotal)) {
+    $count.textContent = String(legacyTotal);
+  }
   if (legacyTotal === 0) {
     $section.hidden = true;
-    $list.innerHTML = "";
+    // Reconcile against an empty block list so any stale invite cards
+    // are removed without wiping siblings that other code attached.
+    reconcileChildren($list, []);
     return;
   }
   $section.hidden = false;
-  const cards = [
-    ...incoming.map(renderIncomingInvite),
-    ...outgoing.map(renderOutgoingInvite),
-  ];
-  $list.innerHTML = cards.join("");
+  const blocks = [];
+  for (const i of incoming) {
+    blocks.push({
+      key: `inv-in:${i.inviteId}`,
+      fp: fpOf({ k: "in", id: i.inviteId, from: i.fromSteamId, name: i.fromPersonaName, av: i.fromAvatarUrl, exp: i.expiresAt, pre: i.messagePreset }),
+      render: () => renderIncomingInvite(i),
+    });
+  }
+  for (const o of outgoing) {
+    blocks.push({
+      key: `inv-out:${o.inviteId}`,
+      fp: fpOf({ k: "out", id: o.inviteId, to: o.toSteamId, name: o.toPersonaName, av: o.toAvatarUrl, exp: o.expiresAt }),
+      render: () => renderOutgoingInvite(o),
+    });
+  }
+  reconcileChildren($list, blocks);
 }
 
 function renderIncomingInvite(i) {
@@ -1762,12 +1963,28 @@ function renderLobbies(state, ux) {
 
   let allLobbies = visibleOpenLobbies(state);
   allLobbies = pinLobbiesForUx(allLobbies, state, ux);
-  $count.textContent = String(allLobbies.length);
+  if ($count.textContent !== String(allLobbies.length)) {
+    $count.textContent = String(allLobbies.length);
+  }
   const $filterBar = document.getElementById("coop-lobby-filter-bar");
   if ($filterBar) $filterBar.hidden = allLobbies.length === 0;
 
+  // Toggle compact-density class without touching content. Mutates a
+  // class on the root only; never wipes children.
+  $list.classList.toggle("is-compact", !!lobbyCompact);
+
+  // -------------------------------------------------------------------
+  // Three empty-ish branches kept structurally identical so the
+  // reconciler can keep cards around when the user toggles filters
+  // mid-poll. Each branch returns early with a single-block list so
+  // the rest of the list comes out fresh.
+  // -------------------------------------------------------------------
   if (allLobbies.length === 0) {
-    $list.innerHTML = renderEmptyLobbies();
+    reconcileChildren($list, [{
+      key: "empty:no-lobbies",
+      fp: "empty:no-lobbies",
+      render: () => renderEmptyLobbies(),
+    }]);
     return;
   }
 
@@ -1792,14 +2009,18 @@ function renderLobbies(state, ux) {
   }
 
   if (filtered.length === 0) {
-    $list.innerHTML = `
-      <div class="coop-empty-card coop-empty-card--compact coop-empty-card--inline">
-        <div class="coop-empty-card-text">
-          <h4 class="coop-empty-title">No lobbies match your filters</h4>
-          <p class="coop-empty-body">Try adjusting the goal, ascension, or voice filters above.</p>
-        </div>
-        <button class="btn-ghost btn-sm" type="button" id="coop-clear-filters">Clear filters</button>
-      </div>`;
+    reconcileChildren($list, [{
+      key: "empty:no-filter-match",
+      fp: "empty:no-filter-match",
+      render: () => `
+        <div class="coop-empty-card coop-empty-card--compact coop-empty-card--inline">
+          <div class="coop-empty-card-text">
+            <h4 class="coop-empty-title">No lobbies match your filters</h4>
+            <p class="coop-empty-body">Try adjusting the goal, ascension, or voice filters above.</p>
+          </div>
+          <button class="btn-ghost btn-sm" type="button" id="coop-clear-filters">Clear filters</button>
+        </div>`,
+    }]);
     document.getElementById("coop-clear-filters")?.addEventListener("click", clearLobbyFilters);
     return;
   }
@@ -1813,24 +2034,103 @@ function renderLobbies(state, ux) {
     ? state.openLobbiesTotalCount
     : allLobbies.length;
   const capActive = trueTotal > allLobbies.length;
-  let html = "";
+
+  // Build the block list. Filter stats and load-more are real blocks
+  // with their own keys; each lobby card is keyed by lobbyId so the
+  // reconciler can match the same lobby across polls and skip the
+  // DOM swap entirely when nothing changed.
+  const blocks = [];
   if (filtered.length < allLobbies.length || capActive) {
     const matchingFrom = capActive
       ? `${filtered.length} matching from top ${allLobbies.length} (of ${trueTotal} total)`
       : `${filtered.length} of ${allLobbies.length} matching`;
-    html += `<p class="coop-filter-stats">Showing ${Math.min(slice.length, filtered.length)} · ${matchingFrom}</p>`;
+    const statsText = `Showing ${Math.min(slice.length, filtered.length)} · ${matchingFrom}`;
+    blocks.push({
+      key: "filter-stats",
+      fp: statsText,
+      render: () => `<p class="coop-filter-stats">${esc(statsText)}</p>`,
+    });
   }
-  html += slice.map((l) => renderLobbyCard(l, mySid, pendingByLobby, state, lobbyCompact)).join("");
+  // Cache the active-pairing flag once — saves a property read per card
+  // and ensures every card in this render sees the same value.
+  const pairedSessionId = state.session && state.session.status === "active"
+    ? state.session.sessionId : null;
+  for (const l of slice) {
+    blocks.push({
+      key: `lobby:${l.lobbyId}`,
+      // Fingerprint includes every viewer-context bit that affects
+      // rendering. If any of these change the card re-renders inner
+      // HTML; otherwise the existing DOM node stays untouched (and
+      // every external decoration on it — match score ring, host run
+      // strip, LevelBadge — stays alive across the poll).
+      fp: fpOf({
+        c: lobbyCompact ? 1 : 0,
+        s: pairedSessionId,
+        p: pendingByLobby.get(l.lobbyId)?.requestId || null,
+        m: mySid || "",
+        // Pick only the lobby fields that drive the card. Avoids
+        // false-positive cache misses on bookkeeping fields the
+        // backend bumps on every tick (e.g. internal version).
+        l: lobbyCardFields(l),
+      }),
+      render: () => renderLobbyCard(l, mySid, pendingByLobby, state, lobbyCompact),
+    });
+  }
   if (remaining > 0) {
-    html += `<div class="coop-load-more"><button class="coop-load-more-btn" id="coop-load-more-lobbies">Show ${Math.min(CARDS_PAGE, remaining)} more <span class="coop-load-more-count">(${remaining} left)</span></button></div>`;
+    const showMoreCount = Math.min(CARDS_PAGE, remaining);
+    blocks.push({
+      key: "load-more",
+      fp: `load-more:${showMoreCount}:${remaining}`,
+      render: () => `<div class="coop-load-more"><button class="coop-load-more-btn" id="coop-load-more-lobbies">Show ${showMoreCount} more <span class="coop-load-more-count">(${remaining} left)</span></button></div>`,
+    });
   }
-  $list.innerHTML = html;
-  if (lobbyCompact) $list.classList.add("is-compact");
-  else $list.classList.remove("is-compact");
-  document.getElementById("coop-load-more-lobbies")?.addEventListener("click", () => {
-    lobbiesVisible += CARDS_PAGE;
-    renderLobbies(lastState, resolveCoopUxState(lastState, lastState?.presence?.steamId));
-  });
+  reconcileChildren($list, blocks);
+  // The load-more button gets a fresh listener whenever it's first
+  // created OR re-created (fp differs). When unchanged across polls
+  // the same DOM node persists, so its existing listener does too.
+  // This is a no-op in steady state.
+  const $loadMore = document.getElementById("coop-load-more-lobbies");
+  if ($loadMore && !$loadMore.__coopBound) {
+    $loadMore.__coopBound = true;
+    $loadMore.addEventListener("click", () => {
+      lobbiesVisible += CARDS_PAGE;
+      renderLobbies(lastState, resolveCoopUxState(lastState, lastState?.presence?.steamId));
+    });
+  }
+}
+
+/**
+ * Project a lobby down to just the fields that affect the rendered
+ * card. Used by both the lobbies list and the recommendations list
+ * fingerprints. Anything not in this set (server-side bookkeeping,
+ * internal version counters, etc.) won't cause a re-render — which is
+ * exactly the point: the lobby data is allowed to drift in ways the
+ * user can't see without paying for a card swap.
+ */
+function lobbyCardFields(l) {
+  return {
+    id: l.lobbyId,
+    t: l.title,
+    h: l.hostSteamId,
+    hn: l.hostPersonaName,
+    ha: l.hostAvatarUrl,
+    st: l.status,
+    g: l.goal,
+    am: l.ascensionMin,
+    aM: l.ascensionMax,
+    v: l.voicePreference,
+    vp: l.voicePreset,
+    vc: l.voiceChannelUrl,
+    mo: l.mode,
+    sz: l.lobbySize,
+    pc: l.preferredCharacters || [],
+    me: lobbyMembers(l),
+    no: l.note,
+    dc: l.discordHandle,
+    pa: l.partyId,
+    ap: l.approvalRequired,
+    ua: l.updatedAt,
+  };
 }
 
 /** Pin host lobby or requested lobby to the top of Open Run Lobbies. */
@@ -2108,48 +2408,62 @@ function renderRecommendations(state, ux) {
     state.recommendedMatches || [],
     mySid,
   );
-  $count.textContent = String(allRecs.length);
+  if ($count.textContent !== String(allRecs.length)) {
+    $count.textContent = String(allRecs.length);
+  }
 
   const pendingLobbyIds = new Set(outgoingPending.map((r) => r.lobbyId));
 
   if (outgoingPending.length > 0 && ux.state === "idle") {
     const req = outgoingPending[0];
     const hostName = findLobbyById(state, req.lobbyId)?.hostPersonaName || "the host";
-    $list.innerHTML = `
-      <div class="coop-empty-card coop-empty-card--compact coop-empty-card--inline">
-        <div class="coop-empty-card-text">
-          <h4 class="coop-empty-title">Seat request pending</h4>
-          <p class="coop-empty-body">Waiting for ${esc(hostName)} to accept. Best matches resume after you cancel or get accepted.</p>
-        </div>
-        <button class="btn-ghost btn-sm" type="button" data-coop-action="cancel-join" data-lobby="${esc(req.lobbyId)}">Cancel Request</button>
-      </div>`;
+    reconcileChildren($list, [{
+      key: "empty:request-pending",
+      fp: `req:${req.lobbyId}:${esc(hostName)}`,
+      render: () => `
+        <div class="coop-empty-card coop-empty-card--compact coop-empty-card--inline">
+          <div class="coop-empty-card-text">
+            <h4 class="coop-empty-title">Seat request pending</h4>
+            <p class="coop-empty-body">Waiting for ${esc(hostName)} to accept. Best matches resume after you cancel or get accepted.</p>
+          </div>
+          <button class="btn-ghost btn-sm" type="button" data-coop-action="cancel-join" data-lobby="${esc(req.lobbyId)}">Cancel Request</button>
+        </div>`,
+    }]);
     return;
   }
 
   if (allRecs.length === 0) {
-    $list.innerHTML = `
-      <div class="coop-empty-card coop-empty-card--compact coop-empty-card--inline">
-        <div class="coop-empty-card-text">
-          <h4 class="coop-empty-title">No best matches yet</h4>
-          <p class="coop-empty-body">Set your Run Preferences or post a run so players can find you.</p>
-        </div>
-        <div class="coop-empty-actions">
-          <button class="btn-ghost btn-sm" type="button" data-coop-action="open-intent">Run Preferences</button>
-        </div>
-      </div>`;
+    reconcileChildren($list, [{
+      key: "empty:no-recs",
+      fp: "empty:no-recs",
+      render: () => `
+        <div class="coop-empty-card coop-empty-card--compact coop-empty-card--inline">
+          <div class="coop-empty-card-text">
+            <h4 class="coop-empty-title">No best matches yet</h4>
+            <p class="coop-empty-body">Set your Run Preferences or post a run so players can find you.</p>
+          </div>
+          <div class="coop-empty-actions">
+            <button class="btn-ghost btn-sm" type="button" data-coop-action="open-intent">Run Preferences</button>
+          </div>
+        </div>`,
+    }]);
     return;
   }
   const me = state.presence;
   const recs = allRecs.filter((r) => recMatchesText(r, recsSearchQuery));
   if (recs.length === 0) {
-    $list.innerHTML = `
-      <div class="coop-empty-card coop-empty-card--compact coop-empty-card--inline">
-        <div class="coop-empty-card-text">
-          <h4 class="coop-empty-title">No matches for &ldquo;${esc(recsSearchQuery)}&rdquo;</h4>
-          <p class="coop-empty-body">Try a different name, ascension number, or character.</p>
-        </div>
-        <button class="btn-ghost btn-sm" type="button" id="coop-recs-clear-search">Clear search</button>
-      </div>`;
+    reconcileChildren($list, [{
+      key: "empty:no-search-match",
+      fp: `search:${recsSearchQuery}`,
+      render: () => `
+        <div class="coop-empty-card coop-empty-card--compact coop-empty-card--inline">
+          <div class="coop-empty-card-text">
+            <h4 class="coop-empty-title">No matches for &ldquo;${esc(recsSearchQuery)}&rdquo;</h4>
+            <p class="coop-empty-body">Try a different name, ascension number, or character.</p>
+          </div>
+          <button class="btn-ghost btn-sm" type="button" id="coop-recs-clear-search">Clear search</button>
+        </div>`,
+    }]);
     document.getElementById("coop-recs-clear-search")?.addEventListener("click", () => {
       recsSearchQuery = "";
       const $s = document.getElementById("coop-recs-search");
@@ -2172,23 +2486,79 @@ function renderRecommendations(state, ux) {
   const items = useLobbies ? matchLobbies : recs;
   const slice = items.slice(0, recsVisible);
   const remaining = items.length - slice.length;
-  let html = "";
+
+  const blocks = [];
   if (recsSearchQuery) {
-    html += `<p class="coop-filter-stats">Showing ${slice.length} of ${items.length} matching &ldquo;${esc(recsSearchQuery)}&rdquo;</p>`;
+    blocks.push({
+      key: "rec-stats",
+      fp: `srch:${slice.length}:${items.length}:${recsSearchQuery}`,
+      render: () => `<p class="coop-filter-stats">Showing ${slice.length} of ${items.length} matching &ldquo;${esc(recsSearchQuery)}&rdquo;</p>`,
+    });
   } else if (useLobbies) {
-    html += `<p class="coop-filter-stats">Compatible open run lobbies for you</p>`;
+    blocks.push({
+      key: "rec-stats",
+      fp: "rec-stats:compat",
+      render: () => `<p class="coop-filter-stats">Compatible open run lobbies for you</p>`,
+    });
   }
-  html += useLobbies
-    ? slice.map((l) => renderLobbyCard(l, mySid, pendingByLobby, state, true)).join("")
-    : slice.map((r) => renderRecCard(r, me)).join("");
+  const pairedSessionId = state.session && state.session.status === "active"
+    ? state.session.sessionId : null;
+  for (const item of slice) {
+    if (useLobbies) {
+      blocks.push({
+        key: `rec-lobby:${item.lobbyId}`,
+        fp: fpOf({
+          c: 1,
+          s: pairedSessionId,
+          p: pendingByLobby.get(item.lobbyId)?.requestId || null,
+          m: mySid || "",
+          l: lobbyCardFields(item),
+        }),
+        render: () => renderLobbyCard(item, mySid, pendingByLobby, state, true),
+      });
+    } else {
+      blocks.push({
+        key: `rec-user:${item.steamId || item.steamID || ""}`,
+        fp: fpOf({
+          m: mySid || "",
+          me: me ? { g: me.goal, am: me.ascensionMin, aM: me.ascensionMax, v: me.voicePreference, pc: preferredCharactersOf(me) } : null,
+          r: {
+            sid: item.steamId || item.steamID || "",
+            n: item.personaName,
+            a: item.avatarUrl,
+            g: item.goal,
+            am: item.ascensionMin,
+            aM: item.ascensionMax,
+            v: item.voicePreference,
+            d: item.hasDiscord,
+            no: item.note,
+            pc: item.preferredCharacters || [],
+            lb: item.label,
+            st: item.status,
+            hb: item.lastHeartbeatAt,
+          },
+        }),
+        render: () => renderRecCard(item, me),
+      });
+    }
+  }
   if (remaining > 0) {
-    html += `<div class="coop-load-more"><button class="coop-load-more-btn" id="coop-load-more-recs">Show ${Math.min(CARDS_PAGE, remaining)} more <span class="coop-load-more-count">(${remaining} left)</span></button></div>`;
+    const showMoreCount = Math.min(CARDS_PAGE, remaining);
+    blocks.push({
+      key: "rec-load-more",
+      fp: `rec-load-more:${showMoreCount}:${remaining}`,
+      render: () => `<div class="coop-load-more"><button class="coop-load-more-btn" id="coop-load-more-recs">Show ${showMoreCount} more <span class="coop-load-more-count">(${remaining} left)</span></button></div>`,
+    });
   }
-  $list.innerHTML = html;
-  document.getElementById("coop-load-more-recs")?.addEventListener("click", () => {
-    recsVisible += CARDS_PAGE;
-    renderRecommendations(lastState, resolveCoopUxState(lastState, lastState?.presence?.steamId));
-  });
+  reconcileChildren($list, blocks);
+  const $loadMore = document.getElementById("coop-load-more-recs");
+  if ($loadMore && !$loadMore.__coopRecsBound) {
+    $loadMore.__coopRecsBound = true;
+    $loadMore.addEventListener("click", () => {
+      recsVisible += CARDS_PAGE;
+      renderRecommendations(lastState, resolveCoopUxState(lastState, lastState?.presence?.steamId));
+    });
+  }
 }
 
 /**

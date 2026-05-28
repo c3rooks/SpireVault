@@ -14,7 +14,7 @@
 // Ascension is capped at 10 (Slay the Spire 2 max).
 // =========================================================================
 
-import { isSandboxSteamId, isCoopSandboxEnabled } from "./coop-sandbox.js?v=8";
+import { isSandboxSteamId, isCoopSandboxEnabled } from "./coop-sandbox.js?v=9";
 import { encodeStart, presetToPlanned, decodeStart, formatCountdown, startSortKey } from "./party-finder-startsoon.js?v=1";
 var PFH = window.PFH;
 
@@ -398,6 +398,96 @@ function onVisibilityChange() {
 // ── Helpers ──────────────────────────────────────────────────────────
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
+// =========================================================================
+// Mutate-in-place reconciliation helpers (v202+ poll-jank fix)
+// -------------------------------------------------------------------------
+// Mirror of the helper that lives in coop-lobbies.js so this file doesn't
+// have to take a new cross-module import (keeps the ?v= cache pin
+// independent). When a poll lands with unchanged data the lobby cards
+// keep their exact DOM nodes — no reflow, no jump, decorations from
+// party-finder-scene.js / -reputation-rt.js / -daily-rt.js stay intact.
+// =========================================================================
+function pfReconcileChildren($list, blocks) {
+  if (!$list) return;
+  const prev = new Map();
+  for (const child of Array.from($list.children)) {
+    if (child.nodeType !== 1) continue;
+    const key = child.getAttribute("data-block-key");
+    if (key) prev.set(key, child);
+  }
+  const wantedKeys = new Set(blocks.map((b) => b.key));
+  for (const [key, node] of prev) {
+    if (!wantedKeys.has(key)) node.remove();
+  }
+  for (let i = 0; i < blocks.length; i++) {
+    const b = blocks[i];
+    let node = prev.get(b.key);
+    const fp = b.fp == null ? "" : String(b.fp);
+    if (!node) {
+      const tmp = document.createElement("div");
+      tmp.innerHTML = b.render();
+      node = tmp.firstElementChild;
+      if (!node) continue;
+      node.setAttribute("data-block-key", b.key);
+      node.setAttribute("data-block-fp", fp);
+    } else if (node.getAttribute("data-block-fp") !== fp) {
+      const tmp = document.createElement("div");
+      tmp.innerHTML = b.render();
+      const fresh = tmp.firstElementChild;
+      if (fresh) {
+        const keepAttrs = new Set(["data-block-key", "data-block-fp"]);
+        for (const a of Array.from(node.attributes)) {
+          if (!keepAttrs.has(a.name) && !fresh.hasAttribute(a.name)) {
+            node.removeAttribute(a.name);
+          }
+        }
+        for (const a of Array.from(fresh.attributes)) {
+          if (keepAttrs.has(a.name)) continue;
+          if (node.getAttribute(a.name) !== a.value) node.setAttribute(a.name, a.value);
+        }
+        node.innerHTML = fresh.innerHTML;
+      }
+      node.setAttribute("data-block-fp", fp);
+    }
+    const expected = $list.children[i];
+    if (expected !== node) {
+      $list.insertBefore(node, expected || null);
+    }
+  }
+}
+
+function pfFpOf(obj) {
+  try { return JSON.stringify(obj); } catch { return ""; }
+}
+
+/** Project a lobby down to the fields that drive a Live Party row /
+ *  Best Party card. Fingerprint everything else as a separate "ctx"
+ *  bag (mySid, prefs, isBest). */
+function pfLobbyCardFields(l) {
+  return {
+    id: l.lobbyId,
+    t: l.title,
+    h: l.hostSteamId,
+    hn: l.hostPersonaName,
+    ha: l.hostAvatarUrl,
+    st: l.status,
+    g: l.goal,
+    am: l.ascensionMin,
+    aM: l.ascensionMax,
+    v: l.voicePreference,
+    vp: l.voicePreset,
+    mo: l.mode,
+    sz: l.lobbySize,
+    pc: l.preferredCharacters || [],
+    me: Array.isArray(l.acceptedMemberSteamIds) ? l.acceptedMemberSteamIds
+      : l.hostSteamId ? [l.hostSteamId] : [],
+    no: l.note,
+    pa: l.partyId,
+    br: l.branch || l.branchAccept,
+    ua: l.updatedAt,
+  };
+}
+
 function normalizeCharacterId(v) {
   const id = String(v || "").trim().toLowerCase();
   return PF_CHAR_IDS.has(id) ? id : "";
@@ -751,9 +841,16 @@ function render(rawState) {
     renderBestParty(state, best);
   } else {
     // Stage A/B: clear the best card so a stale render from a prior
-    // bucket can't ghost into the new layout.
+    // bucket can't ghost into the new layout. We also wipe the
+    // mount fingerprint so the next Stage-C render re-writes.
     const $bestCard = document.getElementById("pf-best-card");
-    if ($bestCard) $bestCard.innerHTML = "";
+    if ($bestCard) {
+      const stageEmptyFp = `best-stage-${bucket}-empty`;
+      if ($bestCard.getAttribute("data-mount-fp") !== stageEmptyFp) {
+        $bestCard.innerHTML = "";
+        $bestCard.setAttribute("data-mount-fp", stageEmptyFp);
+      }
+    }
   }
   // Stage A: don't render the Live Parties list at all. The hero +
   // Showtime strip own the whole page. CSS hides the surrounding
@@ -761,8 +858,8 @@ function render(rawState) {
   if (bucket === "a") {
     const $list = document.getElementById("pf-live-list");
     const $count = document.getElementById("pf-live-count");
-    if ($list) $list.innerHTML = "";
-    if ($count) $count.textContent = "0";
+    if ($list) pfReconcileChildren($list, []);
+    if ($count && $count.textContent !== "0") $count.textContent = "0";
   } else {
     renderLiveParties(state, visible, best);
   }
@@ -784,14 +881,27 @@ function renderPrefsPanel(state) {
   const voiceTxt = p.voicePreference === "yes" ? "Voice preferred"
     : p.voicePreference === "no" ? "No voice"
     : p.voicePreference === "optional" ? "Voice optional" : "Voice flexible";
-  const chips = [
-    chipWithCharHtml(myChar),
-    chipHtml("Ascension", ascensionBucketLabel(p.ascensionMin, p.ascensionMax)),
-    chipHtml("Voice", voiceTxt),
-    chipHtml("Branch", BRANCHES.find((b) => b.id === myBranch)?.label || "Main or Beta OK"),
-    chipHtml("Goal", goalLabel(p.goal || "any")),
-  ];
-  $chips.innerHTML = chips.join("");
+  // Fingerprint-guard the chip strip — five tiny chips, but innerHTML
+  // here used to fire every poll cycle. Now it only writes when one of
+  // the user's preference inputs actually changes.
+  const chipsFp = pfFpOf({
+    c: myChar,
+    a: [p.ascensionMin, p.ascensionMax],
+    v: voiceTxt,
+    b: myBranch,
+    g: p.goal || "any",
+  });
+  if ($chips.getAttribute("data-mount-fp") !== chipsFp) {
+    const chips = [
+      chipWithCharHtml(myChar),
+      chipHtml("Ascension", ascensionBucketLabel(p.ascensionMin, p.ascensionMax)),
+      chipHtml("Voice", voiceTxt),
+      chipHtml("Branch", BRANCHES.find((b) => b.id === myBranch)?.label || "Main or Beta OK"),
+      chipHtml("Goal", goalLabel(p.goal || "any")),
+    ];
+    $chips.innerHTML = chips.join("");
+    $chips.setAttribute("data-mount-fp", chipsFp);
+  }
   const $nm = document.getElementById("pf-prefs-nomatch");
   if ($nm) $nm.hidden = true;
 }
@@ -809,6 +919,9 @@ function renderBestParty(state, best) {
   const $card = document.getElementById("pf-best-card");
   if (!$card) return;
   if (!best) {
+    const emptyFp = "best:none";
+    if ($card.getAttribute("data-mount-fp") === emptyFp) return;
+    $card.setAttribute("data-mount-fp", emptyFp);
     $card.innerHTML = `
       <article class="pf-best-card pf-best-card--empty">
         <div class="pf-best-meta">
@@ -825,6 +938,28 @@ function renderBestParty(state, best) {
       </article>`;
     return;
   }
+  // Same-best-lobby-across-polls is the common case once a user has a
+  // good match. Fingerprint it and skip the swap when nothing changed.
+  // Keeping the same DOM node means the LevelBadge popover trigger,
+  // host run strip, and match score ring stay attached — the user
+  // never sees the "Best Party for you" card flicker on every poll.
+  const myPrefs = state.__pfPrefs || readMyPrefsExt();
+  const bestFp = pfFpOf({
+    pref: {
+      g: state.presence?.goal,
+      am: state.presence?.ascensionMin,
+      aM: state.presence?.ascensionMax,
+      v: state.presence?.voicePreference,
+      pc: (state.presence?.preferredCharacters || []),
+      br: myPrefs?.branch || "",
+    },
+    me: state.presence?.steamId || "",
+    l: pfLobbyCardFields(best),
+    sess: state.session?.status === "active" ? state.session.sessionId : null,
+    party: state.party?.partyId ? { id: state.party.partyId, st: state.party.status } : null,
+  });
+  if ($card.getAttribute("data-mount-fp") === bestFp) return;
+  $card.setAttribute("data-mount-fp", bestFp);
   const score = fitScore(best, state);
   const isGreat = score >= 8;
   const isGood = score >= 5;
@@ -981,20 +1116,30 @@ function renderLiveParties(state, visible, best) {
   const $list = document.getElementById("pf-live-list");
   const $count = document.getElementById("pf-live-count");
   if (!$list || !$count) return;
-  $count.textContent = String(visible.length);
+  if ($count.textContent !== String(visible.length)) {
+    $count.textContent = String(visible.length);
+  }
 
   if (visible.length === 0) {
-    $list.innerHTML = `
-      <div class="pf-empty" id="pf-live-empty">
-        <h4>No live parties yet</h4>
-        <p>Start one or use Discord while you wait.</p>
-        <div class="pf-empty-actions">
-          <button type="button" class="pf-btn pf-btn--primary" data-pf-action="open-host">Host a Room</button>
-          <button type="button" class="pf-btn pf-btn--ghost" data-pf-action="refresh">Refresh</button>
-          <button type="button" class="pf-btn pf-btn--ghost" data-pf-action="open-prefs">Change Preferences</button>
-        </div>
-        <ul class="pf-empty-list"><li>your run goal</li><li>voice room</li><li>character preference</li><li>open seats</li></ul>
-      </div>`;
+    // The "No live parties yet" stub is enhanced into the cold-start
+    // pitch by party-finder-empty-rt.js. Reconcile against a single
+    // block so we keep the same #pf-live-empty node across polls — the
+    // empty-rt MutationObserver then only fires once, not every cycle.
+    pfReconcileChildren($list, [{
+      key: "live-empty",
+      fp: "live-empty",
+      render: () => `
+        <div class="pf-empty" id="pf-live-empty">
+          <h4>No live parties yet</h4>
+          <p>Start one or use Discord while you wait.</p>
+          <div class="pf-empty-actions">
+            <button type="button" class="pf-btn pf-btn--primary" data-pf-action="open-host">Host a Room</button>
+            <button type="button" class="pf-btn pf-btn--ghost" data-pf-action="refresh">Refresh</button>
+            <button type="button" class="pf-btn pf-btn--ghost" data-pf-action="open-prefs">Change Preferences</button>
+          </div>
+          <ul class="pf-empty-list"><li>your run goal</li><li>voice room</li><li>character preference</li><li>open seats</li></ul>
+        </div>`,
+    }]);
     return;
   }
 
@@ -1027,12 +1172,49 @@ function renderLiveParties(state, visible, best) {
   const cap = PAGE_SIZE * page;
   const shownLobbies = sorted.slice(0, cap);
   const remaining = sorted.length - shownLobbies.length;
-  const rowsHtml = shownLobbies.map((l) => renderLiveRow(l, state, best)).join("");
-  const moreHtml = remaining > 0 ? `
-    <div class="pf-live-more">
-      <button type="button" class="pf-btn pf-btn--ghost" data-pf-action="live-more">Show ${Math.min(PAGE_SIZE, remaining)} more (${remaining} hidden)</button>
-    </div>` : "";
-  $list.innerHTML = rowsHtml + moreHtml;
+
+  // Reconcile each row by lobbyId. The expensive part — innerHTML on
+  // ~25 rows + scene.js's body MutationObserver firing on each row's
+  // replacement — only runs for rows whose fingerprint actually moved.
+  // In steady state (lobby data identical across polls) this is zero
+  // DOM ops.
+  const mySid = state.presence?.steamId || "";
+  const myPrefs = state.__pfPrefs || readMyPrefsExt();
+  const ctx = {
+    sid: mySid,
+    pref: {
+      g: state.presence?.goal,
+      am: state.presence?.ascensionMin,
+      aM: state.presence?.ascensionMax,
+      v: state.presence?.voicePreference,
+      pc: (state.presence?.preferredCharacters || []),
+      br: myPrefs?.branch || "",
+    },
+  };
+  const blocks = [];
+  for (const l of shownLobbies) {
+    blocks.push({
+      key: `pf-row:${l.lobbyId}`,
+      fp: pfFpOf({
+        ctx,
+        l: pfLobbyCardFields(l),
+        isBest: best?.lobbyId === l.lobbyId ? 1 : 0,
+      }),
+      render: () => renderLiveRow(l, state, best),
+    });
+  }
+  if (remaining > 0) {
+    const moreCount = Math.min(PAGE_SIZE, remaining);
+    blocks.push({
+      key: "pf-live-more",
+      fp: `more:${moreCount}:${remaining}`,
+      render: () => `
+        <div class="pf-live-more">
+          <button type="button" class="pf-btn pf-btn--ghost" data-pf-action="live-more">Show ${moreCount} more (${remaining} hidden)</button>
+        </div>`,
+    });
+  }
+  pfReconcileChildren($list, blocks);
 }
 
 // Pagination cursor for Live Parties. Bumped one page at a time by

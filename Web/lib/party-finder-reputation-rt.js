@@ -523,22 +523,66 @@
     document.addEventListener("keydown", onDocumentKeydown);
 
     if (typeof MutationObserver !== "function") return;
+    // -------------------------------------------------------------------
+    // v202 poll-jank fix:
+    //
+    // Old behavior — observe `document.body` with `subtree:true`. Every
+    // single innerHTML write anywhere on the page (lobby list, recs,
+    // primary state card, side card, party hub, modals, sandbox, even
+    // toast injection) fired this callback, which then ran
+    // `autoAnnotateProdSurface(document)` + `scan(document)` — two full
+    // document walks per mutation, for every poll cycle. At 15s cadence
+    // on a list with ~25 cards the page paid 50+ document walks per
+    // poll just from this observer alone. That was the primary visible
+    // "jump every 5–15s" jank source.
+    //
+    // New behavior — rAF-coalesced debounce: regardless of how many
+    // mutations the page fires in one frame, we only do at most one
+    // scan/annotate pass per animation frame. With the upstream
+    // mutate-in-place renderers, unchanged-card polls no longer cause
+    // any subtree mutation at all, so this observer becomes truly
+    // quiet in steady state.
+    //
+    // We still observe document.body because the SPA-route swap, the
+    // host modal, the Best Matches list, and dev sandbox can each
+    // create rep-slot nodes outside the lobby surface. Scoping just
+    // to one container would miss them.
+    // -------------------------------------------------------------------
+    var rafPending = false;
+    function scheduleFullScan() {
+      if (rafPending) return;
+      rafPending = true;
+      var run = function () {
+        rafPending = false;
+        try {
+          autoAnnotateProdSurface(document);
+          scan(document);
+        } catch (_) { /* defensive — runtime augmentation must never crash the page */ }
+      };
+      if (typeof window.requestAnimationFrame === "function") {
+        window.requestAnimationFrame(run);
+      } else {
+        setTimeout(run, 16);
+      }
+    }
     var mo = new MutationObserver(function (entries) {
+      // Fast-path the synchronous work: directly hydrate any rep slot
+      // that landed as an added node so a brand-new lobby card gets
+      // its LevelBadge without waiting a frame. The expensive full
+      // document scan is deferred to the next animation frame so a
+      // burst of mutations only costs one walk.
       var sawAdds = false;
       for (var i = 0; i < entries.length; i++) {
         var e = entries[i];
+        if (!e.addedNodes || e.addedNodes.length === 0) continue;
         for (var j = 0; j < e.addedNodes.length; j++) {
           var n = e.addedNodes[j];
           if (!n || n.nodeType !== 1) continue;
           sawAdds = true;
           if (n.matches && n.matches("[data-pf-rep-slot]")) hydrateSlot(n);
-          if (n.querySelectorAll) scan(n);
         }
       }
-      if (sawAdds) {
-        autoAnnotateProdSurface(document);
-        scan(document);
-      }
+      if (sawAdds) scheduleFullScan();
     });
     mo.observe(document.body, { childList: true, subtree: true });
   }
