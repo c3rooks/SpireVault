@@ -1,0 +1,25 @@
+{
+  "id": "SpireVaultCompanion",
+  "name": "SpireVault Companion",
+  "version": "0.1.0",
+  "author": "SpireVault",
+  "description": "Streams live STS2 run state to spirevault.app for cloud damage meters, spectator URLs, OBS overlays, and team-aware AI coaching.",
+  "homepage": "https://spirevault.app/companion-mod",
+  "repository": "https://github.com/spirevault/spirevault/tree/main/Mod/SpireVaultCompanion",
+  "license": "MIT",
+  "gameVersion": "1.0+",
+  "dependencies": [
+    {
+      "id": "BaseLib-StS2",
+      "version": ">=1.0.0",
+      "required": true
+    },
+    {
+      "id": "ModConfig",
+      "version": ">=1.0.0",
+      "required": false
+    }
+  ],
+  "tags": ["multiplayer", "presence", "damage-meter", "tools", "qol"],
+  "entrypoint": "SpireVaultCompanion.dll"
+}

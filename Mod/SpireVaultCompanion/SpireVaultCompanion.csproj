@@ -1,0 +1,84 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    SpireVault Companion mod project file.
+
+    Targets net9.0 to match the Slay the Spire 2 runtime. Mirror the
+    game's exact runtime when STS2 ships a major patch — mismatches
+    surface as `MissingMethodException` at hook-attach time, never
+    at compile time.
+
+    The game's managed DLLs are referenced via the `STS2_PATH` env
+    var so we don't commit a path that depends on each contributor's
+    Steam install location.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>SpireVaultCompanion</AssemblyName>
+    <RootNamespace>SpireVault.Companion</RootNamespace>
+    <Version>0.1.0</Version>
+    <Authors>SpireVault</Authors>
+    <Product>SpireVault Companion</Product>
+    <Copyright>MIT licensed — see LICENSE</Copyright>
+    <Description>Streams live STS2 run state to spirevault.app for cloud damage meters, spectator URLs, and team-aware AI coaching.</Description>
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+  </PropertyGroup>
+
+  <!--
+    Harmony 2 is the universal C# patching library. Used for game-side
+    method patching (run lifecycle, combat events). BaseLib-StS2
+    bundles a known-good Harmony 2.x already; we list it as a NuGet
+    dependency so a fresh checkout that doesn't have BaseLib-StS2
+    around can still compile this scaffold.
+  -->
+  <ItemGroup>
+    <PackageReference Include="Lib.Harmony" Version="2.3.3" />
+  </ItemGroup>
+
+  <!--
+    Game DLL references. Set STS2_PATH in your shell before running
+    `dotnet build`. The default path here is the macOS Steam location;
+    Windows users typically need
+      C:\Program Files (x86)\Steam\steamapps\common\SlayTheSpire2
+    Override with `set STS2_PATH=...` (cmd) or `$env:STS2_PATH=...` (PS).
+
+    BaseLib-StS2 is referenced from `<game>/mods/BaseLib-StS2/` per
+    the upstream install guide. If you get a "file not found" error
+    on first build, install BaseLib-StS2 first.
+  -->
+  <PropertyGroup>
+    <STS2Path Condition=" '$(STS2_PATH)' == '' ">$(HOME)/Library/Application Support/Steam/steamapps/common/SlayTheSpire2</STS2Path>
+    <STS2Path Condition=" '$(STS2_PATH)' != '' ">$(STS2_PATH)</STS2Path>
+    <STS2Managed>$(STS2Path)/managed</STS2Managed>
+  </PropertyGroup>
+
+  <ItemGroup Condition="Exists('$(STS2Managed)')">
+    <Reference Include="Assembly-CSharp">
+      <HintPath>$(STS2Managed)/Assembly-CSharp.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="GodotSharp">
+      <HintPath>$(STS2Managed)/GodotSharp.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="BaseLib-StS2">
+      <HintPath>$(STS2Path)/mods/BaseLib-StS2/BaseLib-StS2.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <!--
+    Copy the manifest + license alongside the built DLL so the zip
+    layout is correct without a separate packaging step.
+  -->
+  <ItemGroup>
+    <None Include="mod_manifest.json" CopyToOutputDirectory="Always" />
+    <None Include="LICENSE" CopyToOutputDirectory="Always" />
+    <None Include="CHANGELOG.md" CopyToOutputDirectory="Always" />
+  </ItemGroup>
+
+</Project>
