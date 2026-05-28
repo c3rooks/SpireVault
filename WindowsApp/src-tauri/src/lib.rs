@@ -29,7 +29,11 @@ use std::{
     path::PathBuf,
     sync::{Arc, Mutex},
 };
-use tauri::{AppHandle, Emitter, Manager, State};
+use tauri::{
+    menu::{Menu, MenuItem, PredefinedMenuItem},
+    tray::{MouseButton, MouseButtonState, TrayIconEvent},
+    AppHandle, Emitter, Manager, State, WindowEvent,
+};
 
 // ─── App state shared across commands ────────────────────────────────────────
 
@@ -353,6 +357,39 @@ fn eval_in_window(app: &AppHandle, label: &str, js: &str) {
     }
 }
 
+// ─── Main-window show/hide helpers (driven by tray + window close) ────────────
+//
+// Shared by the tray left-click handler, the "Show SpireVault" menu item, and
+// the "Hide to tray" menu item. Pulled out as free functions so all three
+// entry points stay in sync — v0.9.9 split this logic between a half-wired
+// tray handler and a Tauri command, which is how the bug slipped in.
+
+/// Restore the main window from tray: show, unminimize, focus.
+/// Called by the tray left-click handler and the "Show SpireVault" menu item.
+fn restore_main_window(app: &AppHandle) {
+    let Some(win) = app.get_webview_window("main") else { return };
+
+    // Order matters on Windows: show() first (no-op if already visible),
+    // then unminimize() (no-op if not minimized), then set_focus() to
+    // bring to front + take keyboard focus. set_focus is called last so
+    // foreground rules apply to a window that is already visible and
+    // restored — otherwise Windows can swallow the focus request and
+    // we'd just get a taskbar flash instead of a focused window.
+    let _ = win.show();
+    if win.is_minimized().unwrap_or(false) {
+        let _ = win.unminimize();
+    }
+    let _ = win.set_focus();
+}
+
+/// Hide the main window to the tray. The process keeps running; the tray
+/// icon (or Alt+Space overlay) is the only way to bring it back.
+fn hide_main_window_to_tray(app: &AppHandle) {
+    if let Some(win) = app.get_webview_window("main") {
+        let _ = win.hide();
+    }
+}
+
 /// (Re)start the file watcher for `folder`. Stores the new watcher in state,
 /// dropping the old one which stops the previous watch automatically.
 fn restart_watcher(app: AppHandle, state: Arc<VaultState>, folder: PathBuf) {
@@ -408,6 +445,29 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_os::init())
         .manage(vault_state)
+        // Window-close → hide-to-tray. Clicking the X on the main window
+        // hides it instead of quitting the process; the tray menu's "Quit"
+        // item is the only true exit. This mirrors what users expect from
+        // any system-tray app (Discord, Slack, Steam tray, etc.) and avoids
+        // the "where did my live-run watcher go" surprise when someone X's
+        // out mid-run.
+        //
+        // The overlay window is left alone — it's already small, frameless,
+        // and skipTaskbar=true, so its close behaviour doesn't matter to
+        // the user-facing flow. We only intercept the main window.
+        //
+        // TODO(0.10.x): expose this as a setting once the in-app
+        // preferences panel lands, so users who prefer close-to-quit can
+        // opt out. For the v0.9.10 bug-fix release we hardcode tray-friendly
+        // behaviour because that's the whole point of the tray icon.
+        .on_window_event(|window, event| {
+            if let WindowEvent::CloseRequested { api, .. } = event {
+                if window.label() == "main" {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             vault_host_message,
             get_save_folder,
@@ -496,12 +556,84 @@ pub fn run() {
                 .ok();
             app.global_shortcut().register(shortcut).ok();
 
-            // ── Tray icon ────────────────────────────────────────────────────
-            // Tray is configured in tauri.conf.json; right-click menu wired here
-            // so "Show The Vault" always brings the main window to front.
-            app.on_tray_icon_event(|_tray, event| {
-                if let tauri::tray::TrayIconEvent::Click { .. } = event {
-                    // handled by default (no-op here)
+            // ── Tray menu + click handlers ───────────────────────────────────
+            //
+            // v0.9.9 registered the tray icon via tauri.conf.json but never
+            // attached a menu or a real click handler, so the icon appeared
+            // in the system tray but did nothing on click. v0.9.10 wires:
+            //   • Show SpireVault   → restore + focus the main window
+            //   • Hide to tray      → hide the main window (app keeps running)
+            //   • ────────────────
+            //   • Quit              → app.exit(0)
+            // Left-click on the icon  → same as "Show SpireVault"
+            // Right-click on the icon → opens the menu (default Tauri
+            //   behaviour because tauri.conf.json sets menuOnLeftClick=false)
+            //
+            // The tray icon itself is configured in tauri.conf.json (with an
+            // explicit id="main"); here we just look it up and attach the
+            // menu + handlers. Tauri 2's MenuItem API has no "default item"
+            // concept, but "Show SpireVault" is intentionally first so that
+            // the platforms that DO bold the first item (some Linux DEs) get
+            // the right one.
+            let show_item = MenuItem::with_id(
+                app,
+                "tray_show",
+                "Show SpireVault",
+                true,
+                None::<&str>,
+            )?;
+            let hide_item = MenuItem::with_id(
+                app,
+                "tray_hide",
+                "Hide to tray",
+                true,
+                None::<&str>,
+            )?;
+            let separator = PredefinedMenuItem::separator(app)?;
+            let quit_item = MenuItem::with_id(
+                app,
+                "tray_quit",
+                "Quit",
+                true,
+                None::<&str>,
+            )?;
+            let tray_menu = Menu::with_items(
+                app,
+                &[&show_item, &hide_item, &separator, &quit_item],
+            )?;
+
+            if let Some(tray) = app.tray_by_id("main") {
+                tray.set_menu(Some(tray_menu))?;
+            } else {
+                // Shouldn't happen — tauri.conf.json declares a tray with
+                // id="main" — but if it ever does, log instead of panicking
+                // so the rest of the app still boots.
+                eprintln!(
+                    "[Vault] tray icon 'main' not found at setup time; \
+                     menu not attached. Check tauri.conf.json#app.trayIcon."
+                );
+            }
+
+            // Global menu-event handler — fires for any menu in the app.
+            // We only own the tray menu, so all ids here come from there.
+            app.on_menu_event(|app, event| match event.id().as_ref() {
+                "tray_show" => restore_main_window(app),
+                "tray_hide" => hide_main_window_to_tray(app),
+                "tray_quit" => app.exit(0),
+                _ => {}
+            });
+
+            // Global tray-icon event handler. Right-click is handled by Tauri
+            // itself (opens the menu); we only need to wire left-click → show.
+            // Filtering on `Up` avoids firing twice per click (Down + Up).
+            app.on_tray_icon_event(|tray, event| {
+                if let TrayIconEvent::Click {
+                    button: MouseButton::Left,
+                    button_state: MouseButtonState::Up,
+                    ..
+                } = event
+                {
+                    restore_main_window(tray.app_handle());
                 }
             });
 
