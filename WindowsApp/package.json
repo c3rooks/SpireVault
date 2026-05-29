@@ -1,6 +1,6 @@
 {
   "name": "the-vault-windows",
-  "version": "0.9.10",
+  "version": "0.9.11",
   "description": "Slay the Spire 2 companion — Windows build",
   "private": true,
   "scripts": {
