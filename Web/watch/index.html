@@ -31,7 +31,7 @@
     <div id="state-list">
       <header class="sv-hero sv-rise sv-rise--1" id="replays-hero">
         <div>
-          <div class="sv-hero-eyebrow"><span class="sv-dot" aria-hidden="true"></span> Featured replay</div>
+          <div class="sv-hero-eyebrow"><span class="sv-dot" aria-hidden="true"></span> <span id="hero-eyebrow">Featured replay</span></div>
           <h1 class="sv-hero-title" id="hero-title">Pulling latest runs</h1>
           <p class="sv-hero-sub" id="hero-sub">Recent shared Slay the Spire 2 runs from the SpireVault community. Open any card to scrub through the deck, relics, and final floor.</p>
           <div class="sv-hero-actions">
@@ -246,6 +246,8 @@
       const items = Array.isArray(r.data?.items) ? r.data.items : [];
       const grid = document.getElementById("replay-grid");
       const empty = document.getElementById("replay-empty");
+      const heroEl = document.getElementById("replays-hero");
+      const heroEyebrow = document.getElementById("hero-eyebrow");
       const heroTitle = document.getElementById("hero-title");
       const heroSub = document.getElementById("hero-sub");
       const heroCount = document.getElementById("hero-count");
@@ -265,11 +267,30 @@
       grid.innerHTML = "";
       grid.hidden = false;
       empty.hidden = true;
+
+      // D06: with a single shared run, rendering it BOTH as the big
+      // "Featured replay" hero AND as the sole "Featured" grid card
+      // showed the same run twice and left a large dead band. When the
+      // count is <=1, reframe the hero as a generic share invitation
+      // (so it no longer echoes the run) and render the lone run as a
+      // normal — not featured — card so it appears exactly once.
+      if (items.length <= 1) {
+        const only = items[0];
+        grid.appendChild(renderReplayCard(only));
+        if (heroEyebrow) heroEyebrow.textContent = "Shared runs";
+        heroTitle.textContent = "One run shared so far";
+        heroSub.textContent = "Open it below to step through the deck and relics — then drop your own STS2 save on spirevault.app to add the next one.";
+        heroCount.textContent = String(items.length);
+        heroRecent.textContent = fmtRel(only.run.endedAt) || "just now";
+        return;
+      }
+
       const [featured, ...rest] = items;
       grid.appendChild(renderReplayCard(featured, { featured: true }));
       for (const h of rest.slice(0, 23)) grid.appendChild(renderReplayCard(h));
 
       // Hero copy/metrics
+      if (heroEyebrow) heroEyebrow.textContent = "Featured replay";
       heroTitle.textContent = featured.run.won
         ? `${cap(featured.run.character)} cleared on A${featured.run.ascension ?? 0}`
         : `${cap(featured.run.character)} fell on floor ${featured.run.floorReached ?? 0}`;

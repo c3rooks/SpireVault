@@ -71,7 +71,7 @@ const STS2_APP_ID = "2868840";
  * on an old client — instruct hard refresh. If it DOES match, the
  * bug is real and we can stop chasing cache ghosts.
  */
-const VAULT_BUILD = "v205-2026-05-28-showtime-strip-and-leave-fix";
+const VAULT_BUILD = "v206-2026-05-29-ascension-accuracy-nav-edges-icons";
 
 /** True on wrangler pages dev / local loopback — not production hostnames. */
 function isLocalDevHost() {
@@ -2210,6 +2210,9 @@ async function boot() {
   document.querySelectorAll(".nav-row").forEach((btn) => {
     btn.addEventListener("click", () => switchTab(btn.dataset.tab));
   });
+  // Keep the mobile tab strip's edge-fade affordance in sync with its
+  // scroll position so the "back" tabs never look unreachable.
+  setupNavStripEdges();
   // Paint the "NEW" pill on the News button before we route to the
   // user's last tab — that way even if they're going straight to
   // Recent Runs, they see the pill on the sidebar immediately.
@@ -2957,55 +2960,37 @@ async function refreshGuestRoster() {
     }
     if ($rosterWrap && $list) {
       $rosterWrap.hidden = total === 0;
-      // Guest view: list rows come back sanitized (anonId / status /
-      // inSTS2 only). Render anonymous placeholders with status pills
-      // so the social proof ("someone IS in STS2 right now") lands
-      // without leaking Steam handles or avatars. Clicking a row does
-      // nothing for guests; we only enable invite actions after
-      // sign-in. A sticky footer row prompts sign-in to reveal
-      // identities and send invites.
-      const rowsHtml = list.slice(0, 12).map((p, i) => `
-        <div class="guest-roster-row guest-roster-row--anon">
-          <div class="avatar avatar-anon" aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="12" cy="8" r="4"/>
-              <path d="M4 21v-1a8 8 0 0 1 16 0v1"/>
-            </svg>
-          </div>
-          <div class="guest-roster-meta">
-            <strong>Anonymous player ${i + 1}</strong>
-            <span class="muted small">${guestStatusLabel(p)}</span>
-          </div>
-          ${p.inSTS2 ? '<span class="pill ember">In STS2</span>' : ''}
-        </div>`).join("");
-      const moreHidden = total > 12 ? `<p class="muted small guest-roster-more">…and ${total - 12} more</p>` : "";
-      const signinCta = `
-        <div class="guest-roster-cta">
-          <div>
-            <strong>Steam handles hidden while you're signed out.</strong>
-            <span class="muted small">Sign in with Steam to see who's here and send invites.</span>
-          </div>
+      // Guest view: rows come back sanitized (status / inSTS2 only, no
+      // Steam handles). We deliberately do NOT enumerate them as
+      // "Anonymous player 1…N" — a wall of sequential placeholder names
+      // reads like a bot farm on the front door. Instead show an honest
+      // aggregate built from the REAL feed counts and let sign-in be the
+      // gate to seeing who's actually here.
+      const headlineNum = looking > 0 ? looking : total;
+      const headlineNoun = headlineNum === 1 ? "player" : "players";
+      const headlineLine = looking > 0
+        ? `${headlineNum} ${headlineNoun} looking for co-op right now`
+        : `${headlineNum} ${headlineNoun} signed up right now`;
+      const inGameNote = inGame > 0
+        ? `<p class="muted small guest-roster-aggregate-note">${inGame === 1 ? "1 is" : inGame + " are"} in Slay the Spire 2 right now.</p>`
+        : "";
+      $list.innerHTML = `
+        <div class="guest-roster-aggregate">
+          <p class="guest-roster-aggregate-headline">
+            <span class="dot dot-pulse" aria-hidden="true"></span>${headlineLine}
+          </p>
+          ${inGameNote}
+          <p class="muted small">Sign in with Steam to see who they are and send a one-tap invite.</p>
           <button class="btn-primary sm" type="button" data-action="signin-cta">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3 5l8-1.1V11H3V5zm0 7h8v7.1L3 18V12zm9 7.2V12h9v8L12 19.2zM12 11V3.9L21 3v8h-9z"/></svg>
             Sign in with Steam
           </button>
         </div>`;
-      $list.innerHTML = rowsHtml + moreHidden + signinCta;
     }
   } catch {
     if ($count) $count.textContent = "Live count momentarily unavailable.";
     if ($headSummary) $headSummary.textContent = "Live count momentarily unavailable.";
   }
-}
-
-function guestStatusLabel(p) {
-  const STATUS_DISPLAY = {
-    looking: "Looking for Co-op", solo: "In a Run", paired: "In Co-op", afk: "Away",
-    inRun: "In a Run", inCoop: "In Co-op",
-  };
-  const label = STATUS_DISPLAY[p.status] || "Signed up";
-  if (p.inSTS2) return "In Slay the Spire 2 · " + (p.status === "looking" ? "looking for co-op" : label.toLowerCase());
-  return label;
 }
 
 function escapeHtml(s) {
@@ -3032,6 +3017,37 @@ function syncTabUrl(tab) {
   } catch {
     // URL sync is nice-to-have only; never block tab rendering on it.
   }
+}
+
+// D04b: the mobile nav is a horizontal scroll strip. A static right-only
+// edge fade made tabs scrolled off the LEFT (e.g. "Overview" — the way
+// "back") read as nonexistent; a beta tester landed on a right-side tab
+// and felt "locked in without an option to go back." We mirror the real
+// scroll state into data attributes so CSS fades exactly the edge(s) that
+// still hide tabs — there's always a visible "more this way" affordance.
+function updateNavStripEdges() {
+  const strip = document.querySelector(".sidebar-nav");
+  if (!strip) return;
+  const overflowing = strip.scrollWidth > strip.clientWidth + 1;
+  const max = strip.scrollWidth - strip.clientWidth;
+  strip.dataset.edgeLeft = overflowing && strip.scrollLeft > 1 ? "1" : "0";
+  strip.dataset.edgeRight = overflowing && strip.scrollLeft < max - 1 ? "1" : "0";
+}
+let __navEdgeRaf = 0;
+function setupNavStripEdges() {
+  const strip = document.querySelector(".sidebar-nav");
+  if (!strip || strip.dataset.edgeWired === "1") return;
+  strip.dataset.edgeWired = "1";
+  const onScroll = () => {
+    if (__navEdgeRaf) return;
+    __navEdgeRaf = requestAnimationFrame(() => {
+      __navEdgeRaf = 0;
+      updateNavStripEdges();
+    });
+  };
+  strip.addEventListener("scroll", onScroll, { passive: true });
+  window.addEventListener("resize", onScroll, { passive: true });
+  updateNavStripEdges();
 }
 
 function switchTab(tab) {
@@ -3075,9 +3091,28 @@ function switchTab(tab) {
   document.querySelectorAll(".nav-row").forEach((b) => {
     const isActive = b.dataset.tab === tab;
     b.classList.toggle("is-active", isActive);
-    if (isActive) b.setAttribute("aria-current", "page");
-    else b.removeAttribute("aria-current");
+    if (isActive) {
+      b.setAttribute("aria-current", "page");
+      // D04: on the mobile horizontal nav strip the active tab could sit
+      // off-screen (e.g. "Co-op" past the right edge with no affordance).
+      // Scroll it into view, centered, scrolling only the strip — never
+      // the page — and only when the strip actually overflows.
+      const strip = b.closest(".sidebar-nav");
+      if (strip && strip.scrollWidth > strip.clientWidth + 1) {
+        const stripRect = strip.getBoundingClientRect();
+        const bRect = b.getBoundingClientRect();
+        const delta = (bRect.left - stripRect.left) - (strip.clientWidth - bRect.width) / 2;
+        const reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+        strip.scrollBy({ left: delta, behavior: reduce ? "auto" : "smooth" });
+      }
+    } else {
+      b.removeAttribute("aria-current");
+    }
   });
+  // Refresh the edge-fade state after the active-tab auto-scroll settles.
+  // The scroll listener covers smooth scrolling, but this catches the
+  // no-overflow / instant cases too.
+  try { updateNavStripEdges(); } catch {}
   document.querySelectorAll(".tab-panel").forEach((p) => {
     const visible = p.dataset.tab === tab;
     p.hidden = !visible;
@@ -10211,7 +10246,7 @@ function renderKPIStrip(runs) {
   // dedicated Characters tab.
   const longestSub = longest > 0
     ? (longestDetail.character
-        ? `Set on <strong>${esc(capitalize(longestDetail.character))}</strong>${longestDetail.ascension != null ? ` at A${longestDetail.ascension}` : ""}`
+        ? `Set on <strong>${esc(capitalize(longestDetail.character))}</strong>${ascAtPhrase(longestDetail.ascension)}`
         : `Set across your run history`)
     : `Win two in a row to start one`;
   const longestCard = `
@@ -10228,7 +10263,7 @@ function renderKPIStrip(runs) {
   const pb = pbFloorRun(runs);
   const pbValue = pb ? `${pb.floorReached}` : "&mdash;";
   const pbSub = pb
-    ? `<strong>${esc(capitalize(pb.character || "Unknown"))}</strong>${Number.isFinite(pb.ascension) ? ` at A${pb.ascension}` : ""}${pb.won ? ` &middot; Victory` : ""}`
+    ? `<strong>${esc(capitalize(pb.character || "Unknown"))}</strong>${ascAtPhrase(pb.ascension)}${pb.won ? ` &middot; Victory` : ""}`
     : `Play one run to set this`;
   const pbCard = `
       <div class="kpi-card" role="listitem" data-tone="accent">
@@ -10243,7 +10278,7 @@ function renderKPIStrip(runs) {
     ? formatPlayTimeStrict(fastest.playTimeSeconds) || `${Math.round(fastest.playTimeSeconds / 60)}m`
     : "—";
   const fastestSub = fastest
-    ? `<strong>${esc(capitalize(fastest.character || "Unknown"))}</strong>${Number.isFinite(fastest.ascension) ? ` at A${fastest.ascension}` : ""}`
+    ? `<strong>${esc(capitalize(fastest.character || "Unknown"))}</strong>${ascAtPhrase(fastest.ascension)}`
     : `No victories yet`;
   const fastestCard = `
       <div class="kpi-card" role="listitem" data-tone="win">
@@ -12152,13 +12187,14 @@ function renderCharactersTab(report) {
  *  Each bar shows total runs (height proportional to max) with the wins
  *  portion painted in green from the bottom up. */
 function renderAscensionsTab(report) {
-  // STS2 Early Access caps the live ascension ladder at A9 ("combined
-  // challenges stack"). A bucket above A9 should only appear if Mega
-  // Crit has shipped a new level — pre-A9 noise from old demo data
-  // gets filtered here so the screen never claims A18 exists in a
-  // game that doesn't have it. If a future patch raises the cap, the
-  // bucket renders cleanly via UNKNOWN_TIER without code changes.
-  const STS2_ASC_CAP = 9;
+  // STS2 Early Access caps the live ascension ladder at A10 (the level
+  // that adds a second boss at the end of Act 3). A bucket above A10
+  // should only appear if Mega Crit has shipped a new level — stale
+  // A11–A18 noise from old STS1-modeled demo data gets filtered here so
+  // the screen never claims a level the game doesn't have. If a future
+  // patch raises the cap, the bucket renders cleanly via UNKNOWN_TIER
+  // without code changes.
+  const STS2_ASC_CAP = 10;
   const allBuckets = report.byAscension
     .slice()
     .sort((a, b) => parseAsc(a.key) - parseAsc(b.key));
@@ -12196,7 +12232,7 @@ function renderAscensionsTab(report) {
   // knows what "A4" means before they see their 5.6% winrate at A4.
   const tierLegend = `
     <div class="asc-tier-legend" aria-label="Ascension tiers">
-      ${AscInfo.ASCENSION_TIERS.filter((t) => t.band[0] < 10).map((t) => {
+      ${AscInfo.ASCENSION_TIERS.filter((t) => t.band[0] <= STS2_ASC_CAP).map((t) => {
         const range = t.band[0] === t.band[1] ? `A${t.band[0]}` : `A${t.band[0]}–A${t.band[1]}`;
         return `
           <div class="asc-tier-pill" style="--tier-accent:${t.accent}">
@@ -13679,6 +13715,14 @@ function toast(msg, opts = {}) {
 function capitalize(s) {
   if (!s) return s;
   return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+// Ascension suffix for stat-card sub-copy. Ascension 0 is the game's
+// base difficulty; rendering it as "at A0" reads as odd jargon (D21),
+// so spell it out. Absent/non-finite values contribute nothing.
+function ascAtPhrase(a) {
+  if (!Number.isFinite(a)) return "";
+  return a > 0 ? ` at A${a}` : " at base ascension";
 }
 
 /**

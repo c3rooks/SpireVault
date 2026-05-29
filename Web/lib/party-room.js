@@ -121,6 +121,25 @@ function schedulePoll() {
   pollTimer = setTimeout(() => { void refreshParty().finally(schedulePoll); }, 12_000);
 }
 
+// Tap-to-send party signal. Exposed for the campfire scene's signal bar,
+// which lives in the (scene-owned) action bar and has no party context
+// or auth of its own. Routing it back through here keeps the api base +
+// session handling identical to every other party write, and the
+// immediate re-render echoes the sender's own bubble without waiting on
+// the 12-s poll.
+async function sendPartySignal(signalId) {
+  if (!partyId) return { ok: false, message: "No active party." };
+  const r = await jsonFetch(`/coop/parties/${partyId}/signal`, { body: { signal: signalId } });
+  if (r.ok && r.party) {
+    lastParty = r.party;
+    renderParty(lastParty, lastLobby);
+  }
+  return r;
+}
+if (typeof window !== "undefined") {
+  window.__pfSendPartySignal = sendPartySignal;
+}
+
 async function refreshParty() {
   const r = await jsonFetch(`/coop/parties/${partyId}`);
   if (!r.ok) {
@@ -288,6 +307,7 @@ function renderSignature(party, lobby, lobbyMissing, viewerSteamId, viewerIsHost
   if (!party) return "";
   const members = (party.members || []).map((m) => [
     m.steamId, m.status, m.selectedCharacter || "", m.personaName || "", m.avatarUrl || "",
+    m.lastSignal ? `${m.lastSignal.id}@${m.lastSignal.at}` : "",
   ].join("|")).join(";");
   // Deliberately EXCLUDE lobby.expiresAt: the backend's
   // heartbeat-extension path bumps it on every GET once the lobby is
@@ -440,13 +460,23 @@ function computeRoomState(party) {
   return { label: "Waiting for players", id: "waiting" };
 }
 
+// The campfire scene (party-finder-scene.js) hides this list and reads
+// it to build the podiums + signal bubbles. Surfacing lastSignal as
+// data-* attributes keeps that one-way DOM contract intact without the
+// scene needing its own fetch of party state.
+function memberSignalAttrs(m) {
+  const sig = m && m.lastSignal;
+  if (!sig || typeof sig.id !== "string") return "";
+  return ` data-signal-id="${esc(sig.id)}" data-signal-at="${esc(sig.at || "")}"`;
+}
+
 function renderMember(m, meSid, party) {
   const isMe = m.steamId === meSid;
   const isHost = m.steamId === party.hostSteamId;
   const role = isHost ? "Host" : (isMe ? "You" : "Joined");
   const character = normalizeCharacterId(m.selectedCharacter);
   return `
-    <li class="pf-member-row ${isMe ? "pf-member-row--me" : ""}">
+    <li class="pf-member-row ${isMe ? "pf-member-row--me" : ""}"${memberSignalAttrs(m)}>
       <img class="pf-member-avatar" src="${esc(m.avatarUrl || "/assets/vault-mark.svg")}" alt="" />
       <div class="pf-member-meta">
         <strong>${esc(m.personaName || "Player")}${isMe ? " (You)" : ""}</strong>

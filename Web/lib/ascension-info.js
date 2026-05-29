@@ -14,7 +14,8 @@
 //      truth. When a field is uncertain we leave it null instead of
 //      making something up — a blank beats a lie on a portfolio site.
 //
-// If Mega Crit ships a new ascension level (10+) we'll still render a
+// A10 (fight two bosses at the end of Act 3) is the current Early
+// Access ceiling. If Mega Crit ships a higher level we'll still render a
 // bucket for it using `UNKNOWN_TIER`, the user's personal stats at that
 // level, and a "new level — check in-game description" note. Better a
 // graceful unknown than a hardcoded list that ages into wrongness.
@@ -35,28 +36,28 @@ export const ASCENSION_TIERS = [
     label: "Early climb",
     band: [1, 3],
     accent: "#d4af37",
-    blurb: "Enemies get tougher and elites start hitting harder. The first real step up from a casual clear.",
+    blurb: "More elites, stingier Ancient heals, and tighter gold. The first real step up from a casual clear.",
   },
   {
     key: "mid",
     label: "Mid climb",
     band: [4, 6],
     accent: "#ff8c42",
-    blurb: "Bosses hit hard. Economy tightens. Deck quality starts to matter as much as run luck.",
+    blurb: "A potion slot gone, a cursed starting card, and pricier removes. Resource management starts to bite.",
   },
   {
     key: "expert",
     label: "Expert",
     band: [7, 9],
     accent: "#e94560",
-    blurb: "Endgame climb. Tight margins on every act. Best-of-three rewards and crisp decision-making win out.",
+    blurb: "Rare and upgraded cards dry up while enemies gain HP and damage. Tight margins on every act.",
   },
   {
     key: "master",
     label: "Master",
-    band: [10, 99],
+    band: [10, 10],
     accent: "#9b83ff",
-    blurb: "Pushing past the current cap. New territory — check the in-game level-select screen for active modifiers.",
+    blurb: "The Early Access ceiling: a second boss waits at the end of Act 3. Verify modifiers on the in-game level-select screen.",
   },
 ];
 
@@ -80,7 +81,9 @@ const UNKNOWN_TIER = {
 /** Per-level modifier descriptions. Early-Access caveat applies. If a
  *  value is `null` the UI should fall back to the tier blurb rather than
  *  invent a modifier. Source: Slay the Spire 2 in-game level-select
- *  screen, Early Access builds 8–9. Update when Mega Crit rebalances. */
+ *  screen (verified by beta testers against the live build). Each level
+ *  applies a single, specific rule change — they do NOT all just "make
+ *  enemies stronger". Update when Mega Crit rebalances. */
 export const ASCENSION_MODIFIERS = {
   0: {
     title: "Baseline",
@@ -88,49 +91,54 @@ export const ASCENSION_MODIFIERS = {
     detail: "No modifiers applied. Clears count toward unlocking Ascension 1.",
   },
   1: {
-    title: "Harder elites",
-    modifier: "Elites are stronger",
-    detail: "Elite encounters have more HP and hit harder. Clear it to unlock A2.",
+    title: "More elites",
+    modifier: "Elites spawn more often",
+    detail: "Roughly 60% more elite encounters appear across the run.",
   },
   2: {
-    title: "Larger normal pool",
-    modifier: "Normal enemies are stronger",
-    detail: "The pool of non-elite encounters leans toward the tougher side of each act.",
+    title: "Weaker heals",
+    modifier: "Ancients heal less",
+    detail: "Ancients restore only 80% of your missing HP — this includes Neow's heal at the start of a run.",
   },
   3: {
-    title: "Stronger bosses",
-    modifier: "Bosses hit harder",
-    detail: "Act bosses have sharper intents and higher damage on their signature moves.",
+    title: "Gold squeeze",
+    modifier: "Less gold drops",
+    detail: "Enemies and treasure chests drop 25% less gold.",
   },
   4: {
-    title: "Compact deck",
-    modifier: "Tighter card economy",
-    detail: "Less tolerance for dead cards. Removes and upgrades matter more than in the early levels.",
+    title: "Fewer potions",
+    modifier: "One less potion slot",
+    detail: "You start each run with one fewer potion slot.",
   },
   5: {
-    title: "Start wounded",
-    modifier: "Reduced starting HP",
-    detail: "You begin each run below full health. Early defensive relics spike in value.",
+    title: "Cursed start",
+    modifier: "Start with an Ascender's Bane",
+    detail: "Each run begins with an Ascender's Bane in your deck.",
   },
   6: {
-    title: "Rarer rewards",
-    modifier: "Fewer generous rewards",
-    detail: "Shops are pricier, relic rooms rarer. Every gold piece has to pull weight.",
+    title: "Expensive removes",
+    modifier: "Pricier card removal",
+    detail: "Card removal at the Merchant starts at 100 gold (up from 75), and each subsequent removal costs 50 gold more (up from 25).",
   },
   7: {
-    title: "Deadly normals",
-    modifier: "Normal enemies hit harder",
-    detail: "Even the regular encounters chip you down. Turn-one defense becomes a real decision.",
+    title: "Thinner rewards",
+    modifier: "Rare & upgraded cards halved",
+    detail: "Rare and upgraded cards appear half as often — in combat rewards from every enemy and in the Merchant's stock.",
   },
   8: {
-    title: "Intent pressure",
-    modifier: "Enemies gain intent upgrades",
-    detail: "Multi-attack intents arrive one turn earlier. Block planning is the whole game now.",
+    title: "Tankier enemies",
+    modifier: "Enemies have more HP",
+    detail: "All enemies have increased maximum HP.",
   },
   9: {
-    title: "The master climb",
-    modifier: "Combined challenges stack",
-    detail: "Every previous modifier still applies on top of a final act-3 difficulty tune.",
+    title: "Harder hits",
+    modifier: "Enemies deal more damage",
+    detail: "All enemies deal increased damage.",
+  },
+  10: {
+    title: "Twin bosses",
+    modifier: "Double Act 3 boss",
+    detail: "You fight two bosses back-to-back at the end of Act 3 — the current Early Access ceiling.",
   },
 };
 

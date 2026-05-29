@@ -63,7 +63,7 @@
         <span class="sv-mode-chip-sub">narrative on a finished run</span>
       </button>
       <button class="sv-mode-chip" data-mode="snapshot" role="tab">
-        Live run (paste runId)
+        Live run
         <span class="sv-mode-chip-sub">requires the Companion mod · optional</span>
       </button>
     </div>
@@ -95,16 +95,16 @@
 
         <!-- Narrative -->
         <div id="mode-narrative" class="sv-form" hidden>
-          <label>runId of a recently-finished run
-            <input class="sv-coach-input" id="narr-runid" placeholder="e.g. share id from /watch" />
+          <label>Shared run link or ID
+            <input class="sv-coach-input" id="narr-runid" placeholder="Paste a link or ID from a /watch replay" />
           </label>
-          <p class="sv-sub" style="margin:0;font-size:12px">Coach writes a short story-style recap suitable for Discord or X.</p>
+          <p class="sv-sub" style="margin:0;font-size:12px">Open a shared run on <a href="/watch">Replays</a>, copy its link, and paste it here. Coach writes a short story-style recap suitable for Discord or X.</p>
         </div>
 
         <!-- Live snapshot -->
         <div id="mode-snapshot" class="sv-form" hidden>
-          <label>runId from the Companion mod
-            <input class="sv-coach-input" id="snap-runid" placeholder="ULID-style runId" />
+          <label>Live run code from the Companion mod
+            <input class="sv-coach-input" id="snap-runid" placeholder="Paste the run code the mod shows" />
           </label>
           <p class="sv-sub" style="margin:0;font-size:12px">Live snapshots need the optional Companion mod streaming. <a href="/companion-mod">Learn more →</a></p>
         </div>
@@ -291,11 +291,11 @@
         body = { mode: "screenshot", imageRef: shotDataUrl, question };
       } else if (mode === "snapshot") {
         const runId = document.getElementById("snap-runid").value.trim();
-        if (!runId) return alertOut("Paste a runId from the Companion mod.");
+        if (!runId) return alertOut("Paste the live run code from the Companion mod.");
         body = { mode: "snapshot", runId, question };
       } else if (mode === "narrative") {
         const runId = document.getElementById("narr-runid").value.trim();
-        if (!runId) return alertOut("Paste a runId of a finished run.");
+        if (!runId) return alertOut("Paste a link or ID from a shared run.");
         body = { mode: "narrative", runId, question };
       } else if (mode === "lastshared") {
         if (!lastSharedTarget) return alertOut("No shared runs found — share one first.");

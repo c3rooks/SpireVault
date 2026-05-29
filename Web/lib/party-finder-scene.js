@@ -35,7 +35,7 @@
     var l = document.createElement("link");
     l.id = "pf-scene-css";
     l.rel = "stylesheet";
-    l.href = "/lib/party-finder-scene.css?v=18";
+    l.href = "/lib/party-finder-scene.css?v=20";
     document.head.appendChild(l);
   }
 
@@ -153,6 +153,28 @@
     ironclad: "Ironclad", silent: "Silent",
     defect: "Defect", necrobinder: "Necrobinder", regent: "Regent",
   };
+
+  // Tap-to-send party signals — must mirror COOP_PARTY_SIGNALS in
+  // Backend/src/coop-types.ts. The order here is the order they appear
+  // in the send bar. Bounded + preset-only so a kid (or a player with
+  // no shared language) gets a voice at the campfire without a mic and
+  // with nothing to moderate.
+  var SIGNAL_LIST = [
+    { id: "wave",   text: "\uD83D\uDC4B Hi!" },
+    { id: "ready",  text: "\u2705 Ready" },
+    { id: "onesec", text: "\u23F3 One sec" },
+    { id: "gg",     text: "\uD83C\uDF89 Good game!" },
+    { id: "nice",   text: "\uD83D\uDD25 Nice run!" },
+    { id: "thanks", text: "\uD83D\uDE4F Thanks!" },
+  ];
+  var SIGNAL_LABELS = {};
+  for (var __si = 0; __si < SIGNAL_LIST.length; __si++) {
+    SIGNAL_LABELS[SIGNAL_LIST[__si].id] = SIGNAL_LIST[__si].text;
+  }
+  // A signal bubble fades from the campfire after this long. Matches the
+  // ~12-s party poll closely enough that a bubble is still visible when
+  // the authoritative state lands, but doesn't linger as stale chatter.
+  var SIGNAL_FRESH_MS = 14000;
   function charAsset(id) {
     var slug = normalizeCharId(id);
     return slug ? "/assets/sts2/characters/" + slug + "-v2.webp" : "";
@@ -202,6 +224,20 @@
   }
   function writeQuiet(on) {
     try { if (on) localStorage.setItem(LS_QUIET, "1"); else localStorage.removeItem(LS_QUIET); } catch (_) {}
+  }
+
+  // First-run welcome — shown ONCE per browser, before the user faces
+  // the room list. It turns the easily-missed "Quiet match" toggle into
+  // the first, calm choice: talk, or just play (no mic). This is the
+  // single decision that removes a new player's biggest fear at the
+  // door. Versioned so we can re-introduce it if the copy materially
+  // changes; never nags once dismissed.
+  var LS_WELCOME = "spirevault.coop.welcome.v1";
+  function welcomeSeen() {
+    try { return localStorage.getItem(LS_WELCOME) === "1"; } catch (_) { return false; }
+  }
+  function markWelcomeSeen() {
+    try { localStorage.setItem(LS_WELCOME, "1"); } catch (_) {}
   }
 
   function rosterCharForUser(state) {
@@ -1279,9 +1315,17 @@
     setTimeout(function () { document.addEventListener("click", offClick, true); }, 0);
   }
 
-  function onQuietToggleChange(input) {
-    var on = !!(input && input.checked);
+  // Single source of truth for flipping Quiet match. Persists the
+  // preference, mirrors every Quiet checkbox on the page, and refreshes
+  // the hero status + Party Hub action bar so the welcome dialog, the
+  // inline toggle, and the gear sheet can never drift out of sync.
+  function setQuietMode(on) {
+    on = !!on;
     writeQuiet(on);
+    try {
+      var boxes = document.querySelectorAll('input[data-pf-action="pf-toggle-quiet"]');
+      for (var i = 0; i < boxes.length; i++) boxes[i].checked = on;
+    } catch (_) {}
     var stage = document.querySelector(".pf-stage[data-pf-stage]");
     if (stage) {
       if (on) stage.setAttribute("data-quiet", "1"); else stage.removeAttribute("data-quiet");
@@ -1294,6 +1338,175 @@
       var hub = document.querySelector(".pr-action-bar");
       if (hub) hub.setAttribute("data-quiet", on ? "1" : "0");
     } catch (_) {}
+  }
+  function onQuietToggleChange(input) {
+    setQuietMode(!!(input && input.checked));
+  }
+
+  // ── First-run welcome dialog ───────────────────────────────────────
+  // A focus-trapped, motion-aware modal that asks one question — how do
+  // you like to play? — and sets Quiet match from the answer. Shown once
+  // per browser. Everything degrades gracefully: no JS animation under
+  // prefers-reduced-motion, ESC + backdrop both dismiss, and focus is
+  // returned to wherever it was when the dialog closes.
+  var __pfWelcomePrevFocus = null;
+  var __pfWelcomeKeyHandler = null;
+  var __pfWelcomeTried = false;
+
+  function welcomeGreeting() {
+    var s = readSession();
+    var name = (s && (s.personaName || s.steamPersonaName) || "").trim();
+    if (!name || /^steam user$/i.test(name)) return "Let\u2019s find your party.";
+    // First word only — keeps the title short and friendly on mobile.
+    var first = name.split(/\s+/)[0];
+    return "Hi " + first + " \u2014 let\u2019s find your party.";
+  }
+
+  function buildWelcomeHtml() {
+    var MIC =
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+        '<path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/>' +
+        '<path d="M19 10v2a7 7 0 0 1-14 0v-2"/>' +
+        '<line x1="12" y1="19" x2="12" y2="22"/>' +
+      '</svg>';
+    return ''
+      + '<div class="pf-welcome-backdrop" data-pf-action="pf-welcome-skip" aria-hidden="true"></div>'
+      + '<div class="pf-welcome-card" role="document">'
+      +   '<div class="pf-welcome-firepit" aria-hidden="true">' + ICON_CAMPFIRE + '</div>'
+      +   '<span class="pf-welcome-eyebrow">Welcome to the campfire</span>'
+      +   '<h2 class="pf-welcome-title" id="pf-welcome-title">' + esc(welcomeGreeting()) + '</h2>'
+      +   '<p class="pf-welcome-sub" id="pf-welcome-sub">Pick how you like to play. You can change it anytime.</p>'
+      +   '<div class="pf-welcome-choices" role="group" aria-label="How do you want to play?">'
+      +     '<button type="button" class="pf-welcome-choice pf-welcome-choice--quiet" data-pf-action="pf-welcome-quiet">'
+      +       '<span class="pf-welcome-choice-icon" aria-hidden="true">' + ICON_CAMPFIRE + '</span>'
+      +       '<span class="pf-welcome-choice-title">Just play together</span>'
+      +       '<span class="pf-welcome-choice-sub">No mic, no talking needed. We\u2019ll match you into relaxed rooms.</span>'
+      +     '</button>'
+      +     '<button type="button" class="pf-welcome-choice pf-welcome-choice--talk" data-pf-action="pf-welcome-talk">'
+      +       '<span class="pf-welcome-choice-icon" aria-hidden="true">' + MIC + '</span>'
+      +       '<span class="pf-welcome-choice-title">Talk &amp; strategize</span>'
+      +       '<span class="pf-welcome-choice-sub">Use voice with your party to plan every fight together.</span>'
+      +     '</button>'
+      +   '</div>'
+      +   '<p class="pf-welcome-reassure">You don\u2019t need to know anyone. Pick a campfire, grab a seat, and you\u2019re in.</p>'
+      +   '<button type="button" class="pf-welcome-skip" data-pf-action="pf-welcome-skip">Maybe later</button>'
+      + '</div>';
+  }
+
+  function welcomeTrack(action) {
+    try {
+      if (typeof window.gtag === "function") {
+        window.gtag("event", "coop_welcome_choice", { event_category: "coop_onboarding", choice: action });
+      }
+    } catch (_) {}
+  }
+
+  function showWelcome() {
+    if (document.querySelector("[data-pf-welcome]")) return;
+    var overlay = document.createElement("div");
+    overlay.className = "pf-welcome";
+    overlay.setAttribute("data-pf-welcome", "");
+    overlay.setAttribute("role", "dialog");
+    overlay.setAttribute("aria-modal", "true");
+    overlay.setAttribute("aria-labelledby", "pf-welcome-title");
+    overlay.setAttribute("aria-describedby", "pf-welcome-sub");
+    overlay.innerHTML = buildWelcomeHtml();
+    document.body.appendChild(overlay);
+
+    __pfWelcomePrevFocus = document.activeElement;
+
+    // Reveal on the next frame so the entrance transition runs (no-op
+    // visually under prefers-reduced-motion; CSS zeroes the transform).
+    requestAnimationFrame(function () {
+      overlay.setAttribute("data-on", "1");
+      var firstChoice = overlay.querySelector(".pf-welcome-choice");
+      if (firstChoice) { try { firstChoice.focus(); } catch (_) {} }
+    });
+
+    // Focus trap + ESC. Capture phase so it wins over other handlers.
+    __pfWelcomeKeyHandler = function (ev) {
+      if (ev.key === "Escape") {
+        ev.preventDefault();
+        ev.stopPropagation();
+        skipWelcome();
+        return;
+      }
+      if (ev.key !== "Tab") return;
+      var focusables = overlay.querySelectorAll(
+        'button:not([disabled]), [href], input:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      );
+      if (!focusables.length) return;
+      var first = focusables[0];
+      var last = focusables[focusables.length - 1];
+      var active = document.activeElement;
+      if (ev.shiftKey && (active === first || !overlay.contains(active))) {
+        ev.preventDefault();
+        try { last.focus(); } catch (_) {}
+      } else if (!ev.shiftKey && active === last) {
+        ev.preventDefault();
+        try { first.focus(); } catch (_) {}
+      }
+    };
+    document.addEventListener("keydown", __pfWelcomeKeyHandler, true);
+
+    welcomeTrack("shown");
+  }
+
+  function dismissWelcome() {
+    var overlay = document.querySelector("[data-pf-welcome]");
+    if (!overlay) return;
+    if (__pfWelcomeKeyHandler) {
+      document.removeEventListener("keydown", __pfWelcomeKeyHandler, true);
+      __pfWelcomeKeyHandler = null;
+    }
+    overlay.removeAttribute("data-on");
+    var remove = function () { try { overlay.parentNode.removeChild(overlay); } catch (_) {} };
+    if (prefersReducedMotion()) remove();
+    else setTimeout(remove, 240);
+    // Return focus to wherever the user was before the dialog opened.
+    try {
+      if (__pfWelcomePrevFocus && typeof __pfWelcomePrevFocus.focus === "function") {
+        __pfWelcomePrevFocus.focus();
+      }
+    } catch (_) {}
+    __pfWelcomePrevFocus = null;
+  }
+
+  function chooseWelcome(quiet) {
+    markWelcomeSeen();
+    setQuietMode(quiet);
+    dismissWelcome();
+    welcomeTrack(quiet ? "quiet" : "talk");
+    try {
+      var msg = quiet
+        ? "Quiet match on \u2014 no mic needed. Change it anytime from the gear."
+        : "Voice on \u2014 talk and strategize with your party.";
+      (window.__pfToast || function () {})(msg);
+    } catch (_) {}
+  }
+
+  function skipWelcome() {
+    markWelcomeSeen();
+    dismissWelcome();
+    welcomeTrack("later");
+  }
+
+  // Decide whether to surface the welcome on this poll. Conservative:
+  // only on the visible Co-op lobby, never over the Party Hub route, an
+  // open modal, or a backgrounded tab — and never more than once.
+  function maybeShowWelcome() {
+    if (__pfWelcomeTried) return;
+    if (welcomeSeen()) { __pfWelcomeTried = true; return; }
+    try { if (/^\/party\//.test(location.pathname || "")) return; } catch (_) {}
+    var root = findCoopRoot();
+    if (!root || !root.getClientRects().length) return; // tab not visible
+    try { if (document.hidden) return; } catch (_) {}
+    // Don't stack on top of an already-open modal (Room Details, etc.).
+    if (document.querySelector(".pf-modal-on, [data-pf-welcome]")) return;
+    var details = document.getElementById("pf-modal-details");
+    if (details && details.getAttribute("aria-hidden") === "false") return;
+    __pfWelcomeTried = true;
+    showWelcome();
   }
 
   // Single delegated capture-phase listener — runs before
@@ -1393,6 +1606,36 @@
         ev.preventDefault();
         ev.stopPropagation();
         onCopyInviteClick(copyLink);
+        return;
+      }
+      // First-run welcome choices.
+      var wQuiet = t.closest('[data-pf-action="pf-welcome-quiet"]');
+      if (wQuiet) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        chooseWelcome(true);
+        return;
+      }
+      var wTalk = t.closest('[data-pf-action="pf-welcome-talk"]');
+      if (wTalk) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        chooseWelcome(false);
+        return;
+      }
+      var wSkip = t.closest('[data-pf-action="pf-welcome-skip"]');
+      if (wSkip) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        skipWelcome();
+        return;
+      }
+      // Tap-to-send party signal.
+      var sigBtn = t.closest('[data-pf-action="pf-signal"]');
+      if (sigBtn) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        sendPartySignal(sigBtn);
         return;
       }
     }, true);
@@ -1800,6 +2043,8 @@
         avatarUrl: (avatar && avatar.getAttribute("src")) || "",
         isMe: isMe,
         ready: ready,
+        signalId: li.getAttribute("data-signal-id") || "",
+        signalAt: li.getAttribute("data-signal-at") || "",
       });
     }
     return out;
@@ -1914,8 +2159,20 @@
     }
     var badgeText = role === "host" ? "Host" : (seat.isMe ? "You" : "Joined");
     var roleLine = (CHAR_LABEL[charId] || (seat.charLabel || "Pick character"));
+    // Recent tap-to-send signal → speech bubble above the podium. The
+    // scene rebuilds every poll, so freshness is re-evaluated against
+    // Date.now() on each render — the bubble simply stops appearing once
+    // it ages past SIGNAL_FRESH_MS, no timers required.
+    var bubbleHtml = "";
+    if (seat.signalId && SIGNAL_LABELS[seat.signalId]) {
+      var sigAt = Date.parse(seat.signalAt || "");
+      if (!isNaN(sigAt) && (Date.now() - sigAt) < SIGNAL_FRESH_MS) {
+        bubbleHtml = '<div class="pr-podium-bubble" role="status">' + esc(SIGNAL_LABELS[seat.signalId]) + '</div>';
+      }
+    }
     return '' +
       '<div class="pr-podium ' + modClass + '" data-char="' + esc(charId) + '" data-ready="' + (seat.ready ? "1" : "0") + '">' +
+        bubbleHtml +
         '<div class="pr-podium-art">' + artHtml + '</div>' +
         '<div class="pr-podium-pedestal"></div>' +
         '<div class="pr-podium-badge">' + esc(badgeText) + '</div>' +
@@ -2034,6 +2291,119 @@
     // and voice button styling kick in immediately on mount.
     var bar = scene.querySelector(".pr-action-bar");
     if (bar) bar.setAttribute("data-quiet", readQuiet() ? "1" : "0");
+
+    // Tap-to-send signal bar — the silent player's voice. Lives below
+    // the action buttons so it reads as "and here's a no-mic way to
+    // talk", not as a primary CTA. Built once; the scene rebuild keeps
+    // re-appending it on each poll, so we guard on presence.
+    if (bar && !bar.querySelector("[data-pr-signal-bar]")) {
+      var btns = SIGNAL_LIST.map(function (s) {
+        return '<button type="button" class="pr-signal-btn" data-pf-action="pf-signal" '
+          + 'data-signal="' + esc(s.id) + '">' + esc(s.text) + '</button>';
+      }).join("");
+      var sigBar = document.createElement("div");
+      sigBar.className = "pr-signal-bar";
+      sigBar.setAttribute("data-pr-signal-bar", "1");
+      sigBar.innerHTML =
+        '<span class="pr-signal-bar-label">Say it without a mic</span>' +
+        '<div class="pr-signal-bar-btns">' + btns + '</div>';
+      bar.appendChild(sigBar);
+    }
+  }
+
+  // Send a tap signal. Routes through party-room.js's exposed sender so
+  // auth + api base stay correct in every environment, and optimistically
+  // stamps the sender's own (hidden) member row so the bubble appears on
+  // the very next scene rebuild instead of waiting on the round-trip.
+  function sendPartySignal(btn) {
+    if (!btn) return;
+    var id = btn.getAttribute("data-signal") || "";
+    if (!SIGNAL_LABELS[id]) return;
+    try {
+      var firstList = document.querySelector("#coop-party-root .pf-hub .pf-members-list")
+                   || document.querySelector("#coop-party-root .pf-members-list");
+      var meRow = firstList && firstList.querySelector("li.pf-member-row--me");
+      if (meRow) {
+        meRow.setAttribute("data-signal-id", id);
+        meRow.setAttribute("data-signal-at", new Date().toISOString());
+      }
+    } catch (_) {}
+    btn.classList.add("is-sent");
+    setTimeout(function () { try { btn.classList.remove("is-sent"); } catch (_) {} }, 900);
+    try {
+      if (typeof window.__pfSendPartySignal === "function") {
+        var p = window.__pfSendPartySignal(id);
+        if (p && typeof p.catch === "function") p.catch(function () {});
+      }
+    } catch (_) {}
+  }
+
+  // ── Party Hub "join juice" ─────────────────────────────────────────
+  // The campfire-side payoff. The scene rebuilds every poll, so all
+  // celebrations are one-shot-guarded by the party key to avoid
+  // strobing, and the full-party flourish is appended to <body> so a
+  // rebuild mid-animation can't truncate it. Audio is intentionally NOT
+  // fired here — party-finder-readyup-rt.js already owns the "everyone
+  // ready" chime; this layer is purely visual so the two don't double.
+  var __pfHubFillKey = "";
+  var __pfHubLastFilled = -1;
+  var __pfHubFullCelebrated = "";
+
+  function popNewestPodium(scene, filled) {
+    if (!scene) return;
+    var podiums = scene.querySelectorAll(".pr-podium:not(.pr-podium--empty)");
+    var node = podiums[filled - 1];
+    if (!node) return;
+    node.classList.add("pr-podium--justjoined");
+  }
+
+  function celebrateFullParty() {
+    if (document.querySelector(".pr-celebrate")) return;
+    var reduce = prefersReducedMotion();
+    var overlay = document.createElement("div");
+    overlay.className = "pr-celebrate";
+    overlay.setAttribute("aria-hidden", "true");
+    var burst = "";
+    if (!reduce) {
+      burst = '<div class="pr-celebrate-burst">';
+      for (var i = 0; i < 14; i++) {
+        burst += '<span style="--pr-ember-i:' + i + '"></span>';
+      }
+      burst += '</div>';
+    }
+    overlay.innerHTML = burst +
+      '<div class="pr-celebrate-banner" role="status">' +
+        '<span class="pr-celebrate-banner-icon" aria-hidden="true">' + ICON_CAMPFIRE + '</span>' +
+        '<span class="pr-celebrate-banner-text">Everyone\u2019s here \u2014 the party\u2019s full!</span>' +
+      '</div>';
+    document.body.appendChild(overlay);
+    requestAnimationFrame(function () { overlay.setAttribute("data-on", "1"); });
+    var ttl = reduce ? 1600 : 2200;
+    setTimeout(function () {
+      overlay.removeAttribute("data-on");
+      setTimeout(function () { try { overlay.parentNode.removeChild(overlay); } catch (_) {} }, 260);
+    }, ttl);
+  }
+
+  function applyHubJuice(scene, summary, filled, empty) {
+    var key = (summary && (summary.lobbyId || summary.title)) || "party";
+    var isFull = filled >= 2 && empty === 0;
+    if (key !== __pfHubFillKey) {
+      // New party context — seed trackers without firing on first paint.
+      __pfHubFillKey = key;
+      __pfHubLastFilled = filled;
+      __pfHubFullCelebrated = "";
+    } else {
+      if (filled > __pfHubLastFilled) popNewestPodium(scene, filled);
+      __pfHubLastFilled = filled;
+    }
+    if (isFull && __pfHubFullCelebrated !== key) {
+      __pfHubFullCelebrated = key;
+      celebrateFullParty();
+    } else if (!isFull && __pfHubFullCelebrated === key) {
+      // A seat opened back up — let a future refill celebrate again.
+      __pfHubFullCelebrated = "";
+    }
   }
 
   function mountPartyHubScene(root) {
@@ -2041,6 +2411,14 @@
     var summary = readSummary(root);
     var members = readPartyMembers(root);
     if (!summary || members.length === 0) return;
+
+    // Count real occupancy BEFORE buildSceneSkeleton pads the list to 4
+    // visual podiums (the padding is display-only; juice keys off the
+    // true seat math from party-room's rendered rows).
+    var filledNow = 0, emptyNow = 0;
+    for (var fi = 0; fi < members.length; fi++) {
+      if (members[fi].empty) emptyNow++; else filledNow++;
+    }
 
     // Remove any previous scene first so we always render fresh from
     // current state. Cheap because the party-room is a single page.
@@ -2059,6 +2437,7 @@
     else root.appendChild(scene);
 
     copyActionPanelInto(scene, root);
+    try { applyHubJuice(scene, summary, filledNow, emptyNow); } catch (_) {}
   }
 
   function pollPartyHub() {
@@ -2169,6 +2548,7 @@
     if (!findCoopRoot()) return;
     ensureHeroStage();
     refreshHeroStage();
+    try { maybeShowWelcome(); } catch (_) {}
   }
 
   // Tint each Live Parties row with its host's character color via a

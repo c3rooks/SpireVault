@@ -73,40 +73,50 @@
     </div>
 
     <div id="state-create" hidden>
-      <h1 class="sv-h1">Create tournament</h1>
-      <p class="sv-sub">Cosmetic-only prizes (no Stripe yet). 4 or 8 teams, single elimination.</p>
-      <form id="form-create" class="sv-form sv-card">
-        <label>URL slug
-          <input class="sv-coach-input" name="slug" required pattern="[a-z0-9-]{3,40}" placeholder="weekend-cup-1" />
-        </label>
-        <label>Title
-          <input class="sv-coach-input" name="title" required maxlength="96" placeholder="SpireVault Weekend Cup #1" />
-        </label>
-        <label>Size
-          <select class="sv-coach-input" name="size" required>
-            <option value="4">4 teams (single elim, 2 rounds)</option>
-            <option value="8">8 teams (single elim, 3 rounds)</option>
-          </select>
-        </label>
+      <div id="create-gate" class="sv-card" hidden>
+        <h1 class="sv-h1">Sign in to create a tournament</h1>
+        <p class="sv-sub">Tournaments are run by signed-in SpireVault players so brackets stay accountable. Sign in with Steam on the home page, then come back here to spin one up.</p>
         <div class="sv-row">
-          <label>Registration closes (ISO)
-            <input class="sv-coach-input" name="registrationClosesAt" type="datetime-local" required />
-          </label>
-          <label>Starts at (ISO)
-            <input class="sv-coach-input" name="startsAt" type="datetime-local" required />
-          </label>
+          <a class="sv-btn sv-btn--primary" href="/">Sign in on SpireVault home →</a>
+          <button type="button" id="cancel-create-gate" class="sv-btn sv-btn--ghost">Back</button>
         </div>
-        <label>Prize description
-          <input class="sv-coach-input" name="prize" maxlength="200" placeholder="Bragging rights and a SpireVault leaderboard pin" />
-        </label>
-        <label>Description
-          <textarea class="sv-coach-input" name="description" rows="4" maxlength="1200" placeholder="Rules, ascension constraints, format details…"></textarea>
-        </label>
-        <div class="sv-row">
-          <button type="submit" class="sv-btn sv-btn--primary">Create</button>
-          <button type="button" id="cancel-create" class="sv-btn sv-btn--ghost">Cancel</button>
-        </div>
-      </form>
+      </div>
+      <div id="create-body">
+        <h1 class="sv-h1">Create tournament</h1>
+        <p class="sv-sub">Cosmetic-only prizes. 4 or 8 teams, single elimination.</p>
+        <form id="form-create" class="sv-form sv-card">
+          <label>Link name
+            <input class="sv-coach-input" name="slug" required pattern="[a-z0-9-]{3,40}" placeholder="weekend-cup-1" />
+          </label>
+          <label>Title
+            <input class="sv-coach-input" name="title" required maxlength="96" placeholder="SpireVault Weekend Cup #1" />
+          </label>
+          <label>Size
+            <select class="sv-coach-input" name="size" required>
+              <option value="4">4 teams (single elim, 2 rounds)</option>
+              <option value="8">8 teams (single elim, 3 rounds)</option>
+            </select>
+          </label>
+          <div class="sv-row">
+            <label>Registration closes
+              <input class="sv-coach-input" name="registrationClosesAt" type="datetime-local" required />
+            </label>
+            <label>Starts
+              <input class="sv-coach-input" name="startsAt" type="datetime-local" required />
+            </label>
+          </div>
+          <label>Prize description
+            <input class="sv-coach-input" name="prize" maxlength="200" placeholder="Bragging rights and a SpireVault leaderboard pin" />
+          </label>
+          <label>Description
+            <textarea class="sv-coach-input" name="description" rows="4" maxlength="1200" placeholder="Rules, ascension constraints, format details…"></textarea>
+          </label>
+          <div class="sv-row">
+            <button type="submit" class="sv-btn sv-btn--primary">Create</button>
+            <button type="button" id="cancel-create" class="sv-btn sv-btn--ghost">Cancel</button>
+          </div>
+        </form>
+      </div>
     </div>
 
     <div id="state-detail" hidden>
@@ -114,7 +124,7 @@
       <div class="sv-card" style="margin-top:8px">
         <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
           <div>
-            <h1 class="sv-h1" id="t-title" style="margin-bottom:4px">—</h1>
+            <h1 class="sv-h1" id="t-title" style="margin-bottom:4px"></h1>
             <p class="sv-sub" id="t-meta" style="margin:0"></p>
           </div>
           <div id="t-status"></div>
@@ -150,6 +160,13 @@
       stateList.hidden   = which !== "list";
       stateCreate.hidden = which !== "create";
       stateDetail.hidden = which !== "detail";
+      // D14: gate the Create form behind sign-in. Signed-out visitors
+      // see a sign-in prompt instead of a fillable form (spam risk).
+      if (which === "create") {
+        const signedIn = !!session;
+        document.getElementById("create-gate").hidden = signedIn;
+        document.getElementById("create-body").hidden = !signedIn;
+      }
     }
 
     async function init() {
@@ -223,6 +240,7 @@
     }
 
     document.getElementById("cancel-create").onclick = () => show("list");
+    document.getElementById("cancel-create-gate").onclick = () => show("list");
     document.getElementById("form-create").onsubmit = async (ev) => {
       ev.preventDefault();
       if (!session) {

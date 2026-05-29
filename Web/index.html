@@ -14,7 +14,15 @@
   <title>Spire Vault · Slay the Spire 2 stats &amp; co-op (web)</title>
   <meta name="description" content="See your Slay the Spire 2 stats in your browser. Drop your STS2 save folder (.run files) — nothing uploads, everything stays local. Optional Steam sign-in unlocks the co-op partner feed." />
   <meta name="theme-color" content="#0c0a14" />
+  <!-- Modern browsers prefer the crisp vector mark. The PNG fallbacks below
+       exist because some surfaces (Discord/Slack link unfurls, iOS home
+       screen, older browsers) don't render SVG favicons and would otherwise
+       upscale a tiny fallback into a blurry blob — the exact "blurry orange
+       icon" a beta tester reported. Generated from vault-mark.svg. -->
   <link rel="icon" type="image/svg+xml" href="/assets/vault-mark.svg" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/assets/icon-32.png?v=1" />
+  <link rel="icon" type="image/png" sizes="192x192" href="/assets/icon-192.png?v=1" />
+  <link rel="apple-touch-icon" sizes="180x180" href="/assets/apple-touch-icon.png?v=1" />
 
   <meta property="og:title" content="Spire Vault · Slay the Spire 2 stats &amp; co-op (web)" />
   <meta property="og:description" content="Drop your STS2 save folder, see your stats instantly. Nothing uploads. Optional Steam sign-in for the co-op partner feed." />
@@ -31,7 +39,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Playfair+Display:wght@700;900&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/styles.css?v=148" />
+  <link rel="stylesheet" href="/styles.css?v=149" />
 
   <!-- Google tag (gtag.js) — Spire Vault GA4 stream G-09LEQ247HN.
        Loaded async so it never blocks the critical rendering path; the
@@ -2251,6 +2259,6 @@
        Pinned with its own ?v= cache key so it does NOT require bumping
        script.js / styles.css when only this module changes. -->
   <script src="/lib/analytics-coop.js?v=1" defer></script>
-  <script src="/script.js?v=205" type="module"></script>
+  <script src="/script.js?v=206" type="module"></script>
 </body>
 </html>

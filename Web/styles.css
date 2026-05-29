@@ -860,6 +860,16 @@ main.main-public,
 .footer-links { display: flex; gap: 22px; font-size: 13px; }
 .footer-links a { color: var(--text-2); }
 .footer-links a:hover { color: var(--text); }
+/* D02 fix: the profile dock (.sidebar-footer) is position:fixed at the
+   bottom-left, 248px wide, on desktop (≥881px) — including for guests
+   ("Browsing as guest"). The global footer is a page-level sibling, so
+   its bottom-left content ("Built by Corey Crooks…") rendered UNDER the
+   dock and got clipped to "…Veb"/"Crooks.". Offset the footer to align
+   with the content column so it clears the dock. The Mac desktop host
+   hides the dock and collapses the shell to full width, so exclude it. */
+@media (min-width: 881px) {
+  html:not(.is-desktop-host) .footer { margin-left: 248px; }
+}
 
 /* ============================================================
    APP SHELL — signed-in. Mirrors the macOS sidebar+detail layout.
@@ -5303,8 +5313,33 @@ select#me-note option { background: var(--bg-deep); color: var(--text); }
        min-width:0 above). */
     min-width: 0;
     width: 100%;
+    /* D04: fade the right edge so it's visually obvious the tab strip
+       scrolls horizontally (the active tab can live past the edge). The
+       active tab is auto-scrolled into view by switchTab() in script.js. */
+    -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 26px), transparent 100%);
+    mask-image: linear-gradient(to right, #000 calc(100% - 26px), transparent 100%);
   }
   .sidebar-nav::-webkit-scrollbar { display: none; }
+
+  /* Edge-aware scroll affordance. The static right-only fade above made
+     tabs scrolled off the LEFT (Overview/Characters — the way "back")
+     look like they didn't exist: a beta tester landed on a right-side tab
+     and reported feeling "locked in without an option to go back." JS
+     (updateNavStripEdges in script.js) sets data-edge-left / data-edge-right
+     to reflect which side actually has hidden tabs, and we fade exactly
+     those edges so there's always a visible "more this way" hint. */
+  .sidebar-nav[data-edge-left="1"][data-edge-right="1"] {
+    -webkit-mask-image: linear-gradient(to right, transparent 0, #000 26px, #000 calc(100% - 26px), transparent 100%);
+    mask-image: linear-gradient(to right, transparent 0, #000 26px, #000 calc(100% - 26px), transparent 100%);
+  }
+  .sidebar-nav[data-edge-left="1"][data-edge-right="0"] {
+    -webkit-mask-image: linear-gradient(to right, transparent 0, #000 26px);
+    mask-image: linear-gradient(to right, transparent 0, #000 26px);
+  }
+  .sidebar-nav[data-edge-left="0"][data-edge-right="0"] {
+    -webkit-mask-image: none;
+    mask-image: none;
+  }
 
   .nav-group {
     display: contents;
@@ -5436,6 +5471,10 @@ select#me-note option { background: var(--bg-deep); color: var(--text); }
    * unclipped. */
   @media (max-width: 380px) {
     .mobile-account-row .muted-status { display: none; }
+    /* D05: the status label ("Browsing as guest") is hidden here, so the
+       status dot beside it has nothing to annotate and dangles after the
+       name as a stray "Guest ·" separator. Drop it with the label. */
+    .mobile-account-row .status-dot { display: none; }
     .mobile-account-row .me-pill-mini strong { max-width: 80px; }
   }
 }
@@ -6209,6 +6248,38 @@ select#me-note option { background: var(--bg-deep); color: var(--text); }
 .guest-roster-more {
   text-align: center;
   margin: 4px 0 2px;
+}
+/* Honest aggregate (replaces the old enumerated "Anonymous player 1…N"
+   list that read like a bot farm). Real feed counts only. */
+.guest-roster-aggregate {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.02);
+}
+.guest-roster-aggregate-headline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-1);
+}
+.guest-roster-aggregate-note { margin: 0; }
+.guest-roster-aggregate .muted.small { margin: 0; }
+.guest-roster-aggregate .btn-primary.sm {
+  align-self: flex-start;
+  margin-top: 4px;
+}
+@media (max-width: 560px) {
+  .guest-roster-aggregate .btn-primary.sm {
+    align-self: stretch;
+    justify-content: center;
+  }
 }
 .guest-roster-cta {
   display: flex;

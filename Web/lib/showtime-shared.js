@@ -66,7 +66,14 @@ export function fmtRel(iso) {
   if (delta < 60) return `${delta}s ago`;
   if (delta < 3600) return `${Math.floor(delta / 60)}m ago`;
   if (delta < 86400) return `${Math.floor(delta / 3600)}h ago`;
-  return new Date(t).toLocaleDateString();
+  // Stay relative beyond a day instead of falling back to an absolute
+  // toLocaleDateString() like "5/9/2026", which reads as stale on the
+  // "Most recent" hero metric (D07).
+  const days = Math.floor(delta / 86400);
+  if (days < 7) return `${days}d ago`;
+  if (days < 30) return `${Math.floor(days / 7)}w ago`;
+  if (days < 365) return `${Math.floor(days / 30)}mo ago`;
+  return `${Math.floor(days / 365)}y ago`;
 }
 
 /** Tiny fetch wrapper that always returns parsed JSON or null on failure. */

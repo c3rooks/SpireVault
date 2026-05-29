@@ -547,6 +547,28 @@ function goalLabel(g) {
     a20: "Heart Attempt", heart: "Heart Attempt", learning: "Learning", daily: "Daily" };
   return m[g] || "Any run";
 }
+// Whether a room reads as newcomer-friendly. Derived ONLY from honest,
+// host-set signals — never fabricated: the host explicitly chose a
+// teaching/learning goal, OR the ascension ceiling is A0–A3 (the bands
+// new players actually climb). This is the "you won't get judged here"
+// signal a nervous first-timer scans for.
+function lobbyWelcomesNewcomers(l) {
+  if (!l) return false;
+  const g = String(l.goal || "").toLowerCase();
+  if (g === "learning" || g === "teaching") return true;
+  const max = l.ascensionMax;
+  if (typeof max === "number" && max >= 0 && max <= 3) return true;
+  return false;
+}
+function newcomerBadgeHtml(l) {
+  if (!lobbyWelcomesNewcomers(l)) return "";
+  const leaf = '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" '
+    + 'stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+    + '<path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.52-4.48 10-10 10Z"/>'
+    + '<path d="M2 21c0-3 1.85-5.36 5.08-6"/></svg>';
+  return ' <span class="pf-newcomer-badge" title="New players are welcome in this room">'
+    + leaf + '<span>Welcomes newcomers</span></span>';
+}
 function modeLabel(l) {
   return { standard: "Standard", daily: "Daily", custom: "Custom" }[l?.mode || "standard"] || "Standard";
 }
@@ -1293,7 +1315,7 @@ function renderLiveRow(l, state, best) {
     <article class="${cls}" data-lobby-id="${esc(l.lobbyId)}" data-host-steam-id="${esc(l.hostSteamId || "")}"${dataHouseAttrs}>
       <div class="pf-live-meta">
         <div class="pf-live-titlerow">
-          <h4 class="pf-live-title">${esc(l.title || "Co-op room")}${isMine ? ' <span class="pf-fit-pill pf-fit-pill--good">Your Room</span>' : ""}</h4>
+          <h4 class="pf-live-title">${esc(l.title || "Co-op room")}${isMine ? ' <span class="pf-fit-pill pf-fit-pill--good">Your Room</span>' : ""}${newcomerBadgeHtml(l)}</h4>
         </div>
         <div class="pf-host-strip" data-pf-host-strip>
           <img src="${esc(isHouse ? "/assets/vault-mark.svg" : (l.hostAvatarUrl || "/assets/vault-mark.svg"))}" class="${isHouse ? "pf-host-strip-img pf-host-strip-img--house" : ""}" alt="" />
@@ -1407,7 +1429,7 @@ function renderHostStep() {
         <input id="pf-host-title" type="text" maxlength="80" value="${esc(hostForm.title)}" placeholder='e.g. "A10 Heart Attempt"' /></div>
       <div class="pf-field"><span class="pf-field-label">Mode</span>
         <div class="pf-chiprow" data-pf-radio="mode">${MODES.map((m) => chipBtn(m.id, m.label, m.id === hostForm.mode)).join("")}</div></div>
-      <div class="pf-field"><span class="pf-field-label">Goal</span>
+      <div class="pf-field"><span class="pf-field-label">Goal <span class="pf-field-hint">“Learning” adds a welcoming “newcomers” badge</span></span>
         <div class="pf-chiprow" data-pf-radio="goal">${GOALS.map((g) => chipBtn(g.id, g.label, g.id === hostForm.goal)).join("")}</div></div>
       <div class="pf-field"><span class="pf-field-label">Ascension</span>
         <div class="pf-chiprow" data-pf-radio="ascensionBucket">${ASC_BUCKETS.map((a) => chipBtn(a.id, a.label, a.id === hostForm.ascensionBucket)).join("")}</div></div>
