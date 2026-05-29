@@ -5,6 +5,26 @@ Dates in YYYY-MM-DD. The project follows [Semantic Versioning](https://semver.or
 loosely — patch bumps for fixes, minor for features, major if I ever
 break the wire format.
 
+## v0.9.11 — 2026-05-29 (desktop installer)
+
+Desktop patch. The Windows system-tray icon was pointing at the 32px
+app icon — which is the detailed vault-door emblem crushed down to an
+unreadable orange blob (beta tester report). Added a dedicated
+`tray.png` rasterized from the simple vault mark (octagon + spire) that
+stays crisp at tray/menu-bar sizes, and repointed `trayIcon.iconPath`
+to it. The rich emblem is unchanged as the app/installer icon, where
+its detail is visible.
+
+No web or backend changes. The desktop wrapper has no auto-updater, so
+grab the new `_x64-setup.exe` from the v0.9.11 GitHub release and
+reinstall to pick up the fixed icon.
+
+(Web-side fixes shipped the same day — corrected A1–A10 ascension
+modifier descriptions, A10 added to the chart, the mobile tab-strip
+"no way back" affordance, and crisp PNG favicons — went out on the
+live web app at app.spirevault.app, which the desktop wrapper loads,
+so they reach desktop users without a reinstall.)
+
 ## v0.12.0-preview — 2026-05-26
 
 Two follow-up rolls landing same-day as v0.11.0, on the same merge.
