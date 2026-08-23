@@ -52,17 +52,39 @@
   Expires: 0
   Pragma: no-cache
 
+# =============================================================================
+# Versioned code: cache hard.
+#
+# `no-store` used to extend to script.js, styles.css and all of /lib/*. That
+# was the correct panic response to the 4-hour-stale-UI incident above, but it
+# was aimed at the wrong layer and it never came back off. The stale UI came
+# from the HTML entry point being cached; the code files it pulls in have
+# ALWAYS been version-pinned (`/script.js?v=N`, `/lib/party-finder.js?v=N`,
+# and so on), and a version-pinned URL cannot go stale — bumping the token
+# produces a different URL, which is a different cache entry.
+#
+# So `no-store` on these bought nothing and cost a full re-download of roughly
+# 1.5 MB of JavaScript on every single page load, for every user, forever.
+# That is worst for exactly the people we most want to keep: the returning
+# ones. The entry points above stay `no-store`, which is what actually
+# guarantees a deploy is picked up — a fresh index.html carries the new
+# version tokens, and those pull the new code.
+#
+# THE ONE RULE THIS DEPENDS ON: every reference to a file under these paths
+# must carry a `?v=` token, and the token must be bumped whenever the file
+# changes. A missed bump now means a user is pinned to the old file for a
+# year, not four hours. `npm run check:asset-versions` enforces the first half
+# of that rule; the second half is on the author.
+# =============================================================================
+
 /styles.css
-  Cache-Control: no-store, no-cache, must-revalidate, max-age=0
-  Expires: 0
-  Pragma: no-cache
+  Cache-Control: public, max-age=31536000, immutable
 
 /script.js
-  Cache-Control: no-store, no-cache, must-revalidate, max-age=0
-  Expires: 0
-  Pragma: no-cache
+  Cache-Control: public, max-age=31536000, immutable
+
+/run-coach.js
+  Cache-Control: public, max-age=31536000, immutable
 
 /lib/*
-  Cache-Control: no-store, no-cache, must-revalidate, max-age=0
-  Expires: 0
-  Pragma: no-cache
+  Cache-Control: public, max-age=31536000, immutable

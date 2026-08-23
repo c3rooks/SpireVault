@@ -38,8 +38,8 @@
   <meta name="twitter:image" content="https://app.spirevault.app/assets/og.png?v=1" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Playfair+Display:wght@700;900&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/styles.css?v=149" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Playfair+Display:wght@700;900&family=Cinzel:wght@700;800;900&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/styles.css?v=152" />
 
   <!-- Google tag (gtag.js) — Spire Vault GA4 stream G-09LEQ247HN.
        Loaded async so it never blocks the critical rendering path; the
@@ -68,6 +68,92 @@
       // the app routes to a tab.
       send_page_view: false
     });
+  </script>
+
+  <!-- Global JS error capture.
+       Lives here, inline and early, rather than inside script.js for two
+       reasons: it has to be installed before script.js is even fetched (a
+       syntax error in the module graph would otherwise be completely
+       invisible), and a crash during app boot must not take the reporter
+       down with it. No dependencies, no imports, nothing that can throw.
+
+       Ships to the same /auth/diag beacon endpoint the auth funnel already
+       uses, so there is no new backend surface, no new vendor, and no new
+       secret. The server sanitizes `reason` to [a-z0-9_-]{0,40} and clamps
+       `detail` to 280 chars.
+
+       Budget discipline: /auth/diag is rate-limited to 10 writes/min/IP, and
+       KV writes are the scarce resource on this plan. A render loop throwing
+       every frame could burn the entire daily quota in minutes, so this
+       de-dupes by error signature and hard-caps per page load. -->
+  <script>
+  (function () {
+    var MAX_PER_PAGELOAD = 6;
+    var sent = 0;
+    var seen = Object.create(null);
+
+    function post(reason, detail) {
+      try {
+        if (sent >= MAX_PER_PAGELOAD) return;
+        // Collapse repeats: one report per unique signature per page load.
+        var sig = reason + "|" + detail.slice(0, 120);
+        if (seen[sig]) return;
+        seen[sig] = 1;
+        sent++;
+
+        var payload = JSON.stringify({ reason: reason, detail: detail.slice(0, 280) });
+        var url = "https://vault-coop.coreycrooks.workers.dev/auth/diag";
+        if (navigator.sendBeacon) {
+          navigator.sendBeacon(url, new Blob([payload], { type: "application/json" }));
+        } else {
+          fetch(url, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: payload,
+            keepalive: true
+          }).catch(function () {});
+        }
+      } catch (e) { /* a broken reporter must never surface to the user */ }
+    }
+
+    // Strip the origin so details stay short and readable in the ops table.
+    function shortSrc(src) {
+      if (!src) return "?";
+      try { return new URL(src).pathname; } catch (e) { return String(src).slice(0, 60); }
+    }
+
+    window.addEventListener("error", function (ev) {
+      // Resource load failures (img/script/link) surface here too, with the
+      // failing element as the target and no `error` object. Worth knowing
+      // about — a 404 on script.js is fatal and otherwise silent.
+      var el = ev.target;
+      if (el && el !== window && (el.tagName === "SCRIPT" || el.tagName === "LINK" || el.tagName === "IMG")) {
+        var res = el.src || el.href || "";
+        // Game art is lazy-loaded by the thousand; a single missing card
+        // image is noise, not a defect worth a KV write.
+        if (res.indexOf("/assets/") !== -1) return;
+        post("resource-load-failed", el.tagName.toLowerCase() + " " + shortSrc(res));
+        return;
+      }
+
+      var msg = ev.message || (ev.error && ev.error.message) || "unknown";
+      // Cross-origin scripts report as a bare "Script error." with no detail.
+      // Still worth a count, but flag it so it isn't mistaken for a real trace.
+      var where = shortSrc(ev.filename) + ":" + (ev.lineno || 0) + ":" + (ev.colno || 0);
+      post("js-error", msg + " @ " + where);
+    }, true); // capture phase — resource errors don't bubble
+
+    window.addEventListener("unhandledrejection", function (ev) {
+      var r = ev.reason;
+      var msg;
+      try {
+        msg = (r && (r.stack || r.message)) || String(r);
+      } catch (e) {
+        msg = "unstringifiable rejection";
+      }
+      post("js-unhandled-rejection", String(msg).replace(/\s+/g, " "));
+    });
+  })();
   </script>
 </head>
 <body>
@@ -288,6 +374,15 @@
              resolves, but it's never visually shown — the click
              handler that signs out is bound by boot() either way. -->
         <button class="status-signout" id="signout-btn" type="button" hidden aria-hidden="true" tabindex="-1" style="display:none">Sign out</button>
+
+        <!-- Game-data freshness badge. Populated at boot from
+             lib/game-sync.js — the single source of truth for which
+             game version the app's tooltips describe (the drift guard
+             asserts the same constant against docs/game-data-sync.md).
+             Clicking it opens the News tab, where the matching data-pass
+             post explains exactly what was verified. Hidden until JS
+             fills it so a broken boot never strands an empty box. -->
+        <button class="sidebar-gamesync" id="game-sync-badge" type="button" hidden title="Open the game-data update notes"></button>
       </div>
 
       <!-- Mobile-only account row. Lives below the horizontal tab strip
@@ -360,7 +455,15 @@
             <div class="panel-head-title-wrap">
               <h2 id="tab-overview-title">Overview</h2>
               <p class="panel-sub" id="overview-sub">Your run history at a glance.</p>
+              <!-- Community pulse: anonymous aggregate from
+                   /api/stats/community, painted by loadCommunityPulse().
+                   Hidden until (and unless) the fetch succeeds. -->
+              <p class="panel-pulse" id="community-pulse" hidden></p>
             </div>
+            <!-- Head crest: per-tab data composition painted by
+                 renderHeadCrests() in script.js. Overview gets the
+                 "war table" stat plaques. -->
+            <div class="head-crest" data-crest="overview"></div>
             <div class="companion-slot" aria-live="polite"></div>
           </div>
         </div>
@@ -416,6 +519,8 @@
           </div>
           <div class="panel-head-stage">
             <div class="panel-head-title-wrap"><h2 id="tab-characters-title">Characters</h2><p class="panel-sub">Win rate by character.</p></div>
+            <!-- "Hall of Heroes" portrait rail — renderHeadCrests(). -->
+            <div class="head-crest" data-crest="characters"></div>
             <div class="companion-slot" aria-live="polite"></div>
           </div>
         </div>
@@ -465,6 +570,8 @@
           </div>
           <div class="panel-head-stage">
             <div class="panel-head-title-wrap"><h2 id="tab-ascensions-title">Ascensions</h2><p class="panel-sub">Win rate by ascension level.</p></div>
+            <!-- "The Climb" tick track — renderHeadCrests(). -->
+            <div class="head-crest" data-crest="ascensions"></div>
             <div class="companion-slot" aria-live="polite"></div>
           </div>
         </div>
@@ -514,6 +621,8 @@
           </div>
           <div class="panel-head-stage">
             <div class="panel-head-title-wrap"><h2 id="tab-relics-title">Top Relics</h2><p class="panel-sub">Best relics by win rate (min. 3 runs).</p></div>
+            <!-- "Reliquary shelf" — renderHeadCrests(). -->
+            <div class="head-crest" data-crest="relics"></div>
             <div class="companion-slot" aria-live="polite"></div>
           </div>
         </div>
@@ -563,6 +672,8 @@
           </div>
           <div class="panel-head-stage">
             <div class="panel-head-title-wrap"><h2 id="tab-cards-title">Cards</h2><p class="panel-sub">Most picked vs. most skipped.</p></div>
+            <!-- "The Hand" fanned card art — renderHeadCrests(). -->
+            <div class="head-crest" data-crest="cards"></div>
             <div class="companion-slot" aria-live="polite"></div>
           </div>
         </div>
@@ -1042,11 +1153,206 @@
             <!-- ====== Post 003 — May 9 2026 — STS2 v0.105.0 content support ====== -->
             <!-- ====== Post 006 — May 10 2026 — Desktop / cloud parity rebuild ====== -->
             <!-- ====== Post 007 — May 26 2026 — Co-op Lobby v2 default + v0.11.0 ===== -->
+            <!-- ====== Post 008 — Jun 19 2026 — STS2 v0.107.1 main-branch support ==== -->
+            <!-- ====== Post 009 — Jul 23 2026 — New banner art, permanent saves,      -->
+            <!-- ======                          beta v0.108/v0.109 data pass          ==== -->
             <!--                                                                         -->
-            <!-- Single launch post. Folded what used to be a separate news-008 (the     -->
-            <!-- v0.11.0 five-feature ship) into this article because both shipped       -->
-            <!-- the same day; two same-day entries read as broken/duplicate. The        -->
-            <!-- v0.11.0 content is the "Five more things..." section below.             -->
+            <!-- No banner figure on 008/009 on purpose: no uploaded art assets for      -->
+            <!-- them yet, and the post-007 banner-cache-key comment below documents     -->
+            <!-- exactly what goes wrong if you reference a webp that isn't uploaded     -->
+            <!-- yet (Cloudflare caches the SPA-fallback HTML at that path for a year).  -->
+            <!-- Add the <figure class="news-post-banner"> block back once art ships.    -->
+            <article class="news-post" id="news-010" data-news-id="010" data-news-eyebrow="Game data · August 23, 2026" data-news-tags="Game data,Patch,Beta watch" aria-labelledby="news-010-title">
+              <header class="news-post-head">
+                <span class="news-post-eyebrow">Game data &middot; August 23, 2026</span>
+                <h3 class="news-post-title" id="news-010-title">v0.110.0 + v0.111.0 read in full &mdash; every tooltip re-verified against the game</h3>
+                <p class="news-post-byline">
+                  Corey
+                  <span class="news-post-byline-sep">&middot;</span>
+                  <span class="news-post-byline-meta">~3 min read</span>
+                </p>
+              </header>
+
+              <div class="news-post-body">
+                <p class="news-lede">
+                  Mega Crit shipped two more beta patches &mdash; <strong>v0.110.0</strong> on July 31 and <strong>v0.111.0</strong> on August 14 &mdash; and said that's the last one for a while, with a big content update teased next. We read both in full, netted them against July's notes, and then went further: <strong>every card and relic tooltip in Spire Vault has been re-verified against the game's own data.</strong> If the app shows you an effect, it's the real one.
+                </p>
+
+                <h4 class="news-post-section">Where the game stands</h4>
+
+                <p>
+                  The main branch &mdash; what most of you play &mdash; is still <strong>v0.107.1 &ldquo;Major Update #2&rdquo;</strong> from June. Everything in v0.108.0 through v0.111.0 lives on the optional beta branch only. Spire Vault's tooltips describe the main branch, with beta changes tracked on a watchlist so nothing sneaks into your tooltips before it actually ships to you.
+                </p>
+
+                <h4 class="news-post-section">What the beta patches change (the short version)</h4>
+
+                <div class="news-feature-block">
+                  <h5>Silent's poison kit got rebuilt</h5>
+                  <p>
+                    <strong>Scare is now Sidestep</strong> (energy next turn instead of Weak), <strong>Outbreak</strong> became a Rare skill that triggers poison immediately, <strong>Haze</strong> costs 2 and adds Weak, and <strong>Mirage</strong> went through a rework, a revert, and an exhaust tweak &mdash; three patches, three shapes. Run history renders both Scare and Sidestep correctly whichever branch you're on.
+                  </p>
+                </div>
+
+                <div class="news-feature-block">
+                  <h5>Ancients rebalanced across the board</h5>
+                  <p>
+                    Seal of Gold taxes 3 gold instead of 5, Fur Coat marks 8 combats, Signet Ring pays 888, Beautiful Bracelet enchants 4 <em>random</em> cards, Diamond Diadem now starts you with 20 persistent Block, and Toy Box hands out 5 relics. All watchlisted; none of it is live on main yet.
+                  </p>
+                </div>
+
+                <div class="news-feature-block">
+                  <h5>Ascension 8 and 9 got meaner (in beta)</h5>
+                  <p>
+                    v0.111.0 retunes specific enemies at A8/A9 &mdash; Exoskeleton and Entomancer HP, Globe Head, Louse Progenitor and Soul Fysh scaling. The ascension guide notes this without changing the main-branch descriptions.
+                  </p>
+                </div>
+
+                <h4 class="news-post-section">What we fixed in the app while we were in there</h4>
+
+                <p>
+                  Re-verifying everything surfaced some old ghosts: a handful of tooltips still carried <em>Slay the Spire 1</em> text for cards and relics that don't exist (or work differently) in STS2 &mdash; Snecko Eye, Girya, Shovel, Blood Vial's heal trigger, even a few STS1-only cards hiding in the sample data. All of it is corrected or removed. The relic guide now covers <strong>150+ relics</strong> with exact in-game text and the correct STS2 rarity tiers (including <em>Ancient</em> &mdash; there is no &ldquo;boss&rdquo; tier in STS2), the AI coach's glossary grew from 72 cards to <strong>279</strong> with full sourced coverage for Regent and Necrobinder for the first time, and a new automated check now cross-references every data source on every deploy &mdash; so this class of drift can't ship again.
+                </p>
+
+                <p class="news-post-signoff">
+                  &mdash; Corey
+                </p>
+              </div>
+
+              <footer class="news-post-foot">
+                <div class="news-post-foot-meta">
+                  <span class="news-post-tag">Game data</span>
+                  <span class="news-post-tag">Patch</span>
+                  <span class="news-post-tag">Beta watch</span>
+                </div>
+                <div class="news-post-foot-actions">
+                  <a class="action-link" href="https://store.steampowered.com/news/app/2868840" target="_blank" rel="noopener">Mega Crit's news hub &rarr;</a>
+                  <a class="action-link" href="https://github.com/c3rooks/SpireVault/issues/new" target="_blank" rel="noopener">Report an issue &rarr;</a>
+                </div>
+              </footer>
+            </article>
+
+            <article class="news-post" id="news-009" data-news-id="009" data-news-eyebrow="Update · July 23, 2026" data-news-tags="Update,UI,Saves,Game data" aria-labelledby="news-009-title">
+              <header class="news-post-head">
+                <span class="news-post-eyebrow">Update &middot; July 23, 2026</span>
+                <h3 class="news-post-title" id="news-009-title">New banner art, saves you never re-import, and a beta-patch data pass</h3>
+                <p class="news-post-byline">
+                  Corey
+                  <span class="news-post-byline-sep">&middot;</span>
+                  <span class="news-post-byline-meta">~3 min read</span>
+                </p>
+              </header>
+
+              <div class="news-post-body">
+                <p class="news-lede">
+                  A little of everything today: the five stats-tab banners got fully re-rendered art, your imported runs are now pinned so the browser can never quietly evict them, and we did a full read-through of Mega Crit's June and July newsletters plus the v0.108.0 and v0.109.0 beta patch notes to make sure everything in the app matches the game. There are 73 of you climbing with us around the world now &mdash; thank you. This one's for you.
+                </p>
+
+                <h4 class="news-post-section">New scene art on every stats tab</h4>
+
+                <p>
+                  Overview, Characters, Ascensions, Top Relics, and Cards each carry a brand-new 3D-rendered backdrop &mdash; the ember-lit gate hall on Overview, five class-colored alcoves on Characters, a staircase climbing into light on Ascensions, a relic vault on Top Relics, and a scriptorium with floating cards on Cards. Your climber and the boss still stand in the scene the way they always have; the stage behind them just got a serious upgrade, plus a slow ember-light pulse so the whole banner breathes. (It respects your reduced-motion setting.)
+                </p>
+
+                <h4 class="news-post-section">Import once. Actually once.</h4>
+
+                <p>
+                  Your runs have always been cached in the browser after an import, but browsers treat that storage as <em>best-effort</em> &mdash; under disk pressure (or Safari's seven-day rule) they're allowed to silently throw it away, which is how "why is it asking me to re-upload?" happens. As of today, the moment real run data lands we ask the browser to mark this site's storage <strong>durable</strong>, which takes eviction off the table. Signed-in users were already double-covered by cloud sync; now guests are covered too. Import once, and your history is here every time you come back &mdash; on this device, forever.
+                </p>
+
+                <h4 class="news-post-section">The beta-patch data pass</h4>
+
+                <p>
+                  Mega Crit shipped two beta patches since Major Update #2: <strong>v0.108.0</strong> (July 3) and <strong>v0.109.0</strong> (July 17). Neither is on the main branch yet, so nothing changes for most of you &mdash; but if you play beta, your save can already contain content the app had never heard of. Now it has: we added display names for all sixteen new multiplayer cards (Midnight, Blade Symphony, The Ball, Tutor, and friends) plus the Dowsing quest chain, and hand-written tooltips for the two new Neow relics &mdash; <strong>Dowsing Rod</strong> and <strong>Neow's Sacrifice</strong> &mdash; using Mega Crit's exact wording from the patch notes. Balance changes that only exist on beta (the Diamond Diadem rework, the History Course nerf, Demon Form's buff) are tracked but deliberately <em>not</em> applied to our tooltips until they land on main, so the app never shows you numbers your own game doesn't have.
+                </p>
+
+                <p>
+                  And from the July Neowsletter: the giant floating hourglass that replaced Doormaker is officially here to stay &mdash; Mega Crit's animator did a whole write-up on bringing Aeonglass to life (the goo in the hourglass runs on the Living Smog's smoke shader, which is a delightful detail). Old runs that fought Doormaker keep their boss icon in your history, in the game and in the app.
+                </p>
+
+                <p class="news-post-signoff">
+                  &mdash; Corey
+                </p>
+              </div>
+
+              <footer class="news-post-foot">
+                <div class="news-post-foot-meta">
+                  <span class="news-post-tag">Update</span>
+                  <span class="news-post-tag">UI</span>
+                  <span class="news-post-tag">Saves</span>
+                  <span class="news-post-tag">Game data</span>
+                </div>
+                <div class="news-post-foot-actions">
+                  <a class="action-link" href="https://store.steampowered.com/news/app/2868840" target="_blank" rel="noopener">Mega Crit's news hub &rarr;</a>
+                  <a class="action-link" href="https://github.com/c3rooks/SpireVault/issues/new" target="_blank" rel="noopener">Report an issue &rarr;</a>
+                </div>
+              </footer>
+            </article>
+
+            <article class="news-post" id="news-008" data-news-id="008" data-news-eyebrow="Patch · June 19, 2026" data-news-tags="Patch,Game data,v0.107.1" aria-labelledby="news-008-title">
+              <header class="news-post-head">
+                <span class="news-post-eyebrow">Patch · June 19, 2026</span>
+                <h3 class="news-post-title" id="news-008-title">STS2 v0.107.1 &ldquo;Major Update #2&rdquo; is supported &mdash; Aeonglass hits the main branch</h3>
+                <p class="news-post-byline">
+                  Corey
+                  <span class="news-post-byline-sep">·</span>
+                  <span class="news-post-byline-meta">~2 min read</span>
+                </p>
+              </header>
+
+              <div class="news-post-body">
+                <p class="news-lede">
+                  Mega Crit shipped Major Update #2 to the <strong>main branch</strong> on June 18&ndash;19 &mdash; the update that carries everything from the last two months of beta patches (v0.105.0 through v0.107.0) to every player, not just beta testers. Runs from the new build already show up correctly in Spire Vault; this post is the "what changed and what we already had covered" rundown.
+                </p>
+
+                <h4 class="news-post-section">What was already covered</h4>
+
+                <div class="news-feature-block">
+                  <h5>Aeonglass, the three new Neow relics, and the Bestiary</h5>
+                  <p>
+                    We added label support for <strong>Aeonglass</strong> (the Act 3 boss replacing Doormaker) and the three new Neow relics &mdash; <strong>Kaleidoscope</strong>, <strong>Fishing Rod</strong>, <strong>Silken Tress</strong> &mdash; back when these were beta-only content in v0.105.0. As of this patch they're live for every player, so "Killed by Aeonglass" and Neow-relic tooltips should just work on your very first post-patch run. No action needed on our end.
+                  </p>
+                </div>
+
+                <h4 class="news-post-section">What we fixed for this patch</h4>
+
+                <div class="news-feature-block">
+                  <h5>Silken Tress picked up a downside &mdash; our tooltip now says so</h5>
+                  <p>
+                    Between the May beta and this main-branch patch, Mega Crit swapped downsides between two Neow relics: <strong>Neow's Scroll Boxes</strong> lost its "lose all gold" clause (that's the buff in the official notes), and <strong>Silken Tress</strong> picked it up instead. Our Silken Tress tooltip was still showing the old, downside-free May text. It now reads "Enchant all cards in the first card reward with Glam. Upon pickup, lose all gold." &mdash; matching what v0.107.1 actually shows you in-game.
+                  </p>
+                </div>
+
+                <div class="news-feature-block">
+                  <h5>Aeonglass got its own boss-taunt lines</h5>
+                  <p>
+                    The other main-branch bosses each have a handful of flavor lines that show up around the app; Aeonglass was missing from that list since it only existed on beta before now. It has lines of its own today.
+                  </p>
+                </div>
+
+                <h4 class="news-post-section">What's still on the list</h4>
+
+                <p>
+                  v0.107.1 is a big patch &mdash; RNG rework (the PRNG is now xoshiro256**, fixing a real correlation bug between your run seed and things like Neow's Bones curses), official Steam Workshop support, and dozens of card and relic balance changes across every class. None of that changes how Spire Vault reads your save file, and we don't have hand-written tooltips for every rebalanced relic yet (Neow's Scroll Boxes, Booming Conch, Nutritious Soup, Seal of Gold, Pael's Eye, and The Boot all changed this patch). Those relics still show up correctly in your run history and Top Relics tab &mdash; they just fall back to your personal stats instead of a hand-written blurb until we source the exact in-game text. If you spot one and want to send us the tooltip, a screenshot + one-line GitHub issue closes it out.
+                </p>
+
+                <p class="news-post-signoff">
+                  &mdash; Corey
+                </p>
+              </div>
+
+              <footer class="news-post-foot">
+                <div class="news-post-foot-meta">
+                  <span class="news-post-tag">Patch</span>
+                  <span class="news-post-tag">Game data</span>
+                  <span class="news-post-tag">v0.107.1</span>
+                </div>
+                <div class="news-post-foot-actions">
+                  <a class="action-link" href="https://store.steampowered.com/news/app/2868840/view/710026912607505280" target="_blank" rel="noopener">Mega Crit's patch notes &rarr;</a>
+                  <a class="action-link" href="https://github.com/c3rooks/SpireVault/issues/new" target="_blank" rel="noopener">Report a missing tooltip &rarr;</a>
+                </div>
+              </footer>
+            </article>
+
             <article class="news-post" id="news-007" data-news-id="007" data-news-eyebrow="Update · May 26, 2026" data-news-tags="Update,Co-op,Beta,Reputation" aria-labelledby="news-007-title">
               <figure class="news-post-banner">
                 <picture>
@@ -2259,6 +2565,6 @@
        Pinned with its own ?v= cache key so it does NOT require bumping
        script.js / styles.css when only this module changes. -->
   <script src="/lib/analytics-coop.js?v=1" defer></script>
-  <script src="/script.js?v=206" type="module"></script>
+  <script src="/script.js?v=211" type="module"></script>
 </body>
 </html>

@@ -260,9 +260,91 @@ enum NewsCatalog {
     /// The most recently *published* post lives at index 0. Bumping
     /// this constant when adding a new post lights the sidebar's
     /// "NEW" pill for every existing user until they open News.
-    static let latestPostID = "006-2026-05-10-desktop-cloud-parity"
+    ///
+    /// Numbering note: ids track the web app's posts of the same
+    /// content (app.spirevault.app's news-009 / news-008 cover the
+    /// same updates). The web catalog also has a "007" (Co-op Lobby
+    /// v2) that hasn't been ported to this native catalog yet —
+    /// that's a pre-existing gap, not something these posts caused.
+    static let latestPostID = "009-2026-07-23-banners-durable-saves-beta-pass"
 
     static let posts: [NewsPost] = [
+        NewsPost(
+            id: "010-2026-08-23-beta-0110-0111-data-pass",
+            eyebrow: "Game data · August 23, 2026",
+            title: "v0.110.0 + v0.111.0 read in full — every tooltip re-verified against the game",
+            readMinutes: 3,
+            tags: ["Game data", "Patch", "Beta watch"],
+            body: [
+                .lede("Mega Crit shipped two more beta patches — v0.110.0 on July 31 and v0.111.0 on August 14 — and said that's the last one for a while, with a big content update teased next. We read both in full, netted them against July's v0.108/v0.109 notes, and then went further: every card and relic tooltip in Spire Vault has been re-verified against the game's own data. If the app shows you an effect, it's the real one."),
+
+                .heading("Where the game stands"),
+                .paragraph("The main branch — what most of you play — is still v0.107.1 \u{201c}Major Update #2\u{201d} from June. Everything in v0.108.0 through v0.111.0 lives on the optional beta branch only. Spire Vault's tooltips describe the main branch, with beta changes tracked on a watchlist so nothing sneaks into your tooltips before it actually ships to you."),
+
+                .heading("What the beta patches change (the short version)"),
+                .feature(
+                    title: "Silent's poison kit got rebuilt",
+                    body: "Scare is now Sidestep (energy next turn instead of Weak), Outbreak became a Rare skill that triggers poison immediately, Haze costs 2 and adds Weak, and Mirage went through a rework, a revert, and an exhaust tweak — three patches, three shapes. Run history renders both Scare and Sidestep correctly whichever branch you're on."
+                ),
+                .feature(
+                    title: "Ancients rebalanced across the board",
+                    body: "Seal of Gold taxes 3 gold instead of 5, Fur Coat marks 8 combats, Signet Ring pays 888, Beautiful Bracelet enchants 4 random cards, Diamond Diadem now starts you with 20 persistent Block, and Toy Box hands out 5 relics. All watchlisted; none of it is live on main yet."
+                ),
+                .feature(
+                    title: "Ascension 8 and 9 got meaner (in beta)",
+                    body: "v0.111.0 retunes specific enemies at A8/A9 — Exoskeleton and Entomancer HP, Globe Head, Louse Progenitor and Soul Fysh scaling. The ascension guide notes this without changing the main-branch descriptions."
+                ),
+
+                .heading("What we fixed in the app while we were in there"),
+                .paragraph("Re-verifying everything surfaced some old ghosts: a handful of tooltips still carried Slay the Spire 1 text for cards and relics that don't exist (or work differently) in STS2 — Snecko Eye, Girya, Shovel, Blood Vial's heal trigger, and a set of STS1-only cards in the AI coach's glossary. All of it is corrected or removed. The coach's glossary also grew from 72 cards to 279, with full sourced coverage for Regent and Necrobinder for the first time, and the relic guide now covers 150+ relics with exact in-game text. A new automated check keeps every source in sync from here on, so this class of drift can't ship again."),
+            ]
+        ),
+        NewsPost(
+            id: "009-2026-07-23-banners-durable-saves-beta-pass",
+            eyebrow: "Update · July 23, 2026",
+            title: "New banner art, saves you never re-import, and a beta-patch data pass",
+            readMinutes: 3,
+            tags: ["Update", "UI", "Saves", "Game data"],
+            body: [
+                .lede("A little of everything today: the five stats-tab banners got fully re-rendered art, imported runs are now pinned so the browser can never quietly evict them, and we did a full read-through of Mega Crit's June and July newsletters plus the v0.108.0 and v0.109.0 beta patch notes to make sure everything in the app matches the game. There are 73 of you climbing with us around the world now — thank you. This one's for you."),
+
+                .heading("New scene art on every stats tab"),
+                .paragraph("Overview, Characters, Ascensions, Top Relics, and Cards each carry a brand-new 3D-rendered backdrop — the ember-lit gate hall on Overview, five class-colored alcoves on Characters, a staircase climbing into light on Ascensions, a relic vault on Top Relics, and a scriptorium with floating cards on Cards. Your climber and the boss still stand in the scene the way they always have; the stage behind them just got a serious upgrade. (Since the desktop app embeds the live web panels, you're already looking at it.)"),
+
+                .heading("Import once. Actually once."),
+                .paragraph("On the web, runs have always been cached in the browser after an import — but browsers treat that storage as best-effort and are allowed to evict it under disk pressure. As of today the web app asks the browser to mark its storage durable the moment real run data lands, which takes eviction off the table. Desktop users were never affected (your runs are parsed natively from disk), and signed-in users were already double-covered by cloud sync."),
+
+                .heading("The beta-patch data pass"),
+                .paragraph("Mega Crit shipped two beta patches since Major Update #2: v0.108.0 (July 3) and v0.109.0 (July 17). Neither is on the main branch yet, so nothing changes for most of you — but if you play beta, your save can already contain content the app had never heard of. Now it has: display names for all sixteen new multiplayer cards (Midnight, Blade Symphony, The Ball, Tutor, and friends) plus the Dowsing quest chain, and hand-written tooltips for the two new Neow relics — Dowsing Rod and Neow's Sacrifice — using Mega Crit's exact wording from the patch notes. Balance changes that only exist on beta (the Diamond Diadem rework, the History Course nerf, Demon Form's buff) are tracked but deliberately not applied to our tooltips until they land on main, so the app never shows numbers your own game doesn't have. — Corey"),
+            ]
+        ),
+
+        NewsPost(
+            id: "008-2026-06-19-sts2-v0_107_1-support",
+            eyebrow: "Patch · June 19, 2026",
+            title: "STS2 v0.107.1 \u{201c}Major Update #2\u{201d} is supported — Aeonglass hits the main branch",
+            readMinutes: 2,
+            tags: ["Patch", "Game data", "v0.107.1"],
+            body: [
+                .lede("Mega Crit shipped Major Update #2 to the main branch on June 18–19 — the update that carries everything from the last two months of beta patches (v0.105.0 through v0.107.0) to every player, not just beta testers. Runs from the new build already show up correctly in The Vault; this post is the \"what changed and what we already had covered\" rundown."),
+
+                .heading("What was already covered"),
+                .feature(
+                    title: "Aeonglass, the three new Neow relics, and the Bestiary",
+                    body: "We added label support for Aeonglass (the Act 3 boss replacing Doormaker) and the three new Neow relics — Kaleidoscope, Fishing Rod, Silken Tress — back when these were beta-only content in v0.105.0. As of this patch they're live for every player, so \"Killed by Aeonglass\" and Neow-relic tooltips should just work on your very first post-patch run. No action needed on our end."
+                ),
+
+                .heading("What we fixed for this patch"),
+                .feature(
+                    title: "Silken Tress picked up a downside — our tooltip now says so",
+                    body: "Between the May beta and this main-branch patch, Mega Crit swapped downsides between two Neow relics: Neow's Scroll Boxes lost its \"lose all gold\" clause (that's the buff in the official notes), and Silken Tress picked it up instead. Our Silken Tress tooltip was still showing the old, downside-free May text. It now reads \"Enchant all cards in the first card reward with Glam. Upon pickup, lose all gold.\" — matching what v0.107.1 actually shows you in-game."
+                ),
+
+                .heading("What's still on the list"),
+                .paragraph("v0.107.1 is a big patch — RNG rework (the PRNG is now xoshiro256**, fixing a real correlation bug between your run seed and things like Neow's Bones curses), official Steam Workshop support, and dozens of card and relic balance changes across every class. None of that changes how The Vault reads your save file, and we don't have hand-written tooltips for every rebalanced relic yet (Neow's Scroll Boxes, Booming Conch, Nutritious Soup, Seal of Gold, Pael's Eye, and The Boot all changed this patch). Those relics still show up correctly in your run history and Top Relics tab — they just fall back to your personal stats instead of a hand-written blurb until we source the exact in-game text. — Corey"),
+            ]
+        ),
+
         NewsPost(
             id: "006-2026-05-10-desktop-cloud-parity",
             eyebrow: "Update · May 10, 2026",

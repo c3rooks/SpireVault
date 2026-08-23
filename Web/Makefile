@@ -52,6 +52,21 @@ preflight:
 	  exit 1; \
 	fi; \
 	echo "✓ version pins match (v$$HTML_PIN)"
+	@# Immutable-cache safety net. script.js, styles.css and /lib/* are
+	@# served `max-age=1y, immutable`, which is only correct because every
+	@# reference to them carries a ?v= token. An unversioned reference is
+	@# a year-long stale cache for anyone who loads it once — a far worse
+	@# version of the 4-hour staleness incident documented in _headers.
+	@# The same script also catches one file being imported at two
+	@# different tokens, which for ES modules silently creates two module
+	@# instances with two copies of module state.
+	@node scripts/check-asset-versions.mjs || { echo "✘ asset version check failed — aborting deploy"; exit 1; }
+	@# Game-data drift guard. Cross-references labels.json, relic-info.js,
+	@# ascension-info.js, demo-runs.js, script.js's boss/roster enums and
+	@# the Swift AI glossary so a tooltip can never describe a card the
+	@# game doesn't have. Found six STS1-only cards in the demo decks on
+	@# its very first run — this is not a hypothetical failure mode.
+	@node scripts/check-game-data.mjs || { echo "✘ game-data check failed — aborting deploy"; exit 1; }
 	@echo "✓ all modules parse cleanly"
 
 deploy: preflight

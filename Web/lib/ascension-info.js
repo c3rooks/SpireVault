@@ -125,6 +125,12 @@ export const ASCENSION_MODIFIERS = {
     modifier: "Rare & upgraded cards halved",
     detail: "Rare and upgraded cards appear half as often — in combat rewards from every enemy and in the Merchant's stock.",
   },
+  // A8/A9 note — the per-enemy numbers behind these two levels are being
+  // actively retuned on the BETA branch (v0.111.0, Aug 2026: Exoskeleton
+  // and Entomancer HP at A8; Globe Head, Louse Progenitor and Soul Fysh
+  // scaling at A9; Torchhead Amalgam at A9 in v0.108/0.109). The rule
+  // *described* here is unchanged on both branches — only the magnitudes
+  // moved, and those live in-game, not in this file.
   8: {
     title: "Tankier enemies",
     modifier: "Enemies have more HP",
@@ -133,7 +139,7 @@ export const ASCENSION_MODIFIERS = {
   9: {
     title: "Harder hits",
     modifier: "Enemies deal more damage",
-    detail: "All enemies deal increased damage.",
+    detail: "All enemies deal increased damage and scale harder.",
   },
   10: {
     title: "Twin bosses",

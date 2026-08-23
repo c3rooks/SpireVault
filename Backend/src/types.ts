@@ -136,6 +136,17 @@ export interface Env {
   DEV_COOP_SANDBOX?: string;
 
   /**
+   * Optional Discord webhook URL for the "someone just opened a room"
+   * auto-announce (set with `wrangler secret put DISCORD_LFG_WEBHOOK_URL`).
+   * When set, every real (non-House) lobby created via POST /coop/lobbies
+   * fires one webhook message into the community Discord with the room
+   * details and a one-click join link — flipping the funnel so Discord
+   * drives people INTO the app's lobby instead of replacing it. Unset →
+   * feature is silently off; lobby creation never depends on it.
+   */
+  DISCORD_LFG_WEBHOOK_URL?: string;
+
+  /**
    * Shared secret for the Discord LFG bridge bot. The bot sends this
    * value in the `X-Bot-Secret` header on POST /coop/mirror and
    * DELETE /coop/mirror/:id. When unset, both write endpoints return

@@ -1,0 +1,11 @@
+{
+  "name": "spirevault-web",
+  "private": true,
+  "type": "module",
+  "description": "Static web app for app.spirevault.app. This file exists so Node-based tooling (the preflight guards in scripts/) treats the ES-module .js files here as ESM without re-parse warnings; the browser ignores it entirely.",
+  "scripts": {
+    "check:asset-versions": "node scripts/check-asset-versions.mjs",
+    "check:game-data": "node scripts/check-game-data.mjs",
+    "preflight": "make preflight"
+  }
+}

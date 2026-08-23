@@ -885,8 +885,10 @@ main.main-public,
 
 /* ─── Sidebar ─────────────────────────────────────────────── */
 .sidebar {
-  background: #0a0812;
-  border-right: 1px solid var(--border);
+  background:
+    radial-gradient(220px 160px at 24px 20px, rgba(255, 122, 26, 0.07), transparent 70%),
+    linear-gradient(180deg, #0c0917 0%, #070511 100%);
+  border-right: 1px solid rgba(212, 175, 55, 0.14);
   display: flex;
   flex-direction: column;
   position: sticky;
@@ -922,8 +924,8 @@ main.main-public,
 }
 .sidebar-brand > div { display: flex; flex-direction: column; gap: 2px; }
 .sidebar-wordmark {
-  font-family: 'Playfair Display', serif;
-  font-size: 17px;
+  font-family: 'Cinzel', 'Playfair Display', serif;
+  font-size: 16px;
   font-weight: 900;
   letter-spacing: 0.16em;
   background: linear-gradient(120deg, var(--accent-hi), var(--gold));
@@ -949,13 +951,22 @@ main.main-public,
 .nav-group { margin-bottom: 22px; }
 .nav-group:last-child { margin-bottom: 0; }
 .nav-group-label {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 10px;
   font-size: 10.5px;
   font-weight: 800;
   letter-spacing: 0.2em;
   color: var(--text-3);
   padding: 0 14px 8px;
   text-transform: uppercase;
+}
+/* Fading hairline after the group label — ledger section rule. */
+.nav-group-label::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, rgba(212, 175, 55, 0.3), transparent);
 }
 .nav-row {
   width: 100%;
@@ -966,39 +977,51 @@ main.main-public,
   border: 0;
   background: transparent;
   color: var(--text-2);
-  border-radius: 8px;
+  border-radius: 10px;
   text-align: left;
   font-size: 13px;
   font-weight: 500;
   letter-spacing: -0.005em;
   cursor: pointer;
+  position: relative;
   transition:
     background 180ms cubic-bezier(0.16, 1, 0.3, 1),
-    color 180ms cubic-bezier(0.16, 1, 0.3, 1);
+    color 180ms cubic-bezier(0.16, 1, 0.3, 1),
+    transform 180ms cubic-bezier(0.16, 1, 0.3, 1);
 }
-.nav-row:hover { background: rgba(255,255,255,0.04); color: var(--text); }
+.nav-row:hover {
+  background: rgba(255, 255, 255, 0.045);
+  color: var(--text);
+  transform: translateX(2px);
+}
 .nav-row:focus-visible {
   outline: 2px solid var(--accent, #d4af37);
   outline-offset: 2px;
 }
 .nav-row.is-active {
-  background: rgba(255, 107, 26, 0.12);
+  background: linear-gradient(90deg, rgba(255, 122, 26, 0.16), rgba(255, 122, 26, 0.03) 78%, transparent);
   color: var(--text);
   font-weight: 700;
-  position: relative;
+  transform: none;
 }
-.nav-row.is-active::after {
+/* Gilded notch on the LEFT edge of the active row — reads like a
+ * ribbon bookmark in the ledger. */
+.nav-row.is-active::before {
   content: "";
   position: absolute;
-  right: 8px;
+  left: -2px;
   top: 50%;
   transform: translateY(-50%);
   width: 3px;
   height: 22px;
-  background: var(--accent);
+  background: linear-gradient(180deg, var(--gold), var(--accent));
   border-radius: 2px;
+  box-shadow: 0 0 8px rgba(255, 160, 92, 0.6);
 }
-.nav-row.is-active .nav-icon { color: var(--accent); }
+.nav-row.is-active .nav-icon {
+  color: var(--accent-hi);
+  filter: drop-shadow(0 0 5px rgba(255, 122, 26, 0.55));
+}
 .nav-icon {
   width: 18px; height: 18px;
   display: inline-flex;
@@ -1128,6 +1151,27 @@ main.main-public,
   font-weight: 600;
   color: var(--text-2, #b6abc4);
 }
+/* Game-data freshness badge — one quiet line under the status row that
+ * says which game version the tooltips were verified against. Clicking
+ * it opens the News tab (the data-pass post explains the details). Kept
+ * deliberately dimmer than the status row: it's provenance, not status. */
+.sidebar-gamesync {
+  display: block;
+  width: 100%;
+  margin-top: 6px;
+  padding: 4px 8px 0;
+  border: 0;
+  background: none;
+  font: 600 10px/1.4 inherit;
+  letter-spacing: 0.4px;
+  color: var(--text-3, #6c647a);
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+.sidebar-gamesync:hover { color: var(--text-2, #b6abc4); }
 .me-pill-status-pill {
   display: inline-flex;
   align-items: center;
@@ -1733,7 +1777,14 @@ main.main-public,
 .content {
   padding: 0;
   min-width: 0;       /* let children shrink instead of overflowing the grid */
-  background: var(--bg);
+  /* v209 atmosphere: two faint corner glows (violet upper-right, ember
+   * lower-left) so the canvas has depth without bleeding through the
+   * sticky panel-head the way the old .bg-glow did — these sit UNDER
+   * everything because .content is the painting surface itself. */
+  background:
+    radial-gradient(1100px 480px at 82% -6%, rgba(130, 90, 255, 0.055), transparent 62%),
+    radial-gradient(900px 420px at 8% 108%, rgba(255, 107, 26, 0.05), transparent 60%),
+    var(--bg);
 }
 .tab-panel { padding: 0; }
 /* Tab swap micro-animation: a soft 14ms-frame-budget fade keeps the
@@ -1754,36 +1805,41 @@ main.main-public,
 }
 
 /* ─────────────────────────────────────────────────────────────────
- * Per-tab atmospheric scene backdrops
+ * Per-tab headers — v209 "Gilded Ledger" redesign
  *
- * The painted scene now spans the ENTIRE panel-head as a banner
- * background, not just the small diorama box. Title text, the
- * companion slot (climber + boss + bubble), and the Import button
- * all sit on top of the painting. A horizontal dark gradient on
- * `.panel-head::before` keeps the title legible on the left while
- * the right side stays bright enough for the diorama to feel like
- * it's set into the scene.
+ * Every themed stats tab keeps its painted scene, but the headers
+ * are no longer clones of each other. Each tab owns:
+ *
+ *   - an accent hue (--tab-accent) that tints its frame, title
+ *     flourish, and crest components;
+ *   - a distinct legibility gradient direction;
+ *   - a distinct centerpiece "crest" (stat plaques / portrait rail /
+ *     climb track / reliquary shelf / card fan) painted by
+ *     renderHeadCrests() in script.js;
+ *   - its own geometry (height, radius, frame treatment).
  *
  * Recent Runs and Co-op are intentionally excluded — both are
  * utility surfaces where a decorative header would hurt the
  * scanability of the list rows beneath them.
  * ───────────────────────────────────────────────────────────────── */
-.tab-panel[data-tab="overview"],
-.tab-panel[data-tab="characters"],
-.tab-panel[data-tab="ascensions"],
-.tab-panel[data-tab="relics"],
-.tab-panel[data-tab="cards"] {
-  /* Hook for tab-specific .panel-head selectors below. */
-}
-.tab-panel[data-tab="overview"]   > .panel-head { background-image: url("/assets/sts2/scene-floor.webp"); }
-.tab-panel[data-tab="characters"] > .panel-head { background-image: url("/assets/sts2/scene-characters.webp"); }
-.tab-panel[data-tab="ascensions"] > .panel-head { background-image: url("/assets/sts2/scene-ascensions.webp"); }
-.tab-panel[data-tab="relics"]     > .panel-head { background-image: url("/assets/sts2/scene-relics.webp"); }
-.tab-panel[data-tab="cards"]      > .panel-head { background-image: url("/assets/sts2/scene-cards.webp"); }
+.tab-panel[data-tab="overview"]   { --tab-accent: #ffb45c; --tab-accent-rgb: 255, 180, 92; }
+.tab-panel[data-tab="characters"] { --tab-accent: #7fe08f; --tab-accent-rgb: 127, 224, 143; }
+.tab-panel[data-tab="ascensions"] { --tab-accent: #a48bff; --tab-accent-rgb: 164, 139, 255; }
+.tab-panel[data-tab="relics"]     { --tab-accent: #5ad6c8; --tab-accent-rgb: 90, 214, 200; }
+.tab-panel[data-tab="cards"]      { --tab-accent: #ff6b7a; --tab-accent-rgb: 255, 107, 122; }
+/* v2 banner art (July 2026): fully re-rendered 3D scenes. New
+ * filenames on purpose — /assets/* is cached hard at the CDN, so
+ * shipping under fresh names guarantees every client picks them up
+ * without a purge. */
+.tab-panel[data-tab="overview"]   > .panel-head { background-image: url("/assets/sts2/scene-floor-v2.webp"); }
+.tab-panel[data-tab="characters"] > .panel-head { background-image: url("/assets/sts2/scene-characters-v2.webp"); }
+.tab-panel[data-tab="ascensions"] > .panel-head { background-image: url("/assets/sts2/scene-ascensions-v2.webp"); }
+.tab-panel[data-tab="relics"]     > .panel-head { background-image: url("/assets/sts2/scene-relics-v2.webp"); }
+.tab-panel[data-tab="cards"]      > .panel-head { background-image: url("/assets/sts2/scene-cards-v2.webp"); }
 
-/* Themed panel-heads: painted banner + in-banner toolbar row (Export /
- * Refresh / Import) + a bottom row with title + diorama. No separate
- * sticky strip above the tab — actions read as part of the scene. */
+/* Shared themed-header shell: painted banner + in-banner toolbar row
+ * (Export / Refresh / Import) + a bottom stage with title, crest, and
+ * (on some tabs) the companion diorama. */
 .tab-panel[data-tab="overview"]   > .panel-head,
 .tab-panel[data-tab="characters"] > .panel-head,
 .tab-panel[data-tab="ascensions"] > .panel-head,
@@ -1796,12 +1852,40 @@ main.main-public,
   align-items: stretch;
   gap: 6px;
   background-size: cover;
-  background-position: center 70%;
+  background-position: center 62%;
   background-repeat: no-repeat;
-  border-radius: 14px;
-  box-shadow: inset 0 0 60px 10px rgba(0, 0, 0, 0.7);
+  border-radius: 18px;
+  border: 1px solid rgba(var(--tab-accent-rgb), 0.28);
+  box-shadow:
+    inset 0 0 70px 12px rgba(0, 0, 0, 0.72),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 12px 32px -18px rgba(0, 0, 0, 0.9);
   min-height: 0;
-  padding: 8px 28px 8px;
+  padding: 8px 28px 10px;
+}
+/* Per-tab geometry so the five headers read as siblings, not clones. */
+.tab-panel[data-tab="characters"] > .panel-head {
+  border-radius: 12px;
+  background-position: center 30%;
+  /* Double keyline base — the "hall" floor. */
+  border-bottom: 2px solid rgba(var(--tab-accent-rgb), 0.5);
+  box-shadow:
+    inset 0 0 70px 12px rgba(0, 0, 0, 0.72),
+    inset 0 -8px 0 -6px rgba(var(--tab-accent-rgb), 0.22),
+    0 12px 32px -18px rgba(0, 0, 0, 0.9);
+}
+.tab-panel[data-tab="ascensions"] > .panel-head {
+  border-radius: 18px 18px 6px 6px;
+  background-position: center 45%;
+}
+.tab-panel[data-tab="relics"] > .panel-head {
+  /* Display-case double frame. */
+  outline: 1px solid rgba(212, 175, 55, 0.22);
+  outline-offset: -7px;
+  border-radius: 14px;
+}
+.tab-panel[data-tab="cards"] > .panel-head {
+  background-position: center 75%;
 }
 .tab-panel[data-tab="overview"]   > .panel-head > .panel-head-stage,
 .tab-panel[data-tab="characters"] > .panel-head > .panel-head-stage,
@@ -1812,15 +1896,17 @@ main.main-public,
   flex-direction: row;
   align-items: flex-end;
   justify-content: space-between;
-  gap: 12px;
+  gap: 18px;
   width: 100%;
   min-width: 0;
-  /* v53 — taller painted banner so the duel diorama has room to
-   * breathe and the Architect reads at presence-scale, matching the
-   * reference in-game scene. Was 118px, now 168px. */
-  min-height: 168px;
+  min-height: 150px;
   flex: 1 1 auto;
 }
+/* Height variation per tab. */
+.tab-panel[data-tab="characters"] > .panel-head > .panel-head-stage { min-height: 152px; align-items: center; padding-top: 10px; }
+.tab-panel[data-tab="ascensions"] > .panel-head > .panel-head-stage { min-height: 148px; }
+.tab-panel[data-tab="relics"]     > .panel-head > .panel-head-stage { min-height: 148px; }
+.tab-panel[data-tab="cards"]      > .panel-head > .panel-head-stage { min-height: 164px; }
 .tab-panel[data-tab="overview"]   > .panel-head .panel-head-title-wrap,
 .tab-panel[data-tab="characters"] > .panel-head .panel-head-title-wrap,
 .tab-panel[data-tab="ascensions"] > .panel-head .panel-head-title-wrap,
@@ -1828,43 +1914,94 @@ main.main-public,
 .tab-panel[data-tab="cards"]      > .panel-head .panel-head-title-wrap {
   flex: 0 1 auto;
   min-width: 0;
-  max-width: min(48%, 400px);
+  max-width: min(34%, 320px);
   z-index: 2;
+  align-self: flex-end;
+  padding-bottom: 6px;
 }
+/* The crest is the centerpiece — let it take the middle. */
+.head-crest {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  z-index: 2;
+  padding-bottom: 6px;
+}
+.tab-panel[data-tab="characters"] .head-crest { align-items: center; padding-bottom: 0; }
+.tab-panel[data-tab="cards"] .head-crest { justify-content: flex-end; padding-right: 12px; overflow: hidden; }
 .tab-panel[data-tab="overview"]   > .panel-head .panel-head-stage > .companion-slot,
-.tab-panel[data-tab="characters"] > .panel-head .panel-head-stage > .companion-slot,
 .tab-panel[data-tab="ascensions"] > .panel-head .panel-head-stage > .companion-slot,
-.tab-panel[data-tab="relics"]     > .panel-head .panel-head-stage > .companion-slot,
-.tab-panel[data-tab="cards"]      > .panel-head .panel-head-stage > .companion-slot {
+.tab-panel[data-tab="relics"]     > .panel-head .panel-head-stage > .companion-slot {
   flex: 0 0 auto;
   align-self: flex-end;
+  /* Ground the sprites: contact shadow + a slight sink toward the
+   * banner's bottom edge so they stand IN the scene, not float on it. */
+  filter: drop-shadow(0 12px 8px rgba(0, 0, 0, 0.55));
+  transform: translateY(4px);
 }
-/* Themed-banner title typography. */
+/* Characters gets the portrait rail, Cards gets the fan — the diorama
+ * would fight both compositions, so those two tabs retire it. */
+.tab-panel[data-tab="characters"] > .panel-head .panel-head-stage > .companion-slot,
+.tab-panel[data-tab="cards"]      > .panel-head .panel-head-stage > .companion-slot {
+  display: none;
+}
+/* Themed-banner title typography — engraved ledger heading. */
 .tab-panel[data-tab="overview"]   > .panel-head .panel-head-title-wrap h2,
 .tab-panel[data-tab="characters"] > .panel-head .panel-head-title-wrap h2,
 .tab-panel[data-tab="ascensions"] > .panel-head .panel-head-title-wrap h2,
 .tab-panel[data-tab="relics"]     > .panel-head .panel-head-title-wrap h2,
 .tab-panel[data-tab="cards"]      > .panel-head .panel-head-title-wrap h2 {
-  font-size: 22px;
-  margin: 0 0 1px;
-  letter-spacing: -0.015em;
+  font-family: 'Cinzel', 'Playfair Display', serif;
+  font-size: 21px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  margin: 0 0 2px;
+  color: #f7f1e3;
   text-shadow:
-    0 2px 8px rgba(0, 0, 0, 0.92),
+    0 2px 10px rgba(0, 0, 0, 0.95),
     0 1px 2px rgba(0, 0, 0, 0.95);
+}
+/* Accent flourish under each title: short gradient rule + diamond,
+ * tinted per-tab so even the title block differs across headers. */
+.tab-panel[data-tab="overview"]   > .panel-head .panel-head-title-wrap h2::after,
+.tab-panel[data-tab="characters"] > .panel-head .panel-head-title-wrap h2::after,
+.tab-panel[data-tab="ascensions"] > .panel-head .panel-head-title-wrap h2::after,
+.tab-panel[data-tab="relics"]     > .panel-head .panel-head-title-wrap h2::after,
+.tab-panel[data-tab="cards"]      > .panel-head .panel-head-title-wrap h2::after {
+  content: "";
+  display: block;
+  width: 64px;
+  height: 2px;
+  margin-top: 5px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, var(--tab-accent), rgba(var(--tab-accent-rgb), 0));
+  box-shadow: 0 0 8px rgba(var(--tab-accent-rgb), 0.7);
 }
 .tab-panel[data-tab="overview"]   > .panel-head .panel-head-title-wrap .panel-sub,
 .tab-panel[data-tab="characters"] > .panel-head .panel-head-title-wrap .panel-sub,
 .tab-panel[data-tab="ascensions"] > .panel-head .panel-head-title-wrap .panel-sub,
 .tab-panel[data-tab="relics"]     > .panel-head .panel-head-title-wrap .panel-sub,
 .tab-panel[data-tab="cards"]      > .panel-head .panel-head-title-wrap .panel-sub {
-  color: rgba(232, 226, 240, 0.95);
-  font-size: 13px;
-  margin: 0;
+  color: rgba(232, 226, 240, 0.92);
+  font-size: 12.5px;
+  margin: 4px 0 0;
   text-shadow: 0 1px 4px rgba(0, 0, 0, 0.95);
 }
-/* Dark gradient overlay: heavier on the left (where the title sits)
- * lighter on the right (where the diorama art is). Text reads, art
- * shines. */
+/* Community pulse line on the Overview hero — warm accent so it reads
+ * as a friendly aside, not another stat. Hidden via [hidden] until
+ * loadCommunityPulse() succeeds. */
+.panel-pulse {
+  margin: 5px 0 0;
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  color: rgba(255, 200, 130, 0.92);
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.95);
+}
+/* Legibility gradient — a DIFFERENT direction per tab so each header
+ * stages its crest with its own light. */
 .tab-panel[data-tab="overview"]   > .panel-head::before,
 .tab-panel[data-tab="characters"] > .panel-head::before,
 .tab-panel[data-tab="ascensions"] > .panel-head::before,
@@ -1873,18 +2010,388 @@ main.main-public,
   content: "";
   position: absolute;
   inset: 0;
-  /* Inherit the parent's rounded corners so the dark overlay
-   * doesn't paint sharp corners outside the rounded banner box. */
   border-radius: inherit;
-  background: linear-gradient(
-    90deg,
-    rgba(8, 8, 16, 0.85) 0%,
-    rgba(8, 8, 16, 0.55) 35%,
-    rgba(8, 8, 16, 0.18) 65%,
-    rgba(8, 8, 16, 0.05) 100%
-  );
   pointer-events: none;
   z-index: 0;
+}
+/* Overview: classic left-heavy fade, title reads, diorama shines. */
+.tab-panel[data-tab="overview"] > .panel-head::before {
+  background: linear-gradient(90deg,
+    rgba(8, 8, 16, 0.85) 0%, rgba(8, 8, 16, 0.55) 32%,
+    rgba(8, 8, 16, 0.30) 60%, rgba(8, 8, 16, 0.08) 100%);
+}
+/* Characters: bottom-heavy stage lighting under the portrait rail. */
+.tab-panel[data-tab="characters"] > .panel-head::before {
+  background: linear-gradient(180deg,
+    rgba(8, 10, 9, 0.42) 0%, rgba(8, 10, 9, 0.30) 40%,
+    rgba(6, 9, 7, 0.82) 100%);
+}
+/* Ascensions: diagonal — dark at the base of the climb, light at the peak. */
+.tab-panel[data-tab="ascensions"] > .panel-head::before {
+  background: linear-gradient(72deg,
+    rgba(10, 8, 20, 0.88) 0%, rgba(10, 8, 20, 0.50) 45%,
+    rgba(10, 8, 20, 0.10) 100%);
+}
+/* Relics: symmetric museum vignette around the shelf. */
+.tab-panel[data-tab="relics"] > .panel-head::before {
+  background: radial-gradient(85% 120% at 50% 45%,
+    rgba(6, 12, 12, 0.10) 0%, rgba(6, 12, 12, 0.42) 55%,
+    rgba(6, 12, 12, 0.88) 100%);
+}
+/* Cards: right-heavy dark felt behind the fanned hand. */
+.tab-panel[data-tab="cards"] > .panel-head::before {
+  background: linear-gradient(270deg,
+    rgba(14, 6, 10, 0.86) 0%, rgba(14, 6, 10, 0.48) 38%,
+    rgba(14, 6, 10, 0.22) 70%, rgba(14, 6, 10, 0.60) 100%);
+}
+/* Living-banner shimmer, tinted with each tab's accent. Opacity-only
+ * animation (compositor cheap). Disabled under prefers-reduced-motion. */
+.tab-panel[data-tab="overview"]   > .panel-head::after,
+.tab-panel[data-tab="characters"] > .panel-head::after,
+.tab-panel[data-tab="ascensions"] > .panel-head::after,
+.tab-panel[data-tab="relics"]     > .panel-head::after,
+.tab-panel[data-tab="cards"]      > .panel-head::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background:
+    radial-gradient(60% 90% at 40% 60%, rgba(var(--tab-accent-rgb), 0.14), transparent 70%),
+    radial-gradient(45% 70% at 82% 15%, rgba(255, 255, 255, 0.05), transparent 75%);
+  mix-blend-mode: screen;
+  opacity: 0.55;
+  pointer-events: none;
+  z-index: 0;
+  animation: bannerEmberPulse 9s ease-in-out infinite alternate;
+}
+@keyframes bannerEmberPulse {
+  from { opacity: 0.35; }
+  to   { opacity: 0.85; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tab-panel[data-tab="overview"]   > .panel-head::after,
+  .tab-panel[data-tab="characters"] > .panel-head::after,
+  .tab-panel[data-tab="ascensions"] > .panel-head::after,
+  .tab-panel[data-tab="relics"]     > .panel-head::after,
+  .tab-panel[data-tab="cards"]      > .panel-head::after {
+    animation: none;
+  }
+}
+
+/* ─── Header crest components ────────────────────────────────────
+ * Painted by renderHeadCrests(). One family per tab. */
+
+/* Overview — war-table stat plaques. */
+.crest-plaques {
+  display: flex;
+  gap: 12px;
+  align-items: stretch;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.crest-plaque {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  min-width: 86px;
+  padding: 10px 16px 8px;
+  background: linear-gradient(180deg, rgba(24, 18, 32, 0.82), rgba(14, 11, 20, 0.88));
+  border: 1px solid rgba(var(--tab-accent-rgb), 0.38);
+  border-radius: 10px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 6px 18px -8px rgba(0, 0, 0, 0.9),
+    0 0 22px -6px rgba(var(--tab-accent-rgb), 0.35);
+  backdrop-filter: blur(4px);
+}
+.crest-plaque-value {
+  font-family: 'Cinzel', serif;
+  font-size: 23px;
+  font-weight: 900;
+  line-height: 1.1;
+  color: var(--tab-accent);
+  text-shadow: 0 0 14px rgba(var(--tab-accent-rgb), 0.55), 0 2px 4px rgba(0, 0, 0, 0.9);
+}
+.crest-plaque-label {
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: rgba(240, 232, 216, 0.75);
+}
+
+/* Characters — hall-of-heroes portrait rail. */
+.crest-heroes {
+  display: flex;
+  gap: 16px;
+  align-items: flex-end;
+  justify-content: center;
+}
+.crest-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  width: 76px;
+}
+.crest-hero-frame {
+  width: 62px;
+  height: 66px;
+  overflow: hidden;
+  border-radius: 50% 50% 10px 10px / 58% 58% 10px 10px; /* arched niche */
+  border: 1.5px solid color-mix(in srgb, var(--hero-color, #d4af37) 65%, rgba(212, 175, 55, 0.6));
+  background:
+    radial-gradient(80% 60% at 50% 20%, color-mix(in srgb, var(--hero-color, #d4af37) 26%, transparent), transparent 75%),
+    rgba(10, 8, 16, 0.78);
+  box-shadow:
+    0 0 16px -4px color-mix(in srgb, var(--hero-color, #d4af37) 60%, transparent),
+    inset 0 -14px 18px -10px rgba(0, 0, 0, 0.85);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+.crest-hero-frame img {
+  width: 58px;
+  height: 62px;
+  object-fit: cover;
+  object-position: top center;
+  filter: drop-shadow(0 3px 4px rgba(0, 0, 0, 0.7));
+}
+.crest-hero-frame .char-icon { width: 26px; height: 26px; margin-bottom: 16px; color: var(--hero-color, #d4af37); }
+.crest-hero-name {
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: rgba(240, 234, 222, 0.9);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.95);
+}
+.crest-hero-bar {
+  width: 56px;
+  height: 4px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.12);
+  overflow: hidden;
+}
+.crest-hero-bar i {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--hero-color, #d4af37);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--hero-color, #d4af37) 80%, transparent);
+}
+.crest-hero-wr {
+  font-size: 10.5px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: var(--hero-color, #d4af37);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.95);
+}
+.crest-hero.is-unplayed { opacity: 0.45; filter: saturate(0.35); }
+
+/* Ascensions — the climb track. */
+.crest-climb {
+  display: flex;
+  align-items: flex-end;
+  gap: 18px;
+}
+.crest-climb-peak {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+}
+.crest-climb-num {
+  font-family: 'Cinzel', serif;
+  font-size: 34px;
+  font-weight: 900;
+  line-height: 1;
+  color: var(--tab-accent);
+  text-shadow: 0 0 18px rgba(var(--tab-accent-rgb), 0.6), 0 2px 5px rgba(0, 0, 0, 0.9);
+}
+.crest-climb-cap {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: rgba(235, 228, 248, 0.72);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.95);
+}
+.crest-climb-rail {
+  display: flex;
+  align-items: flex-end;
+  gap: 5px;
+  padding-bottom: 4px;
+}
+.crest-tick {
+  width: 9px;
+  border-radius: 3px 3px 1px 1px;
+  background: rgba(255, 255, 255, 0.13);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+.crest-tick.is-lit {
+  background: linear-gradient(180deg, var(--tab-accent), rgba(var(--tab-accent-rgb), 0.45));
+  box-shadow: 0 0 10px -2px rgba(var(--tab-accent-rgb), 0.8);
+}
+.crest-tick.is-peak {
+  background: linear-gradient(180deg, #ffe9b0, var(--tab-accent));
+  box-shadow: 0 0 14px rgba(255, 226, 150, 0.75);
+}
+.crest-climb-note {
+  font-size: 11px;
+  font-weight: 700;
+  color: rgba(235, 228, 248, 0.85);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.95);
+  padding-bottom: 6px;
+  white-space: nowrap;
+}
+
+/* Relics — reliquary shelf. */
+.crest-shelf {
+  display: flex;
+  gap: 26px;
+  align-items: flex-end;
+  justify-content: center;
+  position: relative;
+  padding: 0 18px 10px;
+}
+/* The shelf itself: a gold hairline under the pedestals. */
+.crest-shelf::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, transparent, rgba(212, 175, 55, 0.65) 18%, rgba(212, 175, 55, 0.65) 82%, transparent);
+  box-shadow: 0 0 12px rgba(212, 175, 55, 0.4);
+}
+.crest-relic {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  max-width: 110px;
+}
+.crest-relic-orb {
+  width: 52px;
+  height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background:
+    radial-gradient(60% 60% at 50% 38%, rgba(var(--tab-accent-rgb), 0.30), transparent 75%),
+    rgba(8, 14, 14, 0.72);
+  border: 1px solid rgba(var(--tab-accent-rgb), 0.5);
+  box-shadow:
+    0 0 20px -4px rgba(var(--tab-accent-rgb), 0.55),
+    inset 0 -8px 12px -8px rgba(0, 0, 0, 0.8);
+}
+.crest-relic.is-first .crest-relic-orb {
+  width: 62px;
+  height: 62px;
+  border-color: rgba(212, 175, 55, 0.8);
+  box-shadow:
+    0 0 26px -4px rgba(212, 175, 55, 0.6),
+    inset 0 -8px 12px -8px rgba(0, 0, 0, 0.8);
+}
+.crest-relic-orb img { width: 72%; height: 72%; object-fit: contain; filter: drop-shadow(0 3px 5px rgba(0, 0, 0, 0.8)); }
+.crest-relic-name {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  color: rgba(238, 246, 244, 0.92);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.95);
+  max-width: 110px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.crest-relic-wr {
+  font-size: 10.5px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: var(--tab-accent);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.95);
+}
+
+/* Cards — the fanned hand. */
+.crest-fan {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 16px 30px 0 26px;
+}
+.crest-fan-card {
+  width: 64px;
+  margin-left: -24px;
+  transform-origin: 50% 120%;
+  border-radius: 6px;
+  transition: translate 160ms ease;
+}
+.crest-fan-card:first-child { margin-left: 0; }
+.crest-fan-card img {
+  width: 100%;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 210, 160, 0.35);
+  box-shadow:
+    0 10px 22px -8px rgba(0, 0, 0, 0.95),
+    0 0 14px -4px rgba(var(--tab-accent-rgb), 0.35);
+}
+.crest-fan-card:hover { translate: 0 -10px; z-index: 9; position: relative; }
+
+/* Crest entrance: children rise in with a small stagger when the tab
+ * animates in. Uses the independent `translate` property so the fan
+ * cards' inline rotate/translateY transform is untouched. */
+.tab-panel.is-entering .crest-plaque,
+.tab-panel.is-entering .crest-hero,
+.tab-panel.is-entering .crest-relic,
+.tab-panel.is-entering .crest-fan-card,
+.tab-panel.is-entering .crest-climb > * {
+  animation: crestRise 460ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.tab-panel.is-entering .crest-plaque:nth-child(2),
+.tab-panel.is-entering .crest-hero:nth-child(2),
+.tab-panel.is-entering .crest-relic:nth-child(2),
+.tab-panel.is-entering .crest-fan-card:nth-child(2),
+.tab-panel.is-entering .crest-climb > *:nth-child(2) { animation-delay: 60ms; }
+.tab-panel.is-entering .crest-plaque:nth-child(3),
+.tab-panel.is-entering .crest-hero:nth-child(3),
+.tab-panel.is-entering .crest-relic:nth-child(3),
+.tab-panel.is-entering .crest-fan-card:nth-child(3),
+.tab-panel.is-entering .crest-climb > *:nth-child(3) { animation-delay: 120ms; }
+.tab-panel.is-entering .crest-plaque:nth-child(4),
+.tab-panel.is-entering .crest-hero:nth-child(4),
+.tab-panel.is-entering .crest-fan-card:nth-child(4) { animation-delay: 180ms; }
+.tab-panel.is-entering .crest-plaque:nth-child(5),
+.tab-panel.is-entering .crest-hero:nth-child(5),
+.tab-panel.is-entering .crest-fan-card:nth-child(5) { animation-delay: 240ms; }
+@keyframes crestRise {
+  from { opacity: 0; translate: 0 10px; }
+  to   { opacity: 1; translate: 0 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tab-panel.is-entering .crest-plaque,
+  .tab-panel.is-entering .crest-hero,
+  .tab-panel.is-entering .crest-relic,
+  .tab-panel.is-entering .crest-fan-card,
+  .tab-panel.is-entering .crest-climb > * { animation: none; }
+}
+
+/* Crests are a widescreen luxury; on narrow viewports the header
+ * returns to title + scene so nothing overlaps. */
+@media (max-width: 900px) {
+  .head-crest { display: none; }
+  .tab-panel[data-tab="overview"]   > .panel-head .panel-head-title-wrap,
+  .tab-panel[data-tab="characters"] > .panel-head .panel-head-title-wrap,
+  .tab-panel[data-tab="ascensions"] > .panel-head .panel-head-title-wrap,
+  .tab-panel[data-tab="relics"]     > .panel-head .panel-head-title-wrap,
+  .tab-panel[data-tab="cards"]      > .panel-head .panel-head-title-wrap {
+    max-width: min(60%, 400px);
+  }
 }
 /* Lift every direct child of the themed panel-head above the
  * gradient overlay so titles, the diorama slot, and the Import
@@ -6080,8 +6587,156 @@ select#me-note option { background: var(--bg-deep); color: var(--text); }
   display: flex;
   flex-direction: column;
   gap: 24px;
-  max-width: 720px;
+  /* Wide enough for the two-up room-card grid; the sign-in card and
+     roster below stretch with it without looking off. */
+  max-width: 980px;
 }
+
+/* Guest room browser — the Roblox front door. Live game cards with the
+   actual people visible in the seats, browsable with zero account. */
+.guest-rooms-head h2 {
+  font-family: 'Playfair Display', serif;
+  font-size: 26px;
+  font-weight: 900;
+  letter-spacing: -0.01em;
+  margin: 0 0 6px;
+}
+.guest-rooms-pulse {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  margin: 0 0 16px;
+}
+.guest-rooms-pulse .dot.dot-pulse {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #4ade80;
+  box-shadow: 0 0 10px rgba(74, 222, 128, 0.6);
+  animation: pulse-dot 2s ease-in-out infinite;
+}
+.guest-rooms-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 14px;
+}
+.guest-room-card {
+  padding: 18px 18px 16px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  transition: border-color .15s ease, transform .12s ease, box-shadow .15s ease;
+}
+.guest-room-card:hover {
+  border-color: rgba(245, 166, 35, 0.35);
+  transform: translateY(-2px);
+  box-shadow: 0 18px 40px -24px rgba(0, 0, 0, 0.7);
+}
+.guest-room-card--skeleton,
+.guest-room-card--empty { align-items: flex-start; }
+.guest-room-card--empty h3 { margin: 0; font-size: 16px; }
+.guest-room-card--empty .muted { margin: 0; font-size: 13px; line-height: 1.55; color: var(--text-2); }
+.guest-room-card--full { opacity: 0.75; }
+.guest-room-titlerow {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+.guest-room-titlerow h3 {
+  margin: 0;
+  font-size: 15.5px;
+  font-weight: 800;
+  line-height: 1.3;
+}
+.guest-room-badge {
+  flex: none;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+}
+.guest-room-badge--live {
+  color: #4ade80;
+  background: rgba(74, 222, 128, 0.12);
+  border-color: rgba(74, 222, 128, 0.35);
+}
+.guest-room-badge--full {
+  color: var(--text-3);
+  background: rgba(255, 255, 255, 0.05);
+  border-color: var(--border);
+}
+.guest-room-badge--house {
+  color: #fbbf24;
+  background: rgba(251, 191, 36, 0.10);
+  border-color: rgba(251, 191, 36, 0.35);
+}
+.guest-room-attrs { margin: 0; font-size: 12.5px; color: var(--text-2); }
+.guest-seat-strip {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.guest-seat {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  width: 52px;
+  position: relative;
+}
+.guest-seat img {
+  width: 40px;
+  height: 40px;
+  border-radius: 11px;
+  object-fit: cover;
+  background: rgba(0, 0, 0, 0.45);
+  border: 1px solid var(--border);
+}
+.guest-seat--host img {
+  border-color: rgba(245, 166, 35, 0.55);
+  box-shadow: 0 0 0 2px rgba(245, 166, 35, 0.20);
+}
+.guest-seat-crown {
+  position: absolute;
+  top: -9px;
+  right: 0;
+  font-size: 12px;
+  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.7));
+}
+.guest-seat-name {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-3);
+  max-width: 52px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.guest-seat--filled .guest-seat-name { color: var(--text-1); }
+.guest-seat-plus {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 11px;
+  border: 1.5px dashed var(--border);
+  color: var(--text-3);
+  font-size: 18px;
+  font-weight: 700;
+  background: rgba(255, 255, 255, 0.02);
+}
+.guest-room-actions { margin-top: auto; }
+.guest-room-actions .btn-primary,
+.guest-room-actions .btn-ghost { width: 100%; }
 .guest-coop-card {
   padding: 28px 28px 24px;
   background: var(--card);

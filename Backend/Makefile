@@ -1,4 +1,4 @@
-.PHONY: install dev deploy tail logs kv-create secrets funnel verify
+.PHONY: install dev deploy tail logs kv-create secrets funnel verify preflight
 
 # Install once after cloning.
 install:
@@ -8,8 +8,19 @@ install:
 dev:
 	npx wrangler dev
 
+# Type-check plus the offline logic suite. No network, no deployed Worker.
+#
+# The retention cohort math and the intent matcher are the two places where a
+# mistake yields a believable wrong answer instead of an error — a cohort table
+# that quietly reports 0% retention because the denominator includes users who
+# signed up yesterday looks exactly like a product failure. These run before
+# every deploy so that never ships.
+preflight:
+	npx tsc --noEmit -p tsconfig.json
+	node scripts/verify-offline.mjs
+
 # Ship to production.
-deploy:
+deploy: preflight
 	npx wrangler deploy
 
 # Live-tail production logs.

@@ -134,10 +134,30 @@ their own Worker deployment.
 | DELETE | `/presence`                     | session  | drop your presence (sign-out)          |
 | GET    | `/auth/steam/start?return=&nonce=` | public | Steam OpenID kickoff                   |
 | GET    | `/auth/steam/callback?...`      | public   | Steam OpenID return target             |
+| GET    | `/coop/intents`                 | session  | your play windows + schedule matches   |
+| POST   | `/coop/intents`                 | session  | add a play window                      |
+| DELETE | `/coop/intents/:windowId`       | session  | remove a play window                   |
+| GET    | `/coop/intents/upcoming`        | public   | sanitized upcoming schedule board      |
 
 `session` routes require `Authorization: Bearer <token>` issued by
 `/auth/steam/callback`. The Worker resolves the token to a verified SteamID
 server-side and ignores any SteamID the client tries to put in the body.
+
+### Scheduled play intents
+
+`/coop/intents` is the asynchronous half of matchmaking. Presence rows expire
+five minutes after a tab closes, so every other co-op surface silently requires
+two interested players to be online in the same few minutes — which, at this
+user count, is the reason the board looks empty rather than any UI problem.
+
+An intent is a future window ("free tonight 8-11pm, A10 Heart") stored
+server-side and matched against everyone else's schedule by overlap, whether or
+not anyone is currently online. Windows also ride along on the normal
+`/coop/state` poll as `intentWindows` / `intentMatches`, so a client that is
+already polling picks up new matches without a second request.
+
+See `src/coop-intents.ts` for the matching rules and tunables. Logic is covered
+by `scripts/verify-offline.mjs`.
 
 ### `return` URL allowlist
 

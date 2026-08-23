@@ -16,7 +16,7 @@
  *   utcDate          → fnv1a(utcDate)                → uint32
  *   uint32           → base36, padded               → seed string (10–12 chars)
  *   uint32 high bits → index into CHARACTER_POOL
- *   uint32 low bits  → ascension 0..20
+ *   uint32 low bits  → ascension 0..COOP_MAX_ASCENSION (STS2 caps at A10)
  *
  * A separate `coop:daily:joined:<utcDate>` KV blob (set, not consulted
  * for fairness) tracks how many people joined today's challenge for
@@ -25,6 +25,7 @@
  */
 
 import type { Env } from "./types";
+import { COOP_MAX_ASCENSION } from "./coop-lobby-utils";
 
 export interface DailyChallenge {
   /** UTC date string YYYY-MM-DD. */
@@ -33,7 +34,7 @@ export interface DailyChallenge {
   seed: string;
   /** Suggested character slug — same set the lobby uses. */
   character: "ironclad" | "silent" | "defect" | "regent" | "necrobinder";
-  /** Suggested ascension. 0..20. */
+  /** Suggested ascension. 0..COOP_MAX_ASCENSION (STS2 caps at A10). */
   ascension: number;
   /** ISO8601 of when this challenge expires (next UTC day 00:00). */
   expiresAt: string;
@@ -86,8 +87,10 @@ export function deriveChallenge(date: string): Omit<DailyChallenge, "expiresAt" 
   const seedStr = seedNum.toString(36).padStart(10, "0").toUpperCase();
   // Character: use the top 3 bits of the hash, modulo pool length.
   const character = CHARACTER_POOL[(h >>> 29) % CHARACTER_POOL.length];
-  // Ascension: mid bits, mod 21 (0..20 inclusive).
-  const ascension = ((h >>> 4) & 0xffff) % 21;
+  // Ascension: mid bits, mod (cap+1) so it lands in 0..COOP_MAX_ASCENSION
+  // inclusive. STS2 caps ascension at A10 (vs STS1's A20); generating up
+  // to A20 here surfaced an impossible "A13" on the /race hero (D10).
+  const ascension = ((h >>> 4) & 0xffff) % (COOP_MAX_ASCENSION + 1);
   return { date, seed: seedStr, character, ascension };
 }
 

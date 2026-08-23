@@ -26,6 +26,13 @@ If you want to add something non-trivial and aren't sure I'd merge it,
 **open an issue first** and we'll talk it through. I'd rather say "yes, but
 go this way" than have you spend a weekend on something I'd close.
 
+> **Before proposing a new feature, read [docs/surface-freeze.md](docs/surface-freeze.md).**
+> Several existing surfaces — tournaments, the daily race, the run coach,
+> highlights, mod-stream, and anything Discord-facing — are frozen to bug
+> fixes only while we get retention measurable. That document lists what's
+> frozen, what's still open, and the numbers that lift the freeze. It exists
+> so nobody spends a weekend on a PR that was never going to merge.
+
 ---
 
 ## Development setup

@@ -16,6 +16,8 @@
  * `createdAt`, `updatedAt`, and `expiresAt`. Client never sends them.
  */
 
+import type { IntentMatch, IntentWindow } from "./coop-intents";
+
 /** Closed set of "what kind of run am I looking for". */
 export type CoopGoal =
   | "casual"
@@ -207,6 +209,58 @@ export interface RunLobby {
   createdAt: string;
   updatedAt: string;
   expiresAt: string;
+  /**
+   * Wire-only enrichment (never persisted to KV): persona/avatar
+   * snapshots for every accepted member, hydrated from presence rows at
+   * read time by the `/coop/state` and `/coop/rooms` assemblers. This is
+   * what lets the lobby board render Roblox-style seat slots — you can
+   * SEE the people already sitting in a room before you join, instead of
+   * an abstract "2 of 4 filled" counter.
+   */
+  memberProfiles?: RunLobbyMemberProfile[];
+}
+
+/** One filled seat on a lobby card. Host is always slot 1. */
+export interface RunLobbyMemberProfile {
+  steamId?: string;
+  personaName?: string;
+  avatarUrl?: string;
+  isHost?: boolean;
+}
+
+/**
+ * Sanitized lobby row served by the PUBLIC `GET /coop/rooms` endpoint —
+ * the signed-out "browse the games" surface. Roblox lets you window-shop
+ * experiences before you ever make an account; friction belongs at play
+ * time, not browse time. So guests get real rooms with real people
+ * visible in the seats… minus anything join-actionable: **no Steam IDs**
+ * (host's or members'), no discord handles, no pending-request lists.
+ * Persona names + avatars are already public via Steam profiles and our
+ * own share cards, so exposing them here leaks nothing new.
+ */
+export interface PublicCoopRoom {
+  lobbyId: string;
+  title: string;
+  mode?: string;
+  goal: CoopGoal;
+  lobbySize: number;
+  seatsFilled: number;
+  status: RunLobbyStatus;
+  ascensionMin?: number;
+  ascensionMax?: number;
+  voicePreference?: VoicePreference;
+  preferredCharacters?: CoopCharacter[];
+  approvalRequired?: boolean;
+  /** Host free text — carries the `[start=…]` token the client decodes. */
+  note?: string;
+  hostPersonaName: string;
+  hostAvatarUrl?: string;
+  isHouseLobby?: boolean;
+  houseSlug?: string;
+  /** Persona/avatar per filled seat (host first). No Steam IDs. */
+  memberProfiles: Array<{ personaName?: string; avatarUrl?: string; isHost?: boolean }>;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export type CoopPartyMemberStatus =
@@ -245,6 +299,22 @@ export interface CoopPartyMember {
    * which matches the legacy semantics.
    */
   readyAt?: string;
+  /**
+   * Most recent tap-to-send signal from this member. A bounded,
+   * preset-only "voice" for players who don't want to (or can't) talk
+   * — the same un-harassable model as `COOP_INVITE_MESSAGES`: the
+   * client controls only the preset `id`, never free text, so there's
+   * nothing to moderate. `at` lets the frontend fade the bubble after
+   * a few seconds. Undefined for members who haven't signalled.
+   */
+  lastSignal?: CoopPartySignal;
+}
+
+/** A single tap-to-send party signal. `id` is a key of `COOP_PARTY_SIGNALS`. */
+export interface CoopPartySignal {
+  id: string;
+  /** ISO-8601 stamp of when the signal was sent (server-written). */
+  at: string;
 }
 
 export type CoopPartyStatus = "active" | "ended";
@@ -423,6 +493,21 @@ export interface CoopStateBundle {
   lookingNowCount?: number;
   /** Active rows currently paired — true total. */
   pairedNowCount?: number;
+
+  /**
+   * The requesting user's own scheduled play windows, and every other user
+   * whose schedule overlaps theirs.
+   *
+   * Delivered on the existing /coop/state poll rather than a separate endpoint
+   * so that a client which is already polling gets schedule matches without a
+   * second round trip — and so a user who left a tab open sees a match appear
+   * the moment the other side schedules it.
+   */
+  intentWindows: IntentWindow[];
+  intentMatches: IntentMatch[];
+  /** Distinct users with at least one upcoming window. Drives empty states. */
+  scheduledPlayersCount: number;
+
   serverTime: string;
   /**
    * Optional feature flags echoed by the server. The web client reads
@@ -483,3 +568,24 @@ export const COOP_INVITE_MESSAGES: Readonly<Record<string, string>> =
   });
 
 export type CoopInviteMessageId = keyof typeof COOP_INVITE_MESSAGES;
+
+/**
+ * Closed set of in-party "signals" — a tap-to-send vocabulary for the
+ * Party Hub. Like `COOP_INVITE_MESSAGES`, the client sends only the
+ * `id`; the server stores the id and the frontend renders the text.
+ * Deliberately tiny, warm, and unambiguous so a 7-year-old (or a
+ * player who doesn't share a language) can communicate without a mic
+ * and without any free-text surface to abuse. Emoji are part of the
+ * stored value so every client renders an identical bubble.
+ */
+export const COOP_PARTY_SIGNALS: Readonly<Record<string, string>> =
+  Object.freeze({
+    wave: "👋 Hi!",
+    ready: "✅ Ready",
+    onesec: "⏳ One sec",
+    gg: "🎉 Good game!",
+    nice: "🔥 Nice run!",
+    thanks: "🙏 Thanks!",
+  });
+
+export type CoopPartySignalId = keyof typeof COOP_PARTY_SIGNALS;

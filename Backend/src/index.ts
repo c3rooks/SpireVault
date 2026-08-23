@@ -20,6 +20,8 @@ import {
   recordHeartbeat,
   recordClientDiagnostic,
   recordRosterFirstSeen,
+  recordIngestFirstSeen,
+  communityPulse,
 } from "./admin";
 import {
   sendInvite,
@@ -543,6 +545,17 @@ async function handle(
         return json({ ok: true, wasPaired });
       }
 
+      // ----- Public community pulse -----
+      // Anonymous aggregate counts (climbers today / this week / all
+      // time) for the frontend's community touches. Public by design:
+      // no auth, no PII, KV-cached 10 min server-side so the KV list
+      // work isn't paid per page load.
+      if (pathname === "/stats/community" && method === "GET") {
+        return json(await communityPulse(env), {
+          headers: { "cache-control": "public, max-age=300" },
+        });
+      }
+
       // ----- Cross-device run history sync (Steam-ID keyed) -----
       // The user uploads from web (after parsing their .run files) and
       // reads from mobile (or vice versa). Storage is the merged set of
@@ -574,6 +587,22 @@ async function handle(
         const source = req.headers.get("x-vault-source") ?? undefined;
         const result = await uploadRuns(env, auth.steamID, body, source);
         if (!result.ok) return json({ error: result.error }, { status: result.status });
+
+        // Activation attribution. This is the one place where "the user has
+        // actually got their run history into the product" is both true and
+        // provably tied to a Steam ID: the client auto-uploads after every
+        // successful local ingest, and this route requires a session.
+        //
+        // The `ingest-runs-committed` diag beacon looks like the more natural
+        // hook, but it's fired via navigator.sendBeacon to the worker origin
+        // cross-site, so it carries neither the bearer header nor the
+        // vault_session cookie (that cookie is set on the Pages origin). It
+        // can count imports; it can never say *who* imported.
+        //
+        // Idempotent read-first-skip, so a daily user pays one KV read.
+        if ((result.result?.count ?? 0) > 0) {
+          bg(ctx, recordIngestFirstSeen(env, auth.steamID));
+        }
         return json(result.result);
       }
       if (pathname === "/runs" && method === "DELETE") {

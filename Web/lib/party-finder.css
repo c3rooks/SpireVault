@@ -1782,3 +1782,90 @@ body.coop-lobby-beta-off .pf-helper-line[data-coop-mode="beta"] {
 }
 .pf-slot-open .pf-slot-bullet { background: var(--pf-muted); }
 .pf-slot-open { color: var(--pf-muted); }
+
+/* ============================================================
+ * Roblox-style seat slots on live room cards.
+ * Filled seats = real member avatars (host crowned); empty seats
+ * = dashed "+" slots that are themselves the join affordance.
+ * ============================================================ */
+.pf-seat-strip {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  margin: 8px 0 4px;
+  flex-wrap: wrap;
+}
+.pf-seat {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  width: 56px;
+  position: relative;
+  text-decoration: none;
+}
+.pf-seat img {
+  width: 42px; height: 42px;
+  border-radius: 12px;
+  object-fit: cover;
+  background: rgba(0,0,0,0.45);
+  border: 1px solid var(--pf-stroke-strong);
+  box-shadow: 0 6px 14px -8px rgba(0,0,0,0.7);
+}
+.pf-seat--host img {
+  border-color: rgba(245,166,35,0.55);
+  box-shadow: 0 0 0 2px rgba(245,166,35,0.22), 0 6px 14px -8px rgba(0,0,0,0.7);
+}
+.pf-seat-crown {
+  position: absolute;
+  top: -9px; right: 2px;
+  font-size: 12px;
+  filter: drop-shadow(0 2px 3px rgba(0,0,0,0.7));
+}
+.pf-seat-name {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--pf-muted);
+  max-width: 56px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: center;
+}
+.pf-seat--filled .pf-seat-name { color: var(--pf-text); }
+.pf-seat--open {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font-family: inherit;
+}
+.pf-seat--open .pf-seat-plus {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px; height: 42px;
+  border-radius: 12px;
+  border: 1.5px dashed var(--pf-stroke-strong);
+  color: var(--pf-muted);
+  font-size: 20px;
+  font-weight: 700;
+  background: var(--pf-fill);
+  transition: border-color .15s ease, color .15s ease, background .15s ease, transform .12s ease;
+}
+button.pf-seat--open:hover .pf-seat-plus,
+button.pf-seat--open:focus-visible .pf-seat-plus {
+  border-color: var(--pf-ok);
+  color: var(--pf-ok);
+  background: var(--pf-ok-soft);
+  transform: translateY(-1px);
+}
+button.pf-seat--open:hover .pf-seat-name { color: var(--pf-ok); }
+.pf-seat--static .pf-seat-plus { opacity: 0.55; cursor: default; }
+
+/* "Alert me" bell — armed state reads as clearly ON. */
+#pf-room-alert-btn.is-active {
+  background: var(--pf-warn-soft);
+  border-color: rgba(251,191,36,0.45);
+  color: #ffe9b3;
+}

@@ -6,7 +6,7 @@
 // module avoids touching coop-lobbies.js / script.js / index.html
 // while still wiring the new surface into the existing mount path.
 
-import { mountPartyFinder, getLastState as getPartyFinderState } from "./party-finder.js?v=9";
+import { mountPartyFinder, getLastState as getPartyFinderState } from "./party-finder.js?v=11";
 
 const LS_SANDBOX = "spirevault.dev.coopSandbox";
 const LS_PERSONA = "spirevault.dev.activePersona";
@@ -678,6 +678,17 @@ function ensurePartyFinderGlobalsScript() {
           s10.src = "/lib/party-finder-mirror-rt.js?v=2";
           s10.async = false;
           document.head.appendChild(s10);
+        }
+        // Scheduled play intents. Reads intentWindows / intentMatches off the
+        // same /coop/state poll everything else uses, and mounts above the
+        // live list so the schedule is the first thing visible when the board
+        // is empty — which is precisely when it's the only thing that helps.
+        if (!document.getElementById("pf-intents-rt-script")) {
+          const s11 = document.createElement("script");
+          s11.id = "pf-intents-rt-script";
+          s11.src = "/lib/party-finder-intents-rt.js?v=2";
+          s11.async = false;
+          document.head.appendChild(s11);
         }
       } catch (_) { /* ignore */ }
       resolve();

@@ -1,0 +1,344 @@
+/* Scheduled play intents panel.
+ *
+ * Visual language matches the party-finder surface: dark card, ember accent,
+ * gold for the thing you want people to read first. Everything is sized to sit
+ * comfortably above the live lobby list without competing with the hero. */
+
+#pf-intents {
+  margin: 0 0 18px;
+}
+
+.pf-intent-card {
+  background: linear-gradient(160deg, rgba(26, 22, 38, 0.92), rgba(12, 10, 20, 0.92));
+  border: 1px solid #28233a;
+  border-radius: 16px;
+  padding: 20px 22px;
+}
+
+.pf-intent-header {
+  margin-bottom: 16px;
+}
+
+.pf-intent-title {
+  margin: 0 0 6px;
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  color: #f4eddc;
+}
+
+.pf-intent-sub {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: #b6abc4;
+}
+
+.pf-intent-sub strong {
+  color: #d4af37;
+}
+
+/* ---------- presets ---------- */
+
+.pf-intent-presets {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+  gap: 10px;
+}
+
+.pf-intent-preset {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 12px 14px;
+  border-radius: 11px;
+  border: 1px solid #28233a;
+  background: #14111e;
+  color: #f4eddc;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease, transform 0.1s ease;
+}
+
+.pf-intent-preset:hover {
+  border-color: rgba(255, 107, 26, 0.55);
+  background: #1a1626;
+}
+
+.pf-intent-preset:active {
+  transform: translateY(1px);
+}
+
+.pf-intent-preset strong {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.pf-intent-preset small {
+  font-size: 11px;
+  color: #6c647a;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- custom range ---------- */
+
+.pf-intent-custom {
+  margin-top: 12px;
+}
+
+.pf-intent-custom > summary {
+  cursor: pointer;
+  font-size: 12px;
+  color: #6c647a;
+  padding: 4px 0;
+  list-style: none;
+}
+
+.pf-intent-custom > summary::-webkit-details-marker { display: none; }
+
+.pf-intent-custom > summary::before {
+  content: "+ ";
+  color: #ff6b1a;
+}
+
+.pf-intent-custom[open] > summary::before { content: "\2212  "; }
+
+.pf-intent-custom > summary:hover { color: #b6abc4; }
+
+.pf-intent-custom-body {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: flex-end;
+  padding: 12px 0 4px;
+}
+
+.pf-intent-custom-body label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+  color: #6c647a;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.pf-intent-note-field { flex: 1 1 200px; }
+
+.pf-intent-custom-body input {
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid #28233a;
+  background: #06040a;
+  color: #f4eddc;
+  font: 13px/1.4 inherit;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.pf-intent-custom-body input:focus-visible {
+  outline: 2px solid rgba(255, 107, 26, 0.6);
+  outline-offset: 1px;
+}
+
+.pf-intent-custom-save {
+  padding: 9px 16px;
+  border: 0;
+  border-radius: 8px;
+  background: linear-gradient(120deg, #ff6b1a, #d4af37);
+  color: #1a1626;
+  font: 700 12px/1 inherit;
+  letter-spacing: 0.5px;
+  cursor: pointer;
+}
+
+/* ---------- saved windows ---------- */
+
+.pf-intent-list {
+  list-style: none;
+  margin: 16px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.pf-intent-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(212, 175, 55, 0.06);
+  border: 1px solid rgba(212, 175, 55, 0.22);
+}
+
+.pf-intent-when {
+  font-size: 13px;
+  font-weight: 700;
+  color: #d4af37;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.pf-intent-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.pf-intent-chip {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  border: 1px solid #28233a;
+  color: #b6abc4;
+}
+
+.pf-intent-note {
+  font-size: 12px;
+  color: #6c647a;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pf-intent-remove {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  border: 1px solid #28233a;
+  background: transparent;
+  color: #6c647a;
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.pf-intent-remove:hover {
+  border-color: rgba(255, 95, 109, 0.5);
+  color: #ff5f6d;
+}
+
+/* ---------- matches ---------- */
+
+.pf-intent-matches {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid #28233a;
+}
+
+.pf-intent-subhead {
+  margin: 0 0 10px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 1.6px;
+  text-transform: uppercase;
+  color: #6dd97c;
+}
+
+.pf-intent-match-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.pf-intent-match {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(109, 217, 124, 0.07);
+  border: 1px solid rgba(109, 217, 124, 0.24);
+}
+
+.pf-intent-match-avatar {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  object-fit: cover;
+  background: #1a1626;
+}
+
+.pf-intent-match-avatar--blank {
+  display: block;
+  border: 1px solid #28233a;
+}
+
+.pf-intent-match-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.pf-intent-match-name {
+  font-size: 13px;
+  font-weight: 700;
+  color: #f4eddc;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pf-intent-match-when {
+  font-size: 11px;
+  color: #b6abc4;
+  font-variant-numeric: tabular-nums;
+}
+
+.pf-intent-match-note {
+  font-size: 11px;
+  color: #6c647a;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pf-intent-match-link {
+  flex: none;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: #ffa05c;
+  text-decoration: none;
+  padding: 5px 10px;
+  border: 1px solid rgba(255, 160, 92, 0.35);
+  border-radius: 7px;
+}
+
+.pf-intent-match-link:hover {
+  background: rgba(255, 160, 92, 0.1);
+}
+
+.pf-intent-hint {
+  margin: 16px 0 0;
+  padding-top: 14px;
+  border-top: 1px solid #28233a;
+  font-size: 12px;
+  line-height: 1.6;
+  color: #6c647a;
+}
+
+@media (max-width: 600px) {
+  .pf-intent-card { padding: 16px; }
+  .pf-intent-presets { grid-template-columns: repeat(2, 1fr); }
+  .pf-intent-row { flex-wrap: wrap; }
+  .pf-intent-custom-body { flex-direction: column; align-items: stretch; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pf-intent-preset { transition: none; }
+}

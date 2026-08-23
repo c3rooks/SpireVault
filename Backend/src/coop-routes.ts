@@ -1,9 +1,13 @@
 import type { Env } from "./types";
 import type {
   CoopInvite,
+  CoopPresence,
   CoopPresenceFeedRow,
   CoopStateBundle,
   JoinRequest,
+  PublicCoopRoom,
+  RunLobby,
+  RunLobbyMemberProfile,
 } from "./coop-types";
 import {
   COOP_INVITE_MESSAGES,
@@ -58,6 +62,7 @@ import {
   pruneLobbyJoinRequests,
   requestToJoinLobby,
   sendInvite,
+  signalParty,
   updateLobby,
   upsertPresenceV2,
   type CreateLobbyBody,
@@ -99,6 +104,15 @@ import {
   todayDateKey,
 } from "./coop-race";
 import { generateClipBundle } from "./coop-clip";
+import {
+  addIntentWindow,
+  countScheduledPlayers,
+  findIntentMatches,
+  readIntent,
+  removeIntentWindow,
+  upcomingIntents,
+  type IntentWindowInput,
+} from "./coop-intents";
 
 /**
  * Co-op route surface. Mounted under `/coop/*`. Every write goes
@@ -164,6 +178,47 @@ export async function handleCoopRoute(
     return json({ ok: true, messages: COOP_INVITE_MESSAGES });
   }
 
+  // PUBLIC room browser — the Roblox model: anyone can window-shop the
+  // live rooms (real titles, real people in the seats) without an
+  // account; sign-in is only demanded at the moment they click Join.
+  // Payload is sanitized by `toPublicRoom` (no Steam IDs, no discord
+  // handles). Short edge cache keeps a link-share spike to ~4 KV reads
+  // a minute.
+  if (method === "GET" && pathname === "/coop/rooms") {
+    const limited = await rateLimit(env, req, "coop-rooms-public", 30, 60);
+    if (limited) return limited;
+    const [allPresence, allLobbies] = await Promise.all([
+      listPresence(env),
+      listLobbies(env),
+    ]);
+    const now = Date.now();
+    const visible = allLobbies.filter((l) => lobbyVisibleOnBoard(l, allPresence, now));
+    // Fullest-first, then newest — a room with people already in it is
+    // the strongest possible "this place is alive" signal for a guest.
+    visible.sort((a, b) => {
+      const fa = a.acceptedMemberSteamIds?.length ?? 1;
+      const fb = b.acceptedMemberSteamIds?.length ?? 1;
+      if (fb !== fa) return fb - fa;
+      return Date.parse(b.createdAt) - Date.parse(a.createdAt);
+    });
+    const rooms = visible.slice(0, 50).map((l) => toPublicRoom(l, allPresence));
+    const playersOnlineCount = allPresence.filter((p) => isPresenceActive(p, now)).length;
+    const lookingNowCount = allPresence.filter(
+      (p) => isPresenceActive(p, now) && p.status === "looking",
+    ).length;
+    return json(
+      {
+        ok: true,
+        rooms,
+        roomsTotalCount: visible.length,
+        playersOnlineCount,
+        lookingNowCount,
+        serverTime: new Date(now).toISOString(),
+      },
+      { headers: { "cache-control": "public, max-age=15" } },
+    );
+  }
+
   if (method === "GET" && pathname === "/coop/state") {
     const auth = await requireSession(req, env);
     if (auth instanceof Response) return auth;
@@ -174,6 +229,63 @@ export async function handleCoopRoute(
     if (auth instanceof Response) return auth;
     const bundle = await buildStateBundle(env, auth.steamID);
     return json({ ok: true, recommendations: bundle.recommendedMatches });
+  }
+
+  // ----- Scheduled play intents -----
+  //
+  // The async half of matchmaking. Lobbies answer "who is here right now";
+  // intents answer "who plans to be here later", which is the only question
+  // that can be answered at all when two players are never online together.
+  // See coop-intents.ts for the reasoning.
+
+  // Public: the upcoming schedule, sanitized. This is what a signed-out
+  // visitor (or anyone browsing at 4am) sees instead of an empty board.
+  if (method === "GET" && pathname === "/coop/intents/upcoming") {
+    const limited = await rateLimit(env, req, "coop-intents-public", 30, 60);
+    if (limited) return limited;
+    const slots = await upcomingIntents(env);
+    return json(
+      { ok: true, slots, scheduledPlayers: await countScheduledPlayers(env) },
+      { headers: { "cache-control": "public, max-age=60" } },
+    );
+  }
+
+  if (method === "GET" && pathname === "/coop/intents") {
+    const auth = await requireSession(req, env);
+    if (auth instanceof Response) return auth;
+    const [intent, matches] = await Promise.all([
+      readIntent(env, auth.steamID),
+      findIntentMatches(env, auth.steamID),
+    ]);
+    return json({ ok: true, intent, matches });
+  }
+
+  if (method === "POST" && pathname === "/coop/intents") {
+    const auth = await requireSession(req, env);
+    if (auth instanceof Response) return auth;
+    // Scheduling is a deliberate, low-frequency action. A cap this tight also
+    // protects the KV write budget from a client stuck in a retry loop.
+    const limited = await rateLimit(env, req, "coop-intents-write", 20, 60 * 60);
+    if (limited) return limited;
+    const body = (await readJson(req)) as IntentWindowInput | null;
+    if (!body) return errResp(400, "bad_body", "Expected a JSON window.");
+    const result = await addIntentWindow(env, auth.steamID, body);
+    if (!result.ok) return errResp(400, result.error, result.message);
+    const matches = await findIntentMatches(env, auth.steamID);
+    return json({ ok: true, intent: result.value, matches });
+  }
+
+  if (method === "DELETE" && pathname.startsWith("/coop/intents/")) {
+    const auth = await requireSession(req, env);
+    if (auth instanceof Response) return auth;
+    const windowId = pathname
+      .slice("/coop/intents/".length)
+      .replace(/[^0-9a-f]/gi, "")
+      .slice(0, 32);
+    if (!windowId) return errResp(400, "invalid_window", "Missing window id.");
+    const result = await removeIntentWindow(env, auth.steamID, windowId);
+    if (!result.ok) return errResp(404, result.error, result.message);
+    return json({ ok: true, intent: result.value });
   }
 
   // ----- Verified Co-op Reputation (v0.11.0+) -----
@@ -398,6 +510,7 @@ export async function handleCoopRoute(
     }
     const r = await createLobby(env, auth.steamID, body);
     if (!r.ok) return errResp(r.status, r.error, r.message);
+    await announceLobbyToDiscord(env, r.value);
     return json({ ok: true, lobby: r.value });
   }
 
@@ -576,15 +689,27 @@ export async function handleCoopRoute(
   }
 
   const partyActionMatch = pathname.match(
-    /^\/coop\/parties\/([0-9a-f]{32})\/(status|leave|end)$/,
+    /^\/coop\/parties\/([0-9a-f]{32})\/(status|leave|end|signal)$/,
   );
   if (partyActionMatch && method === "POST") {
     const auth = await requireSession(req, env);
     if (auth instanceof Response) return auth;
-    const rl = await rateLimit(env, req, "coop-write", 60, 60);
-    if (rl) return rl;
     const partyId = partyActionMatch[1]!;
     const action = partyActionMatch[2];
+    if (action === "signal") {
+      // Tighter bucket than the generic coop-write: signals are a
+      // tap-to-send surface, so 20/30s per user is plenty for genuine
+      // back-and-forth while still capping spam (the preset-only model
+      // already removes any harassment vector).
+      const rlSig = await rateLimit(env, req, "coop-signal", 20, 30);
+      if (rlSig) return rlSig;
+      const body = (await readJson(req)) as { signal?: string } | null;
+      const r = await signalParty(env, auth.steamID, partyId, body?.signal);
+      if (!r.ok) return errResp(r.status, r.error, r.message);
+      return json({ ok: true, party: r.value });
+    }
+    const rl = await rateLimit(env, req, "coop-write", 60, 60);
+    if (rl) return rl;
     if (action === "status") {
       const body = (await readJson(req)) as { status?: string; selectedCharacter?: string } | null;
       const r = await updatePartyMemberStatus(
@@ -984,39 +1109,10 @@ async function buildStateBundle(
   //   - status === "open"
   const now = Date.now();
   const openLobbiesAll = allLobbies.filter((l) => {
-    if (l.status !== "open" && l.status !== "full") return false;
     // Host's own lobby is returned separately as `lobby`; the main board
     // merges it client-side so hosts still see Manage/Close on the board.
     if (l.hostSteamId === steamID) return false;
-    // SpireVault House lobbies are ambient operator-hosted rooms with
-    // a synthetic Steam ID — no real human heartbeats, so the
-    // host-presence freshness check below would unconditionally hide
-    // them. The renewer (`coop-house-lobbies.ts`) is the authority on
-    // whether a House lobby is live; if `lobby.isHouseLobby` is true
-    // and the lobby's own `expiresAt` is still in the future
-    // (`listLobbies` already filtered expired rows out), it stays on
-    // the board. See module doc on `runHouseLobbyRenewer` for the
-    // lifecycle that backs this bypass.
-    if (l.isHouseLobby) return true;
-    const host = allPresence.find((p) => p.steamId === l.hostSteamId);
-    if (!host) return false;
-    if (!isPresenceActive(host, now)) return false;
-    // "paired" hosts are already in another live session — drop them.
-    if (host.status === "paired") return false;
-    // For "offline" we still drop. For "afk" we now SHOW the lobby as long
-    // as the host's heartbeat is fresh. Rationale: Steam Invisible / Offline
-    // / private-profile users get personastate=0 from the Web API and the
-    // heartbeat handler used to auto-flip them to AFK. Their lobby still
-    // exists, they're still actively at the keyboard (heartbeat is firing
-    // every 30s while the tab is visible), but the prior filter hid them
-    // from everyone else. With the matching fix in heartbeatPresence (host
-    // of an open lobby cannot be auto-AFK'd), the only remaining way to
-    // be "afk" while hosting is to have manually toggled the status pill.
-    // Even in that case, a fresh heartbeat means the host is at the
-    // keyboard and could respond — show the lobby but the client UI
-    // surfaces an "Idle host" hint.
-    if (host.status === "offline") return false;
-    return true;
+    return lobbyVisibleOnBoard(l, allPresence, now);
   });
 
   // Sort lobbies: best match first, then newest, then most-recent activity.
@@ -1094,8 +1190,14 @@ async function buildStateBundle(
   // a "show more" cursor for power users. For now the cap is the
   // pragmatic shield against ballooning bundle size.
   const OPEN_LOBBIES_CAP = 50;
-  const openLobbies = openLobbiesAll.slice(0, OPEN_LOBBIES_CAP);
+  // Hydrate persona/avatar snapshots onto every seat so the board can
+  // render Roblox-style filled-seat rows (you see WHO is in a room, not
+  // just "2 of 4"). Presence rows are already in memory — zero extra KV.
+  const openLobbies = openLobbiesAll
+    .slice(0, OPEN_LOBBIES_CAP)
+    .map((l) => withMemberProfiles(l, allPresence));
   const openLobbiesTotalCount = openLobbiesAll.length;
+  if (myLobby) myLobby = withMemberProfiles(myLobby, allPresence);
 
   // Active player feed: everyone fresh, capped to keep payload bounded.
   const activePlayerFeedAll: CoopPresenceFeedRow[] = allPresence
@@ -1163,6 +1265,17 @@ async function buildStateBundle(
     if (partnerRow) activePlayerFeed = [partnerRow, ...activePlayerFeed];
   }
 
+  // Scheduled intents. Fetched together so a single poll carries both halves
+  // of matchmaking — who is here now, and who plans to be here later.
+  // `listIntents` inside the matcher is a single index read plus one read per
+  // scheduled user, and it prunes its own index, so this costs about as much
+  // as one extra lobby.
+  const [myIntent, intentMatches, scheduledPlayersCount] = await Promise.all([
+    readIntent(env, steamID),
+    findIntentMatches(env, steamID),
+    countScheduledPlayers(env),
+  ]);
+
   return {
     presence,
     session: mySession,
@@ -1179,6 +1292,9 @@ async function buildStateBundle(
     playersOnlineCount,
     lookingNowCount,
     pairedNowCount,
+    intentWindows: myIntent?.windows ?? [],
+    intentMatches,
+    scheduledPlayersCount,
     serverTime: new Date(now).toISOString(),
     // Feature flags. The Worker can flip `COOP_LOBBY_BETA_KILL=1` in
     // env at runtime (or via wrangler secret) and the next /coop/state
@@ -1186,6 +1302,197 @@ async function buildStateBundle(
     // flags are active so the wire shape stays stable.
     flags: betaFlagsFromEnv(env),
   };
+}
+
+/**
+ * Shared board-visibility predicate for open lobbies — used by both the
+ * authenticated `/coop/state` board and the public `/coop/rooms`
+ * browser so the two surfaces can never drift apart on what counts as
+ * a "live" room. (The state board additionally excludes the caller's
+ * own lobby before calling this.)
+ */
+function lobbyVisibleOnBoard(
+  l: RunLobby,
+  allPresence: CoopPresence[],
+  now: number,
+): boolean {
+  if (l.status !== "open" && l.status !== "full") return false;
+  // SpireVault House lobbies are ambient operator-hosted rooms with
+  // a synthetic Steam ID — no real human heartbeats, so the
+  // host-presence freshness check below would unconditionally hide
+  // them. The renewer (`coop-house-lobbies.ts`) is the authority on
+  // whether a House lobby is live; if `lobby.isHouseLobby` is true
+  // and the lobby's own `expiresAt` is still in the future
+  // (`listLobbies` already filtered expired rows out), it stays on
+  // the board. See module doc on `runHouseLobbyRenewer` for the
+  // lifecycle that backs this bypass.
+  if (l.isHouseLobby) return true;
+  const host = allPresence.find((p) => p.steamId === l.hostSteamId);
+  if (!host) return false;
+  if (!isPresenceActive(host, now)) return false;
+  // "paired" hosts are already in another live session — drop them.
+  if (host.status === "paired") return false;
+  // For "offline" we still drop. For "afk" we now SHOW the lobby as long
+  // as the host's heartbeat is fresh. Rationale: Steam Invisible / Offline
+  // / private-profile users get personastate=0 from the Web API and the
+  // heartbeat handler used to auto-flip them to AFK. Their lobby still
+  // exists, they're still actively at the keyboard (heartbeat is firing
+  // every 30s while the tab is visible), but the prior filter hid them
+  // from everyone else. With the matching fix in heartbeatPresence (host
+  // of an open lobby cannot be auto-AFK'd), the only remaining way to
+  // be "afk" while hosting is to have manually toggled the status pill.
+  // Even in that case, a fresh heartbeat means the host is at the
+  // keyboard and could respond — show the lobby but the client UI
+  // surfaces an "Idle host" hint.
+  if (host.status === "offline") return false;
+  return true;
+}
+
+/**
+ * Persona/avatar snapshot for every accepted seat, host first. Members
+ * are resolved from the in-memory presence list (every member signed in
+ * to join, so a presence row exists in the common case; a missing row
+ * degrades to an avatar-less seat, never an error).
+ */
+function memberProfilesFor(
+  l: RunLobby,
+  allPresence: CoopPresence[],
+): RunLobbyMemberProfile[] {
+  const accepted =
+    l.acceptedMemberSteamIds && l.acceptedMemberSteamIds.length > 0
+      ? l.acceptedMemberSteamIds
+      : l.memberSteamIds && l.memberSteamIds.length > 0
+        ? l.memberSteamIds
+        : [l.hostSteamId];
+  const ordered = [
+    l.hostSteamId,
+    ...accepted.filter((sid) => sid && sid !== l.hostSteamId),
+  ].filter(Boolean);
+  return ordered.map((sid) => {
+    if (sid === l.hostSteamId) {
+      return {
+        steamId: sid,
+        personaName: l.hostPersonaName,
+        avatarUrl: l.hostAvatarUrl,
+        isHost: true,
+      };
+    }
+    const p = allPresence.find((x) => x.steamId === sid);
+    return { steamId: sid, personaName: p?.personaName, avatarUrl: p?.avatarUrl };
+  });
+}
+
+function withMemberProfiles(l: RunLobby, allPresence: CoopPresence[]): RunLobby {
+  return { ...l, memberProfiles: memberProfilesFor(l, allPresence) };
+}
+
+/** Strip a lobby down to the guest-safe shape (see `PublicCoopRoom`). */
+function toPublicRoom(l: RunLobby, allPresence: CoopPresence[]): PublicCoopRoom {
+  const profiles = memberProfilesFor(l, allPresence).map((m) => ({
+    personaName: m.personaName,
+    avatarUrl: m.avatarUrl,
+    ...(m.isHost ? { isHost: true } : {}),
+  }));
+  return {
+    lobbyId: l.lobbyId,
+    title: l.title,
+    mode: l.mode,
+    goal: l.goal,
+    // Mirror the client's `lobbySizeOf` default (4) so guest cards and
+    // signed-in cards never disagree on seat counts for the same room.
+    lobbySize: l.lobbySize === 2 || l.lobbySize === 3 || l.lobbySize === 4 ? l.lobbySize : 4,
+    seatsFilled: profiles.length,
+    status: l.status,
+    ascensionMin: l.ascensionMin,
+    ascensionMax: l.ascensionMax,
+    voicePreference: l.voicePreference,
+    preferredCharacters: l.preferredCharacters,
+    approvalRequired: l.approvalRequired,
+    note: typeof l.note === "string" ? l.note.slice(0, 280) : undefined,
+    hostPersonaName: l.hostPersonaName,
+    hostAvatarUrl: l.hostAvatarUrl,
+    isHouseLobby: l.isHouseLobby,
+    houseSlug: l.houseSlug,
+    memberProfiles: profiles,
+    createdAt: l.createdAt,
+    updatedAt: l.updatedAt,
+  };
+}
+
+// ---------- Discord room announce ----------
+
+/** Same join base the client's "Copy Discord LFG Post" uses. */
+const ROOM_JOIN_BASE = "https://spirevault.app/coop?room=";
+
+/** Human labels for goals in the Discord announce (ids are wire-safe). */
+const GOAL_ANNOUNCE_LABELS: Record<string, string> = {
+  casual: "Casual climb",
+  climb: "Standard climb",
+  a20: "Max Ascension push",
+  heart: "Heart hunt",
+  teaching: "Teaching run",
+  learning: "Learning run",
+  daily: "Daily challenge",
+  experimental: "Experimental build",
+  any: "Any goal",
+};
+
+/**
+ * Auto-announce a freshly hosted room to the community Discord.
+ *
+ * This is the piece that flips the funnel: instead of a host manually
+ * copy-pasting an LFG post and begging in Discord (the exact loop the
+ * lobby was supposed to kill), hosting a room in the app broadcasts to
+ * Discord *for* them with a one-click join link back into the app.
+ * Discord becomes an inbound channel, not the venue.
+ *
+ * Deliberately awaited with a hard 3s cap rather than fire-and-forget:
+ * Workers may cancel dangling promises after the response is returned,
+ * and a lost announce defeats the purpose. Worst case, hosting a room
+ * takes 3s longer once — an acceptable trade for guaranteed delivery.
+ * Any failure (no webhook configured, Discord down, timeout) is
+ * swallowed: room creation NEVER depends on Discord being up.
+ */
+async function announceLobbyToDiscord(env: Env, lobby: RunLobby): Promise<void> {
+  const webhook = env.DISCORD_LFG_WEBHOOK_URL;
+  if (!webhook || lobby.isHouseLobby) return;
+  try {
+    // Persona names are attacker-controlled text headed for Discord
+    // markdown; strip the formatting/mention metacharacters. Combined
+    // with allowed_mentions.parse=[] there is no ping or spoof vector.
+    const clean = (s: string): string =>
+      String(s || "").replace(/[*_`~|@#>\[\]()]/g, "").trim().slice(0, 48);
+    const host = clean(lobby.hostPersonaName) || "A climber";
+    const title = clean(lobby.title) || "Co-op room";
+    const size = lobby.lobbySize === 2 || lobby.lobbySize === 3 ? lobby.lobbySize : 4;
+    const goal = GOAL_ANNOUNCE_LABELS[lobby.goal] || "Co-op run";
+    // The host modal encodes planned start into the note as
+    // `[start=ISO]` or `[start=full]` — surface it as a Discord-native
+    // relative timestamp so "starting in 20 minutes" reads correctly
+    // in every reader's timezone.
+    let startLine = "";
+    const m = /\[start=([^\]]+)\]/.exec(lobby.note || "");
+    if (m) {
+      if (m[1] === "full") {
+        startLine = "\nStarts as soon as the party fills.";
+      } else {
+        const t = Date.parse(m[1]!);
+        if (Number.isFinite(t)) startLine = `\nStarts <t:${Math.floor(t / 1000)}:R>.`;
+      }
+    }
+    const content =
+      `🎮 **${host}** just opened a co-op room: **${title}**\n` +
+      `${goal} · ${size} seats · join in one click, no setup:` +
+      `${startLine}\n${ROOM_JOIN_BASE}${lobby.lobbyId}`;
+    await fetch(webhook, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ content, allowed_mentions: { parse: [] } }),
+      signal: AbortSignal.timeout(3000),
+    });
+  } catch {
+    // Never let Discord availability affect room creation.
+  }
 }
 
 function betaFlagsFromEnv(env: Env): { coopLobbyBeta?: boolean; coopLobbyBetaKill?: boolean } | undefined {

@@ -9,7 +9,9 @@
     "deploy": "wrangler deploy",
     "tail": "wrangler tail",
     "types": "wrangler types",
-    "verify": "node scripts/verify-roster.mjs"
+    "verify": "node scripts/verify-roster.mjs",
+    "verify:offline": "node scripts/verify-offline.mjs",
+    "preflight": "tsc --noEmit -p tsconfig.json && node scripts/verify-offline.mjs"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20240320.0",

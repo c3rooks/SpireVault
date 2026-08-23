@@ -14,7 +14,7 @@
 // Ascension is capped at 10 (Slay the Spire 2 max).
 // =========================================================================
 
-import { isSandboxSteamId, isCoopSandboxEnabled } from "./coop-sandbox.js?v=9";
+import { isSandboxSteamId, isCoopSandboxEnabled } from "./coop-sandbox.js?v=12";
 import { encodeStart, presetToPlanned, decodeStart, formatCountdown, startSortKey } from "./party-finder-startsoon.js?v=1";
 var PFH = window.PFH;
 
@@ -164,7 +164,7 @@ function ensureCssLoaded() {
     const link = document.createElement("link");
     link.id = "pf-stylesheet";
     link.rel = "stylesheet";
-    link.href = "/lib/party-finder.css?v=3";
+    link.href = "/lib/party-finder.css?v=5";
     document.head.appendChild(link);
   }
   // House lobby identity (VAULT TEAM pill, themed art tiles, A0/A10
@@ -213,6 +213,7 @@ function ensureBetaRoot() {
           <p class="pf-section-sub">Open STS2 co-op rooms hosted by the community.</p>
         </div>
         <div class="pf-section-actions">
+          <button type="button" class="pf-btn pf-btn--ghost" data-pf-action="toggle-room-alert" id="pf-room-alert-btn" title="Get a notification the moment someone opens a room">🔔 Alert me</button>
           <button type="button" class="pf-btn pf-btn--primary" data-pf-action="open-host">+ Host a Room</button>
         </div>
       </div>
@@ -485,6 +486,9 @@ function pfLobbyCardFields(l) {
     pa: l.partyId,
     br: l.branch || l.branchAccept,
     ua: l.updatedAt,
+    // Seat-slot strip repaints when anyone joins/leaves — persona +
+    // avatar per member, hydrated server-side onto openLobbies.
+    mp: (l.memberProfiles || []).map((m) => `${m.personaName || ""}|${m.avatarUrl || ""}`),
   };
 }
 
@@ -886,6 +890,8 @@ function render(rawState) {
     renderLiveParties(state, visible, best);
   }
   applyRoomDeepLink();
+  consumePendingRoomIntent();
+  syncRoomAlertBtn();
   if (pendingFindMeFocus) {
     pendingFindMeFocus = false;
     if (best) focusBestCard(best);
@@ -1141,6 +1147,7 @@ function renderLiveParties(state, visible, best) {
   if ($count.textContent !== String(visible.length)) {
     $count.textContent = String(visible.length);
   }
+  maybeFireRoomAlert(visible.filter((l) => !isHouseLobby(l)).length);
 
   if (visible.length === 0) {
     // The "No live parties yet" stub is enhanced into the cold-start
@@ -1244,6 +1251,81 @@ function renderLiveParties(state, visible, best) {
 // never inherits a stale deep-page cursor.
 let livePartiesPage = 1;
 
+// ── "Alert me when a room opens" ─────────────────────────────────────
+// The dead-lobby loop in miniature: someone opens the tab, sees no
+// rooms, closes it, and thirty minutes later somebody ELSE hosts into
+// an empty board. This one-shot alert bridges that gap — arm it, walk
+// away, and the next REAL room (House rooms don't count; they're
+// always there) fires one OS notification + toast, then disarms.
+const ROOM_ALERT_KEY = "sv.pf.roomAlert";
+let pfPrevRealRoomCount = null;
+
+function roomAlertArmed() {
+  try { return localStorage.getItem(ROOM_ALERT_KEY) === "1"; } catch { return false; }
+}
+function setRoomAlertArmed(on) {
+  try {
+    if (on) localStorage.setItem(ROOM_ALERT_KEY, "1");
+    else localStorage.removeItem(ROOM_ALERT_KEY);
+  } catch {}
+  syncRoomAlertBtn();
+}
+function syncRoomAlertBtn() {
+  const b = document.getElementById("pf-room-alert-btn");
+  if (!b) return;
+  const on = roomAlertArmed();
+  b.textContent = on ? "🔔 Alert armed" : "🔔 Alert me";
+  b.classList.toggle("is-active", on);
+  b.title = on
+    ? "Armed — you'll get one notification when the next room opens"
+    : "Get a notification the moment someone opens a room";
+}
+function maybeFireRoomAlert(realRoomCount) {
+  const prev = pfPrevRealRoomCount;
+  pfPrevRealRoomCount = realRoomCount;
+  if (prev === null || prev > 0 || realRoomCount <= 0) return;
+  if (!roomAlertArmed()) return;
+  setRoomAlertArmed(false); // one-shot: fire once, disarm
+  const msg = "A co-op room just opened — grab a seat!";
+  try {
+    if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+      const n = new Notification("SpireVault", { body: msg, icon: "/assets/vault-mark.svg" });
+      n.onclick = () => { try { window.focus(); } catch {} };
+    }
+  } catch {}
+  bootCtx?.deps?.toast?.(msg);
+}
+
+// ── Post-sign-in room handoff ────────────────────────────────────────
+// A signed-out guest who clicks Join on the public room browser stores
+// the room id here before the Steam OpenID round-trip (the redirect
+// does not preserve query params). First state paint after sign-in
+// scrolls to and highlights that room so the guest lands exactly where
+// they were headed — the Roblox promise: browse free, sign in only at
+// the moment of play, lose nothing in between.
+const PENDING_ROOM_KEY = "sv.coop.pendingRoom";
+function consumePendingRoomIntent() {
+  let id = null;
+  try { id = sessionStorage.getItem(PENDING_ROOM_KEY); } catch {}
+  if (!id) return;
+  const inState =
+    (lastState?.openLobbies || []).some((l) => l.lobbyId === id) ||
+    lastState?.lobby?.lobbyId === id;
+  if (lastState && !inState) {
+    // Room closed/filled while they were signing in — drop the intent
+    // so it doesn't ambush them on a later visit.
+    try { sessionStorage.removeItem(PENDING_ROOM_KEY); } catch {}
+    bootCtx?.deps?.toast?.("That room just closed — here are the live ones.");
+    return;
+  }
+  const c = document.querySelector(`#pf-live-list [data-lobby-id="${id}"], #pf-best-card [data-lobby-id="${id}"]`);
+  if (!c) return; // not painted yet — retry on the next render pass
+  try { sessionStorage.removeItem(PENDING_ROOM_KEY); } catch {}
+  c.scrollIntoView({ behavior: "smooth", block: "center" });
+  c.classList.add("pf-live-row--highlight");
+  bootCtx?.deps?.toast?.("Here's the room you picked — take a seat.");
+}
+
 // Helper: which urgency bucket does this lobby belong to right now?
 // Used by renderLiveParties() to bump imminent rooms to the top.
 function startSoonBucket(lobby, nowMs) {
@@ -1260,6 +1342,50 @@ function startSoonBucket(lobby, nowMs) {
     return 2;
   }
   return 2;
+}
+
+// ── Roblox-style seat slots ──────────────────────────────────────────
+// The single biggest "is this place alive?" signal on a game card is
+// SEEING the people already inside it. Filled seats render the actual
+// member avatars (host gets a crown); empty seats render as inviting
+// dashed "+ Open" slots that are themselves the join affordance when
+// the viewer can actually take one.
+function renderSeatStrip(l, { joinable } = {}) {
+  const cap = lobbySizeOf(l);
+  const isHouse = isHouseLobby(l);
+  const profiles = Array.isArray(l.memberProfiles) && l.memberProfiles.length > 0
+    ? l.memberProfiles.slice(0, cap)
+    : [{ personaName: l.hostPersonaName, avatarUrl: l.hostAvatarUrl, isHost: true }];
+  const seats = [];
+  for (const m of profiles) {
+    const name = m.personaName || (m.isHost ? "Host" : "Climber");
+    const avatar = isHouse && m.isHost
+      ? "/assets/vault-mark.svg"
+      : (m.avatarUrl || "/assets/vault-mark.svg");
+    seats.push(`
+      <span class="pf-seat pf-seat--filled${m.isHost ? " pf-seat--host" : ""}" title="${esc(name)}${m.isHost ? " (host)" : ""}">
+        <img src="${esc(avatar)}" alt="" loading="lazy" />
+        ${m.isHost ? '<span class="pf-seat-crown" aria-hidden="true">👑</span>' : ""}
+        <span class="pf-seat-name">${esc(name)}</span>
+      </span>`);
+  }
+  const emptyCount = Math.max(0, cap - profiles.length);
+  for (let i = 0; i < emptyCount; i++) {
+    if (joinable) {
+      seats.push(`
+        <button type="button" class="pf-seat pf-seat--open" data-pf-action="join-room" data-lobby-id="${esc(l.lobbyId)}" title="Take this seat">
+          <span class="pf-seat-plus" aria-hidden="true">+</span>
+          <span class="pf-seat-name">Open</span>
+        </button>`);
+    } else {
+      seats.push(`
+        <span class="pf-seat pf-seat--open pf-seat--static">
+          <span class="pf-seat-plus" aria-hidden="true">+</span>
+          <span class="pf-seat-name">Open</span>
+        </span>`);
+    }
+  }
+  return `<div class="pf-seat-strip" aria-label="${profiles.length} of ${cap} seats filled">${seats.join("")}</div>`;
 }
 
 function renderLiveRow(l, state, best) {
@@ -1342,6 +1468,7 @@ function renderLiveRow(l, state, best) {
           ${chipFor(fit)}
         </div>
         ${renderPartyLine(l)}
+        ${renderSeatStrip(l, { joinable: !isMine && !isFull && !mismatch })}
         ${seatsText}
       </div>
       <div class="pf-live-actions">
@@ -1964,6 +2091,27 @@ function wireDelegatedClicks() {
       }
       case "refresh": void refreshState({ force: true }); return;
       case "net-retry": void refreshState({ force: true }); return;
+      case "toggle-room-alert": {
+        if (roomAlertArmed()) {
+          setRoomAlertArmed(false);
+          bootCtx?.deps?.toast?.("Room alerts off.");
+          return;
+        }
+        const arm = () => {
+          setRoomAlertArmed(true);
+          bootCtx?.deps?.toast?.("Armed — you'll get one alert when the next room opens.");
+        };
+        try {
+          if (typeof Notification !== "undefined" && Notification.permission === "default") {
+            // Arm regardless of the user's permission answer — a denied
+            // permission still gets the in-app toast on the next poll.
+            void Notification.requestPermission().then(arm, arm);
+            return;
+          }
+        } catch {}
+        arm();
+        return;
+      }
       case "live-more": {
         livePartiesPage = (livePartiesPage || 1) + 1;
         if (lastState) renderLiveParties(lastState, visibleOpenLobbies(lastState), pickBestLobby(lastState, visibleOpenLobbies(lastState)));

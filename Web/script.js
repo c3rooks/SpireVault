@@ -13,17 +13,18 @@
 //   Co-op (presence + canned-message invite system + Steam deep-links)
 // =========================================================================
 
-import * as Stats from "/lib/stats-engine.js?v=4";
+import * as Stats from "/lib/stats-engine.js?v=5";
 import * as HistoryStore from "/lib/history-store.js?v=8";
 import * as InviteAPI from "/lib/invites.js?v=4";
 import * as HighlightsAPI from "/lib/highlights.js?v=1";
-import * as CoopLobbies from "/lib/coop-lobbies.js?v=33";
-import { isCoopSandboxEnabled, openCoopSandboxPanel } from "/lib/coop-sandbox.js?v=10";
-import * as PartyRoom from "/lib/party-room.js?v=5";
-import * as AscInfo from "/lib/ascension-info.js?v=1";
+import * as CoopLobbies from "/lib/coop-lobbies.js?v=34";
+import { isCoopSandboxEnabled, openCoopSandboxPanel } from "/lib/coop-sandbox.js?v=12";
+import * as PartyRoom from "/lib/party-room.js?v=6";
+import * as AscInfo from "/lib/ascension-info.js?v=2";
 import * as CharInfo from "/lib/character-info.js?v=1";
-import * as RelicInfo from "/lib/relic-info.js?v=1";
+import * as RelicInfo from "/lib/relic-info.js?v=3";
 import * as OverlayEngine from "/lib/overlay-engine.js?v=1";
+import { GAME_SYNC } from "/lib/game-sync.js?v=1";
 
 // ─── Constants ─────────────────────────────────────────────────────────
 //
@@ -71,7 +72,7 @@ const STS2_APP_ID = "2868840";
  * on an old client — instruct hard refresh. If it DOES match, the
  * bug is real and we can stop chasing cache ghosts.
  */
-const VAULT_BUILD = "v206-2026-05-29-ascension-accuracy-nav-edges-icons";
+const VAULT_BUILD = "v211-2026-08-23-parity-showcase";
 
 /** True on wrangler pages dev / local loopback — not production hostnames. */
 function isLocalDevHost() {
@@ -746,6 +747,45 @@ const STORAGE_LAST_IMPORT_AT = "vault.web.history.last-import-at";
 /** Epoch-ms of the last time we showed the no-FSA refresh nudge so we
  *  don't spam it on every visibility flicker. */
 const STORAGE_LAST_NUDGE_AT  = "vault.web.history.last-nudge-at";
+/** "granted" once navigator.storage.persist() succeeded on this
+ *  origin, so we can skip re-asking on every boot. */
+const STORAGE_DURABLE_FLAG   = "vault.web.storage.durable";
+
+/**
+ * Ask the browser to mark this origin's storage as durable ("persistent"
+ * in the Storage Standard sense). Without this, IndexedDB — where every
+ * imported run lives — is *best-effort* storage: Chrome may evict it
+ * under disk pressure and Safari's ITP may wipe it after 7 days of not
+ * visiting. That eviction is exactly the "I had to re-upload my saves"
+ * report we never want to hear again.
+ *
+ * Chromium auto-grants this silently for engaged/installed origins (no
+ * prompt); Firefox may show a permission prompt; Safari grants based on
+ * its own heuristics. All failure modes are non-fatal — cloud sync and
+ * the linked folder handle remain the backstops — so this is strictly
+ * fire-and-forget hardening, called only after we actually have real
+ * run data worth protecting.
+ */
+async function ensureDurableStorage() {
+  try {
+    if (localStorage.getItem(STORAGE_DURABLE_FLAG) === "granted") return true;
+  } catch { /* private mode — still worth attempting persist() below */ }
+  try {
+    if (!navigator.storage || typeof navigator.storage.persist !== "function") return false;
+    if (typeof navigator.storage.persisted === "function" && await navigator.storage.persisted()) {
+      try { localStorage.setItem(STORAGE_DURABLE_FLAG, "granted"); } catch { /* ok */ }
+      return true;
+    }
+    const granted = await navigator.storage.persist();
+    if (granted) {
+      try { localStorage.setItem(STORAGE_DURABLE_FLAG, "granted"); } catch { /* ok */ }
+      sendBeacon("storage-durable-granted", "");
+    }
+    return granted;
+  } catch {
+    return false;
+  }
+}
 
 // Companion options for the Overview page's animated persona picker.
 // Declared up here (not next to renderCompanion()) because boot() runs
@@ -903,6 +943,18 @@ const BOSSES = [
       { text: "Mind the threshold." },
       { text: "I built this hallway." },
       { text: "No exits today." },
+    ],
+  },
+  {
+    // Replaced Doormaker as the main-branch Act 3 boss option in
+    // v0.107.1 (June 19, 2026). Doormaker's entry stays above so
+    // older runs in history still get a taunt line.
+    id: "aeonglass", label: "Aeonglass",
+    lines: [
+      { text: "Time wears thin here." },
+      { text: "Everything withers, eventually." },
+      { text: "You've spent enough turns." },
+      { text: "The hourglass does not refill." },
     ],
   },
   {
@@ -1077,7 +1129,7 @@ async function loadAssetManifest() {
     // relics (Kaleidoscope, Fishing Rod, Silken Tress) and the new
     // Act 3 boss Aeonglass. Labels-only (no art shipped yet); the
     // resolver falls back to the 2-letter glyph until we ship icons.
-    const MANIFEST_VERSION = 3;
+    const MANIFEST_VERSION = 4;
     const [manRes, labRes] = await Promise.all([
       fetch(`${ASSET_BASE}/manifest.json?v=${MANIFEST_VERSION}`, { cache: "force-cache" }),
       fetch(`${ASSET_BASE}/labels.json?v=${MANIFEST_VERSION}`,   { cache: "force-cache" }).catch(() => null),
@@ -1196,9 +1248,13 @@ function cardSlug(id) {
 // swap fallback below: when the input slug ends with a class name (e.g.
 // `strike_ironclad`, the order STS2's `.run` files use) we know to try
 // the swapped form (`ironclad_strike`, the order the asset library uses).
+// STS2's roster only — there is no Watcher in this game (Regent and
+// Necrobinder replaced her; the run parser maps stray `watcher` character
+// values from mods/legacy data to Regent). A watcher token here could
+// never resolve to art anyway: the asset library ships no watcher_* files.
 const CLASS_PREFIXES = new Set([
   "ironclad", "silent", "defect", "regent", "necrobinder",
-  "watcher", "colorless", "curse", "status",
+  "colorless", "curse", "status",
 ]);
 
 function cardImageSrc(id) {
@@ -2049,6 +2105,58 @@ function vaultGtagEvent(name, params) {
   } catch { /* analytics is best-effort, never user-facing */ }
 }
 
+/**
+ * Community pulse — the "you're not climbing alone" line on the
+ * Overview hero. Pulls anonymous aggregate counts (this week / all
+ * time) from /api/stats/community, which the worker computes from its
+ * existing daily-seen markers and caches for 10 minutes.
+ *
+ * Deliberately quiet failure: the element stays hidden unless we get
+ * a believable number back. A dashboard that says "0 climbers" or
+ * errors out would do the opposite of making the place feel alive.
+ */
+async function loadCommunityPulse() {
+  const $pulse = document.getElementById("community-pulse");
+  if (!$pulse) return;
+  let pulse = null;
+  try {
+    const cached = sessionStorage.getItem("vault.web.community-pulse");
+    if (cached) {
+      const parsed = JSON.parse(cached);
+      if (Date.now() - (parsed.fetchedAt || 0) < 10 * 60_000) pulse = parsed.data;
+    }
+  } catch { /* ok */ }
+  if (!pulse) {
+    try {
+      const r = await fetch(`${API_BASE}/stats/community`, { headers: { accept: "application/json" } });
+      if (!r.ok) return;
+      pulse = await r.json();
+      try {
+        sessionStorage.setItem(
+          "vault.web.community-pulse",
+          JSON.stringify({ fetchedAt: Date.now(), data: pulse })
+        );
+      } catch { /* ok */ }
+    } catch {
+      return;
+    }
+  }
+  const week = Number(pulse?.climbersThisWeek) || 0;
+  const total = Number(pulse?.totalClimbers) || 0;
+  // Need at least a couple of climbers for the line to feel true and
+  // warm rather than sad. Below that, stay hidden.
+  if (week < 2 && total < 2) return;
+  const parts = [];
+  if (week >= 2) {
+    parts.push(`${week} Slayers on the climb this week`);
+  }
+  if (total >= 2) {
+    parts.push(`${total} climbers worldwide`);
+  }
+  $pulse.textContent = `⚔ ${parts.join(" · ")} — you're one of them.`;
+  $pulse.hidden = false;
+}
+
 async function refreshPublicCount() {
   const $text = document.getElementById("presence-text");
   if (!$text) return;
@@ -2217,6 +2325,21 @@ async function boot() {
   // user's last tab — that way even if they're going straight to
   // Recent Runs, they see the pill on the sidebar immediately.
   refreshNewsBadge();
+  // Game-data freshness badge in the sidebar footer. The copy comes from
+  // lib/game-sync.js — the same constant the deploy-time drift guard
+  // asserts against the sync ledger — so what the user reads here is
+  // provably the version the data was verified against, not vibes.
+  try {
+    const $sync = document.getElementById("game-sync-badge");
+    if ($sync) {
+      // Short form fits the 248px sidebar without ellipsis; the title
+      // carries the full sentence for hover/assistive tech.
+      $sync.textContent = `STS2 data: ${GAME_SYNC.main} · beta ${GAME_SYNC.betaWatch}`;
+      $sync.title = `Game data verified against STS2 ${GAME_SYNC.main} (main branch) — beta patch notes tracked through ${GAME_SYNC.betaWatch}. Click for details.`;
+      $sync.hidden = false;
+      $sync.addEventListener("click", () => switchTab("news"));
+    }
+  } catch { /* cosmetic — never block boot */ }
   // Paint the Co-op Lobby Beta badge / Switch-to-Classic link in the
   // Co-op slim header *before* we route. The Co-op panel is hidden
   // for non-Co-op tabs anyway but the markup needs to be correct so a
@@ -2621,6 +2744,10 @@ async function boot() {
   if (cached?.runs?.length) {
     parsedRuns = cached.runs.map(reviveRun);
     isDemoMode = false;
+    // There's real data in IndexedDB — make sure the browser is not
+    // allowed to silently evict it. Fire-and-forget; see the helper's
+    // doc comment for why this is the "never re-upload" keystone.
+    void ensureDurableStorage();
     // Signed-in: kick a cloud refresh anyway so any newer runs from
     // another device get unioned in (merge-by-id is safe).
     if (session?.steamID) needCloudHydrate = true;
@@ -2639,7 +2766,7 @@ async function boot() {
   } else {
     // True guest, no local cache, no folder, no Steam — demo time.
     try {
-      const { getDemoRuns } = await import("./lib/demo-runs.js");
+      const { getDemoRuns } = await import("./lib/demo-runs.js?v=2");
       parsedRuns = getDemoRuns();
       isDemoMode = true;
     } catch {
@@ -2752,6 +2879,9 @@ async function boot() {
   // detail UI so its rail is ready the moment a user clicks into
   // the News tab. Idempotent.
   wireNewsTabs();
+  // Community pulse on the Overview hero — fire-and-forget, hidden on
+  // any failure. Deferred a beat so it never competes with first paint.
+  setTimeout(() => { void loadCommunityPulse(); }, 1200);
   // Wire the share-modal "Share to community" affordance even before
   // the modal is opened — keeps event listeners idempotent and the
   // boot sequence simpler.
@@ -2897,16 +3027,27 @@ async function boot() {
 function wireGuestCoop() {
   const $body = document.querySelector('.tab-panel[data-tab="coop"] .panel-body');
   if (!$body) return;
-  // v195: the duplicate orange "Sign in to host" hero block was deleted
-  // here too. Signed-out users now land directly on the guest-coop card
-  // below, which already has the Steam sign-in CTA and the live "who's
-  // around" count. The pf-stage purple hero in party-finder-scene.js
-  // continues to drive the headline visual for signed-in users.
+  // The Roblox front door: signed-out visitors see the LIVE rooms first
+  // — real titles, real people in the seats — instead of a sign-in
+  // wall. Browsing is free; Steam sign-in is only demanded at the
+  // moment they click Join (and the pending-room handoff drops them
+  // straight back into the room they picked after the OpenID
+  // round-trip). Data comes from the public sanitized /coop/rooms
+  // endpoint — no Steam IDs on the wire.
   $body.innerHTML = `
     <div class="guest-coop">
+      <div class="guest-rooms" id="guest-rooms">
+        <div class="guest-rooms-head">
+          <h2>Live co-op rooms</h2>
+          <p class="muted guest-rooms-pulse" id="guest-rooms-pulse">Checking who's playing…</p>
+        </div>
+        <div class="guest-rooms-grid" id="guest-rooms-grid">
+          <div class="guest-room-card guest-room-card--skeleton"><p class="muted">Loading live rooms…</p></div>
+        </div>
+      </div>
       <div class="guest-coop-card">
-        <h2>Find a co-op partner for Slay the Spire 2</h2>
-        <p class="muted">Sign in with Steam to appear on the live feed and send a canned invite to anyone else looking right now. <strong>Stats and run history don't require sign-in</strong> — only the co-op feed does.</p>
+        <h2>Pick a room, sign in, play</h2>
+        <p class="muted">Anyone can browse the rooms above. To take a seat — or host your own — sign in with Steam. Click Join on a room first and we'll bring you right back to it. <strong>Stats and run history don't require sign-in</strong> — only playing does.</p>
         <p class="guest-coop-count" id="guest-coop-count">Checking who's around…</p>
         <button class="btn-primary btn-block" type="button" data-action="signin-cta">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3 5l8-1.1V11H3V5zm0 7h8v7.1L3 18V12zm9 7.2V12h9v8L12 19.2zM12 11V3.9L21 3v8h-9z"/></svg>
@@ -2927,9 +3068,128 @@ function wireGuestCoop() {
         <div class="guest-coop-roster-list" id="guest-coop-roster-list"></div>
       </div>
     </div>`;
+  // One document-level listener for every guest Join button (cards are
+  // re-rendered on each poll, so per-button listeners won't survive).
+  if (!window.__guestRoomJoinWired) {
+    window.__guestRoomJoinWired = true;
+    document.addEventListener("click", (e) => {
+      const btn = e.target.closest('[data-action="guest-join-room"]');
+      if (!btn) return;
+      e.preventDefault();
+      // Stash the intent — the Steam OpenID redirect drops query
+      // params, so party-finder.js re-reads this key after sign-in and
+      // scrolls the user straight to the room they picked.
+      try { sessionStorage.setItem("sv.coop.pendingRoom", btn.dataset.roomId || ""); } catch {}
+      toast("Sign in with Steam and we'll drop you right into that room.");
+      vaultGtagEvent("guest_room_join_intent", { room_id: btn.dataset.roomId || "" });
+      startSteamSignIn();
+    });
+  }
+  void refreshGuestRooms();
+}
+
+// Compact goal labels for guest room cards (mirrors the signed-in
+// board's vocabulary without importing the whole party-finder module).
+const GUEST_GOAL_LABELS = {
+  casual: "Casual climb",
+  climb: "Standard climb",
+  a20: "Max Ascension",
+  heart: "Heart hunt",
+  teaching: "Teaching run",
+  learning: "Learning run",
+  daily: "Daily challenge",
+  experimental: "Experimental",
+  any: "Any goal",
+};
+
+async function refreshGuestRooms() {
+  const $grid = document.getElementById("guest-rooms-grid");
+  const $pulse = document.getElementById("guest-rooms-pulse");
+  if (!$grid) return;
+  try {
+    const r = await fetch(`${API_BASE}/coop/rooms`, { headers: { accept: "application/json" } });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const data = await r.json();
+    const rooms = Array.isArray(data.rooms) ? data.rooms : [];
+    if ($pulse) {
+      const online = data.playersOnlineCount || 0;
+      const bits = [`${rooms.length} ${rooms.length === 1 ? "room" : "rooms"} open`];
+      if (online > 0) bits.push(`${online} ${online === 1 ? "player" : "players"} online`);
+      if (data.lookingNowCount > 0) bits.push(`${data.lookingNowCount} looking for a party`);
+      $pulse.innerHTML = `<span class="dot dot-pulse" aria-hidden="true"></span>${bits.join(" · ")}`;
+    }
+    if (rooms.length === 0) {
+      $grid.innerHTML = `
+        <div class="guest-room-card guest-room-card--empty">
+          <h3>No open rooms right now</h3>
+          <p class="muted">Sign in and host one — it takes about ten seconds, and your room shows up here for everyone browsing.</p>
+          <button class="btn-primary sm" type="button" data-action="signin-cta">Sign in &amp; host the first room</button>
+        </div>`;
+      return;
+    }
+    $grid.innerHTML = rooms.map(renderGuestRoomCard).join("");
+  } catch {
+    if ($pulse) $pulse.textContent = "Room list momentarily unavailable.";
+  }
+}
+
+function renderGuestRoomCard(room) {
+  const esc = escapeHtml;
+  const cap = room.lobbySize === 2 || room.lobbySize === 3 ? room.lobbySize : 4;
+  const profiles = Array.isArray(room.memberProfiles) && room.memberProfiles.length > 0
+    ? room.memberProfiles.slice(0, cap)
+    : [{ personaName: room.hostPersonaName, avatarUrl: room.hostAvatarUrl, isHost: true }];
+  const isHouse = room.isHouseLobby === true;
+  const seats = profiles.map((m) => {
+    const name = m.personaName || (m.isHost ? "Host" : "Climber");
+    const avatar = isHouse && m.isHost ? "/assets/vault-mark.svg" : (m.avatarUrl || "/assets/vault-mark.svg");
+    return `
+      <span class="guest-seat guest-seat--filled${m.isHost ? " guest-seat--host" : ""}" title="${esc(name)}${m.isHost ? " (host)" : ""}">
+        <img src="${esc(avatar)}" alt="" loading="lazy" />
+        ${m.isHost ? '<span class="guest-seat-crown" aria-hidden="true">👑</span>' : ""}
+        <span class="guest-seat-name">${esc(name)}</span>
+      </span>`;
+  });
+  for (let i = profiles.length; i < cap; i++) {
+    seats.push(`
+      <span class="guest-seat guest-seat--open">
+        <span class="guest-seat-plus" aria-hidden="true">+</span>
+        <span class="guest-seat-name">Open</span>
+      </span>`);
+  }
+  const isFull = profiles.length >= cap;
+  const goal = GUEST_GOAL_LABELS[room.goal] || "Co-op run";
+  const ascBits = [];
+  if (room.ascensionMin != null || room.ascensionMax != null) {
+    const lo = Math.max(0, room.ascensionMin ?? 0);
+    const hi = Math.min(10, room.ascensionMax ?? 10);
+    ascBits.push(lo === hi ? `A${lo}` : `A${lo}–A${hi}`);
+  }
+  const badge = isHouse
+    ? '<span class="guest-room-badge guest-room-badge--house">Always open</span>'
+    : isFull
+      ? '<span class="guest-room-badge guest-room-badge--full">Full</span>'
+      : '<span class="guest-room-badge guest-room-badge--live">Live</span>';
+  const cta = isFull
+    ? '<button class="btn-ghost sm" type="button" disabled>Room full</button>'
+    : `<button class="btn-primary sm" type="button" data-action="guest-join-room" data-room-id="${esc(room.lobbyId)}">${room.approvalRequired ? "Request a seat" : "Join this room"}</button>`;
+  return `
+    <article class="guest-room-card${isFull ? " guest-room-card--full" : ""}">
+      <div class="guest-room-titlerow">
+        <h3>${esc(room.title || "Co-op room")}</h3>
+        ${badge}
+      </div>
+      <p class="guest-room-attrs muted">${esc([goal, ...ascBits, `${profiles.length} of ${cap} seats filled`].join(" · "))}</p>
+      <div class="guest-seat-strip">${seats.join("")}</div>
+      <div class="guest-room-actions">${cta}</div>
+    </article>`;
 }
 
 async function refreshGuestRoster() {
+  // Piggyback the public room grid on the same poll cadence — every
+  // guest-roster refresh call site (boot, interval, visibilitychange,
+  // pageshow) keeps the room cards fresh too.
+  void refreshGuestRooms();
   const $count   = document.getElementById("guest-coop-count");
   const $rosterWrap = document.getElementById("guest-coop-roster");
   const $list    = document.getElementById("guest-coop-roster-list");
@@ -3214,7 +3474,7 @@ function switchTab(tab) {
  * thing I read still the latest thing published?" — without forcing
  * a chronological compare that could go wrong on a typo.
  */
-const LATEST_NEWS_POST_ID = "post-006-2026-05-10-desktop-cloud-parity";
+const LATEST_NEWS_POST_ID = "post-010-2026-08-23-beta-0110-0111-data-pass";
 const STORAGE_NEWS_LAST_READ = "vault.web.news.lastRead";
 
 /** Show the "NEW" pill on the sidebar News button when the user
@@ -3775,6 +4035,16 @@ let coopLobbiesMounted = false;
 function ensureCoopLobbiesMounted() {
   if (coopLobbiesMounted || !session) return;
   coopLobbiesMounted = true;
+  // Cookie-rehydrated sessions (iOS Safari after ITP wiped
+  // localStorage, or local dev-login) boot without a localStorage
+  // session, so the shell first-paint already rendered the guest room
+  // browser into the panel. Drop it before the signed-in board mounts
+  // — otherwise both surfaces stack.
+  try {
+    document
+      .querySelector('.tab-panel[data-tab="coop"] .panel-body .guest-coop')
+      ?.remove();
+  } catch { /* cosmetic only */ }
   try {
     CoopLobbies.mountCoopLobbies({
       api: API_BASE,
@@ -8160,7 +8430,18 @@ async function ingestHistoryFiles(files, { silent = false } = {}) {
     if (!silent) toast(`None of those ${list.length} file(s) look like STS2 saves (.run or history.json).`);
     return false;
   }
-  sendBeacon("ingest-files-chosen", `count=${plausible.length}`);
+  // Split interactive vs. auto-refresh into separate reason codes.
+  //
+  // The daily KV counters behind the admin import funnel key on the reason
+  // only — `detail` is stored on sampled event rows, not aggregated. So while
+  // `silent=1` in a detail string is readable one row at a time, it is
+  // invisible to the funnel, and background auto-refresh ingests would show up
+  // as import attempts nobody made. That inflates the later stages above the
+  // earlier ones and produces conversion rates over 100%.
+  sendBeacon(
+    silent ? "ingest-files-chosen-auto" : "ingest-files-chosen",
+    `count=${plausible.length}`
+  );
 
   console.info(`[Vault] ingest start: ${plausible.length} file(s)${list.length > plausible.length ? ` (filtered ${list.length - plausible.length} non-save file(s))` : ""}`);
   if (!silent) {
@@ -8410,8 +8691,11 @@ async function commitParsedRuns(runs, sourceName, { silent, fileCount = 1 }) {
     if (r?.schemaVersion != null) schemaSet.add(r.schemaVersion);
   }
   const schemaList = [...schemaSet].sort().join(",");
+  // Separate reason for background refreshes — see the note on
+  // `ingest-files-chosen` above. `silent=` stays in the detail so a single
+  // event row is still self-describing.
   sendBeacon(
-    "ingest-runs-committed",
+    silent ? "ingest-runs-committed-auto" : "ingest-runs-committed",
     `runs=${completedRuns.length} files=${fileCount} schemas=${schemaList || "none"} live=${liveRun ? 1 : 0} silent=${silent ? 1 : 0}`
   );
 
@@ -8440,6 +8724,10 @@ async function commitParsedRuns(runs, sourceName, { silent, fileCount = 1 }) {
       sourceFilename: sourceName,
       runs: completedRuns.map(serializeRun),
     });
+    // Runs are on disk in IndexedDB — now pin that storage as durable
+    // so the browser can't evict it under disk pressure (the one
+    // scenario where a user would otherwise have to re-import).
+    void ensureDurableStorage();
   } catch (e) {
     console.error("[Vault] saveHistory to IndexedDB failed (continuing in-memory)", e);
     if (!silent) toast("Loaded runs but couldn't cache them locally. Stats will work this visit.");
@@ -8462,7 +8750,9 @@ async function commitParsedRuns(runs, sourceName, { silent, fileCount = 1 }) {
       toast(`${newCompletedCount} new run${newCompletedCount === 1 ? "" : "s"} from disk.`);
     }
   } else if (wasDemo) {
-    toast(`Loaded ${completedRuns.length} run${completedRuns.length === 1 ? "" : "s"} from your save.`);
+    // First real import replaces demo data — this is the one moment to
+    // tell the user their data is now permanent on this device.
+    toast(`Loaded ${completedRuns.length} run${completedRuns.length === 1 ? "" : "s"} from your save. Saved on this device — you'll never need to re-import.`);
   } else if (fileCount > 1) {
     toast(`Loaded ${completedRuns.length} run${completedRuns.length === 1 ? "" : "s"} from ${fileCount} files.`);
   } else {
@@ -9040,6 +9330,9 @@ function renderStatsTab(tab) {
     return;
   }
   const report = Stats.summarize(parsedRuns);
+  // Paint the per-tab header crest (stat plaques / portrait rail /
+  // climb track / reliquary shelf / card fan) from the same report.
+  renderHeadCrests(report);
   // The compact "Sample data" strip only ships above the OVERVIEW tab
   // body when isDemoMode is true. Other tabs would just stack a
   // duplicate banner above their own content; the global toolbar's
@@ -9242,6 +9535,156 @@ function renderStatsTab(tab) {
   }
 }
 
+// =========================================================================
+// Header crests — v209 redesign
+// -------------------------------------------------------------------------
+// Each themed stats tab gets a DIFFERENT header composition instead of the
+// old identical title-left / diorama-right banner:
+//
+//   overview    → "War table":       four engraved stat plaques, centered.
+//   characters  → "Hall of heroes":  five arched portrait frames with
+//                                    per-character win-rate bars.
+//   ascensions  → "The climb":       A0→A10 tick track lit to the highest
+//                                    level reached, peak numeral beside it.
+//   relics      → "Reliquary":       top-3 relics by honest win rate on a
+//                                    glowing shelf.
+//   cards       → "The hand":        the five most-picked cards fanned
+//                                    like a hand of cards.
+//
+// Pure paint from the same `report` renderStatsTab already computed —
+// no extra passes over parsedRuns beyond one cheap streak fold.
+// =========================================================================
+const CREST_ROSTER = ["ironclad", "silent", "defect", "regent", "necrobinder"];
+
+function renderHeadCrests(report) {
+  const crest = (name) => document.querySelector(`.head-crest[data-crest="${name}"]`);
+
+  // Highest ascension reached — shared by the overview plaques and the
+  // ascensions climb track.
+  const highestAsc = (report.byAscension || [])
+    .slice()
+    .sort((a, b) => parseAsc(b.key) - parseAsc(a.key))
+    .find((b) => b.runs > 0) || null;
+  const hiLevel = highestAsc ? parseAsc(highestAsc.key) : -1;
+
+  // ---- Overview: war-table stat plaques --------------------------------
+  const $ov = crest("overview");
+  if ($ov) {
+    const chrono = parsedRuns
+      .slice()
+      .sort((a, b) => (a.endedAt ? a.endedAt.getTime() : 0) - (b.endedAt ? b.endedAt.getTime() : 0));
+    let bestStreak = 0;
+    let cur = 0;
+    for (const r of chrono) {
+      cur = r.won ? cur + 1 : 0;
+      if (cur > bestStreak) bestStreak = cur;
+    }
+    const plaques = [
+      { v: String(report.totalRuns), l: "Runs" },
+      { v: `${(report.overallWinrate * 100).toFixed(0)}%`, l: "Win rate" },
+      { v: bestStreak > 0 ? `${bestStreak}W` : "—", l: "Best streak" },
+      { v: hiLevel >= 0 ? `A${hiLevel}` : "—", l: "Highest asc" },
+    ];
+    $ov.innerHTML = `
+      <div class="crest-plaques">
+        ${plaques.map((p) => `
+          <div class="crest-plaque">
+            <span class="crest-plaque-value">${esc(p.v)}</span>
+            <span class="crest-plaque-label">${esc(p.l)}</span>
+          </div>`).join("")}
+      </div>`;
+  }
+
+  // ---- Characters: hall-of-heroes portrait rail ------------------------
+  const $ch = crest("characters");
+  if ($ch) {
+    $ch.innerHTML = `
+      <div class="crest-heroes">
+        ${CREST_ROSTER.map((key) => {
+          const b = (report.byCharacter || []).find((x) => x.key === key) || null;
+          const theme = charTheme(key);
+          const src = characterImageSrc(key);
+          const wr = b && b.runs > 0 ? Math.round(b.winrate * 100) : null;
+          const art = src
+            ? `<img src="${src}" alt="" loading="lazy" decoding="async" />`
+            : charIcon(theme.icon);
+          return `
+            <div class="crest-hero${b ? "" : " is-unplayed"}" style="--hero-color:${theme.color}" title="${esc(capitalize(key))}${b ? ` — ${b.wins}W / ${b.runs - b.wins}L` : " — no runs yet"}">
+              <div class="crest-hero-frame">${art}</div>
+              <span class="crest-hero-name">${esc(capitalize(key))}</span>
+              <span class="crest-hero-bar"><i style="width:${wr ?? 0}%"></i></span>
+              <span class="crest-hero-wr">${wr === null ? "—" : `${wr}%`}</span>
+            </div>`;
+        }).join("")}
+      </div>`;
+  }
+
+  // ---- Ascensions: the climb track --------------------------------------
+  const $as = crest("ascensions");
+  if ($as) {
+    // A10 is the current Early Access ceiling (see lib/ascension-info.js);
+    // if Mega Crit raises it, the track stretches to whatever was reached.
+    const cap = Math.max(10, hiLevel);
+    const ticks = Array.from({ length: cap + 1 }, (_, i) => {
+      const h = 10 + (i / cap) * 22;
+      const lit = i <= hiLevel;
+      const peak = i === hiLevel;
+      return `<span class="crest-tick${lit ? " is-lit" : ""}${peak ? " is-peak" : ""}" style="height:${h.toFixed(1)}px"></span>`;
+    }).join("");
+    const note = highestAsc
+      ? `${highestAsc.wins}W · ${highestAsc.runs - highestAsc.wins}L at the top`
+      : "the climb starts at A0";
+    $as.innerHTML = `
+      <div class="crest-climb">
+        <div class="crest-climb-peak">
+          <span class="crest-climb-num">${hiLevel >= 0 ? `A${hiLevel}` : "A0"}</span>
+          <span class="crest-climb-cap">highest reached</span>
+        </div>
+        <div class="crest-climb-rail" role="img" aria-label="Ascension progress: ${hiLevel >= 0 ? hiLevel : 0} of ${cap}">${ticks}</div>
+        <span class="crest-climb-note">${esc(note)}</span>
+      </div>`;
+  }
+
+  // ---- Relics: reliquary shelf ------------------------------------------
+  const $re = crest("relics");
+  if ($re) {
+    const top = (report.byRelic || []).slice(0, 3);
+    $re.innerHTML = top.length === 0 ? "" : `
+      <div class="crest-shelf">
+        ${top.map((b, i) => {
+          const src = relicImageSrc(b.key);
+          const art = src ? `<img src="${src}" alt="" loading="lazy" decoding="async" />` : "";
+          return `
+            <div class="crest-relic${i === 0 ? " is-first" : ""}" title="${esc(relicLabel(b.key))} — ${b.wins}W / ${b.runs - b.wins}L">
+              <div class="crest-relic-orb">${art}</div>
+              <span class="crest-relic-name">${esc(relicLabel(b.key))}</span>
+              <span class="crest-relic-wr">${(b.winrate * 100).toFixed(0)}% win</span>
+            </div>`;
+        }).join("")}
+      </div>`;
+  }
+
+  // ---- Cards: the hand ----------------------------------------------------
+  const $ca = crest("cards");
+  if ($ca) {
+    const top = (report.topPickedCards || [])
+      .filter((b) => cardImageSrc(b.key))
+      .slice(0, 5);
+    const n = top.length;
+    $ca.innerHTML = n === 0 ? "" : `
+      <div class="crest-fan" role="img" aria-label="Your five most-picked cards">
+        ${top.map((b, i) => {
+          const rot = (i - (n - 1) / 2) * 8;
+          const lift = Math.abs(i - (n - 1) / 2) * 7;
+          return `
+            <div class="crest-fan-card" style="transform: rotate(${rot.toFixed(1)}deg) translateY(${lift.toFixed(1)}px)" title="${esc(cardLabel(b.key))} — picked ${b.runs}×">
+              <img src="${cardImageSrc(b.key)}" alt="${esc(cardLabel(b.key))}" loading="lazy" decoding="async" />
+            </div>`;
+        }).join("")}
+      </div>`;
+  }
+}
+
 /**
  * Compact "Sample data" strip shown above the Overview body when
  * isDemoMode is true. The previous version was a 250px-tall card that
@@ -9393,6 +9836,7 @@ function renderDemoBanner() {
                 <li><strong>Steam Cloud fallback (Windows):</strong> <code>%PROGRAMFILES(X86)%\\Steam\\userdata\\&lt;your-id&gt;\\2868840\\remote\\</code> if the standard path is empty.</li>
                 <li>On Chrome / Edge / Brave / Arc, the picker remembers your folder for next time &mdash; look for the green <em>Linked:</em> pill in the toolbar to confirm.</li>
                 <li>Inside <code>history/</code> you'll see files named like <code>1735689420.run</code> &mdash; one per game. Pick any ancestor folder and we walk in.</li>
+                <li><strong>Will I have to do this again?</strong> No &mdash; this is a one-time setup. Imported runs are stored permanently in this browser, and if you sign in with Steam they're also synced to the cloud, so they follow you to any device.</li>
               </ul>
             </div>
           </details>
@@ -9413,7 +9857,7 @@ function renderDemoBanner() {
 let cachedKnownSchemas = null;
 async function loadKnownSchemas() {
   if (cachedKnownSchemas) return cachedKnownSchemas;
-  const mod = await import("./lib/sts2-run-parser.js");
+  const mod = await import("./lib/sts2-run-parser.js?v=1");
   cachedKnownSchemas = mod.KNOWN_SCHEMA_VERSIONS || new Set();
   return cachedKnownSchemas;
 }
@@ -9950,7 +10394,6 @@ const CHAR_THEME = {
   ironclad:    { color: "#ff5f6d", icon: "shield" },
   silent:      { color: "#6dd97c", icon: "leaf"   },
   defect:      { color: "#5dc1ff", icon: "bolt"   },
-  watcher:     { color: "#9b83ff", icon: "eye"    },
   regent:      { color: "#d4af37", icon: "crown"  },
   necrobinder: { color: "#b27dff", icon: "skull"  },
 };
@@ -11785,7 +12228,6 @@ const CHAR_META = (() => {
     { id: "ironclad",    label: "Ironclad",    color: "#e94560" },
     { id: "silent",      label: "Silent",      color: "#6dd97c" },
     { id: "defect",      label: "Defect",      color: "#4dc8ff" },
-    { id: "watcher",     label: "Watcher",     color: "#c084fc" },
     { id: "regent",      label: "Regent",      color: "#fbbf24" },
     { id: "necrobinder", label: "Necrobinder", color: "#a78bfa" },
   ]) map[c.id] = c;

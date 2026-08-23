@@ -24,7 +24,7 @@
 // closure card.
 // =========================================================================
 
-import { isSandboxSteamId } from "./coop-sandbox.js?v=8";
+import { isSandboxSteamId } from "./coop-sandbox.js?v=12";
 import { decodeStart } from "./party-finder-startsoon.js?v=1";
 
 const PF_CHARACTERS = Object.freeze([
@@ -92,7 +92,7 @@ function ensureCssLoaded() {
   const link = document.createElement("link");
   link.id = "pf-stylesheet";
   link.rel = "stylesheet";
-  link.href = "/lib/party-finder.css?v=3";
+  link.href = "/lib/party-finder.css?v=5";
   document.head.appendChild(link);
 }
 

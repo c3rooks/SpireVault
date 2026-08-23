@@ -122,3 +122,5 @@ GOLIVE.md
 
 # Local dev artifacts from Playwright UI audits (not shipped)
 Web/.audit-screenshots/
+# Dreaming local state (credentials, cache)
+.dreaming/

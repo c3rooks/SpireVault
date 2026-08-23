@@ -5,6 +5,62 @@ Dates in YYYY-MM-DD. The project follows [Semantic Versioning](https://semver.or
 loosely — patch bumps for fixes, minor for features, major if I ever
 break the wire format.
 
+## v211 (web) / 0.10.0 (macOS) — 2026-08-23 — the parity showcase release
+
+The theme: **if the app shows you a game fact, it's the real one.** Every
+card and relic tooltip was re-verified against the game's own data, the
+gap between us and Mega Crit's patch cadence was closed, and a deploy-time
+guard now makes this class of drift structurally impossible to ship.
+
+### Game-data parity (STS2 main v0.107.1 · beta notes through v0.111.0)
+
+- Read the v0.108.0–v0.111.0 beta patch notes in full, netted the
+  redesign/revert churn (Mirage alone changed shape three times), and
+  recorded the whole timeline in `docs/game-data-sync.md`. Main-branch
+  copy stays main-branch-accurate; beta changes live on explicit
+  watchlists until they promote.
+- Rebuilt `Web/lib/relic-info.js` from the wiki-derived STS2 database:
+  **159 relic tooltips** (was ~32), every effect string sourced, correct
+  STS2 rarity tiers including the *Ancient* tier (STS2 has no "boss"
+  relics). Killed long-standing STS1 ghosts — Snecko Eye, Girya, Shovel,
+  Book of Five Rings, Blood Vial's wrong heal trigger, and two
+  wrong-slug starter relics that could never match a real save.
+- Rebuilt the AI coach's glossary (`STS2CardGlossary.swift`) the same
+  way: **279 sourced cards** (was 72), including first-ever full Regent
+  and Necrobinder coverage, plus corrected starters/statuses (Slimed
+  draws a card in STS2; Ascender's Bane is Ethereal+Eternal). Fourteen
+  STS1-only cards (Streamline, Catalyst, Metallicize…) were removed —
+  they don't exist in this game.
+- Labels: added Scare *and* Sidestep (the beta rename), all sixteen
+  beta multiplayer cards, and the Dowsing quest chain; six STS1-only
+  cards in the demo decks replaced with real STS2 cards.
+- Removed the last Watcher references — STS2 has no Watcher.
+- New sidebar badge: "STS2 data: v0.107.1 · beta v0.111.0" — backed by
+  `Web/lib/game-sync.js`, the same constant the deploy guard asserts.
+- News post (web + macOS) covering the v0.110/v0.111 read-through.
+
+### New guardrails
+
+- `Web/scripts/check-game-data.mjs` — cross-references labels,
+  relic-info, ascension-info, demo decks, the boss list, and the Swift
+  glossary on every deploy. Found six real bugs on its first run.
+- `scripts/verify-local-ui.mjs` — headless Playwright pass over the
+  local stack: boot errors, badge, news, relic drill-down, card art,
+  and a full co-op scheduling round-trip.
+
+### Carried in from the retention pass (same deploy)
+
+- Scheduled play windows ("When are you free?") — server-side intents
+  matched by overlap, so two players never online at the same minute
+  can still find each other. New `/coop/intents*` endpoints + panel.
+- Retention cohorts, import-funnel readout, and a KV write-budget model
+  on `/admin`; production JS error capture; co-op heartbeat write
+  throttling; `currentPartyId` no longer wiped by heartbeats.
+- Immutable caching for all versioned assets (`?v=` discipline now
+  enforced by `check-asset-versions.mjs`) — returning visitors stop
+  re-downloading ~1.5 MB of JavaScript per load.
+- macOS app bumped to 0.10.0/18 with the news + glossary payload.
+
 ## v0.9.11 — 2026-05-29 (desktop installer)
 
 Desktop patch. The Windows system-tray icon was pointing at the 32px

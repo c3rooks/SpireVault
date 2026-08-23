@@ -3,6 +3,7 @@ import {
   COOP_CHARACTERS,
   COOP_GOALS,
   COOP_INVITE_MESSAGES,
+  COOP_PARTY_SIGNALS,
   COOP_PRESENCE_STATUSES,
   VOICE_PREFERENCES,
   type CoopCharacter,
@@ -343,6 +344,12 @@ export async function upsertPresenceV2(
     // (rendering, joins) takes the fast path.
     currentLobbyId: hostedOpenLobby?.lobbyId ?? prev?.currentLobbyId,
     currentSessionId: prev?.currentSessionId,
+    // Carry the party pointer forward. This row is rebuilt from scratch on
+    // every call, so any field not explicitly copied from `prev` is destroyed.
+    // `currentPartyId` is written by acceptSeat/joinParty via setPresenceField
+    // and cleared deliberately on leave — dropping it here silently detached
+    // users from their party within one heartbeat of joining it.
+    currentPartyId: prev?.currentPartyId,
     // User explicitly set their status — clear the auto-set flag.
     statusAutoSet: false,
     lastHeartbeatAt: nowIso,
@@ -460,24 +467,120 @@ export async function heartbeatPresence(
     // restore the pointer so downstream reads take the fast path.
     currentLobbyId: hostedLobbyId ?? prev?.currentLobbyId,
     currentSessionId: prev?.currentSessionId,
+    // See the matching note in upsertPresenceV2 — this row is rebuilt from
+    // scratch, so the party pointer has to be copied forward explicitly.
+    currentPartyId: prev?.currentPartyId,
     statusAutoSet,
     lastHeartbeatAt: nowIso,
     expiresAt: new Date(now + COOP_PRESENCE_TTL_S * 1000).toISOString(),
     updatedAt: nowIso,
   };
+  // Write throttle — see HEARTBEAT_WRITE_FLOOR_MS.
+  //
+  // Clients heartbeat every 30s while the tab is visible. Persisting an
+  // otherwise-identical presence row 120x/hour is the single largest consumer
+  // of the KV write quota in the whole worker, and it buys nothing: the only
+  // fields that change on a no-op heartbeat are the timestamps, and those only
+  // matter to the degree that they keep the row from being judged stale.
+  if (presenceUnchanged(prev, next) && !isPresenceWriteDue(prev, now)) {
+    // Return the *previous* row rather than `next`. The caller echoes this
+    // back to the client, and reporting a lastHeartbeatAt we did not persist
+    // would make the client's view disagree with what every other client
+    // reads out of KV.
+    return ok({ presence: prev!, forceStatus });
+  }
+
   await writePresence(env, next);
 
   // Refresh the host's lobby TTL if they own one.
+  //
+  // Same reasoning, much wider margin: the lobby TTL is 35 minutes, so
+  // rewriting it every 30s is ~70x more often than necessary. Refresh only
+  // once the remaining lifetime dips under the margin.
   if (next.currentLobbyId) {
     const lobby = await readLobby(env, next.currentLobbyId);
     if (lobby && lobby.hostSteamId === steamId && lobby.status === "open") {
-      lobby.updatedAt = nowIso;
-      lobby.expiresAt = new Date(now + COOP_LOBBY_TTL_S * 1000).toISOString();
-      await writeLobby(env, lobby);
+      const expiresAtMs = Date.parse(lobby.expiresAt);
+      const needsRefresh =
+        !Number.isFinite(expiresAtMs) ||
+        expiresAtMs - now < LOBBY_TTL_REFRESH_MARGIN_MS;
+      if (needsRefresh) {
+        lobby.updatedAt = nowIso;
+        lobby.expiresAt = new Date(now + COOP_LOBBY_TTL_S * 1000).toISOString();
+        await writeLobby(env, lobby);
+      }
     }
   }
 
   return ok({ presence: next, forceStatus });
+}
+
+/**
+ * Minimum gap between two persisted presence rows for the same user when
+ * nothing about them has changed.
+ *
+ * Bounded above by the two deadlines that actually depend on freshness:
+ *
+ *   COOP_INACTIVE_HIDE_S = 180s — rows older than this are hidden from the
+ *                                 feed and recommendations.
+ *   COOP_PRESENCE_TTL_S  = 300s — KV drops the row entirely.
+ *
+ * 90s leaves a 2x margin against the tighter of the two, so a throttled user
+ * is never at risk of flickering out of the board. At the 30s client cadence
+ * this turns 120 writes/hour into 40.
+ */
+const HEARTBEAT_WRITE_FLOOR_MS = 90_000;
+
+/** Refresh a hosted lobby's TTL once it has under 10 minutes left of its 35. */
+const LOBBY_TTL_REFRESH_MARGIN_MS = 10 * 60 * 1000;
+
+/** True once the previous row is old enough that we owe KV a refresh. */
+function isPresenceWriteDue(prev: CoopPresence | null, now: number): boolean {
+  if (!prev) return true;
+  const last = Date.parse(prev.lastHeartbeatAt);
+  if (!Number.isFinite(last)) return true;
+  return now - last >= HEARTBEAT_WRITE_FLOOR_MS;
+}
+
+/**
+ * Compares everything on a presence row that a *reader* can observe, ignoring
+ * the three timestamp fields that change on every heartbeat by construction
+ * (lastHeartbeatAt, expiresAt, updatedAt).
+ *
+ * Deliberately explicit rather than a JSON.stringify diff: field order is not
+ * guaranteed across object literals, and a stringify would also compare the
+ * timestamps we are specifically trying to ignore.
+ */
+function presenceUnchanged(
+  prev: CoopPresence | null,
+  next: CoopPresence,
+): boolean {
+  if (!prev) return false;
+  return (
+    prev.status === next.status &&
+    prev.statusAutoSet === next.statusAutoSet &&
+    prev.personaName === next.personaName &&
+    prev.avatarUrl === next.avatarUrl &&
+    prev.steamProfileUrl === next.steamProfileUrl &&
+    prev.note === next.note &&
+    prev.discordHandle === next.discordHandle &&
+    prev.ascensionMin === next.ascensionMin &&
+    prev.ascensionMax === next.ascensionMax &&
+    prev.goal === next.goal &&
+    prev.voicePreference === next.voicePreference &&
+    prev.currentLobbyId === next.currentLobbyId &&
+    prev.currentSessionId === next.currentSessionId &&
+    prev.currentPartyId === next.currentPartyId &&
+    sameStringList(prev.preferredCharacters, next.preferredCharacters)
+  );
+}
+
+function sameStringList(a?: string[], b?: string[]): boolean {
+  if (a === b) return true;
+  if (!a || !b) return !a?.length && !b?.length;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
 }
 
 // ---------- Helpers ----------
@@ -1860,6 +1963,41 @@ export async function updatePartyMemberStatus(
       lobbyId: party.lobbyId,
     });
   }
+  return ok(party);
+}
+
+/**
+ * Tap-to-send a bounded party signal (👋 / Ready / One sec / …). Stores
+ * the preset id + timestamp on the caller's member record so every
+ * other member's next poll renders the bubble. Preset-only by design:
+ * there is no free-text path, so nothing to sanitize beyond the
+ * allow-list check. Mirrors `updatePartyMemberStatus`'s persistence.
+ */
+export async function signalParty(
+  env: Env,
+  callerSteamId: string,
+  partyId: string,
+  signalId: unknown,
+): Promise<CoopResult<CoopParty>> {
+  if (
+    typeof signalId !== "string" ||
+    !Object.prototype.hasOwnProperty.call(COOP_PARTY_SIGNALS, signalId)
+  ) {
+    return err(400, "invalid_signal", "Pick a valid signal.");
+  }
+  const party = await readParty(env, partyId);
+  if (!party || party.status !== "active") {
+    return err(404, "not_found", "Party Room not found.");
+  }
+  const member = party.members.find((m) => m.steamId === callerSteamId);
+  if (!member || member.status === "left") {
+    return err(403, "not_participant", "You're not in this Party Room.");
+  }
+  const now = new Date().toISOString();
+  member.lastSignal = { id: signalId, at: now };
+  member.updatedAt = now;
+  party.updatedAt = now;
+  await writeParty(env, party);
   return ok(party);
 }
 

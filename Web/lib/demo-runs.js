@@ -59,19 +59,19 @@ const CARDS = {
   ironclad: {
     base: ["ironclad_strike", "ironclad_strike", "ironclad_strike", "ironclad_strike", "ironclad_defend", "ironclad_defend", "ironclad_defend", "ironclad_defend", "ironclad_bash"],
     common: ["ironclad_perfectedstrike", "ironclad_stomp", "ironclad_drumofbattle", "ironclad_pillage", "ironclad_flamebarrier", "ironclad_rampage", "ironclad_break", "ironclad_moltenfist", "ironclad_secondwind", "ironclad_infernalblade", "ironclad_colossus", "ironclad_tearasunder", "ironclad_shrugitoff", "ironclad_impervious"],
-    uncommon: ["ironclad_ironwave", "ironclad_stoke", "ironclad_entrench", "ironclad_rupture", "ironclad_unrelenting", "ironclad_anger", "ironclad_tremble", "ironclad_pyre", "ironclad_cruelty", "ironclad_tank", "ironclad_darkembrace", "ironclad_demonicshield"],
+    uncommon: ["ironclad_ironwave", "ironclad_stoke", "ironclad_evileye", "ironclad_rupture", "ironclad_unrelenting", "ironclad_anger", "ironclad_tremble", "ironclad_pyre", "ironclad_cruelty", "ironclad_tank", "ironclad_darkembrace", "ironclad_demonicshield"],
     rare: ["ironclad_bludgeon", "ironclad_barricade", "ironclad_corruption", "ironclad_feed", "ironclad_offering", "ironclad_demonform", "ironclad_bloodletting"],
   },
   silent: {
     base: ["silent_strike", "silent_strike", "silent_strike", "silent_strike", "silent_strike", "silent_defend", "silent_defend", "silent_defend", "silent_defend", "silent_neutralize", "silent_survivor"],
-    common: ["silent_corrosivewave", "silent_untouchable", "silent_tracking", "silent_outmaneuver", "silent_echoingslash", "silent_legsweep", "silent_anticipate", "silent_accelerant", "silent_haze", "silent_suppress", "silent_handtrick", "silent_bladeofink", "silent_knifetrap", "silent_noxiousfumes"],
-    uncommon: ["silent_accuracy", "silent_bouncingflask", "silent_murder", "silent_deadlypoison", "silent_flechettes", "silent_leadingstrike", "silent_distraction", "silent_footwork", "silent_dash", "silent_abrasive", "silent_cloakanddagger", "silent_shadowmeld"],
+    common: ["silent_corrosivewave", "silent_untouchable", "silent_tracking", "silent_backflip", "silent_echoingslash", "silent_legsweep", "silent_anticipate", "silent_accelerant", "silent_haze", "silent_suppress", "silent_handtrick", "silent_bladeofink", "silent_knifetrap", "silent_noxiousfumes"],
+    uncommon: ["silent_accuracy", "silent_bouncingflask", "silent_murder", "silent_deadlypoison", "silent_flechettes", "silent_leadingstrike", "silent_daggerspray", "silent_footwork", "silent_dash", "silent_abrasive", "silent_cloakanddagger", "silent_shadowmeld"],
     rare: ["silent_bullettime", "silent_envenom", "silent_wraithform", "silent_nightmare", "silent_burst"],
   },
   defect: {
     base: ["defect_strike", "defect_strike", "defect_strike", "defect_strike", "defect_defend", "defect_defend", "defect_defend", "defect_defend", "defect_zap", "defect_dualcast"],
-    common: ["defect_overclock", "defect_modded", "defect_rebound", "defect_sweepingbeam", "defect_boostaway", "defect_quadcast", "defect_bootsequence", "defect_glasswork", "defect_coolant", "defect_null", "defect_chaos", "defect_chill", "defect_multi_cast", "defect_shadowshield"],
-    uncommon: ["defect_barrage", "defect_helloworld", "defect_spinner", "defect_leap", "defect_rocketpunch", "defect_focusedstrike", "defect_scavenge", "defect_fightthrough", "defect_rainbow", "defect_geneticalgorithm", "defect_gofortheeyes", "defect_whitenoise"],
+    common: ["defect_overclock", "defect_modded", "defect_hologram", "defect_sweepingbeam", "defect_boostaway", "defect_quadcast", "defect_bootsequence", "defect_glasswork", "defect_coolant", "defect_null", "defect_chaos", "defect_chill", "defect_multicast", "defect_shadowshield"],
+    uncommon: ["defect_barrage", "defect_whitenoise", "defect_spinner", "defect_leap", "defect_rocketpunch", "defect_focusedstrike", "defect_scavenge", "defect_fightthrough", "defect_rainbow", "defect_geneticalgorithm", "defect_gofortheeyes", "defect_whitenoise"],
     rare: ["defect_biasedcognition", "defect_echoform", "defect_buffer", "defect_creativeai", "defect_reboot", "defect_meteorstrike"],
   },
   regent: {

@@ -30,10 +30,13 @@ import type { Env, PresenceEntry } from "./types";
  *   user:<steamID>              first-ever-seen marker, no TTL.
  *                               Written once per unique user, ever.
  *   user-meta:<steamID>         {personaName, firstSeen, lastSeen} JSON,
- *                               touched on every successful sign-in.
- *   seen:<YYYYMMDD>:<steamID>   per-user-per-day flag, TTL ~10 days.
+ *                               touched on every sign-in AND on the first
+ *                               heartbeat of each day (see recordHeartbeat).
+ *   seen:<YYYYMMDD>:<steamID>   per-user-per-day flag, TTL 90 days.
  *                               Lets us count DAU without a separate
- *                               analytics service.
+ *                               analytics service, and — because the TTL
+ *                               outlives a 30-day window — lets us compute
+ *                               real D1/D7/D30 return cohorts.
  *   signin:<ISO>:<steamID>      sign-in event, TTL 30 days. Powers the
  *                               "recent sign-ins" list.
  *
@@ -52,6 +55,13 @@ import type { Env, PresenceEntry } from "./types";
  *   funnel:roster-first:<steamID>     marker, no TTL. Set the first time a user
  *                                     appears in the presence roster after auth.
  *                                     Lets us spot "auth'd but never heartbeated".
+ *   funnel:ingest-first:<steamID>     marker, no TTL. Set the first time a user
+ *                                     successfully commits parsed runs. This is
+ *                                     the activation event: signing in is not
+ *                                     value, seeing your own run history is.
+ *                                     `funnel:diag:*` counters are anonymous, so
+ *                                     without this per-user marker the activation
+ *                                     *rate* per cohort is uncomputable.
  */
 
 const ADMIN_PATHS = new Set(["/admin", "/admin/stats"]);
@@ -139,6 +149,20 @@ interface AdminStats {
     sessionsActive: number;
   };
   daily: Array<{ date: string; activeUsers: number }>;
+
+  // THE numbers. Everything above this line is a point-in-time snapshot that
+  // looks fine while the product quietly fails to retain anyone. These answer
+  // "do people come back?" — which is the only question that matters at this
+  // stage — from the `seen:` day markers and `funnel:ingest-first:` markers.
+  retention: RetentionReport;
+
+  // KV writes are the binding constraint on the free plan (1,000/day) and
+  // there is no built-in alarm before things start silently failing.
+  writeBudget: WriteBudget;
+
+  // The import funnel, in order, derived from beacons the client already
+  // sends. Signing in is not the hard part — getting a save folder parsed is.
+  ingestFunnel: IngestFunnel;
   recentSignIns: Array<{
     when: string;
     steamID: string;
@@ -185,6 +209,133 @@ interface FunnelDay {
   clientDiag: number;
 }
 
+interface IngestStage {
+  key: string;
+  label: string;
+  count: number;
+  /** Conversion from the previous stage. Null on the first stage. */
+  pctOfPrev: number | null;
+}
+
+interface IngestLoss {
+  key: string;
+  label: string;
+  count: number;
+}
+
+interface IngestFunnel {
+  stages: IngestStage[];
+  losses: IngestLoss[];
+  /** Loss reason with the highest count, or null when nothing has been logged. */
+  biggestLoss: IngestLoss | null;
+  /** True once at least one beacon in the whole funnel has been recorded. */
+  hasData: boolean;
+}
+
+/**
+ * A code-derived model of KV write cost, not a meter.
+ *
+ * Cloudflare does not expose per-namespace write counts to the Worker at
+ * runtime, and instrumenting a counter would itself cost a write per write.
+ * So this is arithmetic over the cadences and write sites that exist in the
+ * source, combined with the DAU we do measure. It is meant to answer "are we
+ * anywhere near the cliff?" — not to be accurate to the write.
+ *
+ * Keep the constants honest: if you change a heartbeat cadence or add a write
+ * to a hot path, update them here or this panel becomes a comfortable lie.
+ */
+interface WriteBudget {
+  freeDailyWrites: number;
+  /** Writes consumed by one user with an active co-op tab, per hour. */
+  perCoopUserHour: number;
+  /** Writes consumed by one user on the classic presence heartbeat, per hour. */
+  perClassicUserHour: number;
+  /** Once-per-user-per-day writes: the seen: marker and the user-meta touch. */
+  perUserDayFixed: number;
+  /** Writes the 15-minute house-lobby cron costs per day, worst case. */
+  cronPerDay: number;
+  /** How many co-op user-hours/day the free quota actually covers. */
+  coopUserHoursPerDay: number;
+  /** Low-end estimate for today, assuming each active user did one hour of co-op. */
+  estimatedToday: number;
+  /** estimatedToday as a percentage of freeDailyWrites. */
+  estimatedTodayPct: number;
+}
+
+/**
+ * Retention windows we report on, in days after signup.
+ *
+ * Definition used throughout: "came back within N days" — the user was active
+ * on at least one calendar day in [signup+1, signup+N]. Activity on the signup
+ * day itself never counts, otherwise every user would trivially be retained.
+ *
+ * This is the rolling/"unbounded" definition rather than strict same-day-N
+ * bucketing. At ~84 users, strict D7 ("active exactly on day 7") produces
+ * mostly zeros and tells you nothing; the rolling window is what you can
+ * actually steer on.
+ */
+const RETENTION_WINDOWS = [1, 7, 30] as const;
+
+interface RetentionWindow {
+  /** Days after signup. */
+  days: number;
+  /**
+   * Cohort members whose signup is far enough in the past that the window has
+   * fully elapsed. A user who signed up yesterday cannot yet have failed D30,
+   * so counting them in the denominator would silently depress the rate.
+   */
+  eligible: number;
+  /** Of `eligible`, how many were active on a later day inside the window. */
+  returned: number;
+}
+
+interface RetentionCohort {
+  /** Monday of the signup week, YYYYMMDD. */
+  weekStart: string;
+  /** Users whose firstSeen falls in this week. */
+  signups: number;
+  /** Of `signups`, how many ever successfully imported runs. */
+  activated: number;
+  windows: RetentionWindow[];
+}
+
+interface RetentionReport {
+  /** Weekly signup cohorts, newest first. */
+  cohorts: RetentionCohort[];
+
+  /**
+   * The headline. Same windows, but the denominator is only users who
+   * activated (imported runs at least once) rather than everyone who signed
+   * in. Signing in and bouncing is an acquisition problem; activating and
+   * still not coming back is a product problem, and they need different fixes.
+   */
+  activatedWindows: RetentionWindow[];
+  /** Same windows across every user who ever signed in, activated or not. */
+  allWindows: RetentionWindow[];
+
+  totals: {
+    users: number;
+    /** Ever imported runs. */
+    activated: number;
+    /** Signed in, never imported anything. The top of the leak. */
+    neverActivated: number;
+    /** Active on exactly one calendar day, ever. */
+    oneAndDone: number;
+    /** Active on 2+ calendar days in the last 30. */
+    repeatLast30: number;
+    /** Users with a `seen:` day in the last 30 days. */
+    activeLast30: number;
+  };
+
+  /**
+   * How far back the `seen:` markers actually go. Immediately after raising
+   * SEEN_TTL this will be short, and D30 numbers will be untrustworthy until
+   * it grows past 30. Surfaced so the dashboard can say so out loud instead of
+   * rendering a confident wrong number.
+   */
+  historyDays: number;
+}
+
 async function adminStats(env: Env): Promise<Response> {
   const now = new Date();
 
@@ -214,7 +365,13 @@ async function adminStats(env: Env): Promise<Response> {
   }
 
   // ---- daily-active over the last 7 days, plus 24h subset ----
+  //
+  // `activeLast7d` is a count of DISTINCT users across the week. It used to be
+  // the sum of the seven daily counts, which counts a user who showed up on
+  // five days as five users — precisely the error that makes a flat product
+  // look like a growing one.
   const days: Array<{ date: string; activeUsers: number }> = [];
+  const weekIDs = new Set<string>();
   let activeLast24h = 0;
   for (let i = 0; i < 7; i++) {
     const d = new Date(now.getTime() - i * 86_400_000);
@@ -227,13 +384,17 @@ async function adminStats(env: Env): Promise<Response> {
         cursor,
         limit: 1000,
       });
+      for (const k of page.keys) {
+        const sid = k.name.slice(`seen:${tag}:`.length);
+        if (sid) weekIDs.add(sid);
+      }
       count += page.keys.length;
       cursor = page.list_complete ? undefined : page.cursor;
     } while (cursor);
     days.push({ date: tag, activeUsers: count });
     if (i === 0) activeLast24h = count;
   }
-  const activeLast7d = days.reduce((acc, d) => acc + d.activeUsers, 0);
+  const activeLast7d = weekIDs.size;
 
   // ---- recent sign-ins (last 30) ----
   const signIns: AdminStats["recentSignIns"] = [];
@@ -415,6 +576,13 @@ async function adminStats(env: Env): Promise<Response> {
     allUsers.sort((a, b) => (a.lastSeen < b.lastSeen ? 1 : -1));
   }
 
+  // ---- retention cohorts (reuses the metadata loaded just above) ----
+  const retention = await computeRetention(
+    env,
+    allUsers.map((u) => ({ steamID: u.steamID, firstSeen: u.firstSeen })),
+    now
+  );
+
   const stats: AdminStats = {
     generatedAt: now.toISOString(),
     online: {
@@ -433,6 +601,9 @@ async function adminStats(env: Env): Promise<Response> {
     },
     totals: { everSignedIn, activeLast24h, activeLast7d, sessionsActive },
     daily: days.reverse(),
+    retention,
+    writeBudget: computeWriteBudget(activeLast24h),
+    ingestFunnel: computeIngestFunnel(clientDiagnostics),
     recentSignIns: signIns,
     funnel: {
       today,
@@ -459,14 +630,338 @@ function ymd(d: Date): string {
   return d.toISOString().slice(0, 10).replace(/-/g, "");
 }
 
+/**
+ * YYYYMMDD → whole days since the epoch. Retention is calendar-day math, and
+ * doing it in day-index space avoids every DST/timezone trap that comes with
+ * subtracting Date objects. Everything here is UTC, consistent with `ymd()`.
+ */
+function dayIndexFromYMD(tag: string): number | null {
+  if (!/^\d{8}$/.test(tag)) return null;
+  const ms = Date.UTC(
+    Number(tag.slice(0, 4)),
+    Number(tag.slice(4, 6)) - 1,
+    Number(tag.slice(6, 8))
+  );
+  return Number.isNaN(ms) ? null : Math.floor(ms / 86_400_000);
+}
+
+function ymdFromDayIndex(idx: number): string {
+  return ymd(new Date(idx * 86_400_000));
+}
+
+/**
+ * Day index of the Monday on or before `idx`. Epoch day 0 (1970-01-01) was a
+ * Thursday, hence the +4 to land on a Sunday-0 weekday.
+ */
+function mondayOf(idx: number): number {
+  const weekday = (idx + 4) % 7; // 0 = Sunday
+  return idx - ((weekday + 6) % 7);
+}
+
+// MARK: - Ingest funnel ------------------------------------------------------
+
+/**
+ * The ordered path from "user tried to import" to "user has stats", plus every
+ * way it can fail, built entirely from `funnel:diag:*` counters the client has
+ * been emitting all along.
+ *
+ * These reasons already flowed into the `clientDiagnostics` blob, but that
+ * renders as an unordered pile of cards where an auth nonce failure sits next
+ * to `ingest-runs-zero` with no indication that one of them is the wall the
+ * whole product is hitting. Ordering them and showing stage-to-stage
+ * conversion is the entire point — a raw count of `ingest-no-plausible` means
+ * nothing until you can see it against how many people opened the picker.
+ *
+ * Entry beacons are summed because the three import affordances (picker,
+ * folder drop, file drop) are alternatives, not sequential steps.
+ */
+const INGEST_ENTRY_KEYS = [
+  "ingest-picker-opened",
+  "ingest-drop-folder",
+  "ingest-drop-files",
+  "ingest-folder-input-picked",
+];
+
+const INGEST_LOSS_LABELS: Record<string, string> = {
+  "ingest-picker-abort": "closed the picker without choosing",
+  "ingest-picker-error": "picker threw an error",
+  "ingest-empty-folder": "folder had no parseable files",
+  "ingest-files-empty": "chose files, list came through empty",
+  "ingest-no-plausible": "files chosen, none looked like saves",
+  "ingest-runs-zero": "parsed the files, found zero runs",
+  "ingest-partial-failure": "some files failed to parse",
+  "ingest-unknown-schema": "unrecognized save schema version",
+  "ingest-drop-null-entries": "drop produced null entries",
+  "cloud-runs-upload-failed": "cloud save rejected the upload",
+  "cloud-runs-upload-error": "cloud save upload errored",
+};
+
+export function computeIngestFunnel(diag: Record<string, number>): IngestFunnel {
+  const n = (k: string) => diag[k] ?? 0;
+
+  // Interactive reasons only. Background auto-refresh emits the `-auto`
+  // variants so it cannot inflate stages the user never actually reached.
+  // Counters recorded before that split shipped conflate the two, so
+  // conversion above 100% on older days is expected and not a bug.
+  const entered = INGEST_ENTRY_KEYS.reduce((sum, k) => sum + n(k), 0);
+  const chosen = n("ingest-files-chosen");
+  const committed = n("ingest-runs-committed");
+  const synced = n("cloud-runs-uploaded");
+
+  const raw: Array<{ key: string; label: string; count: number }> = [
+    { key: "entered", label: "Opened an import", count: entered },
+    { key: "chosen", label: "Chose plausible files", count: chosen },
+    { key: "committed", label: "Runs committed", count: committed },
+    { key: "synced", label: "Synced to account", count: synced },
+  ];
+
+  const stages: IngestStage[] = raw.map((s, i) => ({
+    ...s,
+    pctOfPrev:
+      i === 0 || !raw[i - 1]!.count
+        ? null
+        : Math.round((s.count / raw[i - 1]!.count) * 100),
+  }));
+
+  const losses: IngestLoss[] = Object.keys(INGEST_LOSS_LABELS)
+    .map((key) => ({ key, label: INGEST_LOSS_LABELS[key]!, count: n(key) }))
+    .filter((l) => l.count > 0)
+    .sort((a, b) => b.count - a.count);
+
+  return {
+    stages,
+    losses,
+    biggestLoss: losses[0] ?? null,
+    hasData: entered + chosen + committed + losses.length > 0,
+  };
+}
+
+// MARK: - Write budget -------------------------------------------------------
+
+/**
+ * Derivation, all from the current source:
+ *
+ *  Co-op heartbeat — POST /coop/heartbeat, client cadence 30s while the tab is
+ *  visible (Web/lib/coop-lobbies.js). Per beat:
+ *    · 1 write  rate limiter admission (ratelimit.ts writes on every accept)
+ *    · 1 write  coop:presence:<id>, but only once per HEARTBEAT_WRITE_FLOOR_MS
+ *               (90s) when nothing changed — so 1/3 of beats, not all of them
+ *    · lobby TTL refresh is now margin-gated to roughly once per 25 min
+ *  → 120 beats/hr × 1 + 40 presence writes/hr ≈ 162/hr, round to 165.
+ *
+ *  Classic presence — POST /presence, cadence 180s (Web/script.js). Per beat:
+ *    · 1 write  rate limiter
+ *    · 1 write  presence:roster (full blob rewrite, unconditional)
+ *  → 20 beats/hr × 2 = 40/hr.
+ *
+ *  Fixed per user per day: seen:<day>:<id> + the user-meta lastSeen touch = 2.
+ *
+ *  Cron: house-lobby renewer every 15 min = 96 passes/day; each pass writes at
+ *  most the 2 lobbies plus a mutex, and is a no-op outside peak hours.
+ */
+const WRITES_PER_COOP_USER_HOUR = 165;
+const WRITES_PER_CLASSIC_USER_HOUR = 40;
+const WRITES_PER_USER_DAY_FIXED = 2;
+const CRON_WRITES_PER_DAY = 96 * 3;
+const FREE_DAILY_WRITES = 1000;
+
+function computeWriteBudget(activeToday: number): WriteBudget {
+  const estimatedToday =
+    CRON_WRITES_PER_DAY +
+    activeToday * (WRITES_PER_USER_DAY_FIXED + WRITES_PER_COOP_USER_HOUR);
+  return {
+    freeDailyWrites: FREE_DAILY_WRITES,
+    perCoopUserHour: WRITES_PER_COOP_USER_HOUR,
+    perClassicUserHour: WRITES_PER_CLASSIC_USER_HOUR,
+    perUserDayFixed: WRITES_PER_USER_DAY_FIXED,
+    cronPerDay: CRON_WRITES_PER_DAY,
+    coopUserHoursPerDay: Math.round(
+      (FREE_DAILY_WRITES - CRON_WRITES_PER_DAY) / WRITES_PER_COOP_USER_HOUR
+    ),
+    estimatedToday,
+    estimatedTodayPct: Math.round((estimatedToday / FREE_DAILY_WRITES) * 100),
+  };
+}
+
+// MARK: - Retention ----------------------------------------------------------
+
+/**
+ * Builds the retention report from two prefix scans plus the user metadata the
+ * caller has already loaded.
+ *
+ * Cost: one `list()` walk over `seen:` (keys only, no value reads — the marker
+ * value is always "1" and carries no information) and one over
+ * `funnel:ingest-first:`. At 84 users × 90 days that is a worst case of ~7.5k
+ * keys, or 8 list pages. This runs on an operator-only endpoint that nobody
+ * polls harder than every 30 seconds, so the cost is irrelevant; the important
+ * property is that it performs **zero** per-key reads.
+ */
+export async function computeRetention(
+  env: Env,
+  users: Array<{ steamID: string; firstSeen: string }>,
+  now: Date
+): Promise<RetentionReport> {
+  // ---- every active day, per user ----
+  const activeDays = new Map<string, Set<number>>();
+  let earliestDay: number | null = null;
+  {
+    let cursor: string | undefined;
+    do {
+      const page = await env.LOBBIES.list({ prefix: "seen:", cursor, limit: 1000 });
+      for (const k of page.keys) {
+        // key form: seen:<YYYYMMDD>:<steamID>
+        const rest = k.name.slice("seen:".length);
+        const split = rest.indexOf(":");
+        if (split < 0) continue;
+        const idx = dayIndexFromYMD(rest.slice(0, split));
+        const sid = rest.slice(split + 1);
+        if (idx === null || !sid) continue;
+        let set = activeDays.get(sid);
+        if (!set) activeDays.set(sid, (set = new Set()));
+        set.add(idx);
+        if (earliestDay === null || idx < earliestDay) earliestDay = idx;
+      }
+      cursor = page.list_complete ? undefined : page.cursor;
+    } while (cursor);
+  }
+
+  // ---- who has ever imported runs ----
+  //
+  // Two sources, unioned:
+  //
+  //  1. `funnel:ingest-first:<steamID>` — the lifetime marker written going
+  //     forward on every successful run upload.
+  //  2. `runs:<steamID>` — the synced run blob itself. This backfills every
+  //     user who activated *before* the marker existed. Without it the
+  //     activation rate would read as ~0% on the day this shipped and creep
+  //     upward for weeks as old users happened to re-import, which looks
+  //     exactly like a product improvement and is not one.
+  //
+  // Both are key-only scans; the blob is never read.
+  const activated = new Set<string>();
+  for (const prefix of ["funnel:ingest-first:", "runs:"]) {
+    let cursor: string | undefined;
+    do {
+      const page = await env.LOBBIES.list({ prefix, cursor, limit: 1000 });
+      for (const k of page.keys) {
+        const sid = k.name.slice(prefix.length);
+        if (/^\d{17}$/.test(sid)) activated.add(sid);
+      }
+      cursor = page.list_complete ? undefined : page.cursor;
+    } while (cursor);
+  }
+
+  const todayIdx = dayIndexFromYMD(ymd(now))!;
+
+  /** Was this user active on any day in (signup, signup+windowDays]? */
+  function returnedWithin(sid: string, signupIdx: number, windowDays: number): boolean {
+    const days = activeDays.get(sid);
+    if (!days) return false;
+    for (const d of days) {
+      if (d > signupIdx && d <= signupIdx + windowDays) return true;
+    }
+    return false;
+  }
+
+  function emptyWindows(): RetentionWindow[] {
+    return RETENTION_WINDOWS.map((days) => ({ days, eligible: 0, returned: 0 }));
+  }
+
+  function tally(windows: RetentionWindow[], sid: string, signupIdx: number): void {
+    for (const w of windows) {
+      // Only judge users who have had the full window to come back.
+      if (todayIdx - signupIdx < w.days) continue;
+      w.eligible++;
+      if (returnedWithin(sid, signupIdx, w.days)) w.returned++;
+    }
+  }
+
+  const cohortMap = new Map<number, RetentionCohort>();
+  const activatedWindows = emptyWindows();
+  const allWindows = emptyWindows();
+
+  let oneAndDone = 0;
+  let repeatLast30 = 0;
+  let activeLast30 = 0;
+
+  for (const u of users) {
+    const sid = u.steamID;
+    const signupIdx = u.firstSeen
+      ? dayIndexFromYMD(ymd(new Date(u.firstSeen)))
+      : null;
+
+    const days = activeDays.get(sid);
+    if (days) {
+      if (days.size === 1) oneAndDone++;
+      let inLast30 = 0;
+      for (const d of days) if (todayIdx - d <= 30) inLast30++;
+      if (inLast30 > 0) activeLast30++;
+      if (inLast30 > 1) repeatLast30++;
+    }
+
+    if (signupIdx === null || Number.isNaN(signupIdx)) continue;
+
+    tally(allWindows, sid, signupIdx);
+    if (activated.has(sid)) tally(activatedWindows, sid, signupIdx);
+
+    const weekIdx = mondayOf(signupIdx);
+    let cohort = cohortMap.get(weekIdx);
+    if (!cohort) {
+      cohort = {
+        weekStart: ymdFromDayIndex(weekIdx),
+        signups: 0,
+        activated: 0,
+        windows: emptyWindows(),
+      };
+      cohortMap.set(weekIdx, cohort);
+    }
+    cohort.signups++;
+    if (activated.has(sid)) cohort.activated++;
+    tally(cohort.windows, sid, signupIdx);
+  }
+
+  const cohorts = [...cohortMap.entries()]
+    .sort((a, b) => b[0] - a[0])
+    .map(([, c]) => c);
+
+  return {
+    cohorts,
+    activatedWindows,
+    allWindows,
+    totals: {
+      users: users.length,
+      activated: users.filter((u) => activated.has(u.steamID)).length,
+      neverActivated: users.filter((u) => !activated.has(u.steamID)).length,
+      oneAndDone,
+      repeatLast30,
+      activeLast30,
+    },
+    historyDays: earliestDay === null ? 0 : todayIdx - earliestDay + 1,
+  };
+}
+
 // MARK: - User-tracking writes -----------------------------------------------
+
+/**
+ * TTL on the per-user-per-day `seen:` markers.
+ *
+ * This was 10 days, which was enough for the 7-day DAU sparkline and nothing
+ * else. Retention cohorts need the marker to outlive the window being
+ * measured: to ask "did this user come back within 30 days of signing up?"
+ * the day-31 lookback has to still find day-1..day-30 markers. 90 days gives
+ * D30 a full margin and leaves room for a quarterly look.
+ *
+ * Cost is unchanged: still one write per user per day. A longer TTL costs
+ * storage (bytes, effectively free at this scale), not writes.
+ */
+const SEEN_TTL = 90 * 86_400;
 
 /**
  * Called once on every successful Steam OpenID callback. Side effects:
  *  - Marks the user as ever-seen (idempotent).
  *  - Updates user-meta with the latest persona/avatar + lastSeen.
  *  - Records a sign-in event for the recent-sign-ins list (TTL 30 days).
- *  - Marks today's "seen" key (TTL 10 days) so DAU counts pick it up.
+ *  - Marks today's "seen" key so DAU + retention cohorts pick it up.
  */
 export async function recordSignIn(
   env: Env,
@@ -501,9 +996,9 @@ export async function recordSignIn(
     expirationTtl: 30 * 86_400,
   });
 
-  // today's DAU marker (TTL 10d so 7-day-back lookback is safe)
+  // today's DAU marker — also the raw material for retention cohorts
   await env.LOBBIES.put(`seen:${day}:${steamID}`, "1", {
-    expirationTtl: 10 * 86_400,
+    expirationTtl: SEEN_TTL,
   });
 }
 
@@ -516,16 +1011,130 @@ export async function recordSignIn(
  * if the marker isn't already set today. Reads are abundant (100k/day on free
  * tier); writes are scarce (1k/day). One write per user per day, max — instead
  * of one write per heartbeat per user.
+ *
+ * We also refresh `user-meta.lastSeen` here, behind the same once-per-day
+ * gate. Previously `lastSeen` only moved inside `recordSignIn`, i.e. only when
+ * a user re-ran the whole Steam OpenID flow. Sessions last 30 days and get a
+ * sliding refresh on every heartbeat, so a daily user could go months without
+ * re-authing — and the admin table would show them as last seen the day they
+ * first signed up. That made "did anyone come back?" unanswerable from the one
+ * field that looked like it should answer it.
  */
 export async function recordHeartbeat(env: Env, steamID: string): Promise<void> {
-  const day = ymd(new Date());
+  const now = new Date();
+  const day = ymd(now);
   const key = `seen:${day}:${steamID}`;
   const existing = await env.LOBBIES.get(key);
-  if (existing) return; // already marked today — save the write
+  if (existing) return; // already marked today — save both writes
+
   // KV is eventually consistent; setting the same value keeps the TTL fresh.
-  await env.LOBBIES.put(`seen:${day}:${steamID}`, "1", {
-    expirationTtl: 10 * 86_400,
+  await env.LOBBIES.put(key, "1", { expirationTtl: SEEN_TTL });
+
+  // First heartbeat of the day: this user is genuinely back. Move lastSeen.
+  // Read-modify-write so we never clobber personaName/avatarURL/firstSeen.
+  try {
+    const raw = await env.LOBBIES.get(`user-meta:${steamID}`);
+    if (!raw) return; // no meta row means they never completed auth; nothing to touch
+    const meta = JSON.parse(raw);
+    if (!meta || typeof meta !== "object") return;
+    meta.lastSeen = now.toISOString();
+    await env.LOBBIES.put(`user-meta:${steamID}`, JSON.stringify(meta));
+  } catch {
+    // Non-fatal. The `seen:` marker above is the authoritative retention
+    // signal; lastSeen is a convenience column on the operator table.
+  }
+}
+
+/**
+ * Marks a user as having successfully imported runs at least once. This is the
+ * activation event — the first moment the product delivers on its promise.
+ *
+ * Lifetime marker (no TTL), same shape and rationale as roster-first: the
+ * `funnel:diag:ingest-runs-committed:<day>` counter the client already emits
+ * is anonymous, so it can tell us "12 imports happened this week" but never
+ * "what fraction of the people who signed up this week ever got to their
+ * stats". The cohort table needs the latter.
+ *
+ * Idempotent: read-first-skip, so a user who imports every day pays one read.
+ */
+export async function recordIngestFirstSeen(
+  env: Env,
+  steamID: string
+): Promise<void> {
+  const key = `funnel:ingest-first:${steamID}`;
+  const existing = await env.LOBBIES.get(key);
+  if (existing) return;
+  await env.LOBBIES.put(key, new Date().toISOString());
+}
+
+// MARK: - Public community pulse ---------------------------------------------
+
+/**
+ * Public, anonymous aggregate for the frontend's "community pulse"
+ * touches: how many distinct climbers used the app this week / today,
+ * and how many have ever signed in. Derived entirely from data we
+ * already write (the daily `seen:` DAU markers and `user:` records) —
+ * no new tracking, no PII in the response, just counts.
+ *
+ * KV-list-heavy, so the computed result is cached in KV for 10 minutes
+ * (`stats:community-pulse`). At current scale (~73 users) the recompute
+ * is a handful of list pages; the cache is really about not paying that
+ * on every page load once this is on the Overview hero.
+ */
+export interface CommunityPulse {
+  climbersToday: number;
+  climbersThisWeek: number;
+  totalClimbers: number;
+  generatedAt: string;
+}
+
+const PULSE_CACHE_KEY = "stats:community-pulse";
+const PULSE_CACHE_TTL_SECONDS = 600;
+
+export async function communityPulse(env: Env): Promise<CommunityPulse> {
+  const cached = await env.LOBBIES.get(PULSE_CACHE_KEY);
+  if (cached) {
+    try { return JSON.parse(cached) as CommunityPulse; } catch { /* recompute */ }
+  }
+
+  const todayTag = ymd(new Date());
+  const weekIDs = new Set<string>();
+  let climbersToday = 0;
+
+  for (let i = 0; i < 7; i++) {
+    const tag = ymd(new Date(Date.now() - i * 86_400_000));
+    let cursor: string | undefined;
+    do {
+      const page = await env.LOBBIES.list({ prefix: `seen:${tag}:`, cursor, limit: 1000 });
+      for (const k of page.keys) {
+        const sid = k.name.slice(`seen:${tag}:`.length);
+        if (sid) weekIDs.add(sid);
+        if (tag === todayTag) climbersToday++;
+      }
+      cursor = page.list_complete ? undefined : page.cursor;
+    } while (cursor);
+  }
+
+  let totalClimbers = 0;
+  {
+    let cursor: string | undefined;
+    do {
+      const page = await env.LOBBIES.list({ prefix: "user:", cursor, limit: 1000 });
+      totalClimbers += page.keys.length;
+      cursor = page.list_complete ? undefined : page.cursor;
+    } while (cursor);
+  }
+
+  const pulse: CommunityPulse = {
+    climbersToday,
+    climbersThisWeek: weekIDs.size,
+    totalClimbers,
+    generatedAt: new Date().toISOString(),
+  };
+  await env.LOBBIES.put(PULSE_CACHE_KEY, JSON.stringify(pulse), {
+    expirationTtl: PULSE_CACHE_TTL_SECONDS,
   });
+  return pulse;
 }
 
 // MARK: - Funnel tracking ---------------------------------------------------
@@ -714,6 +1323,7 @@ function adminHTML(): Response {
   th { background: var(--card2); font-size:10px; color:var(--t3);
     text-transform:uppercase; letter-spacing:1.5px; }
   tr:last-child td { border-bottom: 0; }
+  tfoot td { background: var(--card2); border-top: 2px solid var(--bd); }
   td.muted { color: var(--t3); font-size:12px; }
   .pill { display:inline-block; padding: 2px 8px; border-radius: 999px; font-size:10px;
     font-weight:700; letter-spacing:1px; text-transform:uppercase; border:1px solid; }
@@ -740,6 +1350,12 @@ function adminHTML(): Response {
     font-size: 18px; padding: 0 2px; }
   .funnel-foot { font-size: 11px; color: var(--t3); margin-top: 14px;
     padding-top: 12px; border-top: 1px solid var(--bd); }
+  .note { font-size: 11px; color: var(--t3); margin: 0 0 12px; line-height:1.6; }
+  .note.warn { color: var(--emberHi); }
+  .v.warn { color: var(--loss); }
+  .v.good { color: var(--win); }
+  td.num { font-variant-numeric: tabular-nums; }
+  td.na { color: var(--t3); }
   .gate { max-width: 380px; margin: 80px auto; padding: 28px;
     background: var(--card); border:1px solid var(--bd); border-radius:14px; }
   .gate h2 { margin: 0 0 6px; font-size:16px; color: var(--gold); letter-spacing:1px; }
@@ -864,6 +1480,81 @@ function adminHTML(): Response {
           <td>\${u.onRoster ? \`<span class="pill looking">on roster</span>\` : \`<span class="pill afk">off roster</span>\`}</td>
         </tr>\`).join("");
 
+    const ret = s.retention;
+
+    // A window with nobody old enough to judge renders as "—", never as 0%.
+    const win = (w) => (w && w.eligible ? pct(w.returned, w.eligible) : "—");
+    const winCell = (w) => w && w.eligible
+      ? \`<td class="num">\${w.returned}/\${w.eligible} · \${pct(w.returned, w.eligible)}</td>\`
+      : \`<td class="na">too new</td>\`;
+    const findWin = (arr, days) => (arr || []).find(w => w.days === days);
+
+    const d7Activated = findWin(ret.activatedWindows, 7);
+    const activationRate = pct(ret.totals.activated, ret.totals.users);
+
+    const cohortRows = ret.cohorts.length === 0
+      ? \`<tr><td colspan="6" class="muted">no signups with a recorded date yet.</td></tr>\`
+      : ret.cohorts.map(c => \`
+        <tr>
+          <td>\${fmtDay(c.weekStart)}</td>
+          <td class="num"><strong>\${c.signups}</strong></td>
+          <td class="num">\${c.activated} · \${pct(c.activated, c.signups)}</td>
+          \${winCell(findWin(c.windows, 1))}
+          \${winCell(findWin(c.windows, 7))}
+          \${winCell(findWin(c.windows, 30))}
+        </tr>\`).join("");
+
+    const historyWarning = ret.historyDays < 31
+      ? \`<p class="note warn">Only \${ret.historyDays} day\${ret.historyDays === 1 ? "" : "s"} of
+         day-marker history so far — the marker TTL was recently raised to 90 days.
+         D30 stays unreliable until this passes 31\${ret.historyDays < 8 ? ", and D7 until it passes 8" : ""}.
+         Cohorts older than the history window under-report returns.</p>\`
+      : "";
+
+    const ing = s.ingestFunnel;
+    const ingestSteps = ing.stages.map((st, i) => \`
+      \${i > 0 ? \`<div class="funnel-arrow">→</div>\` : ""}
+      <div class="funnel-step">
+        <div class="funnel-label">\${escape(st.label)}</div>
+        <div class="funnel-value">\${st.count}</div>
+        <div class="funnel-sub">\${st.pctOfPrev === null ? "&nbsp;" : st.pctOfPrev + "% of previous"}</div>
+      </div>\`).join("");
+
+    const ingestLossRows = ing.losses.length === 0
+      ? \`<tr><td colspan="3" class="muted">no import failures logged.</td></tr>\`
+      : ing.losses.map(l => \`
+        <tr>
+          <td><span class="pill afk">\${escape(l.key)}</span></td>
+          <td class="num"><strong>\${l.count}</strong></td>
+          <td class="muted">\${escape(l.label)}</td>
+        </tr>\`).join("");
+
+    const ingestSection = !ing.hasData
+      ? \`<section>
+           <h2>Import funnel · last 30 days</h2>
+           <p class="note">No import beacons recorded yet.</p>
+         </section>\`
+      : \`<section>
+          <h2>Import funnel · last 30 days</h2>
+          <p class="note">
+            Events, not people — one user retrying three times counts three
+            times. Use it to find the wall, then confirm the size of the
+            problem against the activation rate above.
+          </p>
+          <div class="card funnel">
+            <div class="funnel-row">\${ingestSteps}</div>
+            \${ing.biggestLoss ? \`<div class="funnel-foot">
+              Biggest single drop: <strong>\${escape(ing.biggestLoss.key)}</strong>
+              — \${ing.biggestLoss.count} × \${escape(ing.biggestLoss.label)}
+            </div>\` : ""}
+          </div>
+          <div style="height:18px"></div>
+          <table>
+            <thead><tr><th>reason</th><th>count</th><th>what it means</th></tr></thead>
+            <tbody>\${ingestLossRows}</tbody>
+          </table>
+        </section>\`;
+
     const failureKeys = Object.keys(s.failures.callbackFailures);
     const diagKeys = Object.keys(s.failures.clientDiagnostics);
     const recentFailureRows = s.failures.recentEvents.length === 0
@@ -922,11 +1613,16 @@ function adminHTML(): Response {
           </div>
           <div class="card"><h3>Active · 7d</h3>
             <div class="v">\${s.totals.activeLast7d}</div>
-            <div class="sub">cumulative across the week</div>
+            <div class="sub">distinct users across the week</div>
           </div>
           <div class="card"><h3>Total Vault users</h3>
             <div class="v gold">\${s.totals.everSignedIn}</div>
             <div class="sub">unique Steam IDs ever signed in</div>
+          </div>
+          <div class="card"><h3>KV writes · est. today</h3>
+            <div class="v \${s.writeBudget.estimatedTodayPct >= 80 ? "warn" : s.writeBudget.estimatedTodayPct >= 50 ? "" : "good"}">\${s.writeBudget.estimatedTodayPct}%</div>
+            <div class="sub">~\${s.writeBudget.estimatedToday} of \${s.writeBudget.freeDailyWrites}/day ·
+              budget is \${s.writeBudget.coopUserHoursPerDay} co-op user-hours</div>
           </div>
         </div>
 
@@ -935,6 +1631,66 @@ function adminHTML(): Response {
           <div class="card">
             <div class="spark">\${sparkBars}</div>
           </div>
+        </section>
+
+        <section>
+          <h2>Retention — do people come back?</h2>
+          \${historyWarning}
+          <div class="grid">
+            <div class="card"><h3>Activated</h3>
+              <div class="v \${ret.totals.activated * 2 >= ret.totals.users ? "good" : "warn"}">\${activationRate}</div>
+              <div class="sub">\${ret.totals.activated} of \${ret.totals.users} ever imported a run</div>
+            </div>
+            <div class="card"><h3>Activated · back within 7d</h3>
+              <div class="v \${d7Activated && d7Activated.eligible && d7Activated.returned * 3 >= d7Activated.eligible ? "good" : "warn"}">\${win(d7Activated)}</div>
+              <div class="sub">\${d7Activated && d7Activated.eligible
+                ? d7Activated.returned + " of " + d7Activated.eligible + " eligible"
+                : "no cohort old enough yet"}</div>
+            </div>
+            <div class="card"><h3>One and done</h3>
+              <div class="v \${ret.totals.oneAndDone * 2 >= ret.totals.users ? "warn" : ""}">\${ret.totals.oneAndDone}</div>
+              <div class="sub">active on exactly one day, ever</div>
+            </div>
+            <div class="card"><h3>Repeat · 30d</h3>
+              <div class="v">\${ret.totals.repeatLast30}</div>
+              <div class="sub">2+ separate days in the last 30</div>
+            </div>
+            <div class="card"><h3>Never activated</h3>
+              <div class="v">\${ret.totals.neverActivated}</div>
+              <div class="sub">signed in, never imported</div>
+            </div>
+          </div>
+          <div style="height:18px"></div>
+          <p class="note">
+            "Back within Nd" = active on at least one calendar day in the N days
+            <em>after</em> signup day. Users too new to have completed a window are
+            excluded from that window's denominator rather than counted as churned.
+          </p>
+          <table>
+            <thead><tr>
+              <th>signup week</th><th>signups</th><th>activated</th>
+              <th>back within 1d</th><th>back within 7d</th><th>back within 30d</th>
+            </tr></thead>
+            <tbody>\${cohortRows}</tbody>
+            <tfoot>
+              <tr>
+                <td><strong>all users</strong></td>
+                <td class="num"><strong>\${ret.totals.users}</strong></td>
+                <td class="num">\${ret.totals.activated} · \${activationRate}</td>
+                \${winCell(findWin(ret.allWindows, 1))}
+                \${winCell(findWin(ret.allWindows, 7))}
+                \${winCell(findWin(ret.allWindows, 30))}
+              </tr>
+              <tr>
+                <td><strong>activated only</strong></td>
+                <td class="num"><strong>\${ret.totals.activated}</strong></td>
+                <td class="na">—</td>
+                \${winCell(findWin(ret.activatedWindows, 1))}
+                \${winCell(findWin(ret.activatedWindows, 7))}
+                \${winCell(findWin(ret.activatedWindows, 30))}
+              </tr>
+            </tfoot>
+          </table>
         </section>
 
         <section>
@@ -990,6 +1746,8 @@ function adminHTML(): Response {
             <tbody>\${funnelRows}</tbody>
           </table>
         </section>
+
+        \${ingestSection}
 
         \${failureSection}
 
