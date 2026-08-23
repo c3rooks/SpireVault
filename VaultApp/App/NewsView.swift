@@ -278,6 +278,9 @@ enum NewsCatalog {
             body: [
                 .lede("Today's release is the biggest one since launch, and before anything else: thank you. There are 84 of you now, and some of you open this thing every single day — I see the same names come back morning after morning, and honestly that's the whole reason this update exists. Everything below was built for the people who kept showing up."),
 
+                .heading("Where the game stands"),
+                .paragraph("The main branch — what most of you play — is still v0.107.1 \u{201c}Major Update #2\u{201d} from June. We read Mega Crit's v0.108.0 through v0.111.0 beta notes in full; all of it is beta-branch only, and v0.111.0 is the last patch for a while with a big content update teased. Tooltips describe the main branch, with beta changes watchlisted. The beta short version: Silent's poison kit rebuilt (Scare is now Sidestep), Ancients rebalanced across the board, A8-A9 enemies meaner. Run history renders both branches correctly."),
+
                 .heading("Schedule your co-op — nobody has to be online at the same time anymore"),
                 .paragraph("The oldest problem with the Co-op tab: two people who both wanted the same run would visit twenty minutes apart, each see an empty board, and each conclude nobody was here. The fix is the new \u{201c}When are you free?\u{201d} panel at the top of Co-op. One tap on \u{201c}Tonight\u{201d} or \u{201c}Saturday\u{201d} (or pick exact times) saves your window on the server — close the tab, shut the laptop, doesn't matter. When someone else's window overlaps yours by at least half an hour, with a compatible goal and ascension range, you both see the match: who, when, and how much overlap."),
 
@@ -289,36 +292,6 @@ enum NewsCatalog {
 
                 .heading("What's coming"),
                 .paragraph("Mega Crit says a large content update is next — the data ledger and deploy guard we built this cycle exist precisely so SpireVault syncs in hours when it lands. On the co-op side: schedule matches that reach you when the tab is closed, and one-click match-to-lobby. To the daily crew: you know who you are. Keep climbing."),
-            ]
-        ),
-        NewsPost(
-            id: "010-2026-08-23-beta-0110-0111-data-pass",
-            eyebrow: "Game data · August 23, 2026",
-            title: "v0.110.0 + v0.111.0 read in full — every tooltip re-verified against the game",
-            readMinutes: 3,
-            tags: ["Game data", "Patch", "Beta watch"],
-            body: [
-                .lede("Mega Crit shipped two more beta patches — v0.110.0 on July 31 and v0.111.0 on August 14 — and said that's the last one for a while, with a big content update teased next. We read both in full, netted them against July's v0.108/v0.109 notes, and then went further: every card and relic tooltip in SpireVault has been re-verified against the game's own data. If the app shows you an effect, it's the real one."),
-
-                .heading("Where the game stands"),
-                .paragraph("The main branch — what most of you play — is still v0.107.1 \u{201c}Major Update #2\u{201d} from June. Everything in v0.108.0 through v0.111.0 lives on the optional beta branch only. SpireVault's tooltips describe the main branch, with beta changes tracked on a watchlist so nothing sneaks into your tooltips before it actually ships to you."),
-
-                .heading("What the beta patches change (the short version)"),
-                .feature(
-                    title: "Silent's poison kit got rebuilt",
-                    body: "Scare is now Sidestep (energy next turn instead of Weak), Outbreak became a Rare skill that triggers poison immediately, Haze costs 2 and adds Weak, and Mirage went through a rework, a revert, and an exhaust tweak — three patches, three shapes. Run history renders both Scare and Sidestep correctly whichever branch you're on."
-                ),
-                .feature(
-                    title: "Ancients rebalanced across the board",
-                    body: "Seal of Gold taxes 3 gold instead of 5, Fur Coat marks 8 combats, Signet Ring pays 888, Beautiful Bracelet enchants 4 random cards, Diamond Diadem now starts you with 20 persistent Block, and Toy Box hands out 5 relics. All watchlisted; none of it is live on main yet."
-                ),
-                .feature(
-                    title: "Ascension 8 and 9 got meaner (in beta)",
-                    body: "v0.111.0 retunes specific enemies at A8/A9 — Exoskeleton and Entomancer HP, Globe Head, Louse Progenitor and Soul Fysh scaling. The ascension guide notes this without changing the main-branch descriptions."
-                ),
-
-                .heading("What we fixed in the app while we were in there"),
-                .paragraph("Re-verifying everything surfaced some old ghosts: a handful of tooltips still carried Slay the Spire 1 text for cards and relics that don't exist (or work differently) in STS2 — Snecko Eye, Girya, Shovel, Blood Vial's heal trigger, and a set of STS1-only cards in the AI coach's glossary. All of it is corrected or removed. The coach's glossary also grew from 72 cards to 279, with full sourced coverage for Regent and Necrobinder for the first time, and the relic guide now covers 150+ relics with exact in-game text. A new automated check keeps every source in sync from here on, so this class of drift can't ship again."),
             ]
         ),
         NewsPost(

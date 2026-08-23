@@ -1154,6 +1154,10 @@
             <!-- ====== Post 006 — May 10 2026 — Desktop / cloud parity rebuild ====== -->
             <!-- ====== Post 007 — May 26 2026 — Co-op Lobby v2 default + v0.11.0 ===== -->
             <!-- ====== Post 008 — Jun 19 2026 — STS2 v0.107.1 main-branch support ==== -->
+            <!-- ====== Post 011 — Aug 23 2026 — v211 release: co-op scheduling,       -->
+            <!-- ======                          verified game data, thank-you.        -->
+            <!-- ======                          (Post 010 was merged into 011 —       -->
+            <!-- ======                          one post per day, owner's rule.)      -->
             <!-- ====== Post 009 — Jul 23 2026 — New banner art, permanent saves,      -->
             <!-- ======                          beta v0.108/v0.109 data pass          ==== -->
             <!--                                                                         -->
@@ -1169,8 +1173,8 @@
                        same deploy as this markup, so the CDN-caches-the-SPA-fallback
                        trap documented on post-007 below doesn't apply — but if you
                        ever replace the art, bump the query per that note. -->
-                  <source media="(max-width: 720px)" srcset="/assets/news/post-011-banner-1x.webp?v=1" />
-                  <img src="/assets/news/post-011-banner.webp?v=1" alt="Painted illustration of four adventurers gathered around a heavy wooden table in an ember-lit vault library, one raising a pewter cup in a toast. A huge open ledger glows golden between them, painted card parchments spread beside it, with a brass orrery clock and a small teal hourglass on the table. Through the tall arched window behind them, a colossal dark spire rises into a violet-and-ember dusk full of drifting sparks." decoding="async" />
+                  <source media="(max-width: 720px)" srcset="/assets/news/post-011-banner-1x.webp?v=2" />
+                  <img src="/assets/news/post-011-banner.webp?v=2" alt="Painted still-life of an antique desk in an ember-lit vault library: a massive open ledger glowing golden, neat stacks of parchment cards, a brass orrery clock, a teal hourglass and a candle. Through the tall arched window behind the desk, a colossal dark spire rises into a violet-and-ember dusk sky full of drifting sparks." decoding="async" />
                 </picture>
               </figure>
               <header class="news-post-head">
@@ -1188,6 +1192,12 @@
                   Today's release is the biggest one since launch, and before anything else: <strong>thank you.</strong> There are 84 of you now, and some of you open this thing every single day &mdash; I see the same names come back morning after morning, and honestly that's the whole reason this update exists. Everything below was built for the people who kept showing up.
                 </p>
 
+                <h4 class="news-post-section">Where the game stands</h4>
+
+                <p>
+                  Quick map before the features: the main branch &mdash; what most of you play &mdash; is still <strong>v0.107.1 &ldquo;Major Update #2&rdquo;</strong> from June. We read Mega Crit's <strong>v0.108.0 through v0.111.0</strong> beta patch notes in full; all of it lives on the optional beta branch only, and Mega Crit says v0.111.0 is the last one for a while because something big is coming. SpireVault's tooltips describe the main branch, with beta changes tracked on a watchlist so nothing sneaks into your tooltips before it actually ships to you. The short version of what's brewing in beta: Silent's poison kit got rebuilt (Scare is now Sidestep, Outbreak became a Rare skill that triggers poison immediately, Haze costs 2 and adds Weak), the Ancients got rebalanced across the board (Seal of Gold, Fur Coat, Signet Ring, Diamond Diadem, Toy Box), and Ascension 8&ndash;9 enemies got meaner. Run history renders both Scare <em>and</em> Sidestep, all sixteen beta multiplayer cards, and the Dowsing quest chain &mdash; whichever branch you're on.
+                </p>
+
                 <h4 class="news-post-section">Schedule your co-op &mdash; nobody has to be online at the same time anymore</h4>
 
                 <p>
@@ -1197,11 +1207,11 @@
                 <h4 class="news-post-section">If the app shows you a game fact, it's the real one</h4>
 
                 <p>
-                  We read Mega Crit's v0.108.0 through v0.111.0 patch notes in full, then went further and re-verified <strong>every card and relic tooltip in the app against the game's own data</strong>. Relic tooltips went from ~32 to <strong>159</strong>, every one with the exact in-game effect and the correct STS2 rarity tiers (including <em>Ancient</em> &mdash; fun fact, STS2 has no &ldquo;boss&rdquo; relics). The AI coach's card glossary grew from 72 to <strong>279 sourced cards</strong>, with full Regent and Necrobinder coverage for the first time. And we evicted some long-hiding ghosts: tooltips that still described <em>Slay the Spire 1</em>. If you ever hovered Snecko Eye and wondered why it mentioned random costs &mdash; that was the old game. It doesn't anymore.
+                  Beyond reading the patch notes, we re-verified <strong>every card and relic tooltip in the app against the game's own data</strong>. Relic tooltips went from ~32 to <strong>159</strong>, every one with the exact in-game effect and the correct STS2 rarity tiers (including <em>Ancient</em> &mdash; fun fact, STS2 has no &ldquo;boss&rdquo; relics). The AI coach's card glossary grew from 72 to <strong>279 sourced cards</strong>, with full Regent and Necrobinder coverage for the first time. And we evicted some long-hiding ghosts: tooltips that still described <em>Slay the Spire 1</em>. If you ever hovered Snecko Eye and wondered why it mentioned random costs &mdash; that was the old game. It doesn't anymore.
                 </p>
 
                 <p>
-                  There's a new badge at the bottom of the sidebar &mdash; <strong>&ldquo;STS2 data: v0.107.1 &middot; beta v0.111.0&rdquo;</strong> &mdash; that tells you exactly which game version the data was verified against. It's not decorative: an automated check now cross-references every data source on every deploy, so a stale tooltip literally cannot ship. Beta players are covered too &mdash; run history renders both Scare <em>and</em> Sidestep (the beta rename), all sixteen beta multiplayer cards, and the Dowsing quest chain.
+                  There's a new badge at the bottom of the sidebar that tells you exactly which game version the data was verified against. It's not decorative: an automated check now cross-references every data source on every deploy, so a stale tooltip literally cannot ship.
                 </p>
 
                 <h4 class="news-post-section">Faster for the people who come back (that's you)</h4>
@@ -1233,75 +1243,6 @@
                 </div>
                 <div class="news-post-foot-actions">
                   <a class="action-link" href="https://github.com/c3rooks/SpireVault/releases/tag/v0.10.0" target="_blank" rel="noopener">Get the Mac app (0.10.0) &rarr;</a>
-                  <a class="action-link" href="https://github.com/c3rooks/SpireVault/issues/new" target="_blank" rel="noopener">Report an issue &rarr;</a>
-                </div>
-              </footer>
-            </article>
-
-            <article class="news-post" id="news-010" data-news-id="010" data-news-eyebrow="Game data · August 23, 2026" data-news-tags="Game data,Patch,Beta watch" aria-labelledby="news-010-title">
-              <header class="news-post-head">
-                <span class="news-post-eyebrow">Game data &middot; August 23, 2026</span>
-                <h3 class="news-post-title" id="news-010-title">v0.110.0 + v0.111.0 read in full &mdash; every tooltip re-verified against the game</h3>
-                <p class="news-post-byline">
-                  Corey
-                  <span class="news-post-byline-sep">&middot;</span>
-                  <span class="news-post-byline-meta">~3 min read</span>
-                </p>
-              </header>
-
-              <div class="news-post-body">
-                <p class="news-lede">
-                  Mega Crit shipped two more beta patches &mdash; <strong>v0.110.0</strong> on July 31 and <strong>v0.111.0</strong> on August 14 &mdash; and said that's the last one for a while, with a big content update teased next. We read both in full, netted them against July's notes, and then went further: <strong>every card and relic tooltip in SpireVault has been re-verified against the game's own data.</strong> If the app shows you an effect, it's the real one.
-                </p>
-
-                <h4 class="news-post-section">Where the game stands</h4>
-
-                <p>
-                  The main branch &mdash; what most of you play &mdash; is still <strong>v0.107.1 &ldquo;Major Update #2&rdquo;</strong> from June. Everything in v0.108.0 through v0.111.0 lives on the optional beta branch only. SpireVault's tooltips describe the main branch, with beta changes tracked on a watchlist so nothing sneaks into your tooltips before it actually ships to you.
-                </p>
-
-                <h4 class="news-post-section">What the beta patches change (the short version)</h4>
-
-                <div class="news-feature-block">
-                  <h5>Silent's poison kit got rebuilt</h5>
-                  <p>
-                    <strong>Scare is now Sidestep</strong> (energy next turn instead of Weak), <strong>Outbreak</strong> became a Rare skill that triggers poison immediately, <strong>Haze</strong> costs 2 and adds Weak, and <strong>Mirage</strong> went through a rework, a revert, and an exhaust tweak &mdash; three patches, three shapes. Run history renders both Scare and Sidestep correctly whichever branch you're on.
-                  </p>
-                </div>
-
-                <div class="news-feature-block">
-                  <h5>Ancients rebalanced across the board</h5>
-                  <p>
-                    Seal of Gold taxes 3 gold instead of 5, Fur Coat marks 8 combats, Signet Ring pays 888, Beautiful Bracelet enchants 4 <em>random</em> cards, Diamond Diadem now starts you with 20 persistent Block, and Toy Box hands out 5 relics. All watchlisted; none of it is live on main yet.
-                  </p>
-                </div>
-
-                <div class="news-feature-block">
-                  <h5>Ascension 8 and 9 got meaner (in beta)</h5>
-                  <p>
-                    v0.111.0 retunes specific enemies at A8/A9 &mdash; Exoskeleton and Entomancer HP, Globe Head, Louse Progenitor and Soul Fysh scaling. The ascension guide notes this without changing the main-branch descriptions.
-                  </p>
-                </div>
-
-                <h4 class="news-post-section">What we fixed in the app while we were in there</h4>
-
-                <p>
-                  Re-verifying everything surfaced some old ghosts: a handful of tooltips still carried <em>Slay the Spire 1</em> text for cards and relics that don't exist (or work differently) in STS2 &mdash; Snecko Eye, Girya, Shovel, Blood Vial's heal trigger, even a few STS1-only cards hiding in the sample data. All of it is corrected or removed. The relic guide now covers <strong>150+ relics</strong> with exact in-game text and the correct STS2 rarity tiers (including <em>Ancient</em> &mdash; there is no &ldquo;boss&rdquo; tier in STS2), the AI coach's glossary grew from 72 cards to <strong>279</strong> with full sourced coverage for Regent and Necrobinder for the first time, and a new automated check now cross-references every data source on every deploy &mdash; so this class of drift can't ship again.
-                </p>
-
-                <p class="news-post-signoff">
-                  &mdash; Corey
-                </p>
-              </div>
-
-              <footer class="news-post-foot">
-                <div class="news-post-foot-meta">
-                  <span class="news-post-tag">Game data</span>
-                  <span class="news-post-tag">Patch</span>
-                  <span class="news-post-tag">Beta watch</span>
-                </div>
-                <div class="news-post-foot-actions">
-                  <a class="action-link" href="https://store.steampowered.com/news/app/2868840" target="_blank" rel="noopener">Mega Crit's news hub &rarr;</a>
                   <a class="action-link" href="https://github.com/c3rooks/SpireVault/issues/new" target="_blank" rel="noopener">Report an issue &rarr;</a>
                 </div>
               </footer>
