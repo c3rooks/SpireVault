@@ -1162,8 +1162,10 @@ main.main-public,
   padding: 4px 8px 0;
   border: 0;
   background: none;
-  font: 600 10px/1.4 inherit;
-  letter-spacing: 0.4px;
+  /* 9px + tight tracking so the full "Data: vX · beta vY" string fits the
+   * 248px dock without ellipsis (measured, not guessed). */
+  font: 600 9px/1.4 inherit;
+  letter-spacing: 0.2px;
   color: var(--text-3, #6c647a);
   text-align: left;
   white-space: nowrap;
@@ -1181,8 +1183,16 @@ main.main-public,
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  font-size: 10px;
+  font-size: 9px;
   border: 1px solid rgba(255,255,255,0.16);
+  /* Never wrap — a two-line pill crushes the whole 248px dock row.
+   * Labels are one-word by contract (PROFILE_STATUS_LABELS); this is
+   * the belt-and-suspenders for any stray long status value. */
+  white-space: nowrap;
+  max-width: 96px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: none;
 }
 .me-pill-status-pill[data-status="looking"] { color: #a3e7ad; border-color: rgba(109, 217, 124, 0.5); }
 .me-pill-status-pill[data-status="inRun"]   { color: #f0d27a; border-color: rgba(212, 175, 55, 0.5); }

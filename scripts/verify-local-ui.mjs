@@ -56,16 +56,53 @@ try {
 }
 
 // ---- 4. news post -------------------------------------------------------------
+// The master/detail view shows one article at a time; the badge click lands
+// on the NEWEST post, so assert that one. (Older posts are reachable via the
+// list rail — the pill checks below prove list wiring separately.)
 try {
-  const article = page.locator("#news-010");
+  const article = page.locator("#news-011");
   await article.waitFor({ state: "visible", timeout: 5000 });
   const body = await article.textContent();
-  if (body.includes("Scare is now Sidestep") && body.includes("Ancients rebalanced")) {
-    ok("news: post 010 renders with expected content");
-  } else fail("news: post 010 missing expected phrases");
+  if (body.includes("When are you free") && body.includes("thank you")) {
+    ok("news: newest post renders with expected content");
+  } else fail("news: newest post missing expected phrases");
   await page.screenshot({ path: "/tmp/ui-news.png", fullPage: false });
 } catch (e) {
-  fail(`news post 010 not visible after badge click: ${e.message.split("\n")[0]}`);
+  fail(`news: newest post not visible after badge click: ${e.message.split("\n")[0]}`);
+}
+
+// ---- 4b. News NEW-pill lifecycle ------------------------------------------------
+// The sidebar's "NEW" badge must: show for anyone who hasn't read the latest
+// post (including returning users who read the PREVIOUS one), clear when the
+// News tab opens, and stay cleared across reloads.
+{
+  const pill = page.locator("#nav-news-count");
+  // We are currently ON the news tab (badge click above), so it was just
+  // marked read. Simulate a returning user who last read the previous post.
+  await page.evaluate(() => localStorage.setItem("vault.web.news.lastRead", "post-010-2026-08-23-beta-0110-0111-data-pass"));
+  await page.reload({ waitUntil: "networkidle" }).catch(() => {});
+  await page.waitForTimeout(1500);
+  if (await pill.isVisible()) ok("news pill: shows for a returning reader of the previous post");
+  else fail("news pill: did NOT show after a new post was published");
+
+  await page.click('[data-tab="news"]');
+  await page.waitForTimeout(600);
+  if (!(await pill.isVisible())) ok("news pill: clears when the News tab is opened");
+  else fail("news pill: still visible after opening News");
+
+  await page.reload({ waitUntil: "networkidle" }).catch(() => {});
+  await page.waitForTimeout(1500);
+  if (!(await pill.isVisible())) ok("news pill: stays cleared across reloads");
+  else fail("news pill: reappeared after reload despite being read");
+
+  // Banner art on the newest post must actually load (see the post-007
+  // CDN-caches-the-fallback incident for why this check exists).
+  await page.click('[data-tab="news"]');
+  await page.waitForTimeout(800);
+  const bannerOk = await page.locator("#news-011 .news-post-banner img")
+    .evaluate((el) => el.complete && el.naturalWidth > 100).catch(() => false);
+  if (bannerOk) ok("news: post 011 banner art loads");
+  else fail("news: post 011 banner image missing or broken");
 }
 
 // ---- 5. Top Relics drill-down (demo data) --------------------------------------

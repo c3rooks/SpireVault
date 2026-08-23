@@ -72,7 +72,7 @@ const STS2_APP_ID = "2868840";
  * on an old client — instruct hard refresh. If it DOES match, the
  * bug is real and we can stop chasing cache ghosts.
  */
-const VAULT_BUILD = "v211-2026-08-23-parity-showcase";
+const VAULT_BUILD = "v213-2026-08-23-mac-import-fix";
 
 /** True on wrangler pages dev / local loopback — not production hostnames. */
 function isLocalDevHost() {
@@ -460,7 +460,7 @@ try {
  * UX: the previous version force-reloaded the tab. That worked but
  * was hostile — anyone in the middle of typing an invite, scrolling
  * a long run, or signing into Steam would lose their place. The new
- * banner shows "A newer version of Spire Vault is available —
+ * banner shows "A newer version of SpireVault is available —
  * Reload" with a button. The user reloads when they're ready.
  *
  * Forward-fix-only: catches future deploys for users who have THIS
@@ -593,7 +593,7 @@ function showUpdateBanner(liveVersion) {
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15A9 9 0 1 1 18.36 5.64L23 10"/></svg>
     </span>
     <span class="vault-update-banner-text">
-      <strong>A newer version of Spire Vault is available.</strong>
+      <strong>A newer version of SpireVault is available.</strong>
       Reload to pick up the latest fixes &mdash; your sign-in and stats stay intact.
     </span>
     <button type="button" class="vault-update-banner-reload" data-action="vault-update-reload">
@@ -1584,7 +1584,10 @@ let lastSuccessfulHeartbeatAt = 0;
 // it's been there for two minutes." We only fire the loud notification path
 // once per id; subsequent polls leave the inbox banner alone.
 const ANNOUNCED_INVITE_IDS = new Set();
-const BASE_TAB_TITLE = "The Vault · Web";
+// Brand is ONE word — "SpireVault", never "Spire Vault" (owner call,
+// 2026-08-23). This runtime constant overwrites the static <title> after
+// boot, so it has to carry the brand too.
+const BASE_TAB_TITLE = "SpireVault · Slay the Spire 2";
 let HAS_PROMPTED_NOTIFICATION = false; // ask permission lazily, once
 
 // 401 tolerance. A single 401 used to vaporize the user's session and reload
@@ -2334,7 +2337,7 @@ async function boot() {
     if ($sync) {
       // Short form fits the 248px sidebar without ellipsis; the title
       // carries the full sentence for hover/assistive tech.
-      $sync.textContent = `STS2 data: ${GAME_SYNC.main} · beta ${GAME_SYNC.betaWatch}`;
+      $sync.textContent = `Data: ${GAME_SYNC.main} · beta ${GAME_SYNC.betaWatch}`;
       $sync.title = `Game data verified against STS2 ${GAME_SYNC.main} (main branch) — beta patch notes tracked through ${GAME_SYNC.betaWatch}. Click for details.`;
       $sync.hidden = false;
       $sync.addEventListener("click", () => switchTab("news"));
@@ -3474,7 +3477,7 @@ function switchTab(tab) {
  * thing I read still the latest thing published?" — without forcing
  * a chronological compare that could go wrong on a typo.
  */
-const LATEST_NEWS_POST_ID = "post-010-2026-08-23-beta-0110-0111-data-pass";
+const LATEST_NEWS_POST_ID = "post-011-2026-08-23-v211-thank-you";
 const STORAGE_NEWS_LAST_READ = "vault.web.news.lastRead";
 
 /** Show the "NEW" pill on the sidebar News button when the user
@@ -7420,6 +7423,26 @@ function scanForHistory() {
     triggerFolderPicker();
     return;
   }
+  // macOS HAS THE SAME BLOCKLIST PROBLEM as Windows (reported live with a
+  // screenshot on 2026-08-23): STS2 saves under ~/Library/Application
+  // Support/…, and Chromium registers ~/Library (base::DIR_APP_DATA) with
+  // kBlockAllChildren. showDirectoryPicker() therefore CANNOT grant the
+  // save folder — Chrome pops "Can't open this folder because it contains
+  // system files" and rejects, a hard dead-end on the app's single most
+  // important flow. The webkitdirectory <input> goes through
+  // FileSelectHelper (no blocklist) and opens a native NSOpenPanel where
+  // ⌘⇧G paste works. Same trade as Windows: we lose the persistent handle
+  // (silent re-reads), but macOS Chrome users never got that far anyway —
+  // the pick itself was blocked.
+  if (platform === "mac") {
+    sendBeacon("ingest-picker-opened", "webkitdirectory-mac-blocklist");
+    console.info(
+      "[Vault import] platform=mac → using webkitdirectory (skips Chromium's ~/Library blocklist)"
+    );
+    void copySavePathHint();
+    triggerFolderPicker();
+    return;
+  }
   if (typeof window.showDirectoryPicker === "function") {
     sendBeacon("ingest-picker-opened", "directory");
     console.info("[Vault import] using showDirectoryPicker (Chromium, non-Windows)");
@@ -7464,15 +7487,18 @@ function triggerFolderPicker() {
  * permission was granted previously), so a returning user sees fresh
  * stats with zero clicks after they've played a few more runs.
  */
-async function scanForHistoryViaDirectoryPicker() {
-  // Platform-appropriate path → clipboard so the user can paste into
-  // the OS picker (which is its own modal we cannot decorate) instead
-  // of hand-navigating to a hidden directory. Best-effort; never
-  // blocks. The toast that follows tells them WHAT to do with the
-  // pasted path AND reminds them the next click is "Select" — the
-  // most common failure mode is "I pasted, I'm at the folder, now
-  // what?". A platform-aware copy makes Windows paste-into-address-
-  // bar, macOS Cmd+Shift+G, and Linux file-manager flows all clear.
+/**
+ * Platform-appropriate save path → clipboard, plus a toast telling the
+ * user exactly what to do inside the OS picker (which is a native modal
+ * we cannot decorate). Best-effort; never blocks or throws.
+ *
+ * Shared by BOTH picker paths — the File System Access flow and the
+ * webkitdirectory fallback — because the guidance is identical: the
+ * native macOS NSOpenPanel honors ⌘⇧G paste exactly like Chrome's FSA
+ * picker does, and Windows/Linux file dialogs all have a pasteable
+ * location bar.
+ */
+async function copySavePathHint() {
   const platform = detectPlatform();
   let copiedPath = null;
   try {
@@ -7485,11 +7511,11 @@ async function scanForHistoryViaDirectoryPicker() {
   } catch { /* ignore */ }
   if (copiedPath) {
     if (platform === "mac") {
-      // The Chrome showDirectoryPicker button literally says "Select"
-      // (not "Open"). Earlier copy said Open and confused users who
-      // were already at SlayTheSpire2 and didn't know to click Select.
+      // The picker button literally says "Select" (not "Open"). Earlier
+      // copy said Open and confused users who were already at
+      // SlayTheSpire2 and didn't know to click Select.
       toast(
-        `Path copied. In the picker → press ⌘⇧G → paste → Enter. You'll see SlayTheSpire2 with subfolders (steam, logs, etc.). Click the blue Select button — we walk into steam/<id>/profile1/saves/history automatically.`,
+        `Path copied. In the picker → press ⌘⇧G → paste → Enter. You'll see SlayTheSpire2 with subfolders (steam, logs, etc.). Click Select — we walk into steam/<id>/profile1/saves/history automatically.`,
         { duration: 14000 }
       );
     } else if (platform === "windows") {
@@ -7504,6 +7530,11 @@ async function scanForHistoryViaDirectoryPicker() {
       );
     }
   }
+}
+
+async function scanForHistoryViaDirectoryPicker() {
+  const platform = detectPlatform();
+  await copySavePathHint();
 
   let dirHandle;
   try {
@@ -13418,8 +13449,13 @@ function setStatus(state, label) {
 //     `refreshProfilePopoverIfOpen()` so it never goes stale while open.
 // =========================================================================
 
+// Pill labels are deliberately ONE word/short — this renders inside the
+// 248px sidebar dock next to the connection label and invite count, and
+// "Looking for Co-op" wrapped to two lines and crushed the whole row
+// (screenshot-reported 2026-08-23). The popover has room for long labels;
+// the dock pill does not.
 const PROFILE_STATUS_LABELS = {
-  looking: "Looking for Co-op",
+  looking: "Looking",
   solo:    "In a Run",   paired: "In Co-op",   afk: "Away",
   inRun:   "In a Run",   inCoop: "In Co-op",
 };

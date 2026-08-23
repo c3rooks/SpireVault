@@ -11,7 +11,7 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
   <meta http-equiv="Pragma" content="no-cache" />
   <meta http-equiv="Expires" content="0" />
-  <title>Spire Vault · Slay the Spire 2 stats &amp; co-op (web)</title>
+  <title>SpireVault · Slay the Spire 2 stats &amp; co-op (web)</title>
   <meta name="description" content="See your Slay the Spire 2 stats in your browser. Drop your STS2 save folder (.run files) — nothing uploads, everything stays local. Optional Steam sign-in unlocks the co-op partner feed." />
   <meta name="theme-color" content="#0c0a14" />
   <!-- Modern browsers prefer the crisp vector mark. The PNG fallbacks below
@@ -24,24 +24,24 @@
   <link rel="icon" type="image/png" sizes="192x192" href="/assets/icon-192.png?v=1" />
   <link rel="apple-touch-icon" sizes="180x180" href="/assets/apple-touch-icon.png?v=1" />
 
-  <meta property="og:title" content="Spire Vault · Slay the Spire 2 stats &amp; co-op (web)" />
+  <meta property="og:title" content="SpireVault · Slay the Spire 2 stats &amp; co-op (web)" />
   <meta property="og:description" content="Drop your STS2 save folder, see your stats instantly. Nothing uploads. Optional Steam sign-in for the co-op partner feed." />
   <meta property="og:image" content="https://app.spirevault.app/assets/og.png?v=1" />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
   <meta property="og:url" content="https://app.spirevault.app" />
   <meta property="og:type" content="website" />
-  <meta property="og:site_name" content="Spire Vault" />
+  <meta property="og:site_name" content="SpireVault" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:title" content="Spire Vault · Slay the Spire 2 stats &amp; co-op (web)" />
+  <meta name="twitter:title" content="SpireVault · Slay the Spire 2 stats &amp; co-op (web)" />
   <meta name="twitter:description" content="Drop your STS2 save folder, see your stats instantly. Nothing uploads. Optional Steam sign-in for the co-op partner feed." />
   <meta name="twitter:image" content="https://app.spirevault.app/assets/og.png?v=1" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Playfair+Display:wght@700;900&family=Cinzel:wght@700;800;900&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/styles.css?v=152" />
+  <link rel="stylesheet" href="/styles.css?v=153" />
 
-  <!-- Google tag (gtag.js) — Spire Vault GA4 stream G-09LEQ247HN.
+  <!-- Google tag (gtag.js) — SpireVault GA4 stream G-09LEQ247HN.
        Loaded async so it never blocks the critical rendering path; the
        inline initializer queues calls until the loader finishes. We
        also expose `window.gtag` directly (rather than only via the
@@ -1162,6 +1162,82 @@
             <!-- exactly what goes wrong if you reference a webp that isn't uploaded     -->
             <!-- yet (Cloudflare caches the SPA-fallback HTML at that path for a year).  -->
             <!-- Add the <figure class="news-post-banner"> block back once art ships.    -->
+            <article class="news-post" id="news-011" data-news-id="011" data-news-eyebrow="Release · August 23, 2026" data-news-tags="Release,Co-op,Thank you" aria-labelledby="news-011-title">
+              <figure class="news-post-banner">
+                <picture>
+                  <!-- ?v=1: first deploy of this asset. Files were committed in the
+                       same deploy as this markup, so the CDN-caches-the-SPA-fallback
+                       trap documented on post-007 below doesn't apply — but if you
+                       ever replace the art, bump the query per that note. -->
+                  <source media="(max-width: 720px)" srcset="/assets/news/post-011-banner-1x.webp?v=1" />
+                  <img src="/assets/news/post-011-banner.webp?v=1" alt="Painted illustration of four adventurers gathered around a heavy wooden table in an ember-lit vault library, one raising a pewter cup in a toast. A huge open ledger glows golden between them, painted card parchments spread beside it, with a brass orrery clock and a small teal hourglass on the table. Through the tall arched window behind them, a colossal dark spire rises into a violet-and-ember dusk full of drifting sparks." decoding="async" />
+                </picture>
+              </figure>
+              <header class="news-post-head">
+                <span class="news-post-eyebrow">Release &middot; August 23, 2026</span>
+                <h3 class="news-post-title" id="news-011-title">The big one: schedule your co-op, trust every tooltip &mdash; and thank you</h3>
+                <p class="news-post-byline">
+                  Corey
+                  <span class="news-post-byline-sep">&middot;</span>
+                  <span class="news-post-byline-meta">~4 min read</span>
+                </p>
+              </header>
+
+              <div class="news-post-body">
+                <p class="news-lede">
+                  Today's release is the biggest one since launch, and before anything else: <strong>thank you.</strong> There are 84 of you now, and some of you open this thing every single day &mdash; I see the same names come back morning after morning, and honestly that's the whole reason this update exists. Everything below was built for the people who kept showing up.
+                </p>
+
+                <h4 class="news-post-section">Schedule your co-op &mdash; nobody has to be online at the same time anymore</h4>
+
+                <p>
+                  The oldest problem with the Co-op tab: two people who both wanted the same run would visit twenty minutes apart, each see an empty board, and each conclude nobody was here. The fix is the new <strong>&ldquo;When are you free?&rdquo;</strong> panel at the top of Co-op. One tap on &ldquo;Tonight&rdquo; or &ldquo;Saturday&rdquo; (or pick exact times) saves your window <em>on the server</em> &mdash; close the tab, shut the laptop, doesn't matter. When someone else's window overlaps yours by at least half an hour, with a compatible goal and ascension range, you both see the match: who, when, and how much overlap. Windows only match when there's genuinely time to play &mdash; a ten-minute sliver won't ping anyone.
+                </p>
+
+                <h4 class="news-post-section">If the app shows you a game fact, it's the real one</h4>
+
+                <p>
+                  We read Mega Crit's v0.108.0 through v0.111.0 patch notes in full, then went further and re-verified <strong>every card and relic tooltip in the app against the game's own data</strong>. Relic tooltips went from ~32 to <strong>159</strong>, every one with the exact in-game effect and the correct STS2 rarity tiers (including <em>Ancient</em> &mdash; fun fact, STS2 has no &ldquo;boss&rdquo; relics). The AI coach's card glossary grew from 72 to <strong>279 sourced cards</strong>, with full Regent and Necrobinder coverage for the first time. And we evicted some long-hiding ghosts: tooltips that still described <em>Slay the Spire 1</em>. If you ever hovered Snecko Eye and wondered why it mentioned random costs &mdash; that was the old game. It doesn't anymore.
+                </p>
+
+                <p>
+                  There's a new badge at the bottom of the sidebar &mdash; <strong>&ldquo;STS2 data: v0.107.1 &middot; beta v0.111.0&rdquo;</strong> &mdash; that tells you exactly which game version the data was verified against. It's not decorative: an automated check now cross-references every data source on every deploy, so a stale tooltip literally cannot ship. Beta players are covered too &mdash; run history renders both Scare <em>and</em> Sidestep (the beta rename), all sixteen beta multiplayer cards, and the Dowsing quest chain.
+                </p>
+
+                <h4 class="news-post-section">Faster for the people who come back (that's you)</h4>
+
+                <p>
+                  Returning visitors were re-downloading about 1.5&nbsp;MB of JavaScript on every single load because of an over-cautious caching rule from an old incident. Fixed properly: code is now cached for a year and updates are delivered by version-stamped URLs, so repeat visits are dramatically lighter and a deploy still reaches you instantly. The Mac app also went to <strong>0.10.0</strong> with all of the above baked in &mdash; grab it from the site's download button if you're on the desktop.
+                </p>
+
+                <h4 class="news-post-section">What's coming</h4>
+
+                <p>
+                  Mega Crit said v0.111.0 is the last beta patch for a while because something big is coming &mdash; their words, a large content update. The data ledger and deploy guard we built this cycle exist precisely so that when it lands, SpireVault syncs in hours, not weeks. Next on the co-op side: making schedule matches reach you even when the tab is closed, and letting a match turn into a lobby in one click. And yes &mdash; Aeonglass still needs her portrait in the boss diorama; art is the one thing a data pipeline can't verify into existence.
+                </p>
+
+                <p>
+                  If anything looks off &mdash; a tooltip, a number, a match that should have fired &mdash; the report link below goes straight to me. To the daily crew: you know who you are. Keep climbing.
+                </p>
+
+                <p class="news-post-signoff">
+                  &mdash; Corey
+                </p>
+              </div>
+
+              <footer class="news-post-foot">
+                <div class="news-post-foot-meta">
+                  <span class="news-post-tag">Release</span>
+                  <span class="news-post-tag">Co-op</span>
+                  <span class="news-post-tag">Thank you</span>
+                </div>
+                <div class="news-post-foot-actions">
+                  <a class="action-link" href="https://github.com/c3rooks/SpireVault/releases/tag/v0.10.0" target="_blank" rel="noopener">Get the Mac app (0.10.0) &rarr;</a>
+                  <a class="action-link" href="https://github.com/c3rooks/SpireVault/issues/new" target="_blank" rel="noopener">Report an issue &rarr;</a>
+                </div>
+              </footer>
+            </article>
+
             <article class="news-post" id="news-010" data-news-id="010" data-news-eyebrow="Game data · August 23, 2026" data-news-tags="Game data,Patch,Beta watch" aria-labelledby="news-010-title">
               <header class="news-post-head">
                 <span class="news-post-eyebrow">Game data &middot; August 23, 2026</span>
@@ -1175,13 +1251,13 @@
 
               <div class="news-post-body">
                 <p class="news-lede">
-                  Mega Crit shipped two more beta patches &mdash; <strong>v0.110.0</strong> on July 31 and <strong>v0.111.0</strong> on August 14 &mdash; and said that's the last one for a while, with a big content update teased next. We read both in full, netted them against July's notes, and then went further: <strong>every card and relic tooltip in Spire Vault has been re-verified against the game's own data.</strong> If the app shows you an effect, it's the real one.
+                  Mega Crit shipped two more beta patches &mdash; <strong>v0.110.0</strong> on July 31 and <strong>v0.111.0</strong> on August 14 &mdash; and said that's the last one for a while, with a big content update teased next. We read both in full, netted them against July's notes, and then went further: <strong>every card and relic tooltip in SpireVault has been re-verified against the game's own data.</strong> If the app shows you an effect, it's the real one.
                 </p>
 
                 <h4 class="news-post-section">Where the game stands</h4>
 
                 <p>
-                  The main branch &mdash; what most of you play &mdash; is still <strong>v0.107.1 &ldquo;Major Update #2&rdquo;</strong> from June. Everything in v0.108.0 through v0.111.0 lives on the optional beta branch only. Spire Vault's tooltips describe the main branch, with beta changes tracked on a watchlist so nothing sneaks into your tooltips before it actually ships to you.
+                  The main branch &mdash; what most of you play &mdash; is still <strong>v0.107.1 &ldquo;Major Update #2&rdquo;</strong> from June. Everything in v0.108.0 through v0.111.0 lives on the optional beta branch only. SpireVault's tooltips describe the main branch, with beta changes tracked on a watchlist so nothing sneaks into your tooltips before it actually ships to you.
                 </p>
 
                 <h4 class="news-post-section">What the beta patches change (the short version)</h4>
@@ -1301,7 +1377,7 @@
 
               <div class="news-post-body">
                 <p class="news-lede">
-                  Mega Crit shipped Major Update #2 to the <strong>main branch</strong> on June 18&ndash;19 &mdash; the update that carries everything from the last two months of beta patches (v0.105.0 through v0.107.0) to every player, not just beta testers. Runs from the new build already show up correctly in Spire Vault; this post is the "what changed and what we already had covered" rundown.
+                  Mega Crit shipped Major Update #2 to the <strong>main branch</strong> on June 18&ndash;19 &mdash; the update that carries everything from the last two months of beta patches (v0.105.0 through v0.107.0) to every player, not just beta testers. Runs from the new build already show up correctly in SpireVault; this post is the "what changed and what we already had covered" rundown.
                 </p>
 
                 <h4 class="news-post-section">What was already covered</h4>
@@ -1332,7 +1408,7 @@
                 <h4 class="news-post-section">What's still on the list</h4>
 
                 <p>
-                  v0.107.1 is a big patch &mdash; RNG rework (the PRNG is now xoshiro256**, fixing a real correlation bug between your run seed and things like Neow's Bones curses), official Steam Workshop support, and dozens of card and relic balance changes across every class. None of that changes how Spire Vault reads your save file, and we don't have hand-written tooltips for every rebalanced relic yet (Neow's Scroll Boxes, Booming Conch, Nutritious Soup, Seal of Gold, Pael's Eye, and The Boot all changed this patch). Those relics still show up correctly in your run history and Top Relics tab &mdash; they just fall back to your personal stats instead of a hand-written blurb until we source the exact in-game text. If you spot one and want to send us the tooltip, a screenshot + one-line GitHub issue closes it out.
+                  v0.107.1 is a big patch &mdash; RNG rework (the PRNG is now xoshiro256**, fixing a real correlation bug between your run seed and things like Neow's Bones curses), official Steam Workshop support, and dozens of card and relic balance changes across every class. None of that changes how SpireVault reads your save file, and we don't have hand-written tooltips for every rebalanced relic yet (Neow's Scroll Boxes, Booming Conch, Nutritious Soup, Seal of Gold, Pael's Eye, and The Boot all changed this patch). Those relics still show up correctly in your run history and Top Relics tab &mdash; they just fall back to your personal stats instead of a hand-written blurb until we source the exact in-game text. If you spot one and want to send us the tooltip, a screenshot + one-line GitHub issue closes it out.
                 </p>
 
                 <p class="news-post-signoff">
@@ -1643,7 +1719,7 @@
 
               <div class="news-post-body">
                 <p class="news-lede">
-                  Mega Crit shipped a beta patch on May 8 that touched the Neow pool, reworked an Ancients reward, and replaced the Act 3 boss. Runs from the new build now show up correctly in Spire Vault — names, labels, and tooltips included.
+                  Mega Crit shipped a beta patch on May 8 that touched the Neow pool, reworked an Ancients reward, and replaced the Act 3 boss. Runs from the new build now show up correctly in SpireVault — names, labels, and tooltips included.
                 </p>
 
                 <h4 class="news-post-section">What we added</h4>
@@ -1672,7 +1748,7 @@
                 <h4 class="news-post-section">What this means for unknown future relics</h4>
 
                 <p>
-                  The parser was already designed to forward unknown content as raw slugs — nothing about Spire Vault assumes a closed list of relics. So any post-v0.105.0 patch that ships brand-new relics will tally in the Top Relics tab, show up in deck lists, and roll up into win-rate buckets the moment your save file lands. We just won't have a hand-written tooltip for them until we patch this list. If you spot a relic showing as a 2-letter glyph and want copy added, drop a one-line GitHub issue and it'll go in the next deploy.
+                  The parser was already designed to forward unknown content as raw slugs — nothing about SpireVault assumes a closed list of relics. So any post-v0.105.0 patch that ships brand-new relics will tally in the Top Relics tab, show up in deck lists, and roll up into win-rate buckets the moment your save file lands. We just won't have a hand-written tooltip for them until we patch this list. If you spot a relic showing as a 2-letter glyph and want copy added, drop a one-line GitHub issue and it'll go in the next deploy.
                 </p>
 
                 <p class="news-post-signoff">
@@ -1821,7 +1897,7 @@
                 <h4 class="news-post-section">Reaching out to the Slay the Spire community</h4>
 
                 <p>
-                  This is the bit I'm a little nervous about, so I'm going to write it plainly: I'm starting a conversation with the Slay the Spire 2 official Discord about getting Spire Vault in front of more testers. The plan is to ask the moderators if I can post a short pinned message in <code>#community-tools</code> (or wherever they think it belongs) inviting players to try the web app and send me bug reports.
+                  This is the bit I'm a little nervous about, so I'm going to write it plainly: I'm starting a conversation with the Slay the Spire 2 official Discord about getting SpireVault in front of more testers. The plan is to ask the moderators if I can post a short pinned message in <code>#community-tools</code> (or wherever they think it belongs) inviting players to try the web app and send me bug reports.
                 </p>
 
                 <p>
@@ -1873,7 +1949,7 @@
               </figure>
               <header class="news-post-head">
                 <span class="news-post-eyebrow">Update · May 5, 2026</span>
-                <h3 class="news-post-title" id="news-001-title">Bug fixes &amp; updates &mdash; thank you for using Spire Vault</h3>
+                <h3 class="news-post-title" id="news-001-title">Bug fixes &amp; updates &mdash; thank you for using SpireVault</h3>
                 <p class="news-post-byline">
                   Corey
                   <span class="news-post-byline-sep">·</span>
@@ -1883,7 +1959,7 @@
 
               <div class="news-post-body">
                 <p class="news-lede">
-                  First, the obvious thing: thank you for being here. Spire Vault went from "weird side project" to "people are actually using this" because of you, and I don't take that lightly. So before anything else &mdash; thanks. Genuinely.
+                  First, the obvious thing: thank you for being here. SpireVault went from "weird side project" to "people are actually using this" because of you, and I don't take that lightly. So before anything else &mdash; thanks. Genuinely.
                 </p>
 
                 <p>
@@ -1908,7 +1984,7 @@
                     For a while, every time I shipped a new version, half of you would have to open the app in private mode to see the change. That was bad. The root cause was three layers of cache fighting each other: Cloudflare's edge, your browser's disk cache, and Safari's in-tab memory cache, which ignores cache headers entirely while a tab is alive.
                   </p>
                   <p>
-                    There's now a small banner at the top of the app that appears when a newer version is out: <em>"A newer version of Spire Vault is available &mdash; Reload now."</em> Click it whenever you're ready. Your sign-in and stats stick. No more force-reload mid-typing.
+                    There's now a small banner at the top of the app that appears when a newer version is out: <em>"A newer version of SpireVault is available &mdash; Reload now."</em> Click it whenever you're ready. Your sign-in and stats stick. No more force-reload mid-typing.
                   </p>
                 </div>
 
@@ -1982,7 +2058,7 @@
                 </p>
 
                 <p>
-                  And if Spire Vault has saved you a Discord scroll, helped you find a co-op partner, or just been nice to look at while reviewing a long run &mdash; that's the whole point. Thanks for being here.
+                  And if SpireVault has saved you a Discord scroll, helped you find a co-op partner, or just been nice to look at while reviewing a long run &mdash; that's the whole point. Thanks for being here.
                 </p>
 
                 <p class="news-post-signoff">
@@ -2565,6 +2641,6 @@
        Pinned with its own ?v= cache key so it does NOT require bumping
        script.js / styles.css when only this module changes. -->
   <script src="/lib/analytics-coop.js?v=1" defer></script>
-  <script src="/script.js?v=211" type="module"></script>
+  <script src="/script.js?v=213" type="module"></script>
 </body>
 </html>

@@ -270,16 +270,38 @@ enum NewsCatalog {
 
     static let posts: [NewsPost] = [
         NewsPost(
+            id: "011-2026-08-23-v211-thank-you",
+            eyebrow: "Release · August 23, 2026",
+            title: "The big one: schedule your co-op, trust every tooltip — and thank you",
+            readMinutes: 4,
+            tags: ["Release", "Co-op", "Thank you"],
+            body: [
+                .lede("Today's release is the biggest one since launch, and before anything else: thank you. There are 84 of you now, and some of you open this thing every single day — I see the same names come back morning after morning, and honestly that's the whole reason this update exists. Everything below was built for the people who kept showing up."),
+
+                .heading("Schedule your co-op — nobody has to be online at the same time anymore"),
+                .paragraph("The oldest problem with the Co-op tab: two people who both wanted the same run would visit twenty minutes apart, each see an empty board, and each conclude nobody was here. The fix is the new \u{201c}When are you free?\u{201d} panel at the top of Co-op. One tap on \u{201c}Tonight\u{201d} or \u{201c}Saturday\u{201d} (or pick exact times) saves your window on the server — close the tab, shut the laptop, doesn't matter. When someone else's window overlaps yours by at least half an hour, with a compatible goal and ascension range, you both see the match: who, when, and how much overlap."),
+
+                .heading("If the app shows you a game fact, it's the real one"),
+                .paragraph("We read Mega Crit's v0.108.0 through v0.111.0 patch notes in full, then re-verified every card and relic tooltip against the game's own data. Relic tooltips went from ~32 to 159; the AI coach's glossary grew from 72 to 279 sourced cards with full Regent and Necrobinder coverage for the first time. Long-hiding Slay the Spire 1 ghosts (looking at you, Snecko Eye) are gone, and a new sidebar badge tells you exactly which game version the data was verified against — enforced by an automated check on every deploy."),
+
+                .heading("Faster for the people who come back"),
+                .paragraph("Returning visitors were re-downloading about 1.5 MB of JavaScript on every load. Fixed properly: code is cached for a year and updates arrive via version-stamped URLs — repeat visits are dramatically lighter, and this desktop app (now 0.10.0) carries everything above."),
+
+                .heading("What's coming"),
+                .paragraph("Mega Crit says a large content update is next — the data ledger and deploy guard we built this cycle exist precisely so SpireVault syncs in hours when it lands. On the co-op side: schedule matches that reach you when the tab is closed, and one-click match-to-lobby. To the daily crew: you know who you are. Keep climbing."),
+            ]
+        ),
+        NewsPost(
             id: "010-2026-08-23-beta-0110-0111-data-pass",
             eyebrow: "Game data · August 23, 2026",
             title: "v0.110.0 + v0.111.0 read in full — every tooltip re-verified against the game",
             readMinutes: 3,
             tags: ["Game data", "Patch", "Beta watch"],
             body: [
-                .lede("Mega Crit shipped two more beta patches — v0.110.0 on July 31 and v0.111.0 on August 14 — and said that's the last one for a while, with a big content update teased next. We read both in full, netted them against July's v0.108/v0.109 notes, and then went further: every card and relic tooltip in Spire Vault has been re-verified against the game's own data. If the app shows you an effect, it's the real one."),
+                .lede("Mega Crit shipped two more beta patches — v0.110.0 on July 31 and v0.111.0 on August 14 — and said that's the last one for a while, with a big content update teased next. We read both in full, netted them against July's v0.108/v0.109 notes, and then went further: every card and relic tooltip in SpireVault has been re-verified against the game's own data. If the app shows you an effect, it's the real one."),
 
                 .heading("Where the game stands"),
-                .paragraph("The main branch — what most of you play — is still v0.107.1 \u{201c}Major Update #2\u{201d} from June. Everything in v0.108.0 through v0.111.0 lives on the optional beta branch only. Spire Vault's tooltips describe the main branch, with beta changes tracked on a watchlist so nothing sneaks into your tooltips before it actually ships to you."),
+                .paragraph("The main branch — what most of you play — is still v0.107.1 \u{201c}Major Update #2\u{201d} from June. Everything in v0.108.0 through v0.111.0 lives on the optional beta branch only. SpireVault's tooltips describe the main branch, with beta changes tracked on a watchlist so nothing sneaks into your tooltips before it actually ships to you."),
 
                 .heading("What the beta patches change (the short version)"),
                 .feature(
@@ -501,7 +523,7 @@ enum NewsCatalog {
             readMinutes: 2,
             tags: ["Patch", "Game data", "v0.105.0"],
             body: [
-                .lede("Mega Crit shipped a beta patch on May 8 that touched the Neow pool, reworked an Ancients reward, and replaced the Act 3 boss. Runs from the new build now show up correctly in Spire Vault — names, labels, and tooltips included."),
+                .lede("Mega Crit shipped a beta patch on May 8 that touched the Neow pool, reworked an Ancients reward, and replaced the Act 3 boss. Runs from the new build now show up correctly in SpireVault — names, labels, and tooltips included."),
 
                 .heading("What we added"),
                 .feature(
@@ -518,7 +540,7 @@ enum NewsCatalog {
                 ),
 
                 .heading("What this means for unknown future relics"),
-                .paragraph("The parser was already designed to forward unknown content as raw slugs — nothing about Spire Vault assumes a closed list of relics. Any post-v0.105.0 patch that ships brand-new relics will tally in the Top Relics tab, show up in deck lists, and roll up into win-rate buckets the moment your save file lands. We just won't have a hand-written tooltip for them until we patch this list. — Corey"),
+                .paragraph("The parser was already designed to forward unknown content as raw slugs — nothing about SpireVault assumes a closed list of relics. Any post-v0.105.0 patch that ships brand-new relics will tally in the Top Relics tab, show up in deck lists, and roll up into win-rate buckets the moment your save file lands. We just won't have a hand-written tooltip for them until we patch this list. — Corey"),
             ]
         ),
 
@@ -576,7 +598,7 @@ enum NewsCatalog {
                 ], isInflight: false),
 
                 .heading("Reaching out to the Slay the Spire community"),
-                .paragraph("I'm starting a conversation with the Slay the Spire 2 official Discord about getting Spire Vault in front of more testers. The plan is to ask the moderators if I can post a short pinned message in #community-tools (or wherever they think it belongs) inviting players to try the web app and send me bug reports."),
+                .paragraph("I'm starting a conversation with the Slay the Spire 2 official Discord about getting SpireVault in front of more testers. The plan is to ask the moderators if I can post a short pinned message in #community-tools (or wherever they think it belongs) inviting players to try the web app and send me bug reports."),
                 .paragraph("What I'm specifically looking for: a couple of dozen testers spread across all five characters and the full ascension range, especially A15–A20 victories so the Compare mode has real data to chew on. People playing on the latest STS2 build — schema-16 character-extraction edge cases are exactly the kind of thing that only shows up on real machines, not mine. Honest feedback on the new Compare modal and the auto-refresh pill."),
                 .paragraph("This is opt-in, no posting on anyone's behalf, no DMs without permission. If a moderator from the STS2 Discord is reading this and would like a guided tour of the app or my notes on data handling and privacy, my email is in the footer of every page."),
 
@@ -588,11 +610,11 @@ enum NewsCatalog {
         NewsPost(
             id: "001-2026-05-05-bug-fixes-and-updates",
             eyebrow: "Update · May 5, 2026",
-            title: "Bug fixes & updates — thank you for using Spire Vault",
+            title: "Bug fixes & updates — thank you for using SpireVault",
             readMinutes: 4,
             tags: ["Update", "Bug fixes", "Roadmap"],
             body: [
-                .lede("First, the obvious thing: thank you for being here. Spire Vault went from \"weird side project\" to \"people are actually using this\" because of you. Quick rundown of what's new, then a few things I'm working on next."),
+                .lede("First, the obvious thing: thank you for being here. SpireVault went from \"weird side project\" to \"people are actually using this\" because of you. Quick rundown of what's new, then a few things I'm working on next."),
                 .heading("What's new"),
                 .feature(
                     title: "Co-op pairing — you can now see who's playing with who",
@@ -600,7 +622,7 @@ enum NewsCatalog {
                 ),
                 .feature(
                     title: "The cache & reload mess is finally fixed",
-                    body: "There's now a small banner at the top of the app when a newer version is out: \"A newer version of Spire Vault is available — Reload now.\" Click it whenever you're ready. Sign-in and stats stick across reloads."
+                    body: "There's now a small banner at the top of the app when a newer version is out: \"A newer version of SpireVault is available — Reload now.\" Click it whenever you're ready. Sign-in and stats stick across reloads."
                 ),
                 .feature(
                     title: "Run paths, but readable",
