@@ -1151,29 +1151,6 @@ main.main-public,
   font-weight: 600;
   color: var(--text-2, #b6abc4);
 }
-/* Game-data freshness badge — one quiet line under the status row that
- * says which game version the tooltips were verified against. Clicking
- * it opens the News tab (the data-pass post explains the details). Kept
- * deliberately dimmer than the status row: it's provenance, not status. */
-.sidebar-gamesync {
-  display: block;
-  width: 100%;
-  margin-top: 6px;
-  padding: 4px 8px 0;
-  border: 0;
-  background: none;
-  /* 9px + tight tracking so the full "Data: vX · beta vY" string fits the
-   * 248px dock without ellipsis (measured, not guessed). */
-  font: 600 9px/1.4 inherit;
-  letter-spacing: 0.2px;
-  color: var(--text-3, #6c647a);
-  text-align: left;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  cursor: pointer;
-}
-.sidebar-gamesync:hover { color: var(--text-2, #b6abc4); }
 .me-pill-status-pill {
   display: inline-flex;
   align-items: center;

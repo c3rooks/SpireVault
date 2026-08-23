@@ -24,7 +24,6 @@ import * as AscInfo from "/lib/ascension-info.js?v=2";
 import * as CharInfo from "/lib/character-info.js?v=1";
 import * as RelicInfo from "/lib/relic-info.js?v=3";
 import * as OverlayEngine from "/lib/overlay-engine.js?v=1";
-import { GAME_SYNC } from "/lib/game-sync.js?v=1";
 
 // ─── Constants ─────────────────────────────────────────────────────────
 //
@@ -72,7 +71,7 @@ const STS2_APP_ID = "2868840";
  * on an old client — instruct hard refresh. If it DOES match, the
  * bug is real and we can stop chasing cache ghosts.
  */
-const VAULT_BUILD = "v213-2026-08-23-mac-import-fix";
+const VAULT_BUILD = "v214-2026-08-23-badge-removal";
 
 /** True on wrangler pages dev / local loopback — not production hostnames. */
 function isLocalDevHost() {
@@ -2328,21 +2327,10 @@ async function boot() {
   // user's last tab — that way even if they're going straight to
   // Recent Runs, they see the pill on the sidebar immediately.
   refreshNewsBadge();
-  // Game-data freshness badge in the sidebar footer. The copy comes from
-  // lib/game-sync.js — the same constant the deploy-time drift guard
-  // asserts against the sync ledger — so what the user reads here is
-  // provably the version the data was verified against, not vibes.
-  try {
-    const $sync = document.getElementById("game-sync-badge");
-    if ($sync) {
-      // Short form fits the 248px sidebar without ellipsis; the title
-      // carries the full sentence for hover/assistive tech.
-      $sync.textContent = `Data: ${GAME_SYNC.main} · beta ${GAME_SYNC.betaWatch}`;
-      $sync.title = `Game data verified against STS2 ${GAME_SYNC.main} (main branch) — beta patch notes tracked through ${GAME_SYNC.betaWatch}. Click for details.`;
-      $sync.hidden = false;
-      $sync.addEventListener("click", () => switchTab("news"));
-    }
-  } catch { /* cosmetic — never block boot */ }
+  // (The sidebar game-data freshness badge that briefly rendered here was
+  // removed by owner decision on 2026-08-23 — version strings don't belong
+  // in consumer chrome. lib/game-sync.js remains the machine-checked source
+  // of truth for the sync claim; the deploy guard still enforces it.)
   // Paint the Co-op Lobby Beta badge / Switch-to-Classic link in the
   // Co-op slim header *before* we route. The Co-op panel is hidden
   // for non-Co-op tabs anyway but the markup needs to be correct so a

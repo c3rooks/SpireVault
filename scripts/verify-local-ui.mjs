@@ -41,18 +41,17 @@ await page.waitForTimeout(2500);
 if (jsErrors.length === 0) ok("boot: no JS errors");
 else fail(`boot: JS errors: ${jsErrors.join(" | ").slice(0, 500)}`);
 
-// ---- 3. game-sync badge -------------------------------------------------------
-const badge = page.locator("#game-sync-badge");
-try {
-  await badge.waitFor({ state: "visible", timeout: 5000 });
-  const text = (await badge.textContent())?.trim();
-  if (text?.includes("v0.107.1") && text.includes("v0.111.0")) ok(`badge: "${text}"`);
-  else fail(`badge text wrong: "${text}"`);
-  await page.screenshot({ path: "/tmp/ui-badge.png", clip: { x: 0, y: 640, width: 260, height: 260 } });
-  await badge.click();
+// ---- 3. no version strings in the sidebar chrome -------------------------------
+// The game-sync badge was removed by owner decision (2026-08-23): version
+// numbers read as debug output in consumer chrome. Guard the removal — and
+// open the News tab the way a user would, since the badge shortcut is gone.
+{
+  const leaked = await page.locator("#game-sync-badge").count();
+  const sidebarText = await page.locator(".sidebar-footer").textContent().catch(() => "");
+  if (leaked === 0 && !/v0\.\d+\.\d+/.test(sidebarText || "")) ok("sidebar: no version-string badge in consumer chrome");
+  else fail(`sidebar: version readout leaked back in (badge nodes: ${leaked}, text: "${(sidebarText || "").trim().slice(0, 80)}")`);
+  await page.click('[data-tab="news"]');
   await page.waitForTimeout(800);
-} catch (e) {
-  fail(`badge not visible: ${e.message.split("\n")[0]}`);
 }
 
 // ---- 4. news post -------------------------------------------------------------

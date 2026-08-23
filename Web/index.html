@@ -39,7 +39,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Playfair+Display:wght@700;900&family=Cinzel:wght@700;800;900&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/styles.css?v=153" />
+  <link rel="stylesheet" href="/styles.css?v=154" />
 
   <!-- Google tag (gtag.js) — SpireVault GA4 stream G-09LEQ247HN.
        Loaded async so it never blocks the critical rendering path; the
@@ -375,14 +375,13 @@
              handler that signs out is bound by boot() either way. -->
         <button class="status-signout" id="signout-btn" type="button" hidden aria-hidden="true" tabindex="-1" style="display:none">Sign out</button>
 
-        <!-- Game-data freshness badge. Populated at boot from
-             lib/game-sync.js — the single source of truth for which
-             game version the app's tooltips describe (the drift guard
-             asserts the same constant against docs/game-data-sync.md).
-             Clicking it opens the News tab, where the matching data-pass
-             post explains exactly what was verified. Hidden until JS
-             fills it so a broken boot never strands an empty box. -->
-        <button class="sidebar-gamesync" id="game-sync-badge" type="button" hidden title="Open the game-data update notes"></button>
+        <!-- NOTE: a "Data: v0.107.1 · beta v0.111.0" freshness badge lived
+             here for a few hours on 2026-08-23 and was removed by owner
+             decision — version strings read as debug output in consumer
+             chrome. The sync claim still exists where it belongs: in the
+             News posts, and enforced internally by lib/game-sync.js +
+             scripts/check-game-data.mjs on every deploy. Don't re-add a
+             version readout to the sidebar. -->
       </div>
 
       <!-- Mobile-only account row. Lives below the horizontal tab strip
@@ -1211,7 +1210,7 @@
                 </p>
 
                 <p>
-                  There's a new badge at the bottom of the sidebar that tells you exactly which game version the data was verified against. It's not decorative: an automated check now cross-references every data source on every deploy, so a stale tooltip literally cannot ship.
+                  And this isn't a one-time cleanup: an automated check now cross-references every data source on every single deploy, so a stale tooltip literally cannot ship again.
                 </p>
 
                 <h4 class="news-post-section">Faster for the people who come back (that's you)</h4>
@@ -2582,6 +2581,6 @@
        Pinned with its own ?v= cache key so it does NOT require bumping
        script.js / styles.css when only this module changes. -->
   <script src="/lib/analytics-coop.js?v=1" defer></script>
-  <script src="/script.js?v=213" type="module"></script>
+  <script src="/script.js?v=214" type="module"></script>
 </body>
 </html>
