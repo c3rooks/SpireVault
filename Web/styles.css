@@ -2663,8 +2663,8 @@ main.main-public,
  * v53: scaled up to 218/172 so the boss reads as the visual anchor
  * of the duel scene, matching the in-game encounter reference. */
 .scene-figure-boss {
-  max-width: 218px;
-  height: 178px;
+  max-width: 250px;
+  height: 240px;
 }
 .scene-figure-climber {
   cursor: pointer;
@@ -2714,21 +2714,18 @@ main.main-public,
   animation: sceneBobClimber 2.4s ease-in-out infinite;
 }
 .scene-figure-boss .scene-art {
-  /* Architect crystal-v4 is a clean cel render; the banner behind him
-   * is a soft ember-lit painting. Grade him into the scene: pull
-   * saturation/contrast down, warm the whites toward torchlight, and
-   * knock the razor edge off so he reads as part of the room, not a
-   * sticker on top of it. Scale stays ~1 so no transform resampling. */
+  /* Architect crystal-v4 is the official STS2 render — same pipeline
+   * as the climber sprites — so it gets the same treatment they do:
+   * a grounded drop-shadow and nothing else. No colour grading, no
+   * softening; that just turned him into a smudge. Presence comes
+   * from the slot height (240px vs the climber's 190px) so his tall
+   * silhouette actually reads as the boss. Scale stays 1 so the @2x
+   * asset lands pixel-exact on retina. */
   --boss-scale: 1;
   object-position: center 100%;
   filter:
-    saturate(0.84)
-    contrast(0.9)
-    brightness(0.86)
-    sepia(0.16)
-    blur(0.35px)
     drop-shadow(0 6px 10px rgba(0, 0, 0, 0.7))
-    drop-shadow(0 0 14px rgba(255, 150, 70, 0.14));
+    drop-shadow(0 0 12px rgba(120, 200, 255, 0.16));
   animation: sceneBobBoss 3.4s ease-in-out infinite;
 }
 
