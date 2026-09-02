@@ -71,7 +71,7 @@ const STS2_APP_ID = "2868840";
  * on an old client — instruct hard refresh. If it DOES match, the
  * bug is real and we can stop chasing cache ghosts.
  */
-const VAULT_BUILD = "v216-2026-09-02-overview-polish-architect";
+const VAULT_BUILD = "v217-2026-09-02-architect-grade-plaques";
 
 /** True on wrangler pages dev / local loopback — not production hostnames. */
 function isLocalDevHost() {
@@ -9784,7 +9784,6 @@ function renderHeadCrests(report) {
       { v: `${(report.overallWinrate * 100).toFixed(0)}%`, l: "Win rate" },
       { v: bestStreak > 0 ? `${bestStreak}W` : "—", l: "Best streak" },
       { v: hiLevel >= 0 ? `A${hiLevel}` : "—", l: "Highest asc" },
-      { v: String(report.totalWins ?? 0), l: "Wins" },
     ];
     $ov.innerHTML = `
       <div class="crest-plaques">

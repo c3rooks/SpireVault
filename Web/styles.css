@@ -2073,7 +2073,7 @@ main.main-public,
   display: flex;
   gap: 12px;
   align-items: stretch;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   justify-content: center;
 }
 .crest-plaque {
@@ -2105,6 +2105,7 @@ main.main-public,
   font-weight: 800;
   letter-spacing: 0.16em;
   text-transform: uppercase;
+  white-space: nowrap;
   color: rgba(240, 232, 216, 0.75);
 }
 
@@ -2662,8 +2663,8 @@ main.main-public,
  * v53: scaled up to 218/172 so the boss reads as the visual anchor
  * of the duel scene, matching the in-game encounter reference. */
 .scene-figure-boss {
-  max-width: 248px;
-  height: 210px;
+  max-width: 218px;
+  height: 178px;
 }
 .scene-figure-climber {
   cursor: pointer;
@@ -2713,14 +2714,21 @@ main.main-public,
   animation: sceneBobClimber 2.4s ease-in-out infinite;
 }
 .scene-figure-boss .scene-art {
-  /* Architect crystal-v4 is sharper and taller — keep scale near 1 so
-   * CSS transform doesn't soft-blur the silhouette on retina. */
-  --boss-scale: 1.08;
+  /* Architect crystal-v4 is a clean cel render; the banner behind him
+   * is a soft ember-lit painting. Grade him into the scene: pull
+   * saturation/contrast down, warm the whites toward torchlight, and
+   * knock the razor edge off so he reads as part of the room, not a
+   * sticker on top of it. Scale stays ~1 so no transform resampling. */
+  --boss-scale: 1;
   object-position: center 100%;
-  image-rendering: -webkit-optimize-contrast;
   filter:
-    drop-shadow(0 5px 10px rgba(0, 0, 0, 0.65))
-    drop-shadow(0 0 6px rgba(255, 200, 130, 0.12));
+    saturate(0.84)
+    contrast(0.9)
+    brightness(0.86)
+    sepia(0.16)
+    blur(0.35px)
+    drop-shadow(0 6px 10px rgba(0, 0, 0, 0.7))
+    drop-shadow(0 0 14px rgba(255, 150, 70, 0.14));
   animation: sceneBobBoss 3.4s ease-in-out infinite;
 }
 
@@ -3386,7 +3394,7 @@ main.main-public,
     max-width: 150px;
     height: 124px;
   }
-  .scene-figure-boss .scene-art { --boss-scale: 1.06; }
+  .scene-figure-boss .scene-art { --boss-scale: 1; }
   .scene-bubble   { font-size: 12px; padding: 8px 14px 9px; min-width: 130px; max-width: 240px; -webkit-line-clamp: 3; }
 }
 
@@ -3411,7 +3419,7 @@ main.main-public,
     max-width: 132px;
     height: 112px;
   }
-  .scene-figure-boss .scene-art { --boss-scale: 1.04; }
+  .scene-figure-boss .scene-art { --boss-scale: 1; }
   .scene-bubble   { font-size: 11.5px; padding: 7px 12px 8px; min-width: 120px; max-width: 220px; -webkit-line-clamp: 3; }
   .companion-picker { left: auto; right: 0; }
 }
