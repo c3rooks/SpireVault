@@ -39,7 +39,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Playfair+Display:wght@700;900&family=Cinzel:wght@700;800;900&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/styles.css?v=154" />
+  <link rel="stylesheet" href="/styles.css?v=155" />
 
   <!-- Google tag (gtag.js) — SpireVault GA4 stream G-09LEQ247HN.
        Loaded async so it never blocks the critical rendering path; the
@@ -1165,6 +1165,59 @@
             <!-- exactly what goes wrong if you reference a webp that isn't uploaded     -->
             <!-- yet (Cloudflare caches the SPA-fallback HTML at that path for a year).  -->
             <!-- Add the <figure class="news-post-banner"> block back once art ships.    -->
+            <article class="news-post" id="news-012" data-news-id="012" data-news-eyebrow="Update · September 2, 2026" data-news-tags="Update,Retention,Saves,Co-op" aria-labelledby="news-012-title">
+              <header class="news-post-head">
+                <span class="news-post-eyebrow">Update &middot; September 2, 2026</span>
+                <h3 class="news-post-title" id="news-012-title">Import once. Come back. Schedule a run.</h3>
+                <p class="news-post-byline">
+                  Corey
+                  <span class="news-post-byline-sep">&middot;</span>
+                  <span class="news-post-byline-meta">~2 min read</span>
+                </p>
+              </header>
+
+              <div class="news-post-body">
+                <p class="news-lede">
+                  If you&rsquo;re here from Discord: welcome. The whole product now bends around one promise &mdash; <strong>find your save folder once, see your stats in under a minute, and never redo that dance.</strong>
+                </p>
+
+                <h4 class="news-post-section">Your runs stay put</h4>
+                <p>
+                  On first visit, click <strong>Find my STS2 saves</strong> (or drag the <code>SlayTheSpire2</code> folder onto the page). We parse every <code>.run</code> file, pin them in durable browser storage, and &mdash; if you&rsquo;re signed in with Steam &mdash; sync a cloud copy. Next time you open the app, your dashboard is already there. If the browser ever drops folder permission, you get a one-click <strong>Resume</strong>, not another full re-pick.
+                </p>
+
+                <h4 class="news-post-section">Honest numbers</h4>
+                <p>
+                  Co-op used to look &ldquo;busy&rdquo; with lifetime sign-ups. That lied. You now see who&rsquo;s actually active this week / online now, plus total climbers signed up. Empty rooms aren&rsquo;t a failure &mdash; they&rsquo;re why scheduling exists.
+                </p>
+
+                <h4 class="news-post-section">Schedule co-op when the board is quiet</h4>
+                <p>
+                  On the Co-op tab, tap <strong>Tonight</strong> / <strong>Tomorrow eve</strong> / <strong>Saturday</strong>. We match your window against everyone else&rsquo;s even if nobody&rsquo;s online in the same five minutes. Matches toast in-app (and OS-notify if you allow it). After a good overlap, hit <strong>Same time next week</strong>.
+                </p>
+
+                <p>
+                  Overview also shows what changed since your last visit and a one-line &ldquo;your week&rdquo; digest. Small stuff. The kind that makes coming back feel like opening a place that remembers you.
+                </p>
+
+                <p class="news-post-signoff">
+                  &mdash; Corey
+                </p>
+              </div>
+
+              <footer class="news-post-foot">
+                <div class="news-post-foot-meta">
+                  <span class="news-post-tag">Update</span>
+                  <span class="news-post-tag">Saves</span>
+                  <span class="news-post-tag">Co-op</span>
+                </div>
+                <div class="news-post-foot-actions">
+                  <a class="action-link" href="https://app.spirevault.app/" target="_blank" rel="noopener">Open Spire Vault &rarr;</a>
+                  <a class="action-link" href="https://github.com/c3rooks/SpireVault/issues/new" target="_blank" rel="noopener">Report an issue &rarr;</a>
+                </div>
+              </footer>
+            </article>
+
             <article class="news-post" id="news-011" data-news-id="011" data-news-eyebrow="Release · August 23, 2026" data-news-tags="Release,Co-op,Thank you" aria-labelledby="news-011-title">
               <figure class="news-post-banner">
                 <picture>
@@ -2581,6 +2634,6 @@
        Pinned with its own ?v= cache key so it does NOT require bumping
        script.js / styles.css when only this module changes. -->
   <script src="/lib/analytics-coop.js?v=1" defer></script>
-  <script src="/script.js?v=214" type="module"></script>
+  <script src="/script.js?v=215" type="module"></script>
 </body>
 </html>

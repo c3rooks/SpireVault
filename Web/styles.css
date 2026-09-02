@@ -6730,6 +6730,11 @@ select#me-note option { background: var(--bg-deep); color: var(--text); }
   border: 1px solid var(--border);
   border-radius: var(--radius);
 }
+.guest-coop-card--intents {
+  border-color: rgba(212, 175, 55, 0.35);
+  background: linear-gradient(160deg, rgba(40, 32, 18, 0.55), rgba(18, 16, 24, 0.92));
+}
+.guest-coop-card--intents h2 { color: var(--gold); }
 .guest-coop-card h2 {
   font-family: 'Playfair Display', serif;
   font-size: 26px;
@@ -11964,6 +11969,48 @@ html.prefer-compact-density .h-stat-num { font-size: 18px; }
 @media (prefers-reduced-motion: reduce) {
   .auto-refresh-global-banner { animation: none; }
   .auto-refresh-global-dot { animation: none; }
+}
+
+/* Overview retention strips — save confirmation + weekly digest v0 */
+.since-visit-strip,
+.weekly-digest-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px 12px;
+  margin: 0 0 14px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  font-size: 13px;
+  line-height: 1.45;
+}
+.since-visit-strip {
+  background: rgba(80, 220, 130, 0.08);
+  border: 1px solid rgba(80, 220, 130, 0.28);
+  color: rgba(220, 255, 230, 0.95);
+}
+.since-visit-strip--new {
+  background: rgba(212, 175, 55, 0.10);
+  border-color: rgba(212, 175, 55, 0.35);
+  color: #f4eddc;
+}
+.since-visit-strip--quiet {
+  opacity: 0.92;
+}
+.weekly-digest-strip {
+  background: rgba(93, 193, 255, 0.08);
+  border: 1px solid rgba(93, 193, 255, 0.25);
+  color: #d8ecff;
+}
+.weekly-digest-strip strong { color: #fff; }
+.empty-state-backup-hint {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(212, 175, 55, 0.08);
+  border: 1px solid rgba(212, 175, 55, 0.25);
+  font-size: 13px;
+  line-height: 1.5;
 }
 
 /* ============================================================

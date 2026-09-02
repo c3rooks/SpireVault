@@ -18,7 +18,7 @@ import * as HistoryStore from "/lib/history-store.js?v=8";
 import * as InviteAPI from "/lib/invites.js?v=4";
 import * as HighlightsAPI from "/lib/highlights.js?v=1";
 import * as CoopLobbies from "/lib/coop-lobbies.js?v=34";
-import { isCoopSandboxEnabled, openCoopSandboxPanel } from "/lib/coop-sandbox.js?v=12";
+import { isCoopSandboxEnabled, openCoopSandboxPanel } from "/lib/coop-sandbox.js?v=13";
 import * as PartyRoom from "/lib/party-room.js?v=6";
 import * as AscInfo from "/lib/ascension-info.js?v=2";
 import * as CharInfo from "/lib/character-info.js?v=1";
@@ -71,7 +71,7 @@ const STS2_APP_ID = "2868840";
  * on an old client — instruct hard refresh. If it DOES match, the
  * bug is real and we can stop chasing cache ghosts.
  */
-const VAULT_BUILD = "v214-2026-08-23-badge-removal";
+const VAULT_BUILD = "v215-2026-09-02-persist-retention-tier12";
 
 /** True on wrangler pages dev / local loopback — not production hostnames. */
 function isLocalDevHost() {
@@ -749,6 +749,13 @@ const STORAGE_LAST_NUDGE_AT  = "vault.web.history.last-nudge-at";
 /** "granted" once navigator.storage.persist() succeeded on this
  *  origin, so we can skip re-asking on every boot. */
 const STORAGE_DURABLE_FLAG   = "vault.web.storage.durable";
+/** Lightweight localStorage mirror of the last successful IDB save.
+ *  If IndexedDB hiccups on boot, this lets us show "you had N runs"
+ *  and aggressively pull from cloud instead of looking empty. */
+const STORAGE_LOCAL_BACKUP   = "vault.web.history.backup.v1";
+/** Last time the user closed/hid the tab — powers "since you were here". */
+const STORAGE_LAST_VISIT_AT    = "vault.web.lastVisitAt";
+const STORAGE_LAST_VISIT_RUNS  = "vault.web.lastVisitRunCount";
 
 /**
  * Ask the browser to mark this origin's storage as durable ("persistent"
@@ -783,6 +790,137 @@ async function ensureDurableStorage() {
     return granted;
   } catch {
     return false;
+  }
+}
+
+/** Mirror run count to localStorage so a cold boot with an empty IDB
+ *  read still knows the user had data and can cloud-restore instead of
+ *  showing the import wall again. */
+function persistLocalBackup(runCount) {
+  if (!Number.isFinite(runCount) || runCount <= 0) return;
+  try {
+    localStorage.setItem(STORAGE_LOCAL_BACKUP, JSON.stringify({
+      count: runCount,
+      savedAt: Date.now(),
+      steamID: session?.steamID || null,
+    }));
+  } catch { /* private mode */ }
+}
+
+/** When IDB is empty on boot, try disk handle then cloud before painting
+ *  an empty dashboard. This is the "never make me re-import" path. */
+async function bootRestoreFromDiskOrCloud(hasLinkedSaves, sess) {
+  if (hasLinkedSaves) {
+    await autoReloadHistoryIfPermitted({
+      silent: true,
+      allowPermissionPrompt: false,
+      bypassFingerprint: true,
+    });
+  }
+  if (parsedRuns.length === 0 && sess?.steamID) {
+    await hydrateFromCloudIfAvailable();
+  }
+  if (parsedRuns.length > 0) {
+    void ensureDurableStorage();
+    persistLocalBackup(parsedRuns.length);
+  }
+}
+
+function stampLastVisit() {
+  if (isDemoMode || parsedRuns.length === 0) return;
+  try {
+    localStorage.setItem(STORAGE_LAST_VISIT_AT, String(Date.now()));
+    localStorage.setItem(STORAGE_LAST_VISIT_RUNS, String(parsedRuns.length));
+  } catch { /* ok */ }
+}
+
+function wireLastVisitTracking() {
+  if (window.__vaultLastVisitWired) return;
+  window.__vaultLastVisitWired = true;
+  const go = () => stampLastVisit();
+  window.addEventListener("pagehide", go);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") go();
+  });
+}
+
+/** "Since you were last here" — cheap retention hook on Overview. */
+function renderSinceLastVisitStrip(sortedByDate) {
+  if (isDemoMode || !sortedByDate?.length) return "";
+  let lastVisit = 0;
+  let lastCount = 0;
+  try {
+    lastVisit = Number(localStorage.getItem(STORAGE_LAST_VISIT_AT)) || 0;
+    lastCount = Number(localStorage.getItem(STORAGE_LAST_VISIT_RUNS)) || 0;
+  } catch { /* ok */ }
+  const durable = localStorage.getItem(STORAGE_DURABLE_FLAG) === "granted";
+  const newRuns = lastVisit > 0
+    ? sortedByDate.filter((r) => r.endedAt && r.endedAt.getTime() > lastVisit).length
+    : 0;
+  const savedLine = durable
+    ? "Saved permanently on this device"
+    : "Saved on this device";
+  if (newRuns > 0) {
+    return `
+      <div class="since-visit-strip since-visit-strip--new">
+        <strong>${newRuns} new run${newRuns === 1 ? "" : "s"} since your last visit.</strong>
+        <span class="muted">${savedLine} · ${sortedByDate.length} total.</span>
+      </div>`;
+  }
+  if (lastCount > 0 && sortedByDate.length > lastCount) {
+    const delta = sortedByDate.length - lastCount;
+    return `
+      <div class="since-visit-strip since-visit-strip--new">
+        <strong>+${delta} run${delta === 1 ? "" : "s"} since last session.</strong>
+        <span class="muted">${savedLine} · ${sortedByDate.length} total.</span>
+      </div>`;
+  }
+  return `
+    <div class="since-visit-strip since-visit-strip--quiet">
+      <span>${savedLine} · ${sortedByDate.length} run${sortedByDate.length === 1 ? "" : "s"} ready — no re-import needed.</span>
+    </div>`;
+}
+
+/** In-app weekly digest v0 until the mailer ships. */
+function renderWeeklyDigestStrip(sortedByDate) {
+  if (isDemoMode || !sortedByDate?.length) return "";
+  const weekAgo = Date.now() - 7 * 86400000;
+  const weekRuns = sortedByDate.filter((r) => r.endedAt && r.endedAt.getTime() > weekAgo);
+  if (weekRuns.length === 0) return "";
+  const wins = weekRuns.filter((r) => r.won).length;
+  const losses = weekRuns.length - wins;
+  const best = weekRuns.filter((r) => r.won).sort((a, b) => (b.ascension || 0) - (a.ascension || 0))[0];
+  const bestLine = best
+    ? ` · best win A${best.ascension || 0} ${capitalize(best.character || "")}`
+    : "";
+  return `
+    <div class="weekly-digest-strip">
+      <strong>Your week:</strong>
+      <span>${weekRuns.length} run${weekRuns.length === 1 ? "" : "s"} · ${wins}W · ${losses}L${bestLine}</span>
+    </div>`;
+}
+
+async function fetchCommunityStatsCached() {
+  try {
+    const cached = sessionStorage.getItem("vault.web.community-pulse");
+    if (cached) {
+      const parsed = JSON.parse(cached);
+      if (Date.now() - (parsed.fetchedAt || 0) < 10 * 60_000) return parsed.data;
+    }
+  } catch { /* ok */ }
+  try {
+    const r = await fetch(`${API_BASE}/stats/community`, { headers: { accept: "application/json" } });
+    if (!r.ok) return null;
+    const data = await r.json();
+    try {
+      sessionStorage.setItem(
+        "vault.web.community-pulse",
+        JSON.stringify({ fetchedAt: Date.now(), data })
+      );
+    } catch { /* ok */ }
+    return data;
+  } catch {
+    return null;
   }
 }
 
@@ -2150,12 +2288,12 @@ async function loadCommunityPulse() {
   if (week < 2 && total < 2) return;
   const parts = [];
   if (week >= 2) {
-    parts.push(`${week} Slayers on the climb this week`);
+    parts.push(`${week} active this week`);
   }
   if (total >= 2) {
-    parts.push(`${total} climbers worldwide`);
+    parts.push(`${total} climbers signed up`);
   }
-  $pulse.textContent = `⚔ ${parts.join(" · ")} — you're one of them.`;
+  $pulse.textContent = `⚔ ${parts.join(" · ")}.`;
   $pulse.hidden = false;
 }
 
@@ -2163,18 +2301,20 @@ async function refreshPublicCount() {
   const $text = document.getElementById("presence-text");
   if (!$text) return;
   try {
-    const list = await fetchFeed();
-    if (list.length === 0) {
+    const stats = await fetchCommunityStatsCached();
+    if (!stats) throw new Error("no stats");
+    const week = Number(stats.climbersThisWeek) || 0;
+    const total = Number(stats.totalClimbers) || 0;
+    if (total === 0) {
       $text.textContent = "Nobody signed up yet. Be the first.";
     } else {
-      const looking = list.filter((p) => p.status === "looking").length;
-      const activeNow = list.filter((p) => isActiveNow(p)).length;
-      const head =
-        list.length === 1 ? "1 player signed up" : `${list.length} players signed up`;
-      $text.textContent = `${head} · ${activeNow} online · ${looking} looking`;
+      const parts = [];
+      if (week > 0) parts.push(`${week} active this week`);
+      parts.push(`${total} ${total === 1 ? "climber" : "climbers"} signed up`);
+      $text.textContent = parts.join(" · ");
     }
   } catch {
-    $text.textContent = "Live count momentarily unavailable.";
+    $text.textContent = "Community stats momentarily unavailable.";
   }
 }
 
@@ -2732,37 +2872,45 @@ async function boot() {
   }
 
   let needCloudHydrate = false;
+  let bootRestoreAttempted = false;
   if (cached?.runs?.length) {
     parsedRuns = cached.runs.map(reviveRun);
     isDemoMode = false;
-    // There's real data in IndexedDB — make sure the browser is not
-    // allowed to silently evict it. Fire-and-forget; see the helper's
-    // doc comment for why this is the "never re-upload" keystone.
     void ensureDurableStorage();
-    // Signed-in: kick a cloud refresh anyway so any newer runs from
-    // another device get unioned in (merge-by-id is safe).
+    persistLocalBackup(parsedRuns.length);
     if (session?.steamID) needCloudHydrate = true;
-  } else if (hasLinkedSaves) {
-    // Folder is linked but cache is empty — show empty for one frame,
-    // the auto-reload below will populate it.
-    parsedRuns = [];
-    isDemoMode = false;
-  } else if (session?.steamID) {
-    // Signed-in fresh device. Show a skeleton, NOT demo data, until
-    // cloud download resolves.
-    parsedRuns = [];
-    isDemoMode = false;
-    showBootSkeleton();
-    needCloudHydrate = true;
   } else {
-    // True guest, no local cache, no folder, no Steam — demo time.
-    try {
-      const { getDemoRuns } = await import("./lib/demo-runs.js?v=2");
-      parsedRuns = getDemoRuns();
-      isDemoMode = true;
-    } catch {
+    let shouldTryRestore = hasLinkedSaves || !!session?.steamID;
+    if (!shouldTryRestore) {
+      try {
+        const backup = JSON.parse(localStorage.getItem(STORAGE_LOCAL_BACKUP) || "null");
+        shouldTryRestore = !!(backup?.count > 0);
+      } catch { /* ok */ }
+    }
+    if (shouldTryRestore) {
+      showBootSkeleton();
+      bootRestoreAttempted = true;
+      await bootRestoreFromDiskOrCloud(hasLinkedSaves, session);
+      hideBootSkeleton();
+    }
+    if (parsedRuns.length > 0) {
+      isDemoMode = false;
+      if (session?.steamID) needCloudHydrate = true;
+    } else if (session?.steamID) {
       parsedRuns = [];
       isDemoMode = false;
+    } else if (hasLinkedSaves) {
+      parsedRuns = [];
+      isDemoMode = false;
+    } else {
+      try {
+        const { getDemoRuns } = await import("./lib/demo-runs.js?v=2");
+        parsedRuns = getDemoRuns();
+        isDemoMode = true;
+      } catch {
+        parsedRuns = [];
+        isDemoMode = false;
+      }
     }
   }
   // Demo data and boot-from-cache never carry a live in-progress
@@ -2800,31 +2948,34 @@ async function boot() {
     void hydrateFromCloudIfAvailable()
       .then(async () => {
         hideBootSkeleton();
-        // If the user is signed in and we still have no data,
-        // re-render so the empty-state CTA shows ("Drop your save
-        // folder to start syncing"). NEVER load demo for an authed
-        // user — their dashboard would lie about their stats.
+        if (parsedRuns.length > 0) persistLocalBackup(parsedRuns.length);
         if (parsedRuns.length === 0 && session?.steamID) {
+          renderActiveTab();
+        } else if (parsedRuns.length > 0) {
           renderActiveTab();
         }
       })
       .catch(async () => {
-        // Cloud unreachable. Don't synthesize demo — the user's
-        // network blipped, they'll see a normal empty state.
         hideBootSkeleton();
         if (parsedRuns.length === 0) renderActiveTab();
       });
   }
 
+  // Probe linked folder permission so paused-permission banner shows
+  // even when IDB already had runs (user shouldn't think they must re-import).
+  if (hasLinkedSaves && !bootRestoreAttempted) {
+    void autoReloadHistoryIfPermitted({ silent: true });
+  } else if (hasLinkedSaves && parsedRuns.length === 0) {
+    void autoReloadHistoryIfPermitted({ silent: true });
+  }
 
-  // Silent auto-reload from disk. If the user previously picked their
-  // save folder (directory handle) or a single history.json (file
-  // handle) AND the browser already granted read access for this
-  // origin, we can quietly re-read with no extra click. The fingerprint
-  // check inside autoReload short-circuits if nothing on disk changed,
-  // so this is cheap on a no-op visit and only re-parses when STS2
-  // actually wrote new `.run` files since last ingest.
-  void autoReloadHistoryIfPermitted({ silent: true });
+  wireLastVisitTracking();
+
+  // One silent disk read when we already have cached runs — picks up
+  // anything STS2 wrote since last visit without waiting for the interval.
+  if (hasLinkedSaves && parsedRuns.length > 0) {
+    void autoReloadHistoryIfPermitted({ silent: true });
+  }
   // Background loop: every 60s, silently re-scan the linked folder or
   // re-read history.json when STS2 writes new runs.
   startHistoryAutoRefresh();
@@ -3036,6 +3187,14 @@ function wireGuestCoop() {
           <div class="guest-room-card guest-room-card--skeleton"><p class="muted">Loading live rooms…</p></div>
         </div>
       </div>
+      <div class="guest-coop-card guest-coop-card--intents">
+        <h2>Schedule co-op — no one has to be online at once</h2>
+        <p class="muted">Pick when you're free (Tonight, Tomorrow eve, Saturday). We match your window against everyone else's — even if nobody's in a live room right now. Sign in to save your schedule and get notified when someone overlaps.</p>
+        <button class="btn-primary btn-block" type="button" data-action="signin-cta">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3 5l8-1.1V11H3V5zm0 7h8v7.1L3 18V12zm9 7.2V12h9v8L12 19.2zM12 11V3.9L21 3v8h-9z"/></svg>
+          <span>Sign in to schedule play</span>
+        </button>
+      </div>
       <div class="guest-coop-card">
         <h2>Pick a room, sign in, play</h2>
         <p class="muted">Anyone can browse the rooms above. To take a seat — or host your own — sign in with Steam. Click Join on a room first and we'll bring you right back to it. <strong>Stats and run history don't require sign-in</strong> — only playing does.</p>
@@ -3186,28 +3345,46 @@ async function refreshGuestRoster() {
   const $list    = document.getElementById("guest-coop-roster-list");
   const $headCount   = document.getElementById("online-count");
   const $headSummary = document.getElementById("online-summary");
-  if (!$count && !$headSummary) return;
+  if (!$count && !$headSummary && !$rosterWrap) return;
   try {
+    // Prefer community pulse for the headline (weekly active + total
+    // signed up). Never show lifetime sign-ups as "who's here now".
+    const stats = await fetchCommunityStatsCached();
+    if (stats) {
+      const week = Number(stats.climbersThisWeek) || 0;
+      const total = Number(stats.totalClimbers) || 0;
+      const head = total === 1 ? "1 climber signed up" : `${total} climbers signed up`;
+      const honest = week > 0 ? `${head} · ${week} active this week` : head;
+      if ($count) {
+        $count.innerHTML = `<span class="dot dot-pulse" aria-hidden="true"></span>${honest}`;
+      }
+      if ($headSummary) $headSummary.textContent = honest;
+      if ($headCount) $headCount.textContent = String(week);
+    }
+
     const list = await fetchFeed();
     if (!list || list.length === 0) {
-      if ($count) $count.textContent = "Nobody signed up yet — be the first.";
-      if ($headSummary) $headSummary.textContent = "No one signed up yet.";
-      if ($headCount) $headCount.textContent = "0";
+      if (!stats) {
+        if ($count) $count.textContent = "Nobody signed up yet — be the first.";
+        if ($headSummary) $headSummary.textContent = "No one signed up yet.";
+        if ($headCount) $headCount.textContent = "0";
+      }
       if ($rosterWrap) $rosterWrap.hidden = true;
       return;
     }
     const looking = list.filter((p) => p.status === "looking").length;
     const inGame  = list.filter((p) => p.inSTS2).length;
+    const activeNow = list.filter((p) => isActiveNow(p)).length;
     const total   = list.length;
-    const head    = total === 1 ? "1 player signed up" : `${total} players signed up`;
-    if ($count) {
-      $count.innerHTML = `<span class="dot dot-pulse" aria-hidden="true"></span>${head} · ${looking} looking · ${inGame} in STS2 right now`;
-    }
-    if ($headSummary) {
-      $headSummary.textContent = `${head} · ${looking} looking · ${inGame} in STS2`;
-    }
-    if ($headCount) {
-      $headCount.textContent = String(total);
+    if (!stats) {
+      const head = total === 1 ? "1 player signed up" : `${total} players signed up`;
+      if ($count) {
+        $count.innerHTML = `<span class="dot dot-pulse" aria-hidden="true"></span>${head} · ${activeNow} online · ${looking} looking`;
+      }
+      if ($headSummary) {
+        $headSummary.textContent = `${activeNow} online now · ${looking} looking · ${inGame} in STS2`;
+      }
+      if ($headCount) $headCount.textContent = String(activeNow);
     }
     if ($rosterWrap && $list) {
       $rosterWrap.hidden = total === 0;
@@ -3217,11 +3394,13 @@ async function refreshGuestRoster() {
       // reads like a bot farm on the front door. Instead show an honest
       // aggregate built from the REAL feed counts and let sign-in be the
       // gate to seeing who's actually here.
-      const headlineNum = looking > 0 ? looking : total;
+      const headlineNum = looking > 0 ? looking : activeNow > 0 ? activeNow : total;
       const headlineNoun = headlineNum === 1 ? "player" : "players";
       const headlineLine = looking > 0
         ? `${headlineNum} ${headlineNoun} looking for co-op right now`
-        : `${headlineNum} ${headlineNoun} signed up right now`;
+        : activeNow > 0
+          ? `${headlineNum} ${headlineNoun} online right now`
+          : `${headlineNum} ${headlineNoun} signed up`;
       const inGameNote = inGame > 0
         ? `<p class="muted small guest-roster-aggregate-note">${inGame === 1 ? "1 is" : inGame + " are"} in Slay the Spire 2 right now.</p>`
         : "";
@@ -3779,14 +3958,26 @@ function renderToolbarEmptyPill() {
   });
 }
 
-/** Linked-folder pill suppressed in v109 per user request — the panel-
- *  head was getting too noisy. Auto-refresh from the saved folder
- *  still runs silently in the background; the Refresh button on the
- *  toolbar is the only surface that needs to be there. */
+/** Linked-folder pill — confirms runs are saved so users stop re-importing. */
 function renderLinkedPill() {
+  const count = parsedRuns.length;
+  const linkedName = getLinkedFolderName();
+  const linked = !!linkedName || autoRefreshState.phase !== "off";
+  let durable = false;
+  try { durable = localStorage.getItem(STORAGE_DURABLE_FLAG) === "granted"; } catch { /* ok */ }
+
   document.querySelectorAll("[data-linked-pill]").forEach((el) => {
-    el.hidden = true;
-    el.innerHTML = "";
+    if (isDemoMode || count === 0) {
+      el.hidden = true;
+      el.innerHTML = "";
+      return;
+    }
+    el.hidden = false;
+    const saved = durable ? "Saved permanently" : "Saved on this device";
+    const linkBit = linked && linkedName ? ` · ${esc(linkedName)}` : "";
+    el.innerHTML = `
+      <span class="linked-pill-dot" aria-hidden="true"></span>
+      <span class="linked-pill-text"><strong>${count}</strong> run${count === 1 ? "" : "s"} · ${saved}${linkBit}</span>`;
   });
 }
 
@@ -6357,18 +6548,17 @@ function renderFeed(list) {
   const looking = others.filter((p) => p.status === "looking").length;
   const activeNow = others.filter((p) => isActiveNow(p)).length;
 
-  // Beta-side count + summary. Both are guarded because the Beta UI
-  // no longer renders an inline summary <p> (the slim header is the
-  // page subtitle in Beta), but #online-count still exists in the
-  // Players Looking Now section header.
+  // Honest live count: the big number is people active now, not
+  // lifetime sign-ups. Showing "94" when 0–9 are actually around
+  // made the board feel abandoned the moment someone clicked Co-op.
   const $bCount = document.getElementById("online-count");
-  if ($bCount) $bCount.textContent = String(others.length);
+  if ($bCount) $bCount.textContent = String(activeNow);
   const $bSummary = document.getElementById("online-summary");
   if ($bSummary) {
     $bSummary.textContent = others.length === 0
       ? "No one else has signed up yet. Be the first."
-      : `${others.length} signed-up player${others.length === 1 ? "" : "s"} · ` +
-        `${activeNow} online · ${looking} looking · ${inGame} in STS2`;
+      : `${activeNow} online now · ${looking} looking · ${inGame} in STS2` +
+        (others.length > activeNow ? ` · ${others.length} signed up` : "");
   }
 
   const $feed = document.getElementById("feed");
@@ -6572,13 +6762,12 @@ function renderClassicCoopMirror(list, others, summary) {
       $sub.textContent = "Loading…";
     } else {
       $sub.textContent =
-        `${total} signed-up player${total === 1 ? "" : "s"} · ` +
-        `${summary.activeNow} online · ${summary.looking} looking · ` +
-        `${summary.inGame} in STS2`;
+        `${summary.activeNow} online now · ${summary.looking} looking · ${summary.inGame} in STS2` +
+        (total > summary.activeNow ? ` · ${total} signed up` : "");
     }
   }
   const $count = document.getElementById("classic-online-count");
-  if ($count) $count.textContent = String((others || []).length);
+  if ($count) $count.textContent = String(summary.activeNow || 0);
 
   const $feed = document.getElementById("classic-feed");
   if ($feed) {
@@ -8747,6 +8936,7 @@ async function commitParsedRuns(runs, sourceName, { silent, fileCount = 1 }) {
     // so the browser can't evict it under disk pressure (the one
     // scenario where a user would otherwise have to re-import).
     void ensureDurableStorage();
+    persistLocalBackup(completedRuns.length);
   } catch (e) {
     console.error("[Vault] saveHistory to IndexedDB failed (continuing in-memory)", e);
     if (!silent) toast("Loaded runs but couldn't cache them locally. Stats will work this visit.");
@@ -9818,7 +10008,7 @@ function renderDemoBanner() {
       <button class="demo-banner-dismiss" type="button" data-action="dismiss-demo-banner" aria-label="Dismiss sample data notice" title="Hide this notice">&times;</button>
       <div class="demo-strip-row">
         <span class="demo-strip-eyebrow">Sample data</span>
-        <span class="demo-strip-text">Connect Steam or drop your STS2 save folder to see your own runs &mdash; sign in once and your history follows you to mobile.</span>
+        <span class="demo-strip-text">Demo preview. Point us at your STS2 save folder once &mdash; stats load in under a minute and stay saved on this device. No re-import next visit.</span>
         <div class="demo-strip-actions">${primaryCTAs}</div>
       </div>
       <details class="demo-strip-help">
@@ -10365,6 +10555,15 @@ function renderEmptyState() {
          Restore my runs from Steam
        </button>`
     : "";
+  let backupHint = "";
+  if (parsedRuns.length === 0) {
+    try {
+      const backup = JSON.parse(localStorage.getItem(STORAGE_LOCAL_BACKUP) || "null");
+      if (backup?.count > 0) {
+        backupHint = `<p class="empty-state-backup-hint muted">We had <strong>${backup.count}</strong> runs saved on this device before — try <strong>Restore from Steam</strong> or reconnect your save folder. You shouldn't need to start over.</p>`;
+      }
+    } catch { /* ok */ }
+  }
   const headlineHtml = isSignedIn
     ? `<h2>Restore your runs from Steam</h2>
        <p>You're signed in as <strong>${esc(session?.personaName || "Steam User")}</strong>. If you've already uploaded run history on another device, click <strong>Restore my runs from Steam</strong> below and we'll pull your cloud copy now. If this is your first device, point us at your STS2 save folder once and we'll sync it to your Steam account &mdash; <strong>you only do this once.</strong></p>`
@@ -10375,6 +10574,7 @@ function renderEmptyState() {
     <div class="empty-state${isSignedIn ? " empty-state--authed" : ""}">
       <div class="empty-state-icon">📂</div>
       ${headlineHtml}
+      ${backupHint}
       <div class="empty-state-actions">
         ${cloudRestoreCTA}
         ${primaryCTA}
@@ -11168,7 +11368,12 @@ function renderOverview(report) {
   // Overlay inline card pulled from production. The full Overlay
   // experience is gated behind the OVERLAY_NAV_VISIBLE flag below.
 
+  const sinceStrip = renderSinceLastVisitStrip(sortedByDate);
+  const weekStrip = renderWeeklyDigestStrip(sortedByDate);
+
   return `
+    ${sinceStrip}
+    ${weekStrip}
     ${kpiStrip}
     ${heroPanel}
     ${secTitle("Trends", "bars")}

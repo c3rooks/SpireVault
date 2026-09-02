@@ -68,7 +68,7 @@
     var l = document.createElement("link");
     l.id = "pf-intents-css";
     l.rel = "stylesheet";
-    l.href = "/lib/party-finder-intents.css?v=1";
+    l.href = "/lib/party-finder-intents.css?v=2";
     document.head.appendChild(l);
   }
 
@@ -217,6 +217,9 @@
       +     '</div>'
       +     (m.withNote ? '<div class="pf-intent-match-note">' + esc(m.withNote) + '</div>' : '')
       +   '</div>'
+      +   '<button type="button" class="pf-intent-match-repeat btn-ghost btn-xs"'
+      +     ' data-pf-action="intent-repeat-week" data-start="' + esc(m.overlapStartsAt) + '"'
+      +     ' data-end="' + esc(m.overlapEndsAt) + '">Same time next week</button>'
       +   '<a class="pf-intent-match-link" target="_blank" rel="noopener"'
       +     ' href="https://steamcommunity.com/profiles/' + esc(m.withSteamId) + '">Steam</a>'
       + '</li>';
@@ -338,6 +341,12 @@
         toastSafe(n > 0
           ? "Saved. " + n + (n === 1 ? " player overlaps" : " players overlap") + " with that window."
           : "Saved. We'll match you as others schedule.");
+        // Ask once, on a real user gesture (this save click). Without
+        // this, match notifications can never fire when the tab is
+        // backgrounded — the default permission stays "default".
+        if (typeof Notification !== "undefined" && Notification.permission === "default") {
+          try { Notification.requestPermission().catch(function () {}); } catch (_) {}
+        }
       })
       .catch(function (err) { toastSafe(err.message); });
   }
@@ -367,6 +376,42 @@
   }
 
   var lastSignature = "";
+  var lastMatchNotifySig = "";
+
+  function maybeNotifyMatches(matches) {
+    if (!matches || !matches.length) return;
+    var sig = matches.map(function (m) {
+      return m.withSteamId + "|" + m.overlapStartsAt;
+    }).join(";");
+    if (!lastMatchNotifySig) {
+      lastMatchNotifySig = sig;
+      return;
+    }
+    if (sig === lastMatchNotifySig) return;
+    lastMatchNotifySig = sig;
+    var m = matches[0];
+    var body = (m.withPersonaName || "Someone") + " overlaps "
+      + fmtRange(m.overlapStartsAt, m.overlapEndsAt);
+    toastSafe("Schedule match: " + body);
+    if (typeof Notification === "undefined") return;
+    if (Notification.permission === "granted") {
+      try {
+        new Notification("Co-op schedule match", {
+          body: body,
+          icon: m.withAvatarUrl || "/assets/vault-mark.svg",
+        });
+      } catch (_) {}
+    } else if (Notification.permission === "default" && document.hidden) {
+      Notification.requestPermission().catch(function () {});
+    }
+  }
+
+  function shiftWeek(iso) {
+    var d = new Date(iso);
+    if (isNaN(d)) return "";
+    d.setDate(d.getDate() + 7);
+    return d.toISOString();
+  }
 
   function render(force) {
     var anchor = mountPoint();
@@ -387,6 +432,7 @@
     ]);
     if (!force && sig === lastSignature && document.getElementById(MOUNT_ID)) return;
     lastSignature = sig;
+    maybeNotifyMatches(matches);
 
     var host = document.getElementById(MOUNT_ID);
     if (!host) {
@@ -445,6 +491,15 @@
     if (remove) {
       ev.preventDefault();
       removeWindow(remove.getAttribute("data-window-id"));
+      return;
+    }
+
+    var repeat = t.closest('[data-pf-action="intent-repeat-week"]');
+    if (repeat) {
+      ev.preventDefault();
+      var s = shiftWeek(repeat.getAttribute("data-start"));
+      var e = shiftWeek(repeat.getAttribute("data-end"));
+      if (s && e) addWindow(s, e, { note: "Same time next week" });
     }
   }
 

@@ -686,7 +686,7 @@ function ensurePartyFinderGlobalsScript() {
         if (!document.getElementById("pf-intents-rt-script")) {
           const s11 = document.createElement("script");
           s11.id = "pf-intents-rt-script";
-          s11.src = "/lib/party-finder-intents-rt.js?v=2";
+          s11.src = "/lib/party-finder-intents-rt.js?v=3";
           s11.async = false;
           document.head.appendChild(s11);
         }

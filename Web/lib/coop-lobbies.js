@@ -32,10 +32,10 @@ import {
   filterOpenLobbiesForViewer,
   filterRecommendationsForViewer,
   isSandboxSteamId,
-} from "./coop-sandbox.js?v=12";
+} from "./coop-sandbox.js?v=13";
 import { decodeStart } from "./party-finder-startsoon.js?v=1";
 
-export { ensureCoopSandboxMounted, isCoopSandboxEnabled } from "./coop-sandbox.js?v=12";
+export { ensureCoopSandboxMounted, isCoopSandboxEnabled } from "./coop-sandbox.js?v=13";
 
 const GAME_CONFIG = Object.freeze({
   game: "Slay the Spire 2",
