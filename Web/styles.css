@@ -2662,8 +2662,8 @@ main.main-public,
  * v53: scaled up to 218/172 so the boss reads as the visual anchor
  * of the duel scene, matching the in-game encounter reference. */
 .scene-figure-boss {
-  max-width: 218px;
-  height: 172px;
+  max-width: 248px;
+  height: 210px;
 }
 .scene-figure-climber {
   cursor: pointer;
@@ -2713,13 +2713,14 @@ main.main-public,
   animation: sceneBobClimber 2.4s ease-in-out infinite;
 }
 .scene-figure-boss .scene-art {
-  /* Architect art has transparent padding above the mask — nudge down;
-   * scale up so his silhouette dominates the climber's screen presence. */
-  --boss-scale: 1.32;
+  /* Architect crystal-v4 is sharper and taller — keep scale near 1 so
+   * CSS transform doesn't soft-blur the silhouette on retina. */
+  --boss-scale: 1.08;
   object-position: center 100%;
+  image-rendering: -webkit-optimize-contrast;
   filter:
-    drop-shadow(0 6px 12px rgba(0, 0, 0, 0.7))
-    drop-shadow(0 0 8px rgba(255, 200, 130, 0.15));
+    drop-shadow(0 5px 10px rgba(0, 0, 0, 0.65))
+    drop-shadow(0 0 6px rgba(255, 200, 130, 0.12));
   animation: sceneBobBoss 3.4s ease-in-out infinite;
 }
 
@@ -3385,7 +3386,7 @@ main.main-public,
     max-width: 150px;
     height: 124px;
   }
-  .scene-figure-boss .scene-art { --boss-scale: 1.26; }
+  .scene-figure-boss .scene-art { --boss-scale: 1.06; }
   .scene-bubble   { font-size: 12px; padding: 8px 14px 9px; min-width: 130px; max-width: 240px; -webkit-line-clamp: 3; }
 }
 
@@ -3410,7 +3411,7 @@ main.main-public,
     max-width: 132px;
     height: 112px;
   }
-  .scene-figure-boss .scene-art { --boss-scale: 1.22; }
+  .scene-figure-boss .scene-art { --boss-scale: 1.04; }
   .scene-bubble   { font-size: 11.5px; padding: 7px 12px 8px; min-width: 120px; max-width: 220px; -webkit-line-clamp: 3; }
   .companion-picker { left: auto; right: 0; }
 }

@@ -71,7 +71,7 @@ const STS2_APP_ID = "2868840";
  * on an old client — instruct hard refresh. If it DOES match, the
  * bug is real and we can stop chasing cache ghosts.
  */
-const VAULT_BUILD = "v215-2026-09-02-persist-retention-tier12";
+const VAULT_BUILD = "v216-2026-09-02-overview-polish-architect";
 
 /** True on wrangler pages dev / local loopback — not production hostnames. */
 function isLocalDevHost() {
@@ -844,7 +844,9 @@ function wireLastVisitTracking() {
   });
 }
 
-/** "Since you were last here" — cheap retention hook on Overview. */
+/** "Since you were last here" — only when something actually changed.
+ *  Quiet "Saved on this device · N runs ready" was repeating the crest
+ *  and teaching nothing. */
 function renderSinceLastVisitStrip(sortedByDate) {
   if (isDemoMode || !sortedByDate?.length) return "";
   let lastVisit = 0;
@@ -853,18 +855,13 @@ function renderSinceLastVisitStrip(sortedByDate) {
     lastVisit = Number(localStorage.getItem(STORAGE_LAST_VISIT_AT)) || 0;
     lastCount = Number(localStorage.getItem(STORAGE_LAST_VISIT_RUNS)) || 0;
   } catch { /* ok */ }
-  const durable = localStorage.getItem(STORAGE_DURABLE_FLAG) === "granted";
   const newRuns = lastVisit > 0
     ? sortedByDate.filter((r) => r.endedAt && r.endedAt.getTime() > lastVisit).length
     : 0;
-  const savedLine = durable
-    ? "Saved permanently on this device"
-    : "Saved on this device";
   if (newRuns > 0) {
     return `
       <div class="since-visit-strip since-visit-strip--new">
         <strong>${newRuns} new run${newRuns === 1 ? "" : "s"} since your last visit.</strong>
-        <span class="muted">${savedLine} · ${sortedByDate.length} total.</span>
       </div>`;
   }
   if (lastCount > 0 && sortedByDate.length > lastCount) {
@@ -872,13 +869,9 @@ function renderSinceLastVisitStrip(sortedByDate) {
     return `
       <div class="since-visit-strip since-visit-strip--new">
         <strong>+${delta} run${delta === 1 ? "" : "s"} since last session.</strong>
-        <span class="muted">${savedLine} · ${sortedByDate.length} total.</span>
       </div>`;
   }
-  return `
-    <div class="since-visit-strip since-visit-strip--quiet">
-      <span>${savedLine} · ${sortedByDate.length} run${sortedByDate.length === 1 ? "" : "s"} ready — no re-import needed.</span>
-    </div>`;
+  return "";
 }
 
 /** In-app weekly digest v0 until the mailer ships. */
@@ -1531,15 +1524,11 @@ function characterImageSrc(name) {
 /** Architect asset path.
  *
  *  History: the original filename `architect.webp` got poisoned at
- *  the Cloudflare edge cache. We re-exported the asset multiple
- *  times (transparency fix → AI hero polish → canonical wiki art),
- *  but a stuck `_redirects` rule kept redirecting `?v=4` back to
- *  `?v=3`, so the new bytes never reached users. Rather than fight
- *  the cache, we ship the canonical art under a brand-new filename
- *  that has no edge-cache history. Future re-exports rotate this
- *  filename, not just a query string. Other bosses use a single
- *  stable filename because their art is fixed. */
-const ARCHITECT_ASSET_BASENAME = "architect-wiki";
+ *  the Cloudflare edge cache. We re-exported under `architect-wiki`,
+ *  then shipped a sharper crystal-v4 cut for the Overview diorama
+ *  (new basename so the immutable CDN can't serve the soft old bytes).
+ *  Other bosses use a single stable filename because their art is fixed. */
+const ARCHITECT_ASSET_BASENAME = "architect-crystal-v4";
 
 function bossImageSrc(slug) {
   const s = String(slug || "").trim().toLowerCase();
@@ -3958,26 +3947,27 @@ function renderToolbarEmptyPill() {
   });
 }
 
-/** Linked-folder pill — confirms runs are saved so users stop re-importing. */
+/** Linked-folder pill — quiet. Run count already lives in the crest /
+ *  hero; repeating "434 runs · Saved on this device" next to the title
+ *  was noise. Only surface when a folder is linked (and never the count). */
 function renderLinkedPill() {
-  const count = parsedRuns.length;
   const linkedName = getLinkedFolderName();
-  const linked = !!linkedName || autoRefreshState.phase !== "off";
-  let durable = false;
-  try { durable = localStorage.getItem(STORAGE_DURABLE_FLAG) === "granted"; } catch { /* ok */ }
-
+  const hasData = !isDemoMode && parsedRuns.length > 0;
   document.querySelectorAll("[data-linked-pill]").forEach((el) => {
-    if (isDemoMode || count === 0) {
+    if (!hasData || !linkedName) {
       el.hidden = true;
       el.innerHTML = "";
       return;
     }
-    el.hidden = false;
-    const saved = durable ? "Saved permanently" : "Saved on this device";
-    const linkBit = linked && linkedName ? ` · ${esc(linkedName)}` : "";
-    el.innerHTML = `
-      <span class="linked-pill-dot" aria-hidden="true"></span>
-      <span class="linked-pill-text"><strong>${count}</strong> run${count === 1 ? "" : "s"} · ${saved}${linkBit}</span>`;
+    // Permission-paused state is handled by the global auto-refresh
+    // banner — this pill just confirms the folder link, quietly.
+    if (autoRefreshState.phase === "paused-permission" || autoRefreshState.phase === "error") {
+      el.hidden = true;
+      el.innerHTML = "";
+      return;
+    }
+    el.hidden = true; // suppress by default — crest + hero own the numbers
+    el.innerHTML = "";
   });
 }
 
@@ -8961,7 +8951,7 @@ async function commitParsedRuns(runs, sourceName, { silent, fileCount = 1 }) {
   } else if (wasDemo) {
     // First real import replaces demo data — this is the one moment to
     // tell the user their data is now permanent on this device.
-    toast(`Loaded ${completedRuns.length} run${completedRuns.length === 1 ? "" : "s"} from your save. Saved on this device — you'll never need to re-import.`);
+    toast(`Loaded ${completedRuns.length} run${completedRuns.length === 1 ? "" : "s"}. You're set — next visit opens straight to your stats.`);
   } else if (fileCount > 1) {
     toast(`Loaded ${completedRuns.length} run${completedRuns.length === 1 ? "" : "s"} from ${fileCount} files.`);
   } else {
@@ -9737,10 +9727,12 @@ function renderStatsTab(tab) {
       if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); }
     });
   });
-  // Update Overview sub-text
+  // Update Overview sub-text — don't restate total runs (crest + hero own that).
   if (tab === "overview") {
-    document.getElementById("overview-sub").textContent =
-      `${report.totalRuns} run${report.totalRuns === 1 ? "" : "s"} · ${(report.overallWinrate * 100).toFixed(0)}% win rate`;
+    const $sub = document.getElementById("overview-sub");
+    if ($sub) {
+      $sub.textContent = `${(report.overallWinrate * 100).toFixed(0)}% win rate · streaks, form, and character mix below`;
+    }
   }
 }
 
@@ -9789,10 +9781,10 @@ function renderHeadCrests(report) {
       if (cur > bestStreak) bestStreak = cur;
     }
     const plaques = [
-      { v: String(report.totalRuns), l: "Runs" },
       { v: `${(report.overallWinrate * 100).toFixed(0)}%`, l: "Win rate" },
       { v: bestStreak > 0 ? `${bestStreak}W` : "—", l: "Best streak" },
       { v: hiLevel >= 0 ? `A${hiLevel}` : "—", l: "Highest asc" },
+      { v: String(report.totalWins ?? 0), l: "Wins" },
     ];
     $ov.innerHTML = `
       <div class="crest-plaques">
