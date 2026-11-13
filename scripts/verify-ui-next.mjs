@@ -443,6 +443,8 @@ function duelGeometry(page) {
       climber: box(head.querySelector(".v-actor--climber")),
       boss: box(head.querySelector(".v-actor--boss")),
       bubble: box(head.querySelector(".v-bubble")),
+      tail: box(head.querySelector(".v-bubble-tail")),
+      bossSpeaks: !!head.querySelector(".v-duel--boss-speaks"),
       toolbarBottom: toolbar ? toolbar.getBoundingClientRect().bottom : 0,
       float: parseFloat(getComputedStyle(head).getPropertyValue("--duel-float")),
       gapToken: parseFloat(getComputedStyle(head).getPropertyValue("--duel-gap")),
@@ -457,7 +459,8 @@ function duelGeometry(page) {
  * Staging rules that hold at every width: the two figures are inked, the
  * climber stands left of the boss, both share one ground line (the boss
  * hovers `--duel-float` above it) inside the header, and the line of speech
- * never covers a figure or slides under the toolbar.
+ * sits above whoever is speaking, tail over them, covering neither figure and
+ * never sliding under the toolbar.
  * @param {Awaited<ReturnType<typeof duelGeometry>>} g
  * @param {string} label
  */
@@ -471,10 +474,18 @@ function assertDuelStaging(g, label) {
   assert.ok(groundInset > 6 && groundInset < 40, `${label}: feet rest on the ledge (inset ${groundInset}px)`);
   assert.ok(g.bubble.top >= g.toolbarBottom - 1, `${label}: the balloon sits below the toolbar`);
   assert.ok(g.bubble.left >= g.head.left && g.bubble.right <= g.head.right, `${label}: the balloon stays inside the header`);
+  const speaker = g.bossSpeaks ? g.boss : g.climber;
+  assert.ok(g.bubble.bottom <= speaker.top, `${label}: the balloon sits above the speaker`);
+  const tip = (g.tail.left + g.tail.right) / 2;
+  assert.ok(tip >= speaker.left && tip <= speaker.right, `${label}: the balloon's tail is over the speaker`);
+  [g.climber, g.boss].forEach((figure) => {
+    const clear = g.bubble.bottom <= figure.top || g.bubble.right <= figure.left || g.bubble.left >= figure.right;
+    assert.ok(clear, `${label}: the balloon covers no figure`);
+  });
 }
 
 async function runDuel(browser) {
-  await check("header duel: every climber faces the boss on one ground line, balloon between them", async () => {
+  await check("header duel: every climber squares up to the boss on one ground line, balloon above", async () => {
     const { context, page: p, errors } = await open(browser, "/?ui=next");
     for (const id of CLIMBER_IDS) {
       await p.evaluate((companion) => {
@@ -489,12 +500,11 @@ async function runDuel(browser) {
       const g = await duelGeometry(p);
       assertDuelStaging(g, id);
       const gap = g.boss.left - g.climber.right;
-      assert.ok(gap >= 180 && gap <= 260, `${id}: the two stand a duel's distance apart (gap ${gap}px)`);
+      assert.ok(gap >= 30 && gap <= 60, `${id}: the two stand close, squared up (gap ${gap}px)`);
       // stage.css carries the boss's width as a constant (--duel-boss-w) so the
       // scenery can be placed around the duel. If the boss art or its staging
       // height changes without it, the real gap drifts from the token.
       assert.ok(Math.abs(gap - g.gapToken) <= 1, `${id}: gap is ${gap}px but --duel-gap says ${g.gapToken}px`);
-      assert.ok(g.bubble.left >= g.climber.right - 1 && g.bubble.right <= g.boss.left + 1, `${id}: the balloon fits the gap`);
       assert.ok(g.title.right < g.climber.left, `${id}: the title is clear of the duel`);
     }
     assert.deepEqual(errors, []);
@@ -508,12 +518,26 @@ async function runDuel(browser) {
       await p.waitForTimeout(BUBBLE_SETTLE_MS);
       const g = await duelGeometry(p);
       assertDuelStaging(g, `${width}px`);
-      if (width < 880) {
-        assert.ok(g.bubble.bottom <= g.boss.top + 14, `${width}px: the balloon sits above the figures`);
-      }
       await context.close();
     });
   }
+
+  await check("re-rolling the line on desktop never changes the header's height", async () => {
+    const { context, page: p } = await open(browser, "/?ui=next", { viewport: { width: 1440, height: 900 } });
+    const bubble = '.tab-panel[data-tab="overview"] .v-bubble';
+    const height = () => p.evaluate(() => document.querySelector('.tab-panel[data-tab="overview"] > .panel-head').getBoundingClientRect().height);
+    await p.waitForTimeout(BUBBLE_SETTLE_MS);
+    const first = await height();
+    const speakers = new Set();
+    for (let i = 0; i < 12; i += 1) {
+      await p.click(bubble);
+      await p.waitForTimeout(120);
+      speakers.add(await p.evaluate(() => (document.querySelector(".v-duel--boss-speaks") ? "boss" : "climber")));
+      assert.ok(Math.abs((await height()) - first) < 1, `re-roll ${i + 1}: header went from ${first}px to ${await height()}px`);
+    }
+    assert.equal(speakers.size, 2, "both the climber and the boss spoke during the re-rolls");
+    await context.close();
+  });
 
   await check("re-rolling the line from the keyboard keeps focus on the balloon", async () => {
     const { context, page: p } = await open(browser, "/?ui=next");

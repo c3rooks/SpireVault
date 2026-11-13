@@ -5,7 +5,8 @@
      - the spire's windows are lit up to the highest ascension reached
      - ten torches on the ledge are the last ten runs (lit = victory)
      - the climber and the boss square off on the ledge, which is the top
-       edge of the page content
+       edge of the page content, close together, with whoever is speaking
+       given a balloon above their head
    Every colour is a --v-stage-* token, so it re-inks with the theme.
 
    Markup: `.v-stage-bg` is injected into `.panel-head.v-has-stage` by
@@ -21,15 +22,15 @@
 
   /* The duel is laid out from the right edge in px, not %, so the two
      figures keep the same distance at every width: enemy on the right,
-     player a gap to its left, one shared ground line — the way an encounter
-     is staged in the game. */
+     player a short step to its left, one shared ground line — squared up,
+     the way an encounter is staged in the game. The speech balloon goes
+     above them, never between. */
   --duel-scale: 1;
   --duel-boss-right: calc(var(--stage-gutter) + 26px);
   /* 0.67 (the boss's share of the stage height) x 399/620 (its art). */
   --duel-boss-w: calc(var(--v-stage-h) * 0.4312 * var(--duel-scale));
-  --duel-gap: 224px;
+  --duel-gap: 44px;
   --duel-float: 6px;
-  --duel-bubble-top: 58px;
   /* Right offset of the climber's right edge. */
   --duel-climber-right: calc(var(--duel-boss-right) + var(--duel-boss-w) + var(--duel-gap));
   /* The climber's drawn width. --climber-h / --climber-aspect are copied up
@@ -51,9 +52,11 @@
   --spire-w: var(--spire-fit-w, calc(var(--spire-h) * 120 / 230));
 
   justify-content: space-between;
-  /* --stage-extra: added by Stage.fitStages() when a long line needs more
-     headroom above the boss on a small screen. */
-  min-height: calc(var(--v-stage-h) + var(--stage-extra, 0px));
+  /* --stage-extra: headroom Stage.fitStages() adds so the speech balloon fits
+     between the toolbar and the figures' heads. Until the first fit, reserve
+     what a one-line balloon usually needs, so the page does not jump. */
+  --stage-extra-guess: 50px;
+  min-height: calc(var(--v-stage-h) + var(--stage-extra, var(--stage-extra-guess)));
   padding-inline: var(--stage-gutter);
   padding-bottom: 0;
   --px: 0;
@@ -112,7 +115,9 @@
 /* The moon sits behind the spire's shoulder: the tower cuts into it. */
 .v-stage-moon {
   position: absolute;
-  top: calc(var(--spire-top) - 4px);
+  /* Level with the spire's top (the spire stands on the ground, so this is
+     measured from the bottom: the header can grow above both). */
+  top: calc(100% - var(--v-ledge-h) + 8px - var(--spire-w) * 230 / 120 - 4px);
   right: calc(var(--spire-right) + var(--spire-w) * 0.55);
   width: 86px;
   height: 86px;
@@ -425,22 +430,28 @@
   font-size: 2rem;
 }
 
-/* Speech balloon: in the gap between the two, beside the speaker's head. */
+/* Speech balloon: above the speaker's head, tail pointing down at them.
+   Stage.fitStages() measures the header and writes where it goes
+   (--bubble-left / -w / -bottom, --tail-x) and adds .v-stage--bubble-fit.
+   Before that first fit it sits over the boss's head, right-aligned. Its
+   bottom is measured up from the ground, like the figures, so if the header
+   grows it stays with them. */
 .v-duel-gap {
   position: absolute;
-  top: var(--duel-bubble-top);
-  right: calc(var(--duel-boss-right) + var(--duel-boss-w));
-  bottom: var(--stage-ground);
+  right: var(--stage-gutter);
+  bottom: calc(var(--stage-ground) + var(--duel-float) + var(--v-stage-h) * var(--boss-h) * var(--duel-scale) + 12px);
   display: flex;
-  align-items: flex-start;
-  width: var(--duel-gap);
-  padding-inline: 16px;
-}
-.v-duel--climber-speaks .v-duel-gap {
-  justify-content: flex-start;
-}
-.v-duel--boss-speaks .v-duel-gap {
+  align-items: flex-end;
   justify-content: flex-end;
+  width: var(--bubble-max, 340px);
+  pointer-events: none;
+}
+.v-stage--bubble-fit .v-duel-gap {
+  right: auto;
+  left: var(--bubble-left);
+  bottom: var(--bubble-bottom);
+  width: var(--bubble-w);
+  justify-content: flex-start;
 }
 .v-bubble {
   position: relative;
@@ -461,17 +472,6 @@
   transition: transform var(--v-dur-2) var(--v-ease-spring);
   animation: v-pop 360ms var(--v-ease-spring) both;
 }
-/* The climber's line starts level with the climber's head, wherever that is
-   for this figure; never above the toolbar row. */
-.v-duel--climber-speaks .v-bubble {
-  margin-top: max(
-    0px,
-    calc(
-      var(--v-stage-h) - var(--stage-ground) - var(--v-stage-h) * var(--climber-h) * var(--duel-scale) -
-        var(--duel-bubble-top) - 4px
-    )
-  );
-}
 .v-bubble:hover {
   transform: translateY(-2px) rotate(-1deg);
 }
@@ -481,20 +481,25 @@
 }
 .v-bubble-tail {
   position: absolute;
-  top: 15px;
+  bottom: -8px;
   width: 13px;
   height: 13px;
   border-right: var(--v-outline);
   border-bottom: var(--v-outline);
   background: var(--v-paper);
+  transform: rotate(45deg);
+}
+/* Unfitted: the tail drops toward whoever is speaking. */
+.v-duel--boss-speaks .v-bubble-tail {
+  right: calc(var(--duel-boss-w) * 0.5 + var(--duel-boss-right) - var(--stage-gutter));
 }
 .v-duel--climber-speaks .v-bubble-tail {
-  left: -8px;
-  transform: rotate(135deg);
+  right: min(calc(100% - 26px), calc(var(--duel-boss-w) + var(--duel-gap) + 22px));
 }
-.v-duel--boss-speaks .v-bubble-tail {
-  right: -8px;
-  transform: rotate(-45deg);
+/* Fitted: right over the speaker's head. */
+.v-stage--bubble-fit .v-bubble-tail {
+  right: auto;
+  left: calc(var(--tail-x) - 7.5px);
 }
 @keyframes v-pop {
   from {
@@ -568,7 +573,7 @@
   .panel-head.v-has-stage {
     --duel-scale: 0.92;
     --duel-boss-right: calc(var(--stage-gutter) + 14px);
-    --duel-gap: 164px;
+    --duel-gap: 40px;
     --spire-clear: 40px;
   }
   .v-stage-pillar {
@@ -577,9 +582,6 @@
   .v-stage-moon {
     width: 62px;
     height: 62px;
-  }
-  .v-duel-gap {
-    padding-inline: 12px;
   }
   .v-bubble {
     padding: 7px 10px;
@@ -590,7 +592,7 @@
   .panel-head.v-has-stage {
     --duel-scale: 0.86;
     --duel-boss-right: calc(var(--stage-gutter) + 6px);
-    --duel-gap: 138px;
+    --duel-gap: 36px;
     --spire-clear: 32px;
   }
   .v-stage-moon,
@@ -608,13 +610,12 @@
   .panel-head.v-has-stage {
     --duel-scale: 0.72;
     --duel-boss-right: var(--stage-gutter);
-    --duel-gap: 64px;
+    --duel-gap: 32px;
     --duel-float: 4px;
-    /* Far enough back that the longest line (38 characters) fits in the
-       balloon above the boss without reaching over the tower. */
-    --spire-clear: 48px;
+    --spire-clear: 32px;
     --spire-top: 57px;
     --bubble-max: min(60%, 320px);
+    --stage-extra-guess: 40px;
   }
   .v-has-stage .panel-head-stage {
     padding-bottom: calc(var(--v-ledge-h) + 44px);
@@ -630,51 +631,9 @@
   .v-torches {
     width: calc(var(--torch-count, 10) * 15px);
   }
-  /* No room between the two for a balloon here, so the line sits just above
-     the boss's head with its tail dropping toward whoever is speaking. It is
-     anchored from the ground up: if the toolbar wraps to a second row the
-     header grows, and the balloon stays with the figures instead of sliding
-     under the buttons. */
-  .v-duel-gap {
-    top: auto;
-    right: var(--stage-gutter);
-    bottom: calc(var(--stage-ground) + var(--duel-float) + var(--v-stage-h) * var(--boss-h) * var(--duel-scale) + 8px);
-    align-items: flex-end;
-    /* ...and never reaches back over the spire or the title. Stage.fitStages()
-       measures both and sets --bubble-fit-w; the fallback is the spire rule. */
-    width: var(--bubble-fit-w, min(var(--bubble-max), calc(var(--spire-right) - var(--stage-gutter) - 10px)));
-    padding-inline: 0;
-  }
-  .v-stage--no-spire .v-duel-gap {
-    width: var(--bubble-fit-w, var(--bubble-max));
-  }
-  /* Only while Stage.fitStages() measures the widest the balloon may be. */
-  .v-stage--free-bubble .v-duel-gap {
-    width: var(--bubble-max);
-  }
-  .v-duel--climber-speaks .v-duel-gap,
-  .v-duel--boss-speaks .v-duel-gap {
-    justify-content: flex-end;
-  }
-  .v-bubble,
-  .v-duel--climber-speaks .v-bubble {
-    margin-top: 0;
+  .v-bubble {
     padding: 6px 10px;
     font-size: var(--v-text-xs);
-  }
-  .v-bubble-tail,
-  .v-duel--climber-speaks .v-bubble-tail,
-  .v-duel--boss-speaks .v-bubble-tail {
-    top: auto;
-    bottom: -8px;
-    left: auto;
-    transform: rotate(45deg);
-  }
-  .v-duel--boss-speaks .v-bubble-tail {
-    right: calc(var(--duel-boss-w) * 0.5);
-  }
-  .v-duel--climber-speaks .v-bubble-tail {
-    right: min(calc(100% - 26px), calc(var(--duel-boss-w) + var(--duel-gap) + 22px));
   }
   .v-has-stage .companion-picker {
     right: 8px;
@@ -698,7 +657,7 @@
   .panel-head.v-has-stage {
     --duel-scale: 0.64;
     --duel-boss-right: calc(var(--stage-gutter) - 4px);
-    --duel-gap: 30px;
+    --duel-gap: 22px;
     --spire-clear: 20px;
     --bubble-max: min(52%, 230px);
   }
@@ -711,13 +670,10 @@
   .panel-head.v-has-stage {
     --bubble-max: 44%;
     --duel-scale: 0.58;
-    --duel-gap: 24px;
+    --duel-gap: 18px;
   }
   .v-torches {
     width: calc(var(--torch-count, 10) * 12px);
-  }
-  .v-duel-gap {
-    width: var(--bubble-fit-w, var(--bubble-max));
   }
 }
 

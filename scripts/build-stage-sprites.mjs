@@ -20,7 +20,8 @@
  *   node scripts/build-stage-sprites.mjs --only ironclad --dry --preview <dir>
  *
  * Output filenames carry a version because /assets/* is cached for a year:
- * bump ART_VERSION whenever the pixels change.
+ * bump ART_VERSION whenever the shared settings change, or an actor's own
+ * `version` when only its pixels do.
  */
 
 import { chromium } from "playwright";
@@ -87,7 +88,28 @@ const ACTORS = Object.freeze([
   { id: "ironclad", kind: "climber", source: "characters/ironclad-v2.webp", options: { mirror: true } },
   { id: "silent", kind: "climber", source: "characters/silent-v2.webp", options: { mirror: true } },
   { id: "defect", kind: "climber", source: "characters/defect-v2.webp", options: { mirror: true } },
-  { id: "regent", kind: "climber", source: "characters/regent-v2.webp", options: { mirror: true } },
+  {
+    // The game's Regent art is him on his throne with a creature crushed
+    // under its front corner. On the stage that creature read as the Regent
+    // sitting on an enemy, so it is erased (the throne still meets the ground
+    // at its front foot), and the throne face is painted back where the
+    // creature's claws gripped its edge. Points are regent-v2.webp pixels.
+    id: "regent",
+    kind: "climber",
+    source: "characters/regent-v2.webp",
+    version: 2,
+    options: {
+      mirror: true,
+      patches: [
+        // left claw, over the throne's lower-left corner
+        { points: [[178, 367], [198, 367], [198, 394], [192, 392], [186, 388], [178, 383]], fill: "#5d4f4e" },
+        // right claw and forearm, over the throne's front face
+        { points: [[242, 394], [259, 394], [259, 432], [249, 429], [240, 424], [240, 410]], fill: "#544b4a" },
+        // the creature itself: everything under the throne's front edge
+        { points: [[120, 512], [120, 385], [166, 385], [176, 387], [186, 390], [192, 394], [206, 401], [221, 413], [240, 426], [249, 430], [257, 433], [257, 512]] },
+      ],
+    },
+  },
   { id: "necrobinder", kind: "climber", source: "characters/necrobinder-v2.webp", options: { mirror: true } },
   {
     id: "architect",
@@ -139,7 +161,7 @@ async function inkActor(page, actor, extra) {
   return {
     id: actor.id,
     kind: actor.kind,
-    file: `${actor.id}-ink-v${ART_VERSION}.webp`,
+    file: `${actor.id}-ink-v${actor.version ?? ART_VERSION}.webp`,
     bytes: Buffer.from(result.base64, "base64"),
     width: result.width,
     height: result.height,

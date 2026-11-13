@@ -72,8 +72,17 @@
     return img;
   }
 
-  /** Draws `source` scaled (and optionally mirrored) and returns its pixels. */
-  function rasterize(source, width, height, mirror) {
+  /**
+   * Draws `source` scaled (and optionally mirrored), applies `patches`, and
+   * returns its pixels.
+   *
+   * A patch is a polygon in the SOURCE image's own pixel coordinates (before
+   * scaling or mirroring, so points can be read straight off the original
+   * art). With a `fill` colour it paints over what is there; without one it
+   * erases. Used to take things out of the game's art that do not belong on
+   * the stage.
+   */
+  function rasterize(source, width, height, mirror, patches) {
     const canvas = document.createElement("canvas");
     canvas.width = width;
     canvas.height = height;
@@ -85,6 +94,16 @@
       ctx.scale(-1, 1);
     }
     ctx.drawImage(source, 0, 0, width, height);
+    const scale = width / source.naturalWidth;
+    (patches || []).forEach((patch) => {
+      ctx.beginPath();
+      patch.points.forEach(([x, y], i) => (i === 0 ? ctx.moveTo(x * scale, y * scale) : ctx.lineTo(x * scale, y * scale)));
+      ctx.closePath();
+      ctx.globalCompositeOperation = patch.fill ? "source-over" : "destination-out";
+      ctx.fillStyle = patch.fill || "#000";
+      ctx.fill();
+    });
+    ctx.globalCompositeOperation = "source-over";
     return ctx.getImageData(0, 0, width, height);
   }
 
@@ -558,7 +577,7 @@
     const source = await loadImage(url);
     const width = Math.round(source.naturalWidth * options.workScale);
     const height = Math.round(source.naturalHeight * options.workScale);
-    const pixels = rasterize(source, width, height, options.mirror);
+    const pixels = rasterize(source, width, height, options.mirror, options.patches);
 
     const mask = buildMatte(pixels, options);
     if (!mask.includes(1)) {

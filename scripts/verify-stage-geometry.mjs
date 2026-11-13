@@ -6,9 +6,13 @@
  *
  *   - the spire behind (or touching) a figure — "sitting on the tower"
  *   - the spire or moon under the title, subtitle, torches or toolbar
- *   - the two figures touching each other
- *   - the speech balloon over the title, the toolbar or either figure's face
+ *   - the two figures touching each other, or standing far apart
+ *   - the speech balloon over the title, the toolbar or either figure, not
+ *     above whoever is speaking, or with its tail not over them
  *   - anything poking out of the header sideways
+ *
+ * Every layout is measured twice: once with the climber speaking, once with
+ * the boss.
  *
  * Elements that are display:none at a width (the spire on the narrowest
  * phones, the moon on tablets) are skipped and listed, not failed.
@@ -31,6 +35,9 @@ const SERVER_BOOT_TIMEOUT_MS = 10000;
 const SPIRE_CLEARANCE_PX = 12;
 /** Figures may not touch; their hard shadows need a little air. */
 const FIGURE_CLEARANCE_PX = 8;
+/** ...and stand close, squared up, not across the stage from each other. */
+const MAX_DUEL_GAP_PX = 60;
+const SPEAKERS = ["climber", "boss"];
 
 const STAGE_TABS = ["overview", "characters", "ascensions", "relics", "cards"];
 const CLIMBERS = ["ironclad", "silent", "defect", "regent", "necrobinder"];
@@ -127,6 +134,8 @@ function measure(tab) {
     climber: rect(head.querySelector(".v-actor--climber .v-actor-art")),
     boss: rect(head.querySelector(".v-actor--boss .v-actor-art")),
     bubble: rect(head.querySelector(".v-bubble")),
+    tail: rect(head.querySelector(".v-bubble-tail")),
+    speaker: head.querySelector(".v-duel--boss-speaks") ? "boss" : "climber",
     title: textRect(".panel-head-stage h1, .panel-head-stage h2, .panel-head-stage .panel-title"),
     subtitle: textRect(".panel-head-stage p"),
     torches: union(".v-torches svg, .v-torches .v-stage-cap"),
@@ -179,6 +188,24 @@ function check(m) {
   apart("spireCap", "torches", 6);
   apart("spireCap", "climber", 4);
   apart("climber", "boss", FIGURE_CLEARANCE_PX);
+  if (m.climber && m.boss) {
+    const duelGap = m.boss.left - m.climber.right;
+    if (duelGap > MAX_DUEL_GAP_PX) problems.push(`figures stand ${Math.round(duelGap)}px apart (want ≤ ${MAX_DUEL_GAP_PX})`);
+  }
+  apart("bubble", "climber", 4);
+  apart("bubble", "boss", 4);
+  const who = m[m.speaker];
+  if (m.bubble && who) {
+    if (m.bubble.bottom > who.top - 4) {
+      problems.push(`balloon is not above the ${m.speaker} (balloon bottom ${Math.round(m.bubble.bottom)} vs head ${Math.round(who.top)})`);
+    }
+    if (m.tail) {
+      const tip = (m.tail.left + m.tail.right) / 2;
+      if (tip < who.left || tip > who.right) {
+        problems.push(`balloon tail (x ${Math.round(tip)}) is not over the ${m.speaker} (${Math.round(who.left)}..${Math.round(who.right)})`);
+      }
+    }
+  }
   apart("climber", "title", 4);
   apart("climber", "subtitle", 4);
   apart("climber", "torches", 4);
@@ -213,6 +240,11 @@ async function main() {
         try { window.localStorage.setItem("vault.web.companion.v2", c); } catch { /* none */ }
       }, climber);
       const page = await context.newPage();
+      // A fit that throws leaves the stage half laid out; fail loudly on it.
+      page.on("pageerror", (err) => {
+        failures += 1;
+        console.log(`FAIL ${climber}: uncaught ${String(err.message).slice(0, 200)}`);
+      });
       await page.goto(`${baseUrl}/?ui=next&theme=${options.theme}`, { waitUntil: "load" });
       await page.waitForFunction(() => document.querySelector(".v-duel"), null, { timeout: 15000 });
       for (const width of options.widths) {
@@ -220,10 +252,14 @@ async function main() {
         for (const tab of options.tabs) {
           await page.evaluate((t) => window.SpireVault.switchTab(t), tab);
           await page.waitForTimeout(SETTLE_MS);
-          if (options.line) {
-            await page.evaluate((line) => {
-              document.querySelectorAll(".v-bubble-text").forEach((el) => { el.textContent = line; });
-            }, options.line);
+          for (const speaker of SPEAKERS) {
+            await page.evaluate(([line, who]) => {
+              if (line) document.querySelectorAll(".v-bubble-text").forEach((el) => { el.textContent = line; });
+              document.querySelectorAll(".v-duel").forEach((duel) => {
+                duel.classList.toggle("v-duel--climber-speaks", who === "climber");
+                duel.classList.toggle("v-duel--boss-speaks", who === "boss");
+              });
+            }, [options.line, speaker]);
             // Nudge the width so the stage re-fits around the new line, the
             // way a re-roll does in the app.
             // Two real size changes, a frame apart each, or the observer
@@ -232,23 +268,24 @@ async function main() {
             await page.waitForTimeout(200);
             await page.setViewportSize({ width, height: width < 600 ? 800 : 900 });
             await page.waitForTimeout(300);
-          }
-          const m = await page.evaluate(measure, tab);
-          checks += 1;
-          if (m.error) {
-            failures += 1;
-            console.log(`FAIL ${climber} ${width}px ${tab}: ${m.error}`);
-            continue;
-          }
-          const { problems, skipped } = check(m);
-          skipped.forEach((k) => {
-            const key = `${k}`;
-            if (!skippedAt.has(key)) skippedAt.set(key, new Set());
-            skippedAt.get(key).add(width);
-          });
-          if (problems.length) {
-            failures += 1;
-            console.log(`FAIL ${climber} ${width}px ${tab}:\n  - ${problems.join("\n  - ")}`);
+            const m = await page.evaluate(measure, tab);
+            checks += 1;
+            const label = `${climber} ${width}px ${tab} (${speaker} speaks)`;
+            if (m.error) {
+              failures += 1;
+              console.log(`FAIL ${label}: ${m.error}`);
+              continue;
+            }
+            const { problems, skipped } = check(m);
+            skipped.forEach((k) => {
+              const key = `${k}`;
+              if (!skippedAt.has(key)) skippedAt.set(key, new Set());
+              skippedAt.get(key).add(width);
+            });
+            if (problems.length) {
+              failures += 1;
+              console.log(`FAIL ${label}:\n  - ${problems.join("\n  - ")}`);
+            }
           }
         }
       }
