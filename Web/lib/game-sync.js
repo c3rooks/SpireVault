@@ -12,11 +12,11 @@
 /** The game branch the app's default copy describes. */
 export const GAME_SYNC = {
   /** Current MAIN-branch game version the data is verified against. */
-  main: "v0.107.1",
+  main: "v0.111.0",
   /** Latest BETA patch whose notes are folded into the watchlists. */
-  betaWatch: "v0.111.0",
+  betaWatch: "v0.113.0",
   /** Date of the last full data-verification pass (YYYY-MM-DD). */
-  verified: "2026-08-23",
+  verified: "2026-11-13",
 };
 
 /** One-line badge copy, shared by every surface that shows the claim. */

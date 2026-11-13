@@ -77,12 +77,15 @@ export const VOICE_PRESETS: readonly VoicePreset[] = [
   "custom",
 ];
 
+/** "fool" is The Fool, the STS2 public-beta character (v0.113.0). STS2
+ *  refuses cross-version joins, so in practice only beta lobbies use it. */
 export type CoopCharacter =
   | "ironclad"
   | "silent"
   | "defect"
   | "regent"
-  | "necrobinder";
+  | "necrobinder"
+  | "fool";
 
 export const COOP_CHARACTERS: readonly CoopCharacter[] = [
   "ironclad",
@@ -90,6 +93,7 @@ export const COOP_CHARACTERS: readonly CoopCharacter[] = [
   "defect",
   "regent",
   "necrobinder",
+  "fool",
 ];
 
 /**

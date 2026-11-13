@@ -32,10 +32,10 @@ import {
   filterOpenLobbiesForViewer,
   filterRecommendationsForViewer,
   isSandboxSteamId,
-} from "./coop-sandbox.js?v=13";
+} from "./coop-sandbox.js?v=14";
 import { decodeStart } from "./party-finder-startsoon.js?v=1";
 
-export { ensureCoopSandboxMounted, isCoopSandboxEnabled } from "./coop-sandbox.js?v=13";
+export { ensureCoopSandboxMounted, isCoopSandboxEnabled } from "./coop-sandbox.js?v=14";
 
 const GAME_CONFIG = Object.freeze({
   game: "Slay the Spire 2",
@@ -48,6 +48,11 @@ const COOP_CHARACTERS = Object.freeze([
   { id: "defect", label: "Defect" },
   { id: "regent", label: "Regent" },
   { id: "necrobinder", label: "Necrobinder" },
+  // The Fool, the STS2 public-beta character (v0.113.0). No portrait yet.
+  // Rooms show it only once someone picked it, and pickers offer it only to
+  // viewers with Fool runs (deps.offersBetaCharacter), so main-branch
+  // players keep the five-portrait layout.
+  { id: "fool", label: "The Fool", beta: true },
 ]);
 const COOP_CHARACTER_IDS = new Set(COOP_CHARACTERS.map((c) => c.id));
 
@@ -62,7 +67,36 @@ function characterLabel(id) {
 
 function characterAssetSrc(id) {
   const slug = normalizeCharacterId(id);
-  return slug ? `/assets/sts2/characters/${slug}-v2.webp` : "";
+  if (!slug || COOP_CHARACTERS.find((c) => c.id === slug)?.beta) return "";
+  return `/assets/sts2/characters/${slug}-v2.webp`;
+}
+
+/** Portrait <img>, or a letter glyph for a character with no art yet. */
+function characterArtHtml(id, imgAttrs = "") {
+  const src = characterAssetSrc(id);
+  if (src) return `<img src="${esc(src)}" alt=""${imgAttrs} />`;
+  const initial = characterLabel(id).replace(/^The\s+/, "").slice(0, 1) || "?";
+  return `<span class="coop-character-any-mark" aria-hidden="true">${esc(initial)}</span>`;
+}
+
+/** Picker label: beta-only characters carry a "(beta)" tag. */
+function pickerLabel(c) {
+  return c.beta ? `${c.label} (beta)` : c.label;
+}
+
+/** Whether to offer a beta-only character to this viewer (they have runs with it). */
+function offersCharacter(id) {
+  const offers = bootCtx?.deps?.offersBetaCharacter;
+  return typeof offers === "function" && !!offers(id);
+}
+
+/** Reveal a static picker's beta tile (index.html) only for viewers who
+ *  play that character or already have it selected. */
+function syncBetaCharacterChoices(root) {
+  root.querySelectorAll("[data-beta-character]").forEach(($el) => {
+    const id = $el.getAttribute("data-beta-character");
+    $el.hidden = !(offersCharacter(id) || !!$el.querySelector("input:checked"));
+  });
 }
 
 function preferredCharactersOf(entity) {
@@ -296,7 +330,8 @@ function renderCharacterStrip(chars, opts = {}) {
   const occupied = new Set((opts.occupied || []).map(normalizeCharacterId).filter(Boolean));
   const openAny = selected.size === 0;
   const label = opts.label || (openAny ? "Open to any character" : `Host prefers ${Array.from(selected).map(characterLabel).join(", ")}`);
-  const tokens = COOP_CHARACTERS.map((c) => {
+  const shown = COOP_CHARACTERS.filter((c) => !c.beta || selected.has(c.id) || occupied.has(c.id));
+  const tokens = shown.map((c) => {
     const isSelected = selected.has(c.id);
     const isOccupied = occupied.has(c.id);
     const cls = [
@@ -314,7 +349,7 @@ function renderCharacterStrip(chars, opts = {}) {
           : `${c.label} not preferred`;
     return `
       <span class="${cls}" title="${esc(title)}">
-        <img src="${esc(characterAssetSrc(c.id))}" alt="" loading="lazy" />
+        ${characterArtHtml(c.id, ' loading="lazy"')}
         <span class="coop-character-token-label">${esc(c.label)}</span>
       </span>`;
   }).join("");
@@ -2868,6 +2903,7 @@ function wireHowToToggle() {
 function openModal(id, opts = {}) {
   const $m = document.getElementById(id);
   if (!$m) return;
+  syncBetaCharacterChoices($m);
   $m.hidden = false;
   document.body.style.overflow = "hidden";
   if (opts.focus !== false) {
@@ -3192,15 +3228,15 @@ function occupiedCharactersForLobby(lobby) {
 
 function renderJoinCharacterChoices(lobby) {
   const occupied = new Set(occupiedCharactersForLobby(lobby));
-  const firstAvailable = COOP_CHARACTERS.find((c) => !occupied.has(c.id))?.id || COOP_CHARACTERS[0].id;
-  return COOP_CHARACTERS.map((c) => {
+  const firstAvailable = COOP_CHARACTERS.find((c) => !c.beta && !occupied.has(c.id))?.id || COOP_CHARACTERS[0].id;
+  return COOP_CHARACTERS.filter((c) => !c.beta || occupied.has(c.id) || offersCharacter(c.id)).map((c) => {
     const disabled = occupied.has(c.id);
     const checked = c.id === firstAvailable;
     return `
       <label class="coop-character-choice${disabled ? " is-disabled" : ""}" title="${disabled ? `${esc(c.label)} is already claimed by the host` : `Play ${esc(c.label)}`}">
         <input type="radio" name="joinCharacter" value="${esc(c.id)}"${checked ? " checked" : ""}${disabled ? " disabled" : ""} />
-        <img src="${esc(characterAssetSrc(c.id))}" alt="" />
-        <span class="coop-character-name">${esc(c.label)}${disabled ? " claimed" : ""}</span>
+        ${characterArtHtml(c.id)}
+        <span class="coop-character-name">${esc(pickerLabel(c))}${disabled ? " claimed" : ""}</span>
       </label>`;
   }).join("");
 }

@@ -120,7 +120,7 @@ export interface RunLiveSnapshot {
   hostPersonaName: string;
   hostAvatarUrl?: string;
 
-  /** "ironclad" | "silent" | "necrobinder" | "regent" | "defect". */
+  /** "ironclad" | "silent" | "necrobinder" | "regent" | "defect" | "fool" (beta). */
   characterId: string;
   /** 0-20. */
   ascension: number;

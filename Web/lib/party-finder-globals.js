@@ -15,7 +15,8 @@
 //   • buildDiscordLfgPost — markdown-friendly LFG post text
 //
 // Domain lock: STS2 only. Roster is Ironclad / Silent / Defect /
-// Necrobinder / Regent. Ascension caps at 10. Branch values are limited
+// Necrobinder / Regent, plus The Fool on the beta branch (v0.113.0, no
+// portrait yet — charAsset falls back to the vault mark). Ascension caps at 10. Branch values are limited
 // to beta / main / both. Need-count copy renders as "Need +N".
 // =========================================================================
 
@@ -49,13 +50,14 @@
   globalRoot.STS2_DISCORD_INVITE_URL = STS2_DISCORD_INVITE_URL;
   globalRoot.STS2_DISCORD_CHANNELS = STS2_DISCORD_CHANNELS;
 
-  var CHAR_IDS = { ironclad: 1, silent: 1, defect: 1, necrobinder: 1, regent: 1 };
+  var CHAR_IDS = { ironclad: 1, silent: 1, defect: 1, necrobinder: 1, regent: 1, fool: 1 };
   var CHAR_LABEL = {
     ironclad: 'Ironclad',
     silent: 'Silent',
     defect: 'Defect',
     necrobinder: 'Necrobinder',
     regent: 'Regent',
+    fool: 'The Fool',
   };
 
   function esc(s) {
@@ -77,6 +79,8 @@
   }
   function charAsset(id) {
     var slug = normalizeCharId(id);
+    // The beta-only Fool has no portrait yet; the vault mark beats a broken image.
+    if (slug === 'fool') return '/assets/vault-mark.svg';
     return slug ? '/assets/sts2/characters/' + slug + '-v2.webp' : '';
   }
 
@@ -456,6 +460,7 @@
     if (CHAR_LABEL.defect.toLowerCase() === s) return 'defect';
     if (CHAR_LABEL.necrobinder.toLowerCase() === s) return 'necrobinder';
     if (CHAR_LABEL.regent.toLowerCase() === s) return 'regent';
+    if (s === 'the fool' || s === 'the fool (beta)' || s === 'fool') return 'fool';
     return '';
   }
 

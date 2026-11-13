@@ -1,8 +1,8 @@
 {
   "version": 1,
   "counts": {
-    "cards": 1177,
-    "relics": 284,
+    "cards": 1185,
+    "relics": 291,
     "bosses": 11
   },
   "cards": {
@@ -60,6 +60,8 @@
     "colorless_debt_plus": "Debt+1",
     "colorless_decay": "Decay",
     "colorless_decay_plus": "Decay+1",
+    "colorless_dingydagger": "Dingy Dagger",
+    "colorless_dingydagger_plus": "Dingy Dagger+1",
     "colorless_discovery": "Discovery",
     "colorless_discovery_plus": "Discovery+1",
     "colorless_disintegration": "Disintegration",
@@ -144,6 +146,10 @@
     "colorless_mayhem_plus": "Mayhem+1",
     "colorless_metamorphosis": "Metamorphosis",
     "colorless_metamorphosis_plus": "Metamorphosis+1",
+    "colorless_mightyshield": "Mighty Shield",
+    "colorless_mightyshield_plus": "Mighty Shield+1",
+    "colorless_mightyweapon": "Mighty Weapon",
+    "colorless_mightyweapon_plus": "Mighty Weapon+1",
     "colorless_mimic": "Mimic",
     "colorless_mimic_plus": "Mimic+1",
     "colorless_mindblast": "Mind Blast",
@@ -156,6 +162,8 @@
     "colorless_minionsacrifice_plus": "Minion Sacrifice+1",
     "colorless_minionstrike": "Minion Strike",
     "colorless_minionstrike_plus": "Minion Strike+1",
+    "colorless_myshinies": "My Shinies",
+    "colorless_myshinies_plus": "My Shinies+1",
     "colorless_neowsabundance": "Neow's Abundance",
     "colorless_neowsfury": "Neow's Fury",
     "colorless_neowsfury_plus": "Neow's Fury+1",
@@ -1468,7 +1476,14 @@
     "fishingrod": "Fishing Rod",
     "silkentress": "Silken Tress",
     "dowsingrod": "Dowsing Rod",
-    "neowssacrifice": "Neow's Sacrifice"
+    "neowssacrifice": "Neow's Sacrifice",
+    "wuppy": "Wuppy",
+    "obsidianvice": "Obsidian Vice",
+    "thumbscrew": "Thumbscrew",
+    "tormentouscollar": "Tormentous Collar",
+    "mightywings": "Mighty Wings",
+    "bathtowel": "Bath Towel",
+    "bathrobes": "Bath Robes"
   },
   "bosses": {
     "aeonglass": "Aeonglass",

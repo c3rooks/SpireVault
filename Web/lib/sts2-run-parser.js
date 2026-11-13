@@ -49,7 +49,9 @@
  * the renderers don't know the difference.
  */
 
-const VALID_CHAR_KEYS = new Set(["ironclad", "silent", "regent", "necrobinder", "defect"]);
+// "fool" is The Fool, the STS2 public-beta character (v0.113.0). It is
+// not on the main branch yet, so only beta players' saves carry it.
+const VALID_CHAR_KEYS = new Set(["ironclad", "silent", "regent", "necrobinder", "defect", "fool"]);
 
 /**
  * Schema versions we have explicitly tested against. STS2 is in early
@@ -156,12 +158,12 @@ export function parseSTS2Run(obj, sourceName = "unknown.run") {
   const inProgress = filenameSaysLive
     || (!winExplicit && !obj.was_abandoned && (killedByMissing || runTimeMissing));
   // STS2 `game_mode` literal — typical values "standard", "daily",
-  // "custom", "trial". We pass through whatever the file reports
-  // (lower-cased + clamped) so downstream UI can decide how to badge
-  // it without us having to ship a new client every time STS2 adds a
-  // new mode. `null` means the field was missing (older schema).
-  const rawMode = typeof obj.game_mode === "string" ? obj.game_mode.trim().toLowerCase() : "";
-  const gameMode = rawMode ? rawMode.slice(0, 24) : null;
+  // "custom", "trial", plus the beta-branch "blitz" and "dread" modes
+  // (v0.113.0). We pass through whatever the file reports (lower-cased
+  // + clamped) so downstream UI can decide how to badge it without us
+  // having to ship a new client every time STS2 adds a new mode. `null`
+  // means the field was missing (older schema).
+  const gameMode = normalizeGameMode(obj.game_mode);
   const wasAbandoned = obj.was_abandoned === true || obj.was_abandoned === 1;
   // Daily-run modifiers. STS2 has shipped two shapes for this field:
   //   1. A flat string array — `["MODIFIER.DOUBLE_TIME", ...]`
@@ -354,9 +356,29 @@ function stripPrefix(prefix, raw) {
   return raw.startsWith(prefix) ? raw.slice(prefix.length) : raw;
 }
 
+/**
+ * Lower-cased, clamped `game_mode`, or null when absent. Blitz (its own
+ * 5-level Ascension ladder) and Dread (every ascension modifier on) are
+ * beta-branch modes whose exact save literals are unconfirmed, so any
+ * value mentioning them folds to exactly "blitz" / "dread" — the stats
+ * engine keys its ascension-ladder exclusion off those two strings.
+ */
+export function normalizeGameMode(raw) {
+  if (typeof raw !== "string") return null;
+  const mode = raw.trim().toLowerCase();
+  if (!mode) return null;
+  if (mode.includes("blitz")) return "blitz";
+  if (mode.includes("dread")) return "dread";
+  return mode.slice(0, 24);
+}
+
 function parseCharacter(raw) {
   if (typeof raw !== "string") return null;
   const stripped = stripPrefix("CHARACTER.", raw).toLowerCase().replace(/\s+/g, "");
+  // The Fool's save token is unconfirmed (beta v0.113.0): accept FOOL,
+  // THE_FOOL, TheFool and "The Fool" alike.
+  const compact = stripped.replace(/_/g, "");
+  if (compact === "fool" || compact === "thefool") return "fool";
   if (stripped === "ironclad" || stripped === "ic") return "ironclad";
   if (stripped === "silent" || stripped === "si") return "silent";
   if (stripped === "regent" || stripped === "re" || stripped === "rg" || stripped === "watcher") return "regent";
@@ -423,7 +445,7 @@ function extractCharacter(player) {
  */
 function inferCharacterFromDeck(player) {
   if (!player || !Array.isArray(player.deck)) return null;
-  const tally = { ironclad: 0, silent: 0, defect: 0, regent: 0, necrobinder: 0 };
+  const tally = { ironclad: 0, silent: 0, defect: 0, regent: 0, necrobinder: 0, fool: 0 };
   for (const c of player.deck) {
     const raw = typeof c?.id === "string" ? c.id : "";
     if (!raw) continue;
@@ -433,6 +455,7 @@ function inferCharacterFromDeck(player) {
     else if (stripped.startsWith("defect_") || stripped.startsWith("df_") || stripped.startsWith("de_")) tally.defect++;
     else if (stripped.startsWith("regent_") || stripped.startsWith("watcher_") || stripped.startsWith("re_") || stripped.startsWith("rg_")) tally.regent++;
     else if (stripped.startsWith("necrobinder_") || stripped.startsWith("binder_") || stripped.startsWith("nb_")) tally.necrobinder++;
+    else if (stripped.startsWith("fool_") || stripped.startsWith("thefool_") || stripped.startsWith("the_fool_")) tally.fool++;
   }
   let best = null;
   let bestCount = 0;

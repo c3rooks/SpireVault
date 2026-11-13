@@ -24,7 +24,7 @@
 // closure card.
 // =========================================================================
 
-import { isSandboxSteamId } from "./coop-sandbox.js?v=13";
+import { isSandboxSteamId } from "./coop-sandbox.js?v=14";
 import { decodeStart } from "./party-finder-startsoon.js?v=1";
 
 const PF_CHARACTERS = Object.freeze([
@@ -33,6 +33,7 @@ const PF_CHARACTERS = Object.freeze([
   { id: "defect", label: "Defect" },
   { id: "necrobinder", label: "Necrobinder" },
   { id: "regent", label: "Regent" },
+  { id: "fool", label: "The Fool" }, // STS2 public beta (v0.113.0); labels only, never iterated
 ]);
 const PF_CHAR_IDS = new Set(PF_CHARACTERS.map((c) => c.id));
 

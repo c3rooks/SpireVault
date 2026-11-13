@@ -42,6 +42,9 @@ export interface DailyChallenge {
   joinedCount?: number;
 }
 
+// The beta-only Fool (STS2 v0.113.0) is deliberately left out: a daily has
+// to be playable on the main branch, and adding a slot would reshuffle the
+// deterministic rotation for every past and future date.
 const CHARACTER_POOL: DailyChallenge["character"][] = [
   "ironclad",
   "silent",

@@ -19,8 +19,9 @@
  *   4. Every demo-run card/relic slug resolves to labels (art + names on
  *      the first-visit experience must never regress to placeholders).
  *   5. Boss ids in script.js's BOSSES list exist in labels.bosses.
- *   6. script.js character enumerations contain exactly the 5-character
- *      STS2 roster (regression guard on the Watcher cleanup).
+ *   6. script.js character enumerations contain the 5-character STS2
+ *      main-branch roster plus the beta-branch Fool, and no Watcher
+ *      (regression guard on the Watcher cleanup).
  *   7. Every Swift glossary card/relic key resolves to a labels entry, so
  *      the AI overlay can never describe a card the game doesn't have.
  *   8. The GAME_SYNC version constants match docs/game-data-sync.md.
@@ -44,7 +45,11 @@ const relicKeys = new Set(Object.keys(labels.relics));
 const bossKeys = new Set(Object.keys(labels.bosses));
 
 const ROSTER = ["ironclad", "silent", "defect", "regent", "necrobinder"];
-const CARD_PREFIXES = new Set([...ROSTER, "colorless"]);
+// Beta-branch characters (STS2 v0.113.0+). Allowed as card prefixes and
+// required in script.js's lookup enums, but never part of ROSTER: main-
+// branch players must not see them unless they have runs with them.
+const BETA_ROSTER = ["fool"];
+const CARD_PREFIXES = new Set([...ROSTER, ...BETA_ROSTER, "colorless"]);
 
 // ---- 1. labels.json integrity ----------------------------------------------
 
@@ -148,7 +153,7 @@ for (let lvl = 0; lvl <= 10; lvl++) {
     const block = src.match(new RegExp(`const ${constName} = [\\s\\S]*?${ENUM_END[constName]}`));
     if (!block) { fail(`script.js: could not locate ${constName}`); continue; }
     if (/watcher/i.test(block[0])) fail(`script.js ${constName} still references Watcher`);
-    for (const ch of ROSTER) {
+    for (const ch of [...ROSTER, ...BETA_ROSTER]) {
       if (!block[0].includes(ch)) fail(`script.js ${constName} is missing "${ch}"`);
     }
   }

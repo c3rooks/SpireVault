@@ -299,13 +299,14 @@ export function parseHints(text: string): MirroredLobbyHints {
     out.voiceState = "voice";
   }
 
-  // Characters — match any of the 5 STS2 class names.
+  // Characters — match any of the STS2 class names (The Fool is beta-only).
   const charSet = new Set<string>();
   if (/\bironclad\b|\bic\b/.test(lc)) charSet.add("ironclad");
   if (/\bsilent\b|\bsi\b/.test(lc)) charSet.add("silent");
   if (/\bdefect\b|\bdf\b/.test(lc)) charSet.add("defect");
   if (/\bregent\b/.test(lc)) charSet.add("regent");
   if (/\bnecro(?:binder)?\b|\bnb\b/.test(lc)) charSet.add("necrobinder");
+  if (/\b(?:the\s*)?fool\b/.test(lc)) charSet.add("fool");
   if (charSet.size > 0) out.characters = Array.from(charSet);
 
   // Daily challenge tag: case-insensitive, ISO date.

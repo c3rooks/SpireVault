@@ -266,9 +266,39 @@ enum NewsCatalog {
     /// same updates). The web catalog also has a "007" (Co-op Lobby
     /// v2) that hasn't been ported to this native catalog yet —
     /// that's a pre-existing gap, not something these posts caused.
-    static let latestPostID = "009-2026-07-23-banners-durable-saves-beta-pass"
+    static let latestPostID = "014-2026-11-13-sts2-v0113"
 
     static let posts: [NewsPost] = [
+        NewsPost(
+            id: "014-2026-11-13-sts2-v0113",
+            eyebrow: "Game update · November 13, 2026",
+            title: "The Fool, Blitz and Dread are tracked — and main just caught up to v0.111.0",
+            readMinutes: 2,
+            tags: ["Game data", "v0.113.0", "The Fool"],
+            body: [
+                .lede("Mega Crit shipped their biggest beta patch yet last night — v0.113.0, with the first new character, two new modes and a stack of new events — and in the same breath brought the main branch up to v0.111.0. That's two game updates at once. Back in August I said the data checks we built were there so SpireVault could catch up within hours when the big one landed. This is the big one."),
+
+                .heading("If you play main (most of you)"),
+                .paragraph("Your game just picked up everything from the summer betas: Scare is now Sidestep, Silent's poison kit is rebuilt around Outbreak and Haze, the Ancients were rebalanced across the board, the A8-A9 enemies were retuned, and Neow can now offer Dowsing Rod and Neow's Sacrifice. SpireVault's tooltips and this app's run coach now describe v0.111.0 — the \u{201c}beta watch\u{201d} notes we'd been holding since August became the real text. Where a rework's exact wording isn't published, the tooltip steps aside instead of guessing."),
+
+                .heading("If you're on the beta (v0.113.0)"),
+                .feature(
+                    title: "The Fool",
+                    body: "Fool runs import like any other character. Once you've played one, the Fool gets a place next to the other five and in the run filters; if you haven't, nothing moves. There's no Fool art or card guide yet — Mega Crit hasn't published the card list, and I'm not going to make one up."
+                ),
+                .feature(
+                    title: "Blitz and Dread",
+                    body: "Both get their own tag in Recent Runs, and neither counts toward your normal Ascension climb. Blitz has its own five levels shared across every character, and Dread turns every modifier on at once, so folding either into your A0-A10 numbers would make them wrong."
+                ),
+                .feature(
+                    title: "New things show their real names",
+                    body: "The new event relics (Wuppy, Obsidian Vice, Thumbscrew, Tormentous Collar, Mighty Wings, Bath Towel, Bath Robes) and cards (My Shinies, Dingy Dagger, Mighty Weapon, Mighty Shield) are labelled properly. The beta's balance changes — Expect a Fight, Expertise and Memento Mori reworked; Salvo, Phantom Blades and CHARGE!! trimmed; Speedster buffed; Brilliant Scarf on the 6th card; Dowsing Rod down to 4 ? rooms — are tracked, but tooltips stay on main until they reach it."
+                ),
+
+                .heading("What isn't done yet"),
+                .paragraph("Fool cards don't have proper names yet, so a Fool deck shows a cleaned-up version of the game's internal name until Mega Crit publishes the list. If you've played the Fool, the co-op lobby pickers offer it too. If you're playing the Fool and something looks off, a screenshot or a .run file from a Fool run is the most useful thing anyone can send right now."),
+            ]
+        ),
         NewsPost(
             id: "011-2026-08-23-v211-thank-you",
             eyebrow: "Release · August 23, 2026",

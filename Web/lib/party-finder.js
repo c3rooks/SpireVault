@@ -14,7 +14,7 @@
 // Ascension is capped at 10 (Slay the Spire 2 max).
 // =========================================================================
 
-import { isSandboxSteamId, isCoopSandboxEnabled } from "./coop-sandbox.js?v=13";
+import { isSandboxSteamId, isCoopSandboxEnabled } from "./coop-sandbox.js?v=14";
 import { encodeStart, presetToPlanned, decodeStart, formatCountdown, startSortKey } from "./party-finder-startsoon.js?v=1";
 var PFH = window.PFH;
 
@@ -25,6 +25,9 @@ const PF_CHARACTERS = Object.freeze([
   { id: "defect", label: "Defect" },
   { id: "necrobinder", label: "Necrobinder" },
   { id: "regent", label: "Regent" },
+  // The Fool, the STS2 public-beta character (v0.113.0). No portrait yet;
+  // pickers offer it only to viewers with Fool runs (pickerCharacters).
+  { id: "fool", label: "The Fool", beta: true },
 ]);
 const PF_CHAR_IDS = new Set(PF_CHARACTERS.map((c) => c.id));
 
@@ -499,7 +502,21 @@ function normalizeCharacterId(v) {
 function characterLabel(id) { return PF_CHARACTERS.find((c) => c.id === normalizeCharacterId(id))?.label || ""; }
 function characterAssetSrc(id) {
   const slug = normalizeCharacterId(id);
-  return slug ? `/assets/sts2/characters/${slug}-v2.webp` : "";
+  if (!slug || PF_CHARACTERS.find((c) => c.id === slug)?.beta) return "";
+  return `/assets/sts2/characters/${slug}-v2.webp`;
+}
+
+/** Characters a picker offers: the five main-branch ones, plus a beta-only
+ *  one (The Fool) for viewers who have played it or already picked it. */
+function pickerCharacters(selectedId) {
+  const offers = bootCtx?.deps?.offersBetaCharacter;
+  return PF_CHARACTERS.filter((c) => !c.beta || c.id === selectedId || (typeof offers === "function" && offers(c.id)));
+}
+function pickerLabel(c) { return c.beta ? `${c.label} (beta)` : c.label; }
+/** Portrait for a picker button, or a letter tile when there is no art yet. */
+function charBtnArt(c) {
+  const src = characterAssetSrc(c.id);
+  return src ? `<img src="${esc(src)}" alt=""/>` : `<span class="pf-char-btn-any">${esc(c.label.replace(/^The\s+/, "").slice(0, 1))}</span>`;
 }
 
 function lobbyMembers(lobby) {
@@ -939,7 +956,7 @@ function chipHtml(k, v) {
 function chipWithCharHtml(charId) {
   const slug = normalizeCharacterId(charId);
   const label = slug ? characterLabel(slug) : "Open to any";
-  const img = slug ? `<img class="pf-pref-chip-img" src="${esc(characterAssetSrc(slug))}" alt=""/>` : "";
+  const img = slug && characterAssetSrc(slug) ? `<img class="pf-pref-chip-img" src="${esc(characterAssetSrc(slug))}" alt=""/>` : "";
   return `<li class="pf-pref-chip">${img}<span class="pf-pref-chip-key">Character</span><span>${esc(label)}</span></li>`;
 }
 
@@ -1572,12 +1589,12 @@ function renderHostStep() {
       <div class="pf-field"><span class="pf-field-label">Host character</span>
         <div class="pf-char-grid" data-pf-radio="hostCharacter">
           <button type="button" class="pf-char-btn ${hostForm.hostCharacter === "" ? "is-active" : ""}" data-value=""><span class="pf-char-btn-any">Any</span><span>Open to any</span></button>
-          ${PF_CHARACTERS.map((c) => `<button type="button" class="pf-char-btn ${c.id === hostForm.hostCharacter ? "is-active" : ""}" data-value="${c.id}"><img src="${esc(characterAssetSrc(c.id))}" alt=""/><span>${esc(c.label)}</span></button>`).join("")}
+          ${pickerCharacters(hostForm.hostCharacter).map((c) => `<button type="button" class="pf-char-btn ${c.id === hostForm.hostCharacter ? "is-active" : ""}" data-value="${c.id}">${charBtnArt(c)}<span>${esc(pickerLabel(c))}</span></button>`).join("")}
         </div></div>
       <div class="pf-field"><span class="pf-field-label">Open character preference</span>
         <div class="pf-chiprow" data-pf-radio="openCharacterPreference">
           ${chipBtn("", "Any character welcome", hostForm.openCharacterPreference === "")}
-          ${PF_CHARACTERS.map((c) => chipBtn(c.id, `${c.label} preferred`, hostForm.openCharacterPreference === c.id)).join("")}
+          ${pickerCharacters(hostForm.openCharacterPreference).map((c) => chipBtn(c.id, `${pickerLabel(c)} preferred`, hostForm.openCharacterPreference === c.id)).join("")}
         </div></div>
       <div class="pf-field"><span class="pf-field-label">Party size</span>
         <div class="pf-chiprow" data-pf-radio="lobbySize">${LOBBY_SIZES.map((n) => chipBtn(String(n), String(n), hostForm.lobbySize === n)).join("")}</div></div>
@@ -1717,7 +1734,7 @@ async function submitHost() {
     const matchmaker = window.__pfMatchmaker;
     if (matchmaker && typeof matchmaker.run === "function") {
       const heroSlug = normalizeCharacterId(hostForm.hostCharacter);
-      const heroImage = heroSlug ? characterAssetSrc(heroSlug) : "/assets/vault-mark.svg";
+      const heroImage = (heroSlug && characterAssetSrc(heroSlug)) || "/assets/vault-mark.svg";
       const heroLabel = heroSlug ? characterLabel(heroSlug) : "Your room";
       matchmakerPromise = matchmaker.run({
         reason: "host",
@@ -1843,7 +1860,7 @@ function openPrefsModal() {
     <div class="pf-field"><span class="pf-field-label">Character</span>
       <div class="pf-char-grid" data-pf-radio="pf-prefs-character">
         <button type="button" class="pf-char-btn ${!myChar ? "is-active" : ""}" data-value=""><span class="pf-char-btn-any">Any</span><span>Open to any</span></button>
-        ${PF_CHARACTERS.map((c) => `<button type="button" class="pf-char-btn ${c.id === myChar ? "is-active" : ""}" data-value="${c.id}"><img src="${esc(characterAssetSrc(c.id))}" alt=""/><span>${esc(c.label)}</span></button>`).join("")}
+        ${pickerCharacters(myChar).map((c) => `<button type="button" class="pf-char-btn ${c.id === myChar ? "is-active" : ""}" data-value="${c.id}">${charBtnArt(c)}<span>${esc(pickerLabel(c))}</span></button>`).join("")}
       </div></div>
     <div class="pf-field"><span class="pf-field-label">Ascension</span>
       <div class="pf-chiprow" data-pf-radio="pf-prefs-asc">${ASC_BUCKETS.map((a) => chipBtn(a.id, a.label, a.id === ascId)).join("")}</div></div>
@@ -1899,7 +1916,7 @@ async function doJoinRoom(id) {
   const hostChar = hostCharacterOf(l);
   const claimed = new Set([hostChar].filter(Boolean));
   let pick = my && !claimed.has(my) ? my : "";
-  if (!pick) for (const c of PF_CHARACTERS) if (!claimed.has(c.id)) { pick = c.id; break; }
+  if (!pick) for (const c of PF_CHARACTERS) if (!c.beta && !claimed.has(c.id)) { pick = c.id; break; }
   if (!pick) { bootCtx?.deps?.toast?.("No character left to claim."); return; }
   const approval = l.approvalRequired === true;
   const path = approval ? `/coop/lobbies/${id}/request` : `/coop/lobbies/${id}/join-seat`;

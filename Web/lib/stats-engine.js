@@ -11,7 +11,24 @@
 // keys, all native — comfortably <100ms even on mid-range phones.)
 // =========================================================================
 
-const VALID_CHARACTERS = new Set(["ironclad", "silent", "regent", "necrobinder", "defect"]);
+// "fool" = The Fool, the STS2 public-beta character (v0.113.0).
+const VALID_CHARACTERS = new Set(["ironclad", "silent", "regent", "necrobinder", "defect", "fool"]);
+
+/**
+ * "blitz" | "dread" when a run's game mode gives its `ascension` number a
+ * meaning other than the standard ladder, else "". Blitz (beta v0.113.0)
+ * has its own 5-level Ascension ladder shared across characters; Dread
+ * forces every ascension modifier on. The exact save literals are
+ * unconfirmed, so anything mentioning either word counts (the parser
+ * already folds them to the bare word).
+ */
+export function offLadderMode(gameMode) {
+  if (typeof gameMode !== "string") return "";
+  const mode = gameMode.toLowerCase();
+  if (mode.includes("blitz")) return "blitz";
+  if (mode.includes("dread")) return "dread";
+  return "";
+}
 
 /**
  * Normalize a single record so downstream math doesn't have to care about the
@@ -24,6 +41,8 @@ export function normalizeRun(run) {
     const raw = run.character;
     if (typeof raw !== "string") return null;
     const k = raw.toLowerCase().replace(/\s+/g, "");
+    const compact = k.replace(/^character\./, "").replace(/_/g, "");
+    if (compact === "fool" || compact === "thefool") return "fool";
     if (k === "ironclad" || k === "ic") return "ironclad";
     if (k === "silent"   || k === "si") return "silent";
     if (k === "regent"   || k === "re" || k === "rg") return "regent";
@@ -31,7 +50,14 @@ export function normalizeRun(run) {
     if (k === "defect"   || k === "df" || k === "de") return "defect";
     return null;
   })();
+  // Rollups (macOS CLI history.json) keep the save's mode under
+  // `raw.game_mode`. Only the off-ladder beta modes are carried through:
+  // they are what keeps a Blitz/Dread ascension off the standard ladder,
+  // and leaving every other mode out keeps main-branch rollups exactly as
+  // they rendered before.
+  const mode = offLadderMode(run.gameMode ?? run.game_mode ?? run.raw?.game_mode);
   return {
+    ...(mode ? { gameMode: mode } : {}),
     id: String(run.id ?? `${run.seed ?? "noseed"}-${run.endedAt ?? run.parsedAt ?? Date.now()}`),
     character,
     ascension: Number.isFinite(run.ascension) ? Math.max(0, Math.min(20, run.ascension | 0)) : null,
@@ -70,8 +96,14 @@ export function summarize(runs, opts = {}) {
     (r) => r.won === true,
   );
 
+  // The standard Ascension ladder only. Blitz levels and Dread runs are
+  // not standard-ladder levels, so they stay out of byAscension (which
+  // feeds highest ascension, the per-ascension tables and the spire).
+  // They still count in every other bucket and in the overall win rate,
+  // the same treatment Daily and Custom runs get. Deliberate divergence
+  // from StatsEngine.swift, which has no game-mode field to key off.
   const byAscension = bucket(
-    runs,
+    runs.filter((r) => !offLadderMode(r.gameMode)),
     (r) => r.ascension == null ? null : `A${r.ascension}`,
     (r) => r.won === true,
   ).sort((a, b) => parseAsc(a.key) - parseAsc(b.key));
@@ -268,7 +300,7 @@ export async function extractRuns(parsed) {
     // `immutable` for a year, so an unversioned URL here would pin whatever
     // parser a user first downloaded. This is the file that has to change the
     // day STS2 ships a new save schema. Bump on every parser edit.
-    const { parseSTS2Run } = await import("./sts2-run-parser.js?v=1");
+    const { parseSTS2Run } = await import("./sts2-run-parser.js?v=2");
     const r = parseSTS2Run(parsed, "drop.run");
     if (!r) return { ok: false, error: "File has STS2 run shape but couldn't be parsed." };
     return { ok: true, runs: [r] };

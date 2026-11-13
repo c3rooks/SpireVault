@@ -11,13 +11,15 @@
 
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
-const CHAR_IDS = new Set(["ironclad", "silent", "defect", "necrobinder", "regent"]);
+// "fool" = The Fool, STS2 public beta (v0.113.0); no portrait yet.
+const CHAR_IDS = new Set(["ironclad", "silent", "defect", "necrobinder", "regent", "fool"]);
 const CHAR_LABELS = {
   ironclad: "Ironclad",
   silent: "Silent",
   defect: "Defect",
   necrobinder: "Necrobinder",
   regent: "Regent",
+  fool: "The Fool",
 };
 
 function _normalizeCharId(v) {
@@ -29,6 +31,7 @@ function _charLabel(id) {
 }
 function _charAsset(id) {
   const slug = _normalizeCharId(id);
+  if (slug === "fool") return "/assets/vault-mark.svg"; // no portrait yet
   return slug ? "/assets/sts2/characters/" + slug + "-v2.webp" : "";
 }
 

@@ -102,6 +102,9 @@ final class StatsTests: XCTestCase {
         XCTAssertEqual(Character.from("RG"), .regent)
         XCTAssertEqual(Character.from("Necrobinder"), .necrobinder)
         XCTAssertEqual(Character.from("DEFECT"), .defect)
+        XCTAssertEqual(Character.from("FOOL"), .fool)
+        XCTAssertEqual(Character.from("THE_FOOL"), .fool)
+        XCTAssertEqual(Character.from("The Fool"), .fool)
         XCTAssertEqual(Character.from("Watcher"), .unknown)
         XCTAssertNil(Character.from(nil))
     }

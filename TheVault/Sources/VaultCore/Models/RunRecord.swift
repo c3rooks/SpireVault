@@ -92,6 +92,9 @@ public enum Character: String, Codable, CaseIterable {
     case regent
     case necrobinder
     case defect
+    /// The Fool — STS2 public-beta character (v0.113.0). Its save token is
+    /// unconfirmed, so `from` accepts FOOL / THE_FOOL / "The Fool".
+    case fool
     case unknown
 
     /// Best-effort normalize: case-insensitive, accepts common synonyms.
@@ -99,6 +102,7 @@ public enum Character: String, Codable, CaseIterable {
         guard let raw else { return nil }
         let key = raw.lowercased().replacingOccurrences(of: " ", with: "")
         switch key {
+        case "fool", "thefool", "the_fool": return .fool
         case "ironclad", "ic": return .ironclad
         case "silent", "si": return .silent
         case "regent", "re", "rg": return .regent

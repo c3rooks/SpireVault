@@ -125,12 +125,17 @@ export const ASCENSION_MODIFIERS = {
     modifier: "Rare & upgraded cards halved",
     detail: "Rare and upgraded cards appear half as often — in combat rewards from every enemy and in the Merchant's stock.",
   },
-  // A8/A9 note — the per-enemy numbers behind these two levels are being
-  // actively retuned on the BETA branch (v0.111.0, Aug 2026: Exoskeleton
-  // and Entomancer HP at A8; Globe Head, Louse Progenitor and Soul Fysh
-  // scaling at A9; Torchhead Amalgam at A9 in v0.108/0.109). The rule
-  // *described* here is unchanged on both branches — only the magnitudes
-  // moved, and those live in-game, not in this file.
+  // A8/A9 note — the per-enemy numbers behind these two levels keep being
+  // retuned. MAIN (v0.111.0 since 2026-11-12) now carries the v0.108 →
+  // v0.111 tuning: Exoskeleton and Entomancer HP at A8; Globe Head, Louse
+  // Progenitor and Soul Fysh scaling at A9; Torchhead Amalgam at A9.
+  // BETA v0.113.0 (Nov 12 2026) moves more: Axebot HP is a fixed 70 (80
+  // at A8, was 76-86); Infested Prism's Pulsate applies 1 Vulnerable
+  // instead of 20 Block (22 at A8); Tunneler's From Below hits 24 (28 at
+  // A9, was 26). The rule *described* here is unchanged on both branches
+  // — only the magnitudes moved, and those live in-game, not in this file.
+  // Blitz (beta) has its own separate 5-level Ascension ladder and Dread
+  // (beta) turns every modifier on at once; neither is described here.
   8: {
     title: "Tankier enemies",
     modifier: "Enemies have more HP",

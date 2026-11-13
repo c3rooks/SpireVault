@@ -49,6 +49,10 @@ export interface RunSummary {
    *  at 60 entries server-side to keep stored size bounded. */
   cardChoices?: Array<{ floor: number; picked?: string; skipped?: string[] }>;
   neowBonus?: string;
+  /** STS2 `game_mode`, lower-cased. The web client only sends the beta
+   *  modes ("blitz", "dread") whose ascension is off the standard ladder,
+   *  so a cloud copy keeps them out of another device's Ascension stats. */
+  gameMode?: string;
 }
 
 interface RunsBlob {
@@ -128,6 +132,9 @@ function sanitizeRun(raw: unknown): RunSummary | null {
       };
     }),
     neowBonus: r.neowBonus ? clampString(r.neowBonus, 96) : undefined,
+    gameMode: typeof r.gameMode === "string" && r.gameMode
+      ? clampString(r.gameMode.toLowerCase(), 24) || undefined
+      : undefined,
   };
 }
 

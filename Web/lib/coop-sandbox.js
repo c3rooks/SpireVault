@@ -6,7 +6,7 @@
 // module avoids touching coop-lobbies.js / script.js / index.html
 // while still wiring the new surface into the existing mount path.
 
-import { mountPartyFinder, getLastState as getPartyFinderState } from "./party-finder.js?v=11";
+import { mountPartyFinder, getLastState as getPartyFinderState } from "./party-finder.js?v=12";
 
 const LS_SANDBOX = "spirevault.dev.coopSandbox";
 const LS_PERSONA = "spirevault.dev.activePersona";
@@ -531,7 +531,7 @@ function ensurePartyFinderGlobalsScript() {
     const s = existing || document.createElement("script");
     if (!existing) {
       s.id = "pf-globals-script";
-      s.src = "/lib/party-finder-globals.js?v=11";
+      s.src = "/lib/party-finder-globals.js?v=12";
       s.async = false;
     }
     const done = () => {
@@ -554,7 +554,7 @@ function ensurePartyFinderGlobalsScript() {
         if (!document.getElementById("pf-scene-script")) {
           const s3 = document.createElement("script");
           s3.id = "pf-scene-script";
-          s3.src = "/lib/party-finder-scene.js?v=31";
+          s3.src = "/lib/party-finder-scene.js?v=32";
           s3.async = false;
           document.head.appendChild(s3);
         }
@@ -612,7 +612,7 @@ function ensurePartyFinderGlobalsScript() {
         if (!document.getElementById("pf-daily-rt-script")) {
           const s6 = document.createElement("script");
           s6.id = "pf-daily-rt-script";
-          s6.src = "/lib/party-finder-daily-rt.js?v=1";
+          s6.src = "/lib/party-finder-daily-rt.js?v=2";
           s6.async = false;
           document.head.appendChild(s6);
         }
@@ -675,7 +675,7 @@ function ensurePartyFinderGlobalsScript() {
         if (!document.getElementById("pf-mirror-rt-script")) {
           const s10 = document.createElement("script");
           s10.id = "pf-mirror-rt-script";
-          s10.src = "/lib/party-finder-mirror-rt.js?v=2";
+          s10.src = "/lib/party-finder-mirror-rt.js?v=3";
           s10.async = false;
           document.head.appendChild(s10);
         }

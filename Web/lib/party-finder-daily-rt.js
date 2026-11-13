@@ -47,6 +47,7 @@
       case "defect":      return "Defect";
       case "regent":      return "Regent";
       case "necrobinder": return "Necrobinder";
+      case "fool":        return "The Fool";
       default:            return slug || "Any";
     }
   }

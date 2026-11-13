@@ -35,6 +35,7 @@ const CHARACTER_LABEL = {
   defect:      "Defect",
   regent:      "Regent",
   necrobinder: "Necrobinder",
+  fool:        "The Fool", // STS2 public beta (v0.113.0)
 };
 
 const OUTCOME_LABEL = {

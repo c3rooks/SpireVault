@@ -17,19 +17,25 @@ import Foundation
 // what we can source, not by token budget.
 //
 // SOURCE OF TRUTH & BRANCH POLICY
-// Every effect string describes the MAIN branch (v0.107.1 "Major
-// Update 2", June 2026), which is what most players run. The baseline
-// text comes from the wiki-derived STS2 database in the local
+// Every effect string describes the MAIN branch: v0.111.0 since
+// 2026-11-12, when Mega Crit brought main up to date with the previous
+// beta (v0.111.0). That is what most players run. The baseline text
+// comes from the wiki-derived STS2 database in the local
 // SlayTheSpire2Companion checkout ("zero STS1 content"), with the
 // v0.105 -> v0.107.1 patch-note deltas applied on top where Mega Crit
 // published complete new text (Drum of Battle, Sword Sage, Offering,
-// Infused Core, Pumpkin Candle). Cards whose current text we cannot
-// reconstruct — wiki says "Reworked. See in-game text", or the wiki
-// snapshot conflicts with later patch-note baselines (Hyperbeam,
-// Alignment, Guiding Star, Spoils of Battle, Refine Blade, The Scythe,
-// Expect a Fight, Dominate, Anticipate) — get NO entry. A wrong entry
-// is worse than no entry: the model falls back to hedged general
-// knowledge instead of confidently quoting a stale number.
+// Infused Core, Pumpkin Candle), and the v0.108.0 -> v0.111.0 deltas
+// applied on 2026-11-13 from the official Steam patch notes (each
+// annotated `// v0.11x (main since 2026-11-12)`). Cards whose current
+// text we cannot reconstruct — wiki says "Reworked. See in-game text",
+// or the wiki snapshot conflicts with later patch-note baselines
+// (Alignment, Guiding Star, Spoils of Battle, Refine Blade, The Scythe,
+// Dominate, Anticipate, Forgotten Ritual — v0.111 dropped its Exhaust
+// condition but never published the new sentence) — get NO entry. A
+// wrong entry is worse than no entry: the model falls back to hedged
+// general knowledge instead of confidently quoting a stale number.
+// (Hyperbeam and Expect a Fight left that list: Mega Crit published
+// their full v0.111 text.)
 //
 // An earlier revision carried STS1 cards that do not exist in STS2 at
 // all (Streamline, Catalyst, Metallicize, Flex, Warcry, Clothesline,
@@ -40,39 +46,39 @@ import Foundation
 // the STS2 database and removed or corrected in this revision. STS2
 // also has no "boss" relic tier — "ancient" is the equivalent.
 //
-// BETA WATCHLIST (net state at beta v0.111.0, Aug 14 2026 — folds
-// v0.108.0 -> v0.111.0; several v0.109 redesigns were re-reverted in
-// v0.110, so per-patch notes are superseded by this list). NONE of
-// these are on main; do not merge them into effect strings until the
-// next Major Update. Full netted table: docs/game-data-sync.md.
-//   Silent:  Scare RENAMED Sidestep (energy next turn, no Weak) ·
-//            Outbreak now Rare Skill (poison ALL, triggers immediately) ·
-//            Haze cost 2, +Weak · Mirage exhausts (upgrade removes) ·
-//            Well-Laid Plans cost 2(1), Rare, no hand discard ·
-//            Expertise draws 2(3) w/ Retain · Echoing Slash + Accelerant
-//            -> Uncommon · Tracking +50% (was double) · Flick-Flack 7(9)
-//   Ironclad: Demon Form 3(4) Str · Mangle 20(26) · Pact's End 18(24) ·
-//            Rampage base 10, +5(10) · Setup Strike 3(4) · Howl From
-//            Beyond 18(24) · Colossus 4(7) · Crimson Mantle 7(10) ·
-//            Taunt Common 6(7) · Cruelty -> Uncommon · Bloodletting ->
-//            Uncommon · Juggling copies the original attack (bugfix)
-//   Defect:  Thunder 8(11) · Null 1(2) Weak · Refract 10(13) ·
-//            Synchronize focus 1(2), no self-Exhaust · Rocket Punch
-//            reduces cost by 1 (not to 0) · Shatter gains Exhaust ·
-//            Biased Cognition 5(6) · Trash to Treasure upgrade lowers
-//            cost (not Innate)
-//   Regent:  Terraforming 7(10) Vigor · Crush Under 8(9) · Pillar of
-//            Creation 2(3) per created card · Devastate 35(45) ·
-//            Resonance 2 stars · Kingly cards unchanged
-//   Necro:   Sacrifice = TRIPLE Osty max HP · Eidolon plays Ethereal
-//            cards from Exhaust pile (not hand-exhaust) · Shroud 3(4) ·
-//            Time's Up loses Exhaust · Soulbound shuffles souls into
-//            draw pile
-//   New beta-only multiplayer cards (v0.108/0.109): IC Midnight/Blaze/
-//   Outrage · Silent Blade Symphony/Concoct/Fade · Regent Plot/
-//   Constellation/Tutor · Necro Underworld/Soulbound/Cacophony · Defect
-//   Hibernate/One For All/Imitation Learning. No entries until they
-//   reach main and full text is published.
+// BETA WATCHLIST — beta v0.113.0 (Nov 12 2026). Main is v0.111.0; the
+// previous v0.108 -> v0.111 watchlist graduated into the entries below
+// (incl. the v0.108/0.109 multiplayer cards, whose full text Mega Crit
+// published). NONE of the following are on main; do not merge them into
+// effect strings until they ship there. Source: official v0.113.0 beta
+// notes; docs/game-data-sync.md.
+//   Ironclad: Expect a Fight REWORKED -> cost 3 "Gain 15(20) Block.
+//            Attacks in your Hand cost 1 less Energy until played." ·
+//            Forgotten Ritual reverted to only gaining 3(4) Energy if you
+//            Exhausted a card this turn
+//   Silent:  Expertise REWORKED -> "Draw 2(3) cards. Retain your Hand
+//            this turn." · Memento Mori REWORKED -> cost 3 "Sly. Deal
+//            19(23) damage to the enemy with the lowest HP." · Speedster
+//            damage 2 -> 3 · Phantom Blades extra Shiv damage 9(12) ->
+//            8(11) · Tracking wording: Weak enemies take 50% more damage
+//            from "your" Attacks (writing only, same effect)
+//   Regent:  CHARGE!! Minion Dive Bomb damage 13(16) -> 11(13)
+//   Defect:  One for All only boosts autoplayed cards that would have
+//            cost 0 (bugfix)
+//   Colorless: Salvo damage 12(16) -> 10(14) · NEW My Shinies · NEW
+//            event cards Dingy Dagger (Waterfall of Obvious Secrets),
+//            Mighty Weapon + Mighty Shield (Shrine of the Warlord) ·
+//            Enlightenment (Zen Weaver) loses Exhaust. No entries for
+//            the new cards: no effect text published.
+//   NEW character The Fool: card pool unpublished, no entries.
+//   Relics:  Dowsing Rod 4 ? rooms (was 5), transforming room can't be
+//            a combat · Brilliant Scarf 5th -> 6th card · Power Cell
+//            picks non-Innate zero-cost cards first · Ringing Triangle
+//            gives Retain Hand at start of combat (stacks with
+//            Equilibrium) · Jeweled Mask's Power stays free all combat
+//            (bugfix) · NEW event relics Wuppy, Obsidian Vice,
+//            Thumbscrew, Tormentous Collar, Mighty Wings, Bath Towel,
+//            Bath Robes — no text published, no entries.
 //
 // Future: when a live deck contains a card the glossary doesn't cover,
 // unmatchedIdentifiers logs it locally so coverage can grow per build.
@@ -114,6 +120,12 @@ enum STS2CardGlossary {
             effect: "Unplayable. Removed from your Deck after 5 combats."),
         "apparition": .init(name: "Apparition", cost: "1", type: "skill",
             effect: "Ethereal. Gain 1 Intangible. Exhaust."),
+        // Tezcatara's Ancient card. v0.111 (main since 2026-11-12): Max HP loss 1 -> 2.
+        "brightest_flame": .init(name: "Brightest Flame", cost: "0", type: "skill",
+            effect: "Gain 2 Energy. Draw 2 cards. Lose 2 Max HP."),
+        // v0.108 multiplayer card, full text in the v0.108 notes; v0.109 (main since 2026-11-12): scaling +15 -> +10.
+        "the_ball": .init(name: "The Ball", cost: "1", type: "attack",
+            effect: "Deal 10 damage. Increase this card's damage by 10 this combat and give it to a random ally."),
 
         // ---- Ironclad ----
         "strike_red": .init(name: "Strike", cost: "1", type: "attack",
@@ -129,7 +141,7 @@ enum STS2CardGlossary {
         "blood_wall": .init(name: "Blood Wall", cost: "2", type: "skill",
             effect: "Lose 2 HP. Gain 16 Block."),
         "bloodletting": .init(name: "Bloodletting", cost: "0", type: "skill",
-            effect: "Lose 3 HP. Gain 2 Energy."),
+            effect: "Lose 3 HP. Gain 2 Energy."), // v0.109 (main since 2026-11-12): Common -> Uncommon
         "body_slam": .init(name: "Body Slam", cost: "1", type: "attack",
             effect: "Deal damage equal to your Block."),
         "breakthrough": .init(name: "Breakthrough", cost: "1", type: "attack",
@@ -149,7 +161,7 @@ enum STS2CardGlossary {
         "pommel_strike": .init(name: "Pommel Strike", cost: "1", type: "attack",
             effect: "Deal 9 damage. Draw 1 card."),
         "setup_strike": .init(name: "Setup Strike", cost: "1", type: "attack",
-            effect: "Deal 7 damage. Gain 2 Strength this turn."),
+            effect: "Deal 7 damage. Gain 3 Strength this turn."), // v0.108 (main since 2026-11-12): Strength 2 -> 3
         "shrug_it_off": .init(name: "Shrug It Off", cost: "1", type: "skill",
             effect: "Gain 8 Block. Draw 1 card."),
         "sword_boomerang": .init(name: "Sword Boomerang", cost: "1", type: "attack",
@@ -184,12 +196,14 @@ enum STS2CardGlossary {
             effect: "Gain 12 Block. Whenever you are attacked this turn, deal 4 damage back."),
         "hemokinesis": .init(name: "Hemokinesis", cost: "1", type: "attack",
             effect: "Lose 2 HP. Deal 14 damage."),
+        // v0.108 (main since 2026-11-12): damage 16 -> 18.
         "howl_from_beyond": .init(name: "Howl from Beyond", cost: "3", type: "attack",
-            effect: "Deal 16 damage to ALL enemies. At the start of your turn, plays from the Exhaust Pile."),
+            effect: "Deal 18 damage to ALL enemies. At the start of your turn, plays from the Exhaust Pile."),
         "infernal_blade": .init(name: "Infernal Blade", cost: "1", type: "skill",
             effect: "Add a random Attack into your Hand. It's free to play this turn. Exhaust."),
         "inflame": .init(name: "Inflame", cost: "1", type: "power",
             effect: "Gain 2 Strength."),
+        // v0.110 bugfix (main since 2026-11-12): copies your original third Attack, not an auto-played one.
         "juggling": .init(name: "Juggling", cost: "1", type: "power",
             effect: "Add a copy of the third Attack you play each turn into your Hand."),
         "pillage": .init(name: "Pillage", cost: "1", type: "attack",
@@ -197,7 +211,7 @@ enum STS2CardGlossary {
         "rage": .init(name: "Rage", cost: "0", type: "skill",
             effect: "Whenever you play an Attack this turn, gain 3 Block."),
         "rampage": .init(name: "Rampage", cost: "1", type: "attack",
-            effect: "Deal 9 damage. Increase this card's damage by 5 this combat."),
+            effect: "Deal 10 damage. Increase this card's damage by 5 this combat."), // v0.111 (main since 2026-11-12): base 9 -> 10
         "rupture": .init(name: "Rupture", cost: "1", type: "power",
             effect: "Whenever you lose HP on your turn, gain 1 Strength."),
         "second_wind": .init(name: "Second Wind", cost: "1", type: "skill",
@@ -209,7 +223,7 @@ enum STS2CardGlossary {
         "stone_armor": .init(name: "Stone Armor", cost: "1", type: "power",
             effect: "Gain 4 Plating."),
         "taunt": .init(name: "Taunt", cost: "1", type: "skill",
-            effect: "Gain 7 Block. Apply 1 Vulnerable."),
+            effect: "Gain 6 Block. Apply 1 Vulnerable."), // v0.109 (main since 2026-11-12): Block 7 -> 6, now Common
         "uppercut": .init(name: "Uppercut", cost: "2", type: "attack",
             effect: "Deal 13 damage. Apply 1 Weak. Apply 1 Vulnerable."),
         "vicious": .init(name: "Vicious", cost: "1", type: "power",
@@ -223,17 +237,17 @@ enum STS2CardGlossary {
         "cascade": .init(name: "Cascade", cost: "1", type: "skill",
             effect: "Play the top X cards of your Draw Pile."),
         "colossus": .init(name: "Colossus", cost: "1", type: "skill",
-            effect: "Gain 5 Block. You receive 50% less damage from Vulnerable enemies this turn."),
+            effect: "Gain 4 Block. You receive 50% less damage from Vulnerable enemies this turn."), // v0.108 (main since 2026-11-12): Block 5 -> 4
         "conflagration": .init(name: "Conflagration", cost: "1", type: "attack",
             effect: "Deal 8 damage to ALL enemies. Deals 2 additional damage for each other Attack you've played this turn."),
         "crimson_mantle": .init(name: "Crimson Mantle", cost: "1", type: "power",
-            effect: "At the start of your turn, lose 1 HP and gain 8 Block."),
+            effect: "At the start of your turn, lose 1 HP and gain 7 Block."), // v0.108 (main since 2026-11-12): Block 8 -> 7
         "cruelty": .init(name: "Cruelty", cost: "1", type: "power",
-            effect: "Vulnerable enemies take an additional 25% damage."),
+            effect: "Vulnerable enemies take an additional 25% damage."), // v0.109 (main since 2026-11-12): Rare -> Uncommon
         "dark_embrace": .init(name: "Dark Embrace", cost: "2", type: "power",
             effect: "Whenever a card is Exhausted, draw 1 card."),
         "demon_form": .init(name: "Demon Form", cost: "3", type: "power",
-            effect: "At the start of your turn, gain 2 Strength."),
+            effect: "At the start of your turn, gain 3 Strength."), // v0.109 (main since 2026-11-12): Strength 2 -> 3
         "feed": .init(name: "Feed", cost: "1", type: "attack",
             effect: "Deal 10 damage. If Fatal, raise your Max HP by 3. Exhaust."),
         "fiend_fire": .init(name: "Fiend Fire", cost: "2", type: "attack",
@@ -243,13 +257,14 @@ enum STS2CardGlossary {
         "juggernaut": .init(name: "Juggernaut", cost: "2", type: "power",
             effect: "Whenever you gain Block, deal 5 damage to a random enemy."),
         "mangle": .init(name: "Mangle", cost: "3", type: "attack",
-            effect: "Deal 15 damage. Enemy loses 10 Strength this turn."),
+            effect: "Deal 20 damage. Enemy loses 10 Strength this turn."), // v0.110 (main since 2026-11-12): damage 15 -> 20
         "offering": .init(name: "Offering", cost: "0", type: "skill",
             effect: "Lose 6 HP. Gain 2 Energy. Draw 3 cards. Exhaust."),
         "one_two_punch": .init(name: "One-Two Punch", cost: "1", type: "skill",
             effect: "This turn, your next Attack is played an extra time."),
+        // v0.110 (main since 2026-11-12): damage 17 -> 18.
         "pact_s_end": .init(name: "Pact's End", cost: "0", type: "attack",
-            effect: "Can only be played if you have 3 or more cards in your Exhaust Pile. Deal 17 damage to ALL enemies."),
+            effect: "Can only be played if you have 3 or more cards in your Exhaust Pile. Deal 18 damage to ALL enemies."),
         "tear_asunder": .init(name: "Tear Asunder", cost: "2", type: "attack",
             effect: "Deal 5 damage. Hits an additional time for each time you lost HP this combat."),
         "thrash": .init(name: "Thrash", cost: "1", type: "attack",
@@ -258,6 +273,16 @@ enum STS2CardGlossary {
             effect: "The first time you gain Block from a card each turn, double the amount gained."),
         "break": .init(name: "Break", cost: "2", type: "attack",
             effect: "Deal 20 damage. Apply 5 Vulnerable."),
+        // v0.111 rework (main since 2026-11-12); text is Mega Crit's, confirmed as the pre-v0.113 text by the v0.113 notes.
+        "expect_a_fight": .init(name: "Expect a Fight", cost: "3", type: "skill",
+            effect: "Gain 15 Block. Gains 5 additional Block for each Strength you have."),
+        // v0.108 multiplayer cards (main since 2026-11-12). Midnight damage 99 -> 60 in v0.109.
+        "midnight": .init(name: "Midnight", cost: "12", type: "attack",
+            effect: "Deal 60 damage. Costs 1 less for each card Exhausted this combat by ANYONE."),
+        "blaze": .init(name: "Blaze", cost: "2", type: "skill",
+            effect: "Give another player 5 Strength."),
+        "outrage": .init(name: "Outrage", cost: "0", type: "attack",
+            effect: "Deal 9 damage. Add a copy of this card into EVERYONE'S Discard Pile."),
 
         // ---- Silent ----
         "strike_green": .init(name: "Strike", cost: "1", type: "attack",
@@ -281,7 +306,7 @@ enum STS2CardGlossary {
         "dodge_and_roll": .init(name: "Dodge and Roll", cost: "1", type: "skill",
             effect: "Gain 4 Block. Next turn, gain 4 Block."),
         "flick_flack": .init(name: "Flick-Flack", cost: "1", type: "attack",
-            effect: "Sly. Deal 7 damage to ALL enemies."),
+            effect: "Sly. Deal 7 damage to ALL enemies."), // v0.108 (main since 2026-11-12): 6 -> 7 (main was 6 at v0.107.1)
         "backstab": .init(name: "Backstab", cost: "0", type: "attack",
             effect: "Innate. Deal 11 damage. Exhaust."),
         "footwork": .init(name: "Footwork", cost: "1", type: "power",
@@ -295,7 +320,7 @@ enum STS2CardGlossary {
         "corrosive_wave": .init(name: "Corrosive Wave", cost: "1", type: "skill",
             effect: "Whenever you draw a card this turn, apply 3 Poison to ALL enemies."),
         "echoing_slash": .init(name: "Echoing Slash", cost: "1", type: "attack",
-            effect: "Deal 10 damage to ALL enemies. Repeat this effect for each enemy killed."),
+            effect: "Deal 10 damage to ALL enemies. Repeat this effect for each enemy killed."), // v0.110 (main since 2026-11-12): Rare -> Uncommon
         "grand_finale": .init(name: "Grand Finale", cost: "0", type: "attack",
             effect: "Can only be played if there are no cards in your Draw Pile. Deal 50 damage to ALL enemies."),
         "malaise": .init(name: "Malaise", cost: "1", type: "skill",
@@ -317,27 +342,46 @@ enum STS2CardGlossary {
         "tools_of_the_trade": .init(name: "Tools of the Trade", cost: "1", type: "power",
             effect: "At the start of your turn, draw 1 card and discard 1 card."),
         "tracking": .init(name: "Tracking", cost: "2", type: "power",
-            effect: "Weak enemies take double damage from Attacks."),
+            effect: "Weak enemies take 50% more damage from Attacks."), // v0.108 (main since 2026-11-12): double -> 50% more
         "suppress": .init(name: "Suppress", cost: "0", type: "attack",
             effect: "Innate. Deal 11 damage. Apply 3 Weak."),
-        "outbreak": .init(name: "Outbreak", cost: "1", type: "power",
-            effect: "Every 3 times you apply Poison, deal 11 damage to ALL enemies."),
-        "well_laid_plans": .init(name: "Well-Laid Plans", cost: "1", type: "power",
-            effect: "At the end of your turn, Retain up to 1 card."),
+        // v0.110 rework (main since 2026-11-12): now a Rare Skill (was an Uncommon Power).
+        "outbreak": .init(name: "Outbreak", cost: "3", type: "skill",
+            effect: "Apply 9 Poison to ALL enemies. Poison triggers immediately."),
+        // v0.109 rework + v0.110 cost (main since 2026-11-12): Rare, cost 2(1).
+        "well_laid_plans": .init(name: "Well-Laid Plans", cost: "2", type: "power",
+            effect: "At the end of your turn, you no longer discard your Hand."),
+        // v0.109 rework (main since 2026-11-12); confirmed as the pre-v0.113 text by the v0.113 notes.
         "expertise": .init(name: "Expertise", cost: "1", type: "skill",
-            effect: "Draw cards until you have 6 in your Hand."),
+            effect: "Draw 2 cards. They gain Retain this turn."),
+        // Net v0.109 -> v0.111 (main since 2026-11-12): v0.109 rework was reverted in v0.110; v0.111
+        // made the upgrade remove Exhaust instead of lowering cost. Base text is unchanged.
         "mirage": .init(name: "Mirage", cost: "1", type: "skill",
             effect: "Gain Block equal to Poison on ALL enemies. Exhaust."),
-        "haze": .init(name: "Haze", cost: "3", type: "skill",
-            effect: "Sly. Apply 4 Poison to ALL enemies."),
+        // v0.110 rework (main since 2026-11-12): cost 3 -> 2, loses Sly, adds Weak.
+        "haze": .init(name: "Haze", cost: "2", type: "skill",
+            effect: "Apply 4 Poison and 1 Weak to ALL enemies."),
         "accelerant": .init(name: "Accelerant", cost: "1", type: "power",
-            effect: "Poison is triggered 1 additional time."),
+            effect: "Poison is triggered 1 additional time."), // v0.109 (main since 2026-11-12): Rare -> Uncommon
         "poisoned_stab": .init(name: "Poisoned Stab", cost: "1", type: "attack",
             effect: "Deal 6 damage. Apply 3 Poison."),
         "slice": .init(name: "Slice", cost: "0", type: "attack",
             effect: "Deal 6 damage."),
         "leg_sweep": .init(name: "Leg Sweep", cost: "2", type: "skill",
             effect: "Apply 2 Weak. Gain 11 Block."),
+        // v0.110 (main since 2026-11-12): Scare reworked and renamed Sidestep.
+        "sidestep": .init(name: "Sidestep", cost: "0", type: "skill",
+            effect: "Next turn, gain 1 Energy."),
+        // Main text confirmed by the v0.113 notes' "from" clause (the v0.104 wiki had 8 damage).
+        "memento_mori": .init(name: "Memento Mori", cost: "1", type: "attack",
+            effect: "Deal 9 damage. Deals 4 additional damage for each card discarded this turn."),
+        // v0.108 multiplayer cards (main since 2026-11-12). Blade Symphony cost 1 -> 2 in v0.109.
+        "blade_symphony": .init(name: "Blade Symphony", cost: "2", type: "skill",
+            effect: "Add 2 Shivs to ALL players' Hands."),
+        "concoct": .init(name: "Concoct", cost: "0", type: "skill",
+            effect: "Another player's Attacks apply 3 Poison this turn."),
+        "fade": .init(name: "Fade", cost: "0", type: "skill",
+            effect: "Retain. Another player gains 6 Dexterity this turn."),
 
         // ---- Defect ----
         "strike_blue": .init(name: "Strike", cost: "1", type: "attack",
@@ -399,23 +443,25 @@ enum STS2CardGlossary {
         "loop": .init(name: "Loop", cost: "1", type: "power",
             effect: "At the start of your turn, trigger the passive ability of your rightmost Orb."),
         "null": .init(name: "Null", cost: "2", type: "attack",
-            effect: "Deal 10 damage. Apply 2 Weak. Channel 1 Dark."),
+            effect: "Deal 10 damage. Apply 1 Weak. Channel 1 Dark."), // v0.111 (main since 2026-11-12): Weak 2 -> 1
         "refract": .init(name: "Refract", cost: "3", type: "attack",
-            effect: "Deal 9 damage twice. Channel 2 Glass."),
+            effect: "Deal 10 damage twice. Channel 2 Glass."), // v0.110 (main since 2026-11-12): damage 9 -> 10
         "rip_and_tear": .init(name: "Rip and Tear", cost: "1", type: "attack",
             effect: "Deal 7 damage to a random enemy twice."),
+        // v0.110 (main since 2026-11-12): Status creation reduces cost by 1 (was to 0). Clause is Mega Crit's v0.110 copy.
         "rocket_punch": .init(name: "Rocket Punch", cost: "2", type: "attack",
-            effect: "Deal 13 damage. Draw 1 card. When a Status card is created, reduce this card's cost to 0 this turn."),
+            effect: "Deal 13 damage. Draw 1 card. Whenever you create a Status, reduce this card's cost by 1 Energy until played."),
         "skim": .init(name: "Skim", cost: "1", type: "skill",
             effect: "Draw 3 cards."),
         "storm": .init(name: "Storm", cost: "1", type: "power",
             effect: "Whenever you play a Power, Channel 1 Lightning."),
+        // v0.110 + v0.111 (main since 2026-11-12): no longer Exhausts; Focus 2 -> 1.
         "synchronize": .init(name: "Synchronize", cost: "1", type: "skill",
-            effect: "Gain 2 Focus this turn for each unique Orb you have. Exhaust."),
+            effect: "Gain 1 Focus this turn for each unique Orb you have."),
         "tempest": .init(name: "Tempest", cost: "1", type: "skill",
             effect: "Channel X Lightning."),
         "thunder": .init(name: "Thunder", cost: "1", type: "power",
-            effect: "Whenever you Evoke Lightning, deal 6 damage to each enemy hit."),
+            effect: "Whenever you Evoke Lightning, deal 8 damage to each enemy hit."), // v0.111 (main since 2026-11-12): damage 6 -> 8
         "all_for_one": .init(name: "All for One", cost: "2", type: "attack",
             effect: "Deal 10 damage. Put ALL 0 cards from your Discard Pile into your Hand."),
         "buffer": .init(name: "Buffer", cost: "2", type: "power",
@@ -441,13 +487,23 @@ enum STS2CardGlossary {
         "reboot": .init(name: "Reboot", cost: "0", type: "skill",
             effect: "Shuffle ALL your cards into your Draw Pile. Draw 4 cards. Exhaust."),
         "shatter": .init(name: "Shatter", cost: "1", type: "attack",
-            effect: "Deal 11 damage to ALL enemies. Evoke all of your Orbs."),
+            effect: "Deal 11 damage to ALL enemies. Evoke all of your Orbs. Exhaust."), // v0.108 (main since 2026-11-12): now Exhausts
         "trash_to_treasure": .init(name: "Trash to Treasure", cost: "1", type: "power",
-            effect: "Whenever you create a Status card, Channel 1 random Orb."),
+            effect: "Whenever you create a Status card, Channel 1 random Orb."), // v0.109 (main since 2026-11-12): upgrade lowers cost (was Innate)
         "biased_cognition": .init(name: "Biased Cognition", cost: "1", type: "power",
-            effect: "Gain 4 Focus. At the start of your turn, lose 1 Focus."),
+            effect: "Gain 5 Focus. At the start of your turn, lose 1 Focus."), // v0.110 (main since 2026-11-12): Focus 4 -> 5
         "quadcast": .init(name: "Quadcast", cost: "1", type: "skill",
             effect: "Evoke your rightmost Orb 4 times."),
+        // v0.111 rework (main since 2026-11-12); text is Mega Crit's. Cost 2 per the companion DB (no patch since changed it).
+        "hyperbeam": .init(name: "Hyperbeam", cost: "2", type: "attack",
+            effect: "Deal 24 damage to ALL enemies. Lose 3 Focus this turn."),
+        // v0.108 multiplayer cards (main since 2026-11-12).
+        "hibernate": .init(name: "Hibernate", cost: "2", type: "skill",
+            effect: "Channel 2 Frost. This turn, your Frost grants ALL allies Block."),
+        "one_for_all": .init(name: "One For All", cost: "1", type: "power",
+            effect: "EVERYONE'S 0 energy Attacks deal 3 additional damage."),
+        "imitation_learning": .init(name: "Imitation Learning", cost: "1", type: "skill",
+            effect: "Choose another player. The next 2 times they play a Power, you play a copy of it. Exhaust."),
 
         // ---- Regent ----
         "strike_regent": .init(name: "Strike", cost: "1", type: "attack",
@@ -469,7 +525,7 @@ enum STS2CardGlossary {
         "crescent_spear": .init(name: "Crescent Spear", cost: "1", type: "attack",
             effect: "Deal 6 damage. Deals 2 additional damage for ALL your cards that have a cost."),
         "crush_under": .init(name: "Crush Under", cost: "1", type: "attack",
-            effect: "Deal 7 damage to ALL enemies. All enemies lose 1 Strength this turn."),
+            effect: "Deal 8 damage to ALL enemies. All enemies lose 1 Strength this turn."), // v0.110 (main since 2026-11-12): damage 7 -> 8
         "gather_light": .init(name: "Gather Light", cost: "1", type: "skill",
             effect: "Gain 7 Block. Gain 1 Star."),
         "glitterstream": .init(name: "Glitterstream", cost: "2", type: "skill",
@@ -485,7 +541,7 @@ enum STS2CardGlossary {
         "wrought_in_war": .init(name: "Wrought in War", cost: "1", type: "attack",
             effect: "Deal 7 damage. Forge 5."),
         "devastate": .init(name: "Devastate", cost: "1", type: "attack",
-            effect: "Deal 30 damage."),
+            effect: "Deal 35 damage."), // v0.108 (main since 2026-11-12): damage 30 -> 35
         "furnace": .init(name: "Furnace", cost: "1", type: "power",
             effect: "At the start of your turn, Forge 4."),
         "gamma_blast": .init(name: "Gamma Blast", cost: "0", type: "attack",
@@ -506,8 +562,9 @@ enum STS2CardGlossary {
             effect: "If you play 5 or more cards in a turn, draw 1 card at the start of your next turn."),
         "particle_wall": .init(name: "Particle Wall", cost: "0", type: "skill",
             effect: "Gain 9 Block. Return this card to your Hand."),
+        // Net v0.109 -> v0.110 (main since 2026-11-12): once-per-turn rework reverted; Block 3 -> 2.
         "pillar_of_creation": .init(name: "Pillar of Creation", cost: "1", type: "power",
-            effect: "Whenever you create a card, gain 3 Block."),
+            effect: "Whenever you create a card, gain 2 Block."),
         "prophesize": .init(name: "Prophesize", cost: "2", type: "skill",
             effect: "Draw 6 cards."),
         "quasar": .init(name: "Quasar", cost: "0", type: "skill",
@@ -515,13 +572,13 @@ enum STS2CardGlossary {
         "reflect": .init(name: "Reflect", cost: "1", type: "skill",
             effect: "Gain 17 Block. Blocked attack damage is reflected to your attacker this turn."),
         "resonance": .init(name: "Resonance", cost: "1", type: "skill",
-            effect: "Gain 1 Strength. ALL enemies lose 1 Strength."),
+            effect: "Gain 1 Strength. ALL enemies lose 1 Strength."), // v0.108 (main since 2026-11-12): Star cost 3 -> 2 (not shown here)
         "stardust": .init(name: "Stardust", cost: "0", type: "attack",
             effect: "Deal 5 damage to a random enemy X times."),
         "supermassive": .init(name: "Supermassive", cost: "1", type: "attack",
             effect: "Deal 5 damage. Deals 3 additional damage for each card you created this combat."),
         "terraforming": .init(name: "Terraforming", cost: "1", type: "skill",
-            effect: "Gain 6 Vigor."),
+            effect: "Gain 7 Vigor."), // v0.110 (main since 2026-11-12): Vigor 6 -> 7
         "arsenal": .init(name: "Arsenal", cost: "1", type: "power",
             effect: "Whenever a card is created, gain 1 Strength."),
         "comet": .init(name: "Comet", cost: "0", type: "attack",
@@ -548,6 +605,13 @@ enum STS2CardGlossary {
             effect: "End your turn. The first 2 cards you play each turn are free to play."),
         "meteor_shower": .init(name: "Meteor Shower", cost: "0", type: "attack",
             effect: "Deal 14 damage to ALL enemies. Apply 2 Weak and Vulnerable to ALL enemies."),
+        // v0.108/v0.109 multiplayer cards (main since 2026-11-12).
+        "plot": .init(name: "Plot", cost: "1", type: "skill",
+            effect: "Next turn, ALL players draw 2 cards."),
+        "constellation": .init(name: "Constellation", cost: "0", type: "skill",
+            effect: "Another player draws 1 card, gains 1 Energy, and gains 9 Block."),
+        "tutor": .init(name: "Tutor", cost: "1", type: "skill",
+            effect: "Another player chooses a card in their Draw Pile to add into their Hand."),
 
         // ---- Necrobinder ----
         "strike_necrobinder": .init(name: "Strike", cost: "1", type: "attack",
@@ -611,7 +675,7 @@ enum STS2CardGlossary {
         "high_five": .init(name: "High Five", cost: "2", type: "attack",
             effect: "Osty deals 11 damage and applies 2 Vulnerable to ALL enemies."),
         "legion_of_bone": .init(name: "Legion of Bone", cost: "2", type: "skill",
-            effect: "ALL players Summon 6. Exhaust."),
+            effect: "ALL players Summon 6."), // v0.108 (main since 2026-11-12): no longer Exhausts
         "lethality": .init(name: "Lethality", cost: "1", type: "power",
             effect: "Ethereal. The first Attack each turn deals 50% additional damage."),
         "no_escape": .init(name: "No Escape", cost: "1", type: "skill",
@@ -627,13 +691,14 @@ enum STS2CardGlossary {
         "rattle": .init(name: "Rattle", cost: "1", type: "attack",
             effect: "Osty deals 7 damage. Hits an additional time for each other time he has attacked this turn."),
         "shroud": .init(name: "Shroud", cost: "1", type: "power",
-            effect: "Whenever you apply Doom, gain 2 Block."),
+            effect: "Whenever you apply Doom, gain 3 Block."), // v0.111 (main since 2026-11-12): Block 2 -> 3
         "sic_em": .init(name: "Sic 'Em", cost: "1", type: "attack",
             effect: "Osty deals 5 damage. Whenever Osty hits this enemy this turn, Summon 2."),
         "spur": .init(name: "Spur", cost: "1", type: "skill",
             effect: "Retain. Summon 3. Osty heals 5 HP."),
+        // v0.109 rework (main since 2026-11-12); text is Mega Crit's. v0.110: can no longer be generated mid-combat.
         "eidolon": .init(name: "Eidolon", cost: "2", type: "skill",
-            effect: "Exhaust your Hand. If 9 cards were Exhausted this way, gain 1 Intangible."),
+            effect: "Play ALL Ethereal cards in your Exhaust Pile. Exhaust."),
         "end_of_days": .init(name: "End of Days", cost: "3", type: "skill",
             effect: "Apply 29 Doom to ALL enemies. Kill enemies with at least as much Doom as HP."),
         "eradicate": .init(name: "Eradicate", cost: "1", type: "attack",
@@ -649,11 +714,11 @@ enum STS2CardGlossary {
         "reaper_form": .init(name: "Reaper Form", cost: "3", type: "power",
             effect: "Whenever Attacks deal damage, they also apply that much Doom."),
         "sacrifice": .init(name: "Sacrifice", cost: "1", type: "skill",
-            effect: "Retain. If Osty is alive, he dies and you gain Block equal to double his Max HP."),
+            effect: "Retain. If Osty is alive, he dies and you gain Block equal to triple his Max HP."), // v0.110 (main since 2026-11-12): double -> triple
         "spirit_of_ash": .init(name: "Spirit of Ash", cost: "1", type: "power",
             effect: "Whenever you play an Ethereal card, gain 4 Block."),
         "time_s_up": .init(name: "Time's Up", cost: "2", type: "attack",
-            effect: "Deal damage equal to the enemy's Doom. Exhaust."),
+            effect: "Deal damage equal to the enemy's Doom."), // v0.111 (main since 2026-11-12): no longer Exhausts
         "undeath": .init(name: "Undeath", cost: "0", type: "skill",
             effect: "Gain 7 Block. Add a copy of this card into your Discard Pile."),
         "banshee_s_cry": .init(name: "Banshee's Cry", cost: "6", type: "attack",
@@ -662,6 +727,13 @@ enum STS2CardGlossary {
             effect: "Deal 10 damage. Double the damage ALL Hang cards deal to this enemy."),
         "forbidden_grimoire": .init(name: "Forbidden Grimoire", cost: "2", type: "power",
             effect: "At the end of combat, you may remove a card from your Deck. Eternal."),
+        // v0.108 multiplayer cards (main since 2026-11-12).
+        "underworld": .init(name: "Underworld", cost: "2", type: "skill",
+            effect: "Whenever other players deal attack damage this turn, apply that much Doom. Exhaust."),
+        "soulbound": .init(name: "Soulbound", cost: "1", type: "power",
+            effect: "Choose an ally. Whenever you create a Soul, add a Soul to their Draw Pile."),
+        "cacophony": .init(name: "Cacophony", cost: "2", type: "power",
+            effect: "Every 33 cards drawn by ALL players, deal 66 damage to a random enemy."),
     ]
 
     // MARK: - Relic entries
@@ -687,7 +759,7 @@ enum STS2CardGlossary {
         "infusedcore": .init(name: "Infused Core", cost: "—", type: "starter",
             effect: "Defect Ancient starter. Start of combat: Channel 1 Lightning; Lightning Orbs deal +1 damage. (v0.105 rework.)"),
         "divinedestiny": .init(name: "Divine Destiny", cost: "—", type: "starter",
-            effect: "Regent starter. Start of each combat: gain 6 Stars."),
+            effect: "Regent starter. Start of each combat: gain 7 Stars."), // v0.108 (main since 2026-11-12): 6 -> 7
         "divineright": .init(name: "Divine Right", cost: "—", type: "starter",
             effect: "Regent Ancient starter. Start of each combat: gain Stars (larger grant than Divine Destiny)."),
         "boundphylactery": .init(name: "Bound Phylactery", cost: "—", type: "starter",
@@ -772,8 +844,9 @@ enum STS2CardGlossary {
             effect: "Start each combat with 3 additional Orb Slots. (Defect.)"),
         "emotionchip": .init(name: "Emotion Chip", cost: "—", type: "rare",
             effect: "If you lost HP during the previous turn, trigger the passive ability of all Orbs at the start of your turn. (Defect.)"),
+        // v0.110 rework + v0.111 value (main since 2026-11-12); matches relic-info.js.
         "regalite": .init(name: "Regalite", cost: "—", type: "common",
-            effect: "Whenever a card is created, gain Block. (Regent.)"),
+            effect: "The first time you create a card each turn, gain 4 Block. (Regent.)"),
         "fencingmanual": .init(name: "Fencing Manual", cost: "—", type: "common",
             effect: "At the start of each combat, Forge 10. (Regent.)"),
         "vitruvianminion": .init(name: "Vitruvian Minion", cost: "—", type: "shop",

@@ -147,11 +147,14 @@
   }
   function normalizeCharId(v) {
     var id = String(v || "").trim().toLowerCase();
-    return /^(ironclad|silent|defect|necrobinder|regent)$/.test(id) ? id : "";
+    return /^(ironclad|silent|defect|necrobinder|regent|fool)$/.test(id) ? id : "";
   }
+  // "fool" = The Fool, STS2 public beta (v0.113.0). Never in the empty-hero
+  // carousel below, so main-branch players see the same five portraits.
   var CHAR_LABEL = {
     ironclad: "Ironclad", silent: "Silent",
     defect: "Defect", necrobinder: "Necrobinder", regent: "Regent",
+    fool: "The Fool",
   };
 
   // Tap-to-send party signals — must mirror COOP_PARTY_SIGNALS in
@@ -177,6 +180,8 @@
   var SIGNAL_FRESH_MS = 14000;
   function charAsset(id) {
     var slug = normalizeCharId(id);
+    // The beta-only Fool has no portrait yet; the vault mark beats a broken image.
+    if (slug === "fool") return "/assets/vault-mark.svg";
     return slug ? "/assets/sts2/characters/" + slug + "-v2.webp" : "";
   }
 
@@ -1112,6 +1117,7 @@
     if (s === "defect") return "🤖";
     if (s === "necrobinder") return "💀";
     if (s === "regent") return "👑";
+    if (s === "fool") return "🎵";
     return "🎴";
   }
 
@@ -2014,6 +2020,7 @@
       else if (lower.indexOf("defect") >= 0)      charId = "defect";
       else if (lower.indexOf("necrobinder") >= 0) charId = "necrobinder";
       else if (lower.indexOf("regent") >= 0)      charId = "regent";
+      else if (lower.indexOf("fool") >= 0)        charId = "fool";
       var isMe = li.classList.contains("pf-member-row--me");
       // ready state: read from the Party Status list's "Ready" badge.
       var ready = false;
@@ -2576,8 +2583,8 @@
       // 1) Read the row-art tag.
       var artTag = row.querySelector(".pf-row-art .pf-row-art-tag");
       var label = (artTag && artTag.textContent || "").trim().toLowerCase();
-      if (/ironclad|silent|defect|necrobinder|regent/.test(label)) {
-        charId = (label.match(/(ironclad|silent|defect|necrobinder|regent)/) || [])[1] || "";
+      if (/ironclad|silent|defect|necrobinder|regent|fool/.test(label)) {
+        charId = (label.match(/(ironclad|silent|defect|necrobinder|regent|fool)/) || [])[1] || "";
       }
       // 2) Fall back to lobby state.
       if (!charId && state) {
@@ -3131,7 +3138,7 @@
   // activity ticker. Always visible, even on a fresh account — empty
   // state copy invites the player to join their first party.
   var CHAR_EMOJI = {
-    ironclad: "⚔️", silent: "🗡️", defect: "🤖", necrobinder: "💀", regent: "👑",
+    ironclad: "⚔️", silent: "🗡️", defect: "🤖", necrobinder: "💀", regent: "👑", fool: "🎵",
   };
   function charEmojiOf(slug) { return CHAR_EMOJI[String(slug || "").toLowerCase()] || "🎴"; }
   function timeAgoShort(ts) {

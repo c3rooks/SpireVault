@@ -17,14 +17,17 @@
 //   - synergy:   short list of archetypes / characters that pair well
 //
 // SOURCE OF TRUTH & BRANCH POLICY
-// Effects describe the MAIN branch (v0.107.1 "Major Update 2"), which is
-// what ~90% of players run. The baseline text comes from the wiki-derived
-// database in the local SlayTheSpire2Companion checkout (v0.104-era
-// snapshot), with every known v0.105 → v0.107.1 patch-note delta applied
-// on top — each one annotated where it happens. Beta-branch changes
-// (v0.108.0 → v0.111.0) are tracked in the WATCHLIST comment at the
-// bottom and must NOT be merged into `effect` strings until they ship to
-// main. See docs/game-data-sync.md for the full netted timeline.
+// Effects describe the MAIN branch: v0.111.0 since 2026-11-12, when
+// Mega Crit brought main up to date with the previous beta (v0.111.0).
+// That is what ~90% of players run. The baseline text comes from the
+// wiki-derived database in the local SlayTheSpire2Companion checkout
+// (v0.104-era snapshot), with every known v0.105 → v0.107.1 and
+// v0.108.0 → v0.111.0 patch-note delta applied on top — each one
+// annotated where it happens (official Steam patch notes are the source
+// for every number). Beta-branch changes (v0.113.0, Nov 12 2026) are
+// tracked in the WATCHLIST comment at the bottom and must NOT be merged
+// into `effect` strings until they ship to main. See
+// docs/game-data-sync.md for the full netted timeline.
 //
 // THE ONE RULE: never fabricate in-game text. If we don't have a sourced
 // description, the relic gets NO entry and the UI falls back to the
@@ -73,9 +76,10 @@ export const RELIC_INFO = {
     synergy: ["Defect", "Lightning builds", "Focus stacking"],
   },
   divinedestiny: {
+    // v0.108 (main since 2026-11-12): Star gain 6 -> 7.
     rarity: "starter",
-    effect: "At the start of each combat, gain 6 Stars. (Regent starter.)",
-    tip: "Stars are Regent's casting resource — a guaranteed 6 lets you script your opening turns around a Star spender before the economy comes online.",
+    effect: "At the start of each combat, gain 7 Stars. (Regent starter.)",
+    tip: "Stars are Regent's casting resource — a guaranteed 7 lets you script your opening turns around a Star spender before the economy comes online.",
     synergy: ["Regent", "Star spenders", "Opening tempo"],
   },
   divineright: {
@@ -201,9 +205,12 @@ export const RELIC_INFO = {
     synergy: ["Ironclad", "Self-damage", "Aggro"],
   },
   regalite: {
+    // v0.110 rework + v0.111 nerf (main since 2026-11-12): was "Whenever
+    // you create a card, gain 2 Block"; v0.110 made it once per turn at 6,
+    // v0.111 cut 6 -> 4. Text is Mega Crit's v0.110 copy with the v0.111 value.
     rarity: "common",
-    effect: "Whenever a card is created, gain Block. (Regent.)",
-    tip: "Every created card is now also a defend. Creation-heavy Regent decks turn this into double-digit free block per turn.",
+    effect: "The first time you create a card each turn, gain 4 Block. (Regent.)",
+    tip: "Your first created card each turn doubles as a 4-Block defend. Any Regent deck that creates a card most turns gets it reliably — extra creations no longer stack it.",
     synergy: ["Regent", "Card creation"],
   },
   regalpillow: {
@@ -649,15 +656,18 @@ export const RELIC_INFO = {
     synergy: ["Energy decks", "Rest-site economy"],
   },
   toybox: {
+    // v0.109 (main since 2026-11-12): relics gained 4 -> 5.
     rarity: "ancient",
-    effect: "Upon pickup, obtain 4 Wax Relics. Every 3 combats, your left-most Wax Relic will melt away.",
-    tip: "Four relics on a melting timer — the value is front-loaded, so take it when the next few fights matter most.",
+    effect: "Upon pickup, obtain 5 Wax Relics. Every 3 combats, your left-most Wax Relic will melt away.",
+    tip: "Five relics on a melting timer — the value is front-loaded, so take it when the next few fights matter most.",
     synergy: ["Tempo spikes", "Elite pushes"],
   },
   meatcleaver: {
+    // v0.109 (main since 2026-11-12): Cook's HP gain 9 -> 5. The relic's
+    // own text is unchanged; the number lives on the Cook option.
     rarity: "ancient",
     effect: "You may Cook at Rest Sites.",
-    tip: "Adds a permanent-value option to every campfire. The Cook menu converts HP-to-spare into lasting stats.",
+    tip: "Adds an extra option to every campfire. Cook's HP gain was cut from 9 to 5 (v0.109, now on main), so it's a smaller bonus than older guides suggest.",
     synergy: ["Rest-site economy"],
   },
   fiddle: {
@@ -667,53 +677,66 @@ export const RELIC_INFO = {
     synergy: ["Big-hand decks", "No-draw builds"],
   },
   diamonddiadem: {
+    // v0.109 rework (main since 2026-11-12). Text is Mega Crit's v0.109
+    // copy. v0.110 reworded it in-game "to be clearer about how long its
+    // effect lasts" without changing the numbers; that newer sentence was
+    // never published, so this is the last verbatim wording we have.
     rarity: "ancient",
-    effect: "Whenever you play 2 or fewer cards in a turn, take half damage from enemies.",
-    tip: "Few-big-plays decks get permanent 50% damage reduction. Pocketwatch-style plans wear it perfectly.",
-    synergy: ["Few-big-plays decks", "Stall plans"],
+    effect: "Start combat with 20 Block. Block is not removed at the start of your next turn.",
+    tip: "Every fight opens behind a 20-Block wall that carries into your second turn — slow, setup-heavy decks get a quiet opening to assemble their engine.",
+    synergy: ["Setup decks", "Slow openers"],
   },
   sealofgold: {
+    // v0.110 (main since 2026-11-12): Gold spent per Energy 5 -> 3.
     rarity: "ancient",
-    effect: "At the start of your turn, spend 5 Gold to gain 1 Energy.",
+    effect: "At the start of your turn, spend 3 Gold to gain 1 Energy.",
     tip: "Converts your gold reserve directly into tempo. Gold engines make it effectively free extra energy all run.",
     synergy: ["Gold engines", "Energy decks"],
   },
   toastymittens: {
+    // v0.110 rework (main since 2026-11-12): Exhausts from your Hand instead
+    // of the top of your Draw Pile. Text is Mega Crit's v0.110 copy.
     rarity: "ancient",
-    effect: "At the start of your turn, Exhaust the top card of your Draw Pile and gain 1 Strength.",
-    tip: "Permanent Strength every turn at the cost of burning your deck down. Thin decks feel the exhaust; tall decks barely notice.",
-    synergy: ["Tall decks", "Strength scaling"],
+    effect: "At the start of your turn, Exhaust 1 card from your Hand and gain 1 Strength.",
+    tip: "Permanent Strength every turn, paid for with a card from your hand. Exhaust payoffs and decks clogged with Statuses or Curses turn the tax into upside.",
+    synergy: ["Exhaust payoffs", "Strength scaling"],
   },
   furcoat: {
+    // v0.110 (main since 2026-11-12): marked combats 7 -> 8.
     rarity: "ancient",
-    effect: "Upon pickup, mark 7 random combats. Enemies in those rooms have 1 HP.",
-    tip: "Seven fights simply stop existing. Pure route acceleration — the earlier you grab it, the more marked rooms you'll actually visit.",
+    effect: "Upon pickup, mark 8 random combats. Enemies in those rooms have 1 HP.",
+    tip: "Eight fights simply stop existing. Pure route acceleration — the earlier you grab it, the more marked rooms you'll actually visit.",
     synergy: ["Fast routing", "Early pickup"],
   },
   signetring: {
+    // v0.110 (main since 2026-11-12): Gold 999 -> 888.
     rarity: "ancient",
-    effect: "Upon pickup, gain 999 Gold.",
+    effect: "Upon pickup, gain 888 Gold.",
     tip: "A full shopping spree in one relic. Route through every shop you can reach before the gold burns a hole in your pocket.",
     synergy: ["Shop routes", "The Courier"],
   },
   beautifulbracelet: {
+    // v0.110 + v0.111 (main since 2026-11-12): cards 3 -> 4, Swift 3 -> 2
+    // (v0.110), and the cards are now random instead of chosen (v0.111).
+    // Numbers are from the notes; Mega Crit never published the new full
+    // sentence, so this follows the game's own phrasing for random
+    // Enchants/Upgrades (cf. Sand Castle, Kifuda).
     rarity: "ancient",
-    effect: "Upon pickup, choose 3 cards in your Deck. Enchant them with Swift 3.",
-    tip: "Hand-pick your three engine pieces and make them fly. Enchant the cards you want in your opening hand every fight.",
-    synergy: ["Combo consistency", "Engine pieces"],
+    effect: "Upon pickup, Enchant 4 random cards in your Deck with Swift 2.",
+    tip: "Four random cards get Swift 2 — less control than the old pick-three version, so it shines in lean decks where any card it hits is one you want.",
+    synergy: ["Thin decks", "Consistent decks"],
   },
   sandcastle: {
+    // v0.109 (main since 2026-11-12): moved from Orobos' Pool 1 to Pool 2
+    // (offered as the second option instead of the first). Text unchanged.
     rarity: "ancient",
     effect: "Upon pickup, Upgrade 6 random cards.",
-    tip: "Six instant upgrades. Best mid-run when your deck is mostly keepers — early it wastes hits on cards you'll cut.",
+    tip: "Six instant upgrades, now offered as Orobos' second option. Best mid-run when your deck is mostly keepers — early it wastes hits on cards you'll cut.",
     synergy: ["Mid-run power spike"],
   },
-  distinguishedcape: {
-    rarity: "ancient",
-    effect: "Upon pickup, lose 9 Max HP. Add 3 Apparitions to your Deck.",
-    tip: "Apparitions cap incoming hits at 1 — three of them can trivialize boss spike turns. The Max HP tax stings on already-low runs.",
-    synergy: ["Anti-burst", "Boss insurance"],
-  },
+  // distinguishedcape: REMOVED 2026-11-13. v0.109 (now main) swapped its
+  // downside with Sere Talon's, and Sere Talon's text was never sourced,
+  // so the current Cape text can't be stated. See KNOWN GAPS.
   boomingconch: {
     // v0.107.1 buff applied to the wiki-era text: the June main-branch
     // patch added the Energy grant on top of the existing Elite draw.
@@ -1005,72 +1028,76 @@ export const RELIC_INFO = {
     synergy: ["Long-game scaling"],
   },
 
-  // ---- Neow (beta v0.109.0 additions) ---------------------------------------
-  // These exist ONLY on the beta branch as of this writing. Main-branch
-  // players will never roll them; beta players' runs can already contain
-  // the slugs. Effect strings are Mega Crit's own copy from the patch
-  // notes, quoted verbatim.
+  // ---- Neow (added in v0.109.0; main since 2026-11-12) -----------------------
+  // Introduced on the beta in v0.109.0 and on the main branch since main
+  // moved to v0.111.0. Effect strings are Mega Crit's own copy from the
+  // v0.109.0 patch notes, quoted verbatim (v0.110 only buffed Abundance:
+  // always Upgraded Powers, its upgrade now lowers cost).
   dowsingrod: {
+    // Main value is 5 ? rooms. Beta v0.113.0 makes it 4 and the
+    // transforming room can't be a combat — see the WATCHLIST.
     rarity: "event",
     effect: "Upon pickup, add 1 Dowsing to your Deck. (Dowsing: Quest, 0 cost — after entering 5 more ? rooms, transform this into Abundance.)",
-    tip: "A quest relic that pays off in ? rooms — Abundance offers a choice of 3 upgraded Powers. Take it when your route is event-heavy. Beta branch only (v0.109.0) for now.",
+    tip: "A quest relic that pays off in ? rooms — Abundance offers a choice of 3 upgraded Powers. Take it when your route is event-heavy. Beta v0.113.0: transforms after 4 ? rooms, and that room can't be a combat.",
     synergy: ["Event-heavy routes", "Power decks", "Neow pool"],
   },
   neowssacrifice: {
     rarity: "event",
     effect: "Upon pickup, procure 1 Ambergris and add 1 Guilty to your Deck. (Ambergris: heal for 50% of your max HP. Take an extra turn after this one.)",
-    tip: "Banked emergency button — Ambergris is a half-heal plus a free extra turn, which can steal a boss fight. The Guilty curse is the tax. Beta branch only (v0.109.0) for now.",
+    tip: "Banked emergency button — Ambergris is a half-heal plus a free extra turn, which can steal a boss fight. The Guilty curse is the tax.",
     synergy: ["Curse mitigation", "Boss insurance", "Neow pool"],
   },
 };
 
 // -------------------------------------------------------------------------
-// KNOWN GAPS — v0.107.1 changed relics we can't fully verify.
+// KNOWN GAPS — main-branch (v0.111.0) relics we can't fully verify.
 //
 // Sere Talon and Jeweled Mask have no sourced main-branch description
 // (the wiki module is blank for them), and Pendulum's wiki text literally
 // says "Reworked. See in-game text." Per the ONE RULE above they ship no
-// entry and fall back to personal stats. If you have STS2 open, a
-// screenshot + one-line GitHub issue is all it takes to close these out.
-// Same for the ~60 other blank-description relics — coverage here is
-// every relic with sourced text, not every relic that exists.
+// entry and fall back to personal stats. Known facts, for whoever closes
+// these: v0.109 swapped Sere Talon's and Distinguished Cape's downsides;
+// v0.111 made Jeweled Mask pick a non-Innate Power unless every Power in
+// the deck is Innate, and on main the Power it frees is free on turn 1
+// only (beta v0.113.0 makes it free all combat).
+//
+// Distinguished Cape was REMOVED on 2026-11-13: its old text ("lose 9
+// Max HP. Add 3 Apparitions") predates the v0.109 downside swap that is
+// now on main, and the swapped-in downside is Sere Talon's unsourced one.
+//
+// Brightest Flame and History Course have no entry here (Brightest Flame
+// is Tezcatara's card, not a relic; History Course's text is blank in
+// the source). Their v0.109/v0.111 changes are live on main regardless:
+// History Course only repeats Attacks; Brightest Flame costs 2 Max HP.
+//
+// If you have STS2 open, a screenshot + one-line GitHub issue is all it
+// takes to close these out. Same for the ~60 other blank-description
+// relics — coverage here is every relic with sourced text, not every
+// relic that exists.
 // -------------------------------------------------------------------------
 
 // -------------------------------------------------------------------------
-// BETA-BRANCH WATCHLIST — the NET state of relic changes as of beta
-// v0.111.0 (Aug 14, 2026), folding together v0.108.0 → v0.111.0. Several
-// v0.109.0 redesigns were partially reverted by v0.110.0, so earlier
-// per-patch notes are superseded by this list. None of these are on the
-// main branch; apply them to the entries above only when the next Major
-// Update lands. Full netted timeline: docs/game-data-sync.md.
+// BETA-BRANCH WATCHLIST — beta v0.113.0 (Nov 12, 2026). Main is v0.111.0;
+// everything in the previous (v0.108 → v0.111) watchlist graduated into
+// the entries above on 2026-11-12/13. Nothing below is on main: do NOT
+// merge it into `effect` strings until it ships there. Source: the
+// official v0.113.0 beta patch notes; docs/game-data-sync.md.
 //
-//   - Diamond Diadem (diamonddiadem) REWORKED — "Start combat with 20
-//     Block. Block is not removed at the start of your next turn."
-//     (replaces the play-2-or-fewer / half-damage design)
-//   - Beautiful Bracelet (beautifulbracelet) REWORKED — enchants 4
-//     RANDOM cards (no longer chosen) with Swift 2 (was choose-3, Swift 3)
-//   - Seal of Gold (sealofgold) — gold cost per Energy 5 -> 3
-//   - Toasty Mittens (toastymittens) — now Exhausts a card from your
-//     HAND instead of the top of the Draw Pile
-//   - Fur Coat (furcoat) — marked combats 7 -> 8
-//   - Signet Ring (signetring) — gold 999 -> 888
-//   - Brightest Flame (brightestflame) — max HP loss on activation 1 -> 2
-//   - Toy Box (toybox) — relics gained 4 -> 5
-//   - Meat Cleaver (meatcleaver) — Cook healing 9 -> 5
-//   - Fiddle (fiddle) — draw briefly 3 in v0.109, REVERTED to 2 in
-//     v0.110 (i.e. main text above is already correct for beta too)
-//   - History Course (historycourse) — now only repeats Attacks
-//   - Sere Talon (seretalon) / Distinguished Cape (distinguishedcape)
-//     — downsides swapped between the two
-//   - Orobos' Sand Castle (sandcastle) — moved Pool 1 -> Pool 2
-//   - Jeweled Mask (jeweledmask) — now selects a non-Innate power
-//     unless all powers are Innate (v0.111.0)
-//   - Divine Destiny (divinedestiny, Regent starter) — Star gain 6 -> 7
-//   - Regalite (regalite, Regent) — reworked to once-per-turn in
-//     v0.110, block 6 -> 4 in v0.111 (net: first created card each
-//     turn grants 4 Block)
-//   - NEW Neow relics: Dowsing Rod, Neow's Sacrifice (entries above,
-//     marked beta)
+//   - Dowsing Rod (dowsingrod) — its Dowsing card transforms after 4 ?
+//     rooms instead of 5, and the ? room that transforms it can no
+//     longer be a combat
+//   - Brilliant Scarf (brilliantscarf, no entry) — 5th card -> 6th card
+//   - Power Cell (powercell) — now picks zero-cost cards without Innate
+//     before Innate ones
+//   - Ringing Triangle (ringingtriangle) — now gives Retain Hand at the
+//     start of combat, so it stacks with other Retain Hand effects such
+//     as Equilibrium
+//   - Jeweled Mask (jeweledmask, no entry) — bugfix: the Power it makes
+//     free now stays free for the whole combat instead of only turn 1
+//   - NEW event relics, no effect text published so NO entries: Wuppy
+//     (Wuppy in Trouble); Obsidian Vice, Thumbscrew, Tormentous Collar
+//     (Museum of Torture); Mighty Wings (Shrine of the Warlord); Bath
+//     Towel, Bath Robes (Thermae Nonupeipe)
 // -------------------------------------------------------------------------
 
 /** Relic rarity color → matches in-game tiers. STS2 has no "boss"
