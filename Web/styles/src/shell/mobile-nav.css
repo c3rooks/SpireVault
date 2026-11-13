@@ -1,0 +1,795 @@
+/* ==========================================================================
+   Phone tab bar — new look (≤ 880px).
+
+   Four real sidebar rows (Overview, Characters, Runs, Co-op) plus a "More"
+   button that opens a sheet with the rest. Built by lib/ui/mobile-nav.js,
+   which marks the nav `data-v-mnav`; every rule here is gated on that, so
+   without the module phones keep shell.css's scrolling strip.
+
+   The six rows that live in the sheet are hidden with `visibility`, not
+   `display`: they stay laid out, so the 1–9 shortcuts (which skip rows with
+   no offsetParent) keep the same numbering as the desktop rail.
+   ========================================================================== */
+
+/* Phone-only pieces never show on the desktop rail. */
+.v-mnav-more,
+.v-mnav-short {
+  display: none;
+}
+
+@media (max-width: 880px) {
+  /* ---- The bar ------------------------------------------------------------ */
+  .sidebar-nav[data-v-mnav] {
+    justify-content: center;
+    gap: 2px;
+    padding: 6px max(6px, env(safe-area-inset-right)) calc(6px + env(safe-area-inset-bottom)) max(6px, env(safe-area-inset-left));
+    overflow: visible;
+    scroll-snap-type: none;
+    box-shadow: 0 -1px 0 color-mix(in srgb, var(--v-text) 6%, transparent);
+  }
+  .sidebar-nav[data-v-mnav],
+  .sidebar-nav[data-v-mnav][data-edge-left="1"],
+  .sidebar-nav[data-v-mnav][data-edge-right="1"] {
+    -webkit-mask-image: none;
+    mask-image: none;
+  }
+
+  /* Rows that live in the sheet: laid out (see the header), never seen. */
+  .sidebar-nav[data-v-mnav] .nav-row:not([data-tab="overview"]):not([data-tab="characters"]):not([data-tab="runs"]):not([data-tab="coop"]) {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 1px;
+    min-width: 0;
+    height: 1px;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    visibility: hidden;
+    pointer-events: none;
+  }
+
+  /* Equal slots while the labels fit; a long label takes what it needs. */
+  .sidebar-nav[data-v-mnav] .nav-row,
+  .v-mnav-more {
+    position: relative;
+    display: flex;
+    flex: 1 1 0;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    min-width: auto;
+    max-width: 112px;
+    margin: 0;
+    padding: 5px 4px 4px;
+    border: var(--v-outline-w) solid transparent;
+    border-radius: var(--v-radius-md);
+    background: none;
+    color: var(--v-text-2);
+    font-family: var(--v-font-text);
+    font-size: max(12px, 0.8rem);
+    font-weight: 700;
+    line-height: 1.15;
+    -webkit-tap-highlight-color: transparent;
+    cursor: pointer;
+    scroll-snap-align: none;
+    transition: transform var(--v-dur-1) ease, box-shadow var(--v-dur-1) ease, background-color var(--v-dur-1) ease, color var(--v-dur-1) ease;
+  }
+  .sidebar-nav[data-v-mnav] .nav-label {
+    flex: none;
+    max-width: none;
+    overflow: visible;
+    letter-spacing: 0.01em;
+    white-space: nowrap;
+  }
+  .sidebar-nav[data-v-mnav] .nav-icon,
+  .v-mnav-more-icon {
+    display: grid;
+    place-items: center;
+    width: 24px;
+    height: 24px;
+    transition: transform var(--v-dur-2) var(--v-ease-spring);
+  }
+  .sidebar-nav[data-v-mnav] .nav-icon svg,
+  .v-mnav-more-icon svg { width: 21px; height: 21px; }
+  /* The Runs clock's hands are a second subpath; with the default nonzero
+     fill they vanish into a plain disc, which means nothing at bar size. */
+  .sidebar-nav[data-v-mnav] .nav-row[data-tab="runs"] .nav-icon svg {
+    fill-rule: evenodd;
+  }
+
+  /* "Recent Runs" is "Runs" in the bar; the full name stays the button's
+     accessible name. */
+  .sidebar-nav[data-v-mnav] .v-mnav-has-short .nav-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .sidebar-nav[data-v-mnav] .v-mnav-short {
+    display: block;
+    white-space: nowrap;
+  }
+
+  /* Pressed, hovered, current. The current tab is the rail's bookmark: a
+     butter-yellow card on the hard shadow, its icon tipped like a played
+     card. Pressing sinks any slot into the bar. */
+  @media (hover: hover) {
+    .sidebar-nav[data-v-mnav] .nav-row:hover,
+    .v-mnav-more:hover {
+      background: var(--v-surface-1);
+      color: var(--v-text);
+      transform: none;
+    }
+  }
+  .sidebar-nav[data-v-mnav] .nav-row:active,
+  .v-mnav-more:active {
+    transform: scale(0.95);
+  }
+  .sidebar-nav[data-v-mnav] .nav-row.is-active,
+  .v-mnav-more.is-active {
+    margin: 0;
+    border-color: var(--v-outline-color);
+    background: var(--v-title);
+    box-shadow: var(--v-shadow-sm);
+    color: var(--v-ink);
+    transform: none;
+  }
+  /* Everything that sits on a hard shadow presses into it. */
+  .sidebar-nav[data-v-mnav] .nav-row.is-active:active,
+  .v-mnav-more.is-active:active,
+  .v-mnav-close:active,
+  .v-mnav-tile:active,
+  .v-mnav-profile:active {
+    box-shadow: var(--v-shadow-pressed);
+    transform: translate(var(--v-press), var(--v-press));
+  }
+  .sidebar-nav[data-v-mnav] .nav-row.is-active .nav-icon,
+  .v-mnav-more.is-active .v-mnav-more-icon {
+    transform: rotate(-8deg) scale(1.06);
+  }
+  .sidebar-nav[data-v-mnav] .nav-row.is-active .nav-label,
+  .sidebar-nav[data-v-mnav] .nav-row.is-active .v-mnav-short,
+  .v-mnav-more.is-active .v-mnav-more-label {
+    font-weight: 800;
+  }
+  /* Sheet open: More reads as held down. */
+  .v-mnav-more[aria-expanded="true"]:not(.is-active) {
+    border-color: var(--v-outline-color);
+    background: var(--v-surface-2);
+    color: var(--v-text);
+  }
+
+  /* Badges on the bar sit on the icon's shoulder, whatever the slot width. */
+  .sidebar-nav[data-v-mnav] .nav-badge {
+    top: 2px;
+    right: auto;
+    left: calc(50% + 6px);
+    box-shadow: 1px 1px 0 var(--v-ink);
+  }
+  .v-mnav-dot {
+    position: absolute;
+    top: 4px;
+    left: calc(50% + 7px);
+    width: 12px;
+    height: 12px;
+    border: var(--v-outline);
+    border-radius: 50%;
+    background: var(--v-loss);
+    box-shadow: 1px 1px 0 var(--v-ink);
+  }
+
+  /* ---- The sheet ---------------------------------------------------------- */
+  html.v-mnav-lock {
+    overflow: hidden;
+    scrollbar-gutter: stable;
+  }
+  .v-mnav-sheet[open] {
+    --mnav-bar: calc(var(--v-tabbar-h) + env(safe-area-inset-bottom));
+    position: fixed;
+    inset: 0;
+    z-index: 300;
+    display: block;
+    width: 100%;
+    max-width: none;
+    height: 100%;
+    max-height: none;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    border: 0;
+    background: transparent;
+    color: var(--v-text);
+    font-family: var(--v-font-text);
+    /* Pans that start on the scrim must not scroll the page behind. */
+    touch-action: none;
+    overscroll-behavior: contain;
+  }
+  .v-mnav-sheet::backdrop {
+    background: transparent;
+  }
+  /* Dims the page but not the bar, so More stays visibly "open". */
+  .v-mnav-scrim {
+    position: absolute;
+    inset: 0 0 var(--mnav-bar);
+    background: color-mix(in srgb, var(--v-ink) 64%, transparent);
+    animation: v-mnav-fade var(--v-dur-2) ease both;
+  }
+  .v-mnav-panel {
+    position: absolute;
+    right: max(8px, env(safe-area-inset-right));
+    bottom: calc(var(--mnav-bar) - var(--v-outline-w));
+    left: max(8px, env(safe-area-inset-left));
+    display: flex;
+    flex-direction: column;
+    max-height: calc(100% - var(--mnav-bar) - 20px);
+    margin-inline: auto;
+    max-width: 560px;
+    border: var(--v-outline);
+    border-bottom: 0;
+    border-radius: var(--v-radius-lg) var(--v-radius-lg) 0 0;
+    background: var(--v-surface-1);
+    box-shadow: var(--v-shadow);
+    transform-origin: 50% 100%;
+    animation: v-mnav-rise 260ms var(--v-ease-out) both;
+  }
+  .v-mnav-sheet[data-closing] .v-mnav-panel {
+    animation: v-mnav-sink 180ms var(--v-ease-inout) both;
+  }
+  .v-mnav-sheet[data-closing] .v-mnav-scrim {
+    animation: v-mnav-fade 180ms ease reverse both;
+  }
+
+  .v-mnav-head {
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--v-space-3);
+    padding: var(--v-space-3) var(--v-space-3) var(--v-space-2) var(--v-space-4);
+  }
+  .v-mnav-title {
+    margin: 0;
+    color: var(--v-title);
+    font-family: var(--v-font-display);
+    font-size: var(--v-text-2xl);
+    font-weight: var(--v-display-weight);
+    line-height: 1;
+    text-shadow: var(--v-title-shadow);
+    transform: rotate(var(--v-title-tilt));
+    transform-origin: 0 50%;
+  }
+  /* Focus lands here when a tap opens the sheet; it is a landing spot for
+     screen readers, not a control, so it shows no ring. */
+  .v-mnav-title:focus {
+    outline: none;
+  }
+  /* Its own class, not .v-icon-btn: that one is 34px and lives in a later
+     layer, so it would win over any size set here. */
+  .v-mnav-close {
+    display: grid;
+    flex: none;
+    place-items: center;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    border: var(--v-outline);
+    border-radius: var(--v-radius-sm);
+    background: var(--v-surface-2);
+    box-shadow: var(--v-shadow-sm);
+    color: var(--v-text);
+    -webkit-tap-highlight-color: transparent;
+    cursor: pointer;
+    transition: transform var(--v-dur-1) ease, box-shadow var(--v-dur-1) ease;
+  }
+  @media (hover: hover) {
+    .v-mnav-close:hover {
+      box-shadow: var(--v-shadow-pressed);
+      color: var(--v-title);
+      transform: translate(var(--v-press), var(--v-press));
+    }
+  }
+  .v-mnav-close svg { width: 20px; height: 20px; }
+
+  /* Every grid in the sheet gets an explicit shrinkable column: an implicit
+     `auto` column grows to its longest unbreakable line and pushes rows
+     past the panel edge. */
+  .v-mnav-scroll,
+  .v-mnav-groups,
+  .v-mnav-group,
+  .v-mnav-account,
+  .v-mnav-list {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .v-mnav-scroll {
+    display: grid;
+    gap: var(--v-space-4);
+    min-height: 0;
+    padding: var(--v-space-2) var(--v-space-4) var(--v-space-5);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    touch-action: pan-y;
+    -webkit-overflow-scrolling: touch;
+  }
+  .v-mnav-groups {
+    display: grid;
+    gap: var(--v-space-4);
+  }
+  .v-mnav-group {
+    display: grid;
+    gap: var(--v-space-2);
+    min-width: 0;
+  }
+  .v-mnav-eyebrow {
+    display: flex;
+    align-items: center;
+    gap: var(--v-space-2);
+    margin: 0;
+    color: var(--v-text-2);
+    font-family: var(--v-font-text);
+    font-size: 0.8rem;
+    font-weight: 800;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+  }
+  .v-mnav-eyebrow::after {
+    content: "";
+    flex: 1;
+    border-top: 2px dashed var(--v-line);
+  }
+
+  /* Section tiles: little cards, three to a row, that press into their
+     shadow. The current one is the same yellow card as the bar's. */
+  .v-mnav-tiles,
+  .v-mnav-list {
+    display: grid;
+    gap: var(--v-space-2);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .v-mnav-tiles {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .v-mnav-tile {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    width: 100%;
+    min-height: 82px;
+    padding: 10px 4px 9px;
+    border: var(--v-outline);
+    border-radius: var(--v-radius-md);
+    background: var(--v-surface-2);
+    box-shadow: var(--v-shadow-sm);
+    color: var(--v-text);
+    font-family: var(--v-font-text);
+    -webkit-tap-highlight-color: transparent;
+    cursor: pointer;
+    transition: transform var(--v-dur-1) ease, box-shadow var(--v-dur-1) ease, background-color var(--v-dur-1) ease;
+  }
+  .v-mnav-tile-orb {
+    display: grid;
+    place-items: center;
+    width: 36px;
+    height: 36px;
+    border: var(--v-outline);
+    border-radius: 50%;
+    background: var(--v-bg-deep);
+    color: var(--v-title);
+    transition: transform var(--v-dur-2) var(--v-ease-spring);
+  }
+  .v-mnav-tile-orb svg { width: 19px; height: 19px; }
+  .v-mnav-tile-label {
+    max-width: 100%;
+    font-size: 0.875rem;
+    font-weight: 800;
+    line-height: 1.15;
+    text-align: center;
+    overflow-wrap: anywhere;
+  }
+  @media (hover: hover) {
+    .v-mnav-tile:hover {
+      background: var(--v-bg-deep);
+    }
+    .v-mnav-tile:hover .v-mnav-tile-orb {
+      transform: rotate(-8deg);
+    }
+  }
+  .v-mnav-tile[aria-current="page"] {
+    background: var(--v-title);
+    color: var(--v-ink);
+  }
+  .v-mnav-tile[aria-current="page"] .v-mnav-tile-orb {
+    background: var(--v-paper);
+    color: var(--v-on-paper);
+    transform: rotate(-8deg);
+  }
+
+  /* Mirrors of the sidebar badges, pinned to the tile's corner. */
+  .v-mnav-badge {
+    position: absolute;
+    top: -8px;
+    right: -6px;
+    min-width: 22px;
+    padding: 2px 7px;
+    border: var(--v-outline);
+    border-radius: var(--v-radius-pill);
+    background: var(--v-accent);
+    box-shadow: 2px 2px 0 var(--v-ink);
+    color: var(--v-on-accent);
+    font-size: 0.8rem;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    line-height: 1.25;
+  }
+  .v-mnav-badge[data-kind="new"] {
+    background: var(--v-info);
+    color: var(--v-ink);
+  }
+  .v-mnav-badge[data-kind="dot"] {
+    top: -6px;
+    right: -5px;
+    width: 16px;
+    min-width: 0;
+    height: 16px;
+    padding: 0;
+    background: var(--v-loss);
+  }
+
+  /* ---- You: account, Settings, Theme ------------------------------------- */
+  .v-mnav-account {
+    display: grid;
+    gap: 6px;
+  }
+  .v-mnav-account:empty {
+    display: none;
+  }
+  .v-mnav-signin {
+    width: 100%;
+    min-height: 48px;
+    font-size: var(--v-text-md);
+  }
+  .v-mnav-signin svg { width: 16px; height: 16px; }
+  .v-mnav-note {
+    margin: 0;
+    color: var(--v-text-2);
+    font-size: 0.8rem;
+    text-align: center;
+  }
+  .v-mnav-list {
+    gap: 0;
+    overflow: hidden;
+    border: var(--v-outline);
+    border-radius: var(--v-radius-md);
+    background: var(--v-bg-deep);
+  }
+  .v-mnav-list > li + li {
+    border-top: 2px dashed var(--v-line);
+  }
+  .v-mnav-row {
+    display: flex;
+    align-items: center;
+    gap: var(--v-space-3);
+    width: 100%;
+    min-height: 56px;
+    padding: 8px var(--v-space-3);
+    border: 0;
+    background: none;
+    color: var(--v-text);
+    font-family: var(--v-font-text);
+    text-align: left;
+    -webkit-tap-highlight-color: transparent;
+    cursor: pointer;
+    transition: background-color var(--v-dur-1) ease;
+  }
+  .v-mnav-row:active {
+    background: var(--v-surface-2);
+  }
+  @media (hover: hover) {
+    .v-mnav-row:hover {
+      background: var(--v-surface-1);
+    }
+  }
+  .v-mnav-row:focus-visible {
+    outline-offset: -3px;
+  }
+  .v-mnav-row[aria-current="page"] {
+    background: color-mix(in srgb, var(--v-title) 16%, transparent);
+    box-shadow: inset 4px 0 0 var(--v-title);
+  }
+  .v-mnav-row-icon {
+    display: grid;
+    flex: none;
+    place-items: center;
+    width: 34px;
+    height: 34px;
+    border: var(--v-outline);
+    border-radius: var(--v-radius-sm);
+    background: var(--v-surface-1);
+    color: var(--v-title);
+  }
+  .v-mnav-row-icon svg { width: 18px; height: 18px; }
+  .v-mnav-row-text {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
+  }
+  .v-mnav-row-text strong {
+    font-size: var(--v-text-md);
+    font-weight: 800;
+    line-height: 1.2;
+  }
+  .v-mnav-row-text small {
+    color: var(--v-text-2);
+    font-size: 0.8rem;
+    font-weight: 600;
+    line-height: 1.3;
+  }
+  .v-mnav-row-chev {
+    display: grid;
+    flex: none;
+    color: var(--v-text-3);
+    transition: transform var(--v-dur-2) var(--v-ease-out);
+  }
+  .v-mnav-row-chev svg { width: 16px; height: 16px; }
+  .v-mnav-row[aria-expanded="true"] .v-mnav-row-chev {
+    transform: rotate(90deg);
+  }
+  .v-mnav-profile {
+    border: var(--v-outline);
+    border-radius: var(--v-radius-md);
+    background: var(--v-surface-2);
+    box-shadow: var(--v-shadow-sm);
+  }
+  .v-mnav-avatar {
+    flex: none;
+    width: 36px;
+    height: 36px;
+    border: var(--v-outline);
+    border-radius: 50%;
+    object-fit: cover;
+  }
+
+  /* The current theme as a live miniature: it carries its own data-theme. */
+  .v-mnav-theme-chip {
+    position: relative;
+    flex: none;
+    width: 40px;
+    height: 28px;
+    overflow: hidden;
+    border: var(--v-outline);
+    border-radius: 6px;
+    background: linear-gradient(180deg, var(--v-stage-sky-1), var(--v-stage-sky-2) 70%, var(--v-stage-sky-3));
+  }
+  .v-mnav-theme-chip::before {
+    content: "";
+    position: absolute;
+    top: 5px;
+    left: 5px;
+    width: 18px;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--v-title);
+  }
+  .v-mnav-theme-chip::after {
+    content: "";
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    height: 9px;
+    border-top: var(--v-outline);
+    background: var(--v-bg);
+  }
+  .v-mnav-theme-chip i {
+    position: absolute;
+    top: 4px;
+    right: 5px;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--v-accent);
+  }
+  .v-mnav-themes {
+    padding: 2px var(--v-space-2) var(--v-space-2);
+  }
+  /* Two to a row: eight themes fill four rows with no orphan, and a name
+     like "Necrobinder" still fits beside its miniature on a 320px phone. */
+  .v-mnav-swatches {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+  }
+  .v-mnav-swatch {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    min-width: 0;
+    min-height: 48px;
+    padding: 5px;
+    border: var(--v-outline-w) solid transparent;
+    border-radius: var(--v-radius-md);
+    background: none;
+    color: var(--v-text);
+    font-family: var(--v-font-text);
+    text-align: left;
+    -webkit-tap-highlight-color: transparent;
+    cursor: pointer;
+    transition: transform var(--v-dur-1) ease, background-color var(--v-dur-1) ease;
+  }
+  @media (hover: hover) {
+    .v-mnav-swatch:hover {
+      background: var(--v-surface-1);
+    }
+  }
+  .v-mnav-swatch:active {
+    transform: scale(0.97);
+  }
+  .v-mnav-swatch[aria-checked="true"] {
+    border-color: var(--v-title);
+    background: var(--v-surface-1);
+  }
+  .v-mnav-swatch .v-mnav-theme-chip {
+    width: 34px;
+    height: 26px;
+  }
+  .v-mnav-swatch-text {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
+  }
+  .v-mnav-swatch-text strong {
+    font-size: 0.8rem;
+    font-weight: 800;
+    line-height: 1.15;
+    overflow-wrap: break-word;
+  }
+  .v-mnav-swatch-text small {
+    color: var(--v-text-2);
+    font-size: 0.8rem;
+    font-weight: 600;
+    line-height: 1.2;
+  }
+  .v-mnav-themes-foot {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0 var(--v-space-2);
+    margin: var(--v-space-2) 0 0;
+    color: var(--v-text-2);
+    font-size: 0.8rem;
+  }
+  .v-mnav-link {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--v-text-2);
+    font-family: var(--v-font-text);
+    font-size: 0.8rem;
+    font-weight: 700;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    cursor: pointer;
+  }
+  .v-mnav-link:active {
+    color: var(--v-title);
+  }
+
+  /* The localhost-only co-op dev sandbox toggle sits on the bottom edge. */
+  .coop-sandbox-wrap {
+    bottom: calc(var(--v-tabbar-h) + 12px + env(safe-area-inset-bottom));
+  }
+}
+
+/* The profile popover (opened from the sheet's account row) is positioned
+   off the sidebar pill, which is hidden on phones. At 721–880px, where the
+   legacy bottom-sheet layout does not apply, that put it above the top of
+   the screen; park it above the bar instead. The !important is needed to
+   beat the inline coordinates script.js writes. */
+/* 320–360px phones: a smaller miniature so "Necrobinder" keeps one line. */
+@media (max-width: 360px) {
+  .v-mnav-themes { padding-inline: var(--v-space-1); }
+  .v-mnav-swatch { gap: 6px; }
+  .v-mnav-swatch .v-mnav-theme-chip { width: 28px; height: 22px; }
+}
+
+@media (min-width: 721px) and (max-width: 880px) {
+  .profile-popover:not([hidden]) {
+    top: auto !important;
+    right: 12px !important;
+    bottom: calc(var(--v-tabbar-h) + 12px + env(safe-area-inset-bottom)) !important;
+    left: auto !important;
+  }
+}
+
+/* ---- A phone on its side ------------------------------------------------- */
+/* About 340px of height: the bar slims down (icon beside label) and the
+   sheet lays its sections side by side so it needs no scrolling. */
+@media (max-width: 880px) and (max-height: 480px) {
+  /* 56 = 44px targets + 2px top outline + 5px padding above and below. */
+  :root {
+    --v-tabbar-h: 56px;
+  }
+  .sidebar-nav[data-v-mnav] {
+    padding-top: 5px;
+    padding-bottom: calc(5px + env(safe-area-inset-bottom));
+  }
+  .sidebar-nav[data-v-mnav] .nav-row,
+  .v-mnav-more {
+    flex-direction: row;
+    gap: 7px;
+    max-width: 150px;
+    padding: 4px 8px;
+  }
+  .sidebar-nav[data-v-mnav] .nav-badge,
+  .v-mnav-dot {
+    top: 1px;
+    left: 26px;
+  }
+  .v-mnav-panel {
+    max-width: 760px;
+  }
+  .v-mnav-head {
+    padding-block: var(--v-space-2) 0;
+  }
+  .v-mnav-title {
+    font-size: var(--v-text-xl);
+  }
+  .v-mnav-scroll {
+    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+    align-items: start;
+    gap: var(--v-space-3) var(--v-space-4);
+    padding-bottom: var(--v-space-4);
+  }
+  .v-mnav-tile {
+    flex-direction: row;
+    justify-content: flex-start;
+    gap: 8px;
+    min-height: 48px;
+    padding: 6px 8px;
+  }
+  .v-mnav-tile-orb {
+    flex: none;
+    width: 30px;
+    height: 30px;
+  }
+  .v-mnav-tile-label {
+    text-align: left;
+  }
+  .v-mnav-groups {
+    gap: var(--v-space-3);
+  }
+  .v-mnav-row {
+    min-height: 48px;
+    padding-block: 4px;
+  }
+}
+
+/* ---- Motion ----------------------------------------------------------------- */
+@keyframes v-mnav-rise { from { opacity: 0; transform: translateY(24px) scale(0.98); } }
+@keyframes v-mnav-sink { to { opacity: 0; transform: translateY(24px) scale(0.98); } }
+@keyframes v-mnav-fade { from { opacity: 0; } }
+
+/* Reduced motion — the OS setting or the in-app toggle: the sheet simply
+   appears and nothing eases. The selectors outweigh the animated rules. */
+@media (prefers-reduced-motion: reduce) {
+  .v-mnav-sheet[open] :is(.v-mnav-panel, .v-mnav-scrim) { animation: none; }
+  :is(.sidebar-nav[data-v-mnav] :is(.nav-row, .nav-icon), [class*="v-mnav-"]) { transition: none; }
+}
+.prefer-reduced-motion .v-mnav-sheet[open] :is(.v-mnav-panel, .v-mnav-scrim) { animation: none; }
+.prefer-reduced-motion :is(.sidebar-nav[data-v-mnav] :is(.nav-row, .nav-icon), [class*="v-mnav-"]) { transition: none; }

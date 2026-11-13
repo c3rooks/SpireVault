@@ -1,0 +1,54 @@
+/* Self-hosted, OFL-licensed (see /assets/fonts/OFL-*.txt). Latin subset,
+   variable weight. Filenames are versioned because /assets/* is immutable. */
+@font-face {
+  font-family: "Figtree";
+  src: url("/assets/fonts/figtree-latin-var-v1.woff2") format("woff2");
+  font-weight: 300 900;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Grenze Gotisch";
+  src: url("/assets/fonts/grenze-gotisch-latin-var-v1.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* Grenze: the roman sibling of Grenze Gotisch. Same designer, same bones,
+   plain roman capitals. Headings use it because the Gotisch blackletter
+   capitals (A, R, S) cost too much legibility below ~28px. Not preloaded:
+   it is never above the fold on its own. */
+@font-face {
+  font-family: "Grenze";
+  src: url("/assets/fonts/grenze-latin-800-v1.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* Legacy aliases. The old stylesheet names Inter / Playfair Display / Cinzel
+   in ~40 rules; the new UI drops the Google Fonts request, so point those
+   family names at the new files. Not-yet-migrated surfaces pick up the new
+   type with no selector work. Removed together with styles.css. */
+@font-face {
+  font-family: "Inter";
+  src: url("/assets/fonts/figtree-latin-var-v1.woff2") format("woff2");
+  font-weight: 300 900;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Playfair Display";
+  src: url("/assets/fonts/grenze-latin-800-v1.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Cinzel";
+  src: url("/assets/fonts/grenze-latin-800-v1.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}

@@ -1,0 +1,494 @@
+/* ==========================================================================
+   Overview. Every metric appears exactly once:
+     stage  → highest ascension (spire), last ten runs (torches)
+     top    → win rate, totals, best character, average ascension, last 20
+              · per-character banners
+     hand   → recent form, streak, longest streak, best floor, fastest
+              victory, runs this week
+     charts → win-rate trend, where climbs end
+     relics → top six by win rate
+   Markup from lib/ui/views.js.
+   ========================================================================== */
+.v-ov {
+  display: flex;
+  flex-direction: column;
+}
+.v-ov-top {
+  display: grid;
+  grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+  gap: var(--v-space-5);
+  align-items: stretch;
+}
+
+/* ---- Win-rate panel ----------------------------------------------------------- */
+.v-wr {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v-space-4);
+}
+.v-wr-main {
+  display: flex;
+  align-items: center;
+  gap: var(--v-space-4);
+}
+.v-ring {
+  position: relative;
+  flex: none;
+  width: 148px;
+  height: 148px;
+}
+.v-ring svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.v-ring-ink {
+  fill: none;
+  stroke: var(--v-outline-color);
+  stroke-width: 19;
+}
+.v-ring-track {
+  fill: none;
+  stroke: var(--v-surface-2);
+  stroke-width: 13;
+}
+.v-ring-fill {
+  fill: none;
+  stroke: var(--v-title);
+  stroke-width: 13;
+  stroke-linecap: round;
+  stroke-dasharray: var(--dash) var(--circ);
+}
+[data-enter] .v-ring-fill {
+  animation: v-ring-draw var(--v-dur-4) var(--v-ease-out) both;
+  animation-delay: calc(0ms - var(--enter-elapsed, 0ms));
+}
+@keyframes v-ring-draw {
+  from {
+    stroke-dasharray: 0 var(--circ);
+  }
+}
+.v-ring-text {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  text-align: center;
+}
+.v-ring-pct {
+  font-family: var(--v-font-display);
+  font-size: 2.75rem;
+  font-weight: var(--v-display-weight);
+  line-height: 0.9;
+  color: var(--v-title);
+  font-variant-numeric: tabular-nums;
+}
+.v-ring-pct small {
+  font-size: 0.5em;
+}
+.v-ring-label {
+  margin-top: 2px;
+  color: var(--v-text-2);
+  font-size: var(--v-text-xs);
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.v-wr-side {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--v-space-3);
+  min-width: 0;
+}
+.v-nums {
+  display: flex;
+  gap: var(--v-space-5);
+  margin: 0;
+}
+.v-nums div {
+  display: flex;
+  flex-direction: column-reverse;
+}
+.v-nums dt {
+  color: var(--v-text-2);
+  font-size: var(--v-text-xs);
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.v-nums dd {
+  margin: 0;
+  font-family: var(--v-font-display);
+  font-size: var(--v-text-2xl);
+  font-weight: var(--v-display-weight);
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.v-nums .is-win {
+  color: var(--v-win);
+}
+.v-nums .is-loss {
+  color: var(--v-loss);
+}
+.v-wr-best {
+  margin: 0;
+  color: var(--v-text-2);
+  font-size: var(--v-text-sm);
+  font-weight: 600;
+}
+.v-wr-best b {
+  color: color-mix(in srgb, var(--v-char) 80%, var(--v-text));
+  font-weight: 800;
+}
+.v-wr-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--v-space-2);
+}
+
+/* Last 20 climbs as a map path: a dashed trail of win/loss nodes. */
+.v-path {
+  padding-top: var(--v-space-3);
+  border-top: 2px dashed var(--v-line);
+}
+.v-path-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--v-space-2);
+  margin-bottom: 4px;
+}
+.v-path-head span {
+  color: var(--v-text-2);
+  font-size: var(--v-text-xs);
+  font-weight: 700;
+}
+.v-path svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+.v-path-trail {
+  fill: none;
+  stroke: var(--v-text-3);
+  stroke-width: 2;
+  stroke-dasharray: 3 5;
+  stroke-linecap: round;
+}
+.v-path-node {
+  stroke: var(--v-outline-color);
+  stroke-width: 2;
+}
+.v-path-node.is-win {
+  fill: var(--v-win);
+}
+.v-path-node.is-loss {
+  fill: var(--v-loss);
+}
+/* Hollow and dashed, so an abandoned run differs from a loss by shape as
+   well as colour. */
+.v-path-node.is-abandon {
+  fill: var(--v-bg-deep);
+  stroke: var(--v-text-2);
+  stroke-dasharray: 3 2;
+}
+.v-path-node.is-latest {
+  stroke: var(--v-title);
+  stroke-width: 3;
+}
+
+/* ---- Characters ---------------------------------------------------------------- */
+.v-chars {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v-space-3);
+}
+.v-chars-grid {
+  display: grid;
+  flex: 1;
+  grid-template-columns: repeat(var(--cols, 5), minmax(0, 1fr));
+  gap: var(--v-space-2);
+}
+.v-char {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  min-width: 0;
+  padding: 0 8px 10px;
+  overflow: hidden;
+  border: var(--v-outline);
+  border-radius: var(--v-radius-md);
+  background: var(--v-bg-deep);
+  color: var(--v-text);
+  font-family: var(--v-font-text);
+  text-align: center;
+  cursor: pointer;
+  transition: transform var(--v-dur-2) var(--v-ease-spring), box-shadow var(--v-dur-2) ease;
+}
+.v-char:hover {
+  box-shadow: var(--v-shadow-sm);
+  transform: translateY(-6px) rotate(-1.2deg);
+}
+/* The portrait plate grows to fill the banner, so five banners always fill
+   their panel however tall the neighbouring panel is. */
+.v-char-art {
+  position: relative;
+  display: grid;
+  flex: 1 1 104px;
+  place-items: end center;
+  width: calc(100% + 16px);
+  min-height: 104px;
+  margin: 0 -8px 8px;
+  overflow: hidden;
+  border-bottom: var(--v-outline);
+  background:
+    radial-gradient(70px 50px at 50% 100%, color-mix(in srgb, var(--v-char) 88%, white) 0%, transparent 100%),
+    color-mix(in srgb, var(--v-char) 62%, var(--v-ink));
+}
+.v-char-art img {
+  width: auto;
+  height: 112px;
+  max-width: none;
+  margin-bottom: -6px;
+  filter: drop-shadow(2px 2px 0 var(--v-ink));
+  transition: transform var(--v-dur-2) var(--v-ease-spring);
+}
+/* Stage art is cropped tight to the figure (no padding, no painted floor
+   shadow), so it is sized by its own height and inked like the header. */
+.v-char-art img.is-inked {
+  height: 86px;
+  max-width: 88%;
+  margin-bottom: 10px;
+  object-fit: contain;
+  object-position: 50% 100%;
+  filter: var(--v-actor-ink);
+}
+.v-char:hover .v-char-art img {
+  transform: scale(1.08) translateY(-2px);
+}
+.v-char-art svg {
+  width: 40px;
+  height: 40px;
+  margin-bottom: 22px;
+  color: var(--v-ink);
+}
+.v-char-name {
+  max-width: 100%;
+  overflow: hidden;
+  font-size: var(--v-text-sm);
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.v-char-wr {
+  font-family: var(--v-font-display);
+  font-size: 1.875rem;
+  font-weight: var(--v-display-weight);
+  line-height: 1;
+  color: color-mix(in srgb, var(--v-char) 76%, var(--v-text));
+  font-variant-numeric: tabular-nums;
+}
+.v-char-wr small {
+  font-size: 0.5em;
+}
+.v-char-rec {
+  color: var(--v-text-2);
+  font-size: var(--v-text-xs);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.v-char-bar {
+  width: 100%;
+  height: 7px;
+  margin-top: 6px;
+  overflow: hidden;
+  border-radius: var(--v-radius-pill);
+  background: var(--v-well);
+}
+.v-char-bar i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--v-char);
+  transform-origin: 0 50%;
+}
+[data-enter] .v-char-bar i {
+  animation: v-fill 900ms var(--v-ease-out) both;
+  animation-delay: calc(240ms - var(--enter-elapsed, 0ms));
+}
+@keyframes v-fill {
+  from {
+    transform: scaleX(0);
+  }
+}
+.v-char.is-unplayed {
+  opacity: 0.6;
+}
+
+/* ---- Hand heading --------------------------------------------------------------- */
+.v-hand-title {
+  justify-content: center;
+  margin-bottom: 0;
+}
+.v-hand-title::before,
+.v-hand-title::after {
+  content: "";
+  flex: 1;
+  align-self: center;
+  height: 0;
+  border-top: 2px dashed var(--v-line);
+}
+
+/* ---- Charts row ------------------------------------------------------------------ */
+.v-ov-charts {
+  display: grid;
+  grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+  gap: var(--v-space-5);
+}
+
+/* ---- Top relics ------------------------------------------------------------------ */
+.v-relics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--v-space-3);
+}
+.v-relic {
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 2px var(--v-space-3);
+  padding: 10px 14px 10px 10px;
+  border: var(--v-outline);
+  border-radius: var(--v-radius-md);
+  background: var(--v-surface-1);
+  box-shadow: var(--v-shadow-sm);
+  color: var(--v-text);
+  font-family: var(--v-font-text);
+  text-align: left;
+  cursor: pointer;
+  transition: transform var(--v-dur-1) ease, box-shadow var(--v-dur-1) ease;
+}
+.v-relic:hover {
+  transform: translate(var(--v-press), var(--v-press));
+  box-shadow: var(--v-shadow-pressed);
+}
+.v-relic-orb {
+  display: grid;
+  grid-row: span 2;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  border: var(--v-outline);
+  border-radius: 50%;
+  background: var(--v-well);
+}
+.v-relic-orb img {
+  width: 34px;
+  height: 34px;
+  object-fit: contain;
+}
+.v-relic-name {
+  overflow: hidden;
+  font-size: var(--v-text-md);
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.v-relic-wr {
+  grid-row: span 2;
+  font-family: var(--v-font-display);
+  font-size: var(--v-text-xl);
+  font-weight: var(--v-display-weight);
+  color: var(--v-win);
+  font-variant-numeric: tabular-nums;
+}
+.v-relic-meta {
+  color: var(--v-text-2);
+  font-size: var(--v-text-xs);
+  font-weight: 600;
+}
+
+/* ---- Demo banner (legacy markup, restyled as a notice card) ----------------------- */
+.v-ov-wrap .demo-banner,
+.panel-body > .demo-banner {
+  margin-bottom: var(--v-space-5);
+  border: var(--v-outline);
+  border-radius: var(--v-radius-lg);
+  background: var(--v-surface-1);
+  background-image: none;
+  box-shadow: var(--v-shadow);
+}
+
+/* ---- Responsive ------------------------------------------------------------------- */
+@media (max-width: 1180px) {
+  .v-ov-top,
+  .v-ov-charts {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .v-relics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 720px) {
+  .v-wr-main {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .v-ring {
+    align-self: center;
+  }
+  .v-chars-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  /* Banners become rows: portrait chip, name + record, win rate. */
+  .v-char {
+    display: grid;
+    grid-template-columns: 52px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 0 var(--v-space-3);
+    padding: 8px 12px 8px 8px;
+    text-align: left;
+  }
+  .v-relics {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .v-char-art {
+    grid-row: span 2;
+    flex: none;
+    width: 52px;
+    min-height: 0;
+    height: 52px;
+    margin: 0;
+    border: var(--v-outline);
+    border-radius: var(--v-radius-sm);
+  }
+  .v-char-art img {
+    height: 58px;
+    margin-bottom: -4px;
+  }
+  .v-char-art img.is-inked {
+    height: 42px;
+    margin-bottom: 4px;
+  }
+  .v-char-art svg {
+    margin-bottom: 6px;
+  }
+  .v-char-wr {
+    grid-row: span 2;
+    grid-column: 3;
+  }
+  .v-char-name,
+  .v-char-rec {
+    grid-column: 2;
+  }
+  .v-char-bar {
+    display: none;
+  }
+  .v-char:hover {
+    transform: translateX(3px);
+  }
+}

@@ -1,0 +1,34 @@
+/* ==========================================================================
+   Legacy token bridge.
+
+   styles.css reads ~1,160 var() references to the handful of variables
+   below. Re-pointing them at theme tokens re-colours every not-yet-migrated
+   surface (co-op, news, highlights, modals) and makes them follow the active
+   theme for free. It cannot reach hard-coded hex/rgba literals — those stay
+   as they are until each surface is migrated.
+
+   Deleted together with styles.css.
+   ========================================================================== */
+:root {
+  --bg: var(--v-bg);
+  --bg-deep: var(--v-bg-deep);
+  --card: var(--v-surface-1);
+  --card-raised: var(--v-surface-2);
+  --border: var(--v-line);
+  --border-strong: color-mix(in srgb, var(--v-line) 60%, var(--v-text-2));
+  --accent: var(--v-accent);
+  --accent-hi: var(--v-accent-hi);
+  --gold: var(--v-gold);
+  --text: var(--v-text);
+  --text-2: var(--v-text-2);
+  --text-3: var(--v-text-3);
+  --win: var(--v-win);
+  --loss: var(--v-loss);
+  --radius: var(--v-radius-md);
+
+  /* Used by the legacy sheet but never defined there (they resolved to
+     nothing). Defining them is a deliberate, next-only fix. */
+  --text-1: var(--v-text);
+  --surface: var(--v-surface-1);
+  --muted: var(--v-text-3);
+}

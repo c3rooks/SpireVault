@@ -1,10 +1,20 @@
 PROJECT ?= vault-web
 DOMAIN  ?= app.spirevault.app
 
-.PHONY: dev deploy verify assets preflight
+.PHONY: dev dev-static css deploy verify assets preflight
 
 dev:
 	npx --yes wrangler@latest pages dev .
+
+# Dependency-free static server (no Pages Functions). Applies _headers, so
+# the production CSP is enforced locally. Enough for UI work and screenshots.
+dev-static:
+	node scripts/dev-static.mjs 8788
+
+# Rebuild styles.next.css (the new UI's stylesheet) from styles/src/.
+# The output is committed; `preflight` fails if it is stale.
+css:
+	node scripts/build-css.mjs
 
 # Regenerate the optimized STS2 art library + label database from the
 # iOS Ascension Companion's xcassets and GameDatabase.swift. Should be
@@ -28,10 +38,22 @@ assets:
 # but the browser explodes the moment that template renders. Once
 # bitten, twice shy.
 preflight:
-	@for f in script.js run-coach.js lib/*.js; do \
+	@for f in script.js run-coach.js lib/*.js lib/ui/*.js scripts/*.mjs; do \
 	  node --check $$f || { echo "✘ parse error in $$f — aborting deploy"; exit 1; }; \
 	done
 	@node scripts/preflight-runtime.mjs || { echo "✘ runtime preflight failed — aborting deploy"; exit 1; }
+	@# No top-level await in script.js. It is a PARSE error in engines that
+	@# predate it (Safari < 15, Chrome < 89), and a parse error in the entry
+	@# module is a blank app for every visitor on such an engine, whichever
+	@# code path they would have taken. `node --check` accepts it, so it
+	@# needs its own guard. Top-level statements in script.js start in
+	@# column 0; anything awaited there is the thing we are looking for.
+	@if grep -nE '^[^ \t/*].*\bawait\b' script.js; then \
+	  echo "✘ top-level await in script.js — wrap it in an async function"; exit 1; \
+	fi
+	@# styles.next.css is generated from styles/src/ and committed. A stale
+	@# copy means the deployed CSS does not match the source that was reviewed.
+	@node scripts/build-css.mjs --check || { echo "✘ styles.next.css is stale — run 'make css'"; exit 1; }
 	@# Version-pin sanity. The leading vN in script.js's VAULT_BUILD
 	@# constant must match the script.js?v=N pin in index.html. If
 	@# they drift (e.g. someone bumps the HTML pin during a deploy
@@ -74,6 +96,9 @@ deploy: preflight
 	    --project-name=$(PROJECT) \
 	    --branch=main \
 	    --commit-dirty=true
+	@# Record what is now live, so the next preflight can tell "changed since
+	@# deploy without a token bump" from "never deployed". Commit the lock.
+	@node scripts/check-asset-versions.mjs --record
 
 verify:
 	@echo "→ HEAD https://$(DOMAIN)"

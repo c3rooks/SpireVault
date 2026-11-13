@@ -1,0 +1,53 @@
+/* ==========================================================================
+   Migration ledger.
+
+   A surface listed here has been fully restyled. `all: revert` (in a layer
+   that outranks `legacy`) discards every legacy declaration on it, so the
+   new component CSS starts from browser defaults instead of fighting 16k
+   lines of accumulated overrides property by property.
+
+   Rules of the ledger:
+   - SVG internals are excluded. `revert` would also discard presentation
+     attributes (fill="currentColor"), blanking every inline icon.
+   - Legacy `!important` state gates ([hidden], desktop-host hides,
+     reduced-motion kills) are untouched: layered !important outranks this.
+   - This file doubles as the list of what is safe to delete from styles.css.
+   ========================================================================== */
+:where(.sidebar),
+:where(.sidebar) :where(:not(svg, svg *)),
+:where(.sidebar)::before,
+:where(.sidebar)::after,
+:where(.sidebar) :where(:not(svg, svg *))::before,
+:where(.sidebar) :where(:not(svg, svg *))::after,
+
+:where(.panel-head),
+:where(.panel-head)::before,
+:where(.panel-head)::after,
+:where(.panel-head-stage),
+:where(.panel-head-stage)::before,
+:where(.panel-head-stage)::after,
+:where(.panel-head-toprow),
+:where(.panel-head-toprow) :where(:not(svg, svg *)),
+:where(.panel-head-toprow) :where(:not(svg, svg *))::before,
+:where(.panel-head-toprow) :where(:not(svg, svg *))::after,
+:where(.panel-head-title-wrap),
+:where(.panel-head-title-wrap) :where(:not(svg, svg *)),
+:where(.panel-head-title-wrap) :where(:not(svg, svg *))::before,
+:where(.panel-head-title-wrap) :where(:not(svg, svg *))::after,
+:where(.companion-slot),
+:where(.companion-slot) :where(:not(svg, svg *)),
+:where(.companion-slot) :where(:not(svg, svg *))::before,
+:where(.companion-slot) :where(:not(svg, svg *))::after,
+:where(.head-crest),
+:where(.head-crest)::before,
+:where(.head-crest)::after,
+
+:where(.app-shell),
+:where(.content),
+:where(.tab-panel),
+:where(.panel-body),
+:where(.bg-glow),
+:where(.bg-glow)::before,
+:where(.bg-glow)::after {
+  all: revert;
+}

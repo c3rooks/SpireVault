@@ -1,0 +1,192 @@
+/* ==========================================================================
+   Theme picker. Each swatch's preview carries its own data-theme, so it is
+   a live miniature rendered from that theme's real tokens — no screenshots,
+   no duplicated colour lists. Built by lib/ui/theme.js.
+   ========================================================================== */
+.v-theme-pop {
+  position: fixed;
+  z-index: 150;
+  width: min(348px, calc(100vw - 24px));
+  padding: var(--v-space-3);
+  border: var(--v-outline);
+  border-radius: var(--v-radius-lg);
+  background: var(--v-surface-1);
+  box-shadow: var(--v-shadow-lg);
+  color: var(--v-text);
+  animation: v-pop 220ms var(--v-ease-spring) both;
+}
+.v-theme-pop-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--v-space-2);
+  margin-bottom: var(--v-space-3);
+}
+.v-theme-pop-head h3 {
+  margin: 0;
+  font-family: var(--v-font-heading);
+  font-size: var(--v-text-xl);
+  font-weight: 800;
+  line-height: 1;
+  color: var(--v-title);
+  text-shadow: 2px 2px 0 var(--v-ink);
+}
+/* "Press T to cycle" means nothing without a keyboard. */
+@media (hover: none) {
+  .v-theme-pop-head span {
+    display: none;
+  }
+}
+.v-theme-pop-head kbd {
+  padding: 1px 6px;
+  border: var(--v-outline);
+  border-radius: 5px;
+  background: var(--v-bg-deep);
+  color: var(--v-text-2);
+  font-family: var(--v-font-text);
+  font-size: var(--v-text-xs);
+  font-weight: 800;
+}
+
+.v-themes {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: var(--v-space-2);
+}
+.v-theme {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 5px;
+  border: 2px solid transparent;
+  border-radius: var(--v-radius-md);
+  background: none;
+  color: var(--v-text);
+  font-family: var(--v-font-text);
+  font-size: var(--v-text-xs);
+  font-weight: 700;
+  line-height: 1.2;
+  text-align: left;
+  cursor: pointer;
+  transition: transform var(--v-dur-2) var(--v-ease-spring), background-color var(--v-dur-1) ease;
+}
+.v-theme:hover {
+  background: var(--v-surface-2);
+  transform: translateY(-2px);
+}
+.v-theme[aria-checked="true"] {
+  border-color: var(--v-title);
+  background: var(--v-surface-2);
+}
+.v-theme small {
+  color: var(--v-text-2);
+  font-size: var(--v-text-xs);
+  font-weight: 600;
+}
+
+/* The miniature: sky, a title stroke, a panel, a card and an accent pip. */
+.v-theme-prev {
+  position: relative;
+  display: block;
+  height: 62px;
+  overflow: hidden;
+  border: var(--v-outline);
+  border-radius: var(--v-radius-sm);
+  background: linear-gradient(180deg, var(--v-stage-sky-1), var(--v-stage-sky-2) 78%, var(--v-stage-sky-3));
+}
+.v-theme-prev::before {
+  content: "";
+  position: absolute;
+  top: 9px;
+  left: 8px;
+  width: 38px;
+  height: 7px;
+  border-radius: 2px;
+  background: var(--v-title);
+  box-shadow: 2px 2px 0 var(--v-ink);
+  transform: rotate(var(--v-title-tilt));
+}
+.v-theme-prev::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 22px;
+  border-top: var(--v-outline);
+  background: var(--v-bg);
+}
+.v-theme-prev i {
+  position: absolute;
+  z-index: 1;
+  border: var(--v-outline);
+}
+.v-theme-prev i:nth-child(1) {
+  bottom: 6px;
+  left: 8px;
+  width: 40px;
+  height: 22px;
+  border-radius: 5px;
+  background: var(--v-surface-1);
+  box-shadow: var(--v-shadow-sm);
+}
+.v-theme-prev i:nth-child(2) {
+  right: 22px;
+  bottom: 8px;
+  width: 18px;
+  height: 26px;
+  border-radius: 4px;
+  background: var(--v-paper);
+  box-shadow: var(--v-shadow-sm);
+  transform: rotate(6deg);
+}
+.v-theme-prev i:nth-child(3) {
+  top: 8px;
+  right: 8px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--v-accent);
+}
+
+.v-theme-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--v-space-2);
+  margin-top: var(--v-space-3);
+  padding-top: var(--v-space-3);
+  border-top: 2px dashed var(--v-line);
+  color: var(--v-text-2);
+  font-size: var(--v-text-xs);
+}
+.v-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--v-text-2);
+  font-family: var(--v-font-text);
+  font-size: var(--v-text-xs);
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.v-link:hover {
+  color: var(--v-title);
+}
+/* A bare text link is 17px tall: too small to tap. */
+@media (max-width: 880px) {
+  .v-link {
+    display: inline-flex;
+    align-items: center;
+    min-height: 36px;
+  }
+}
+
+/* Trigger in the rail brand row. */
+.sidebar-brand .v-icon-btn {
+  width: 30px;
+  height: 30px;
+}

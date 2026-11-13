@@ -2,7 +2,8 @@
 /**
  * Guards the immutable-caching contract in Web/_headers.
  *
- * /script.js, /styles.css, /run-coach.js and everything under /lib/* are
+ * /script.js, the three stylesheets (/styles.css, /styles.next.css,
+ * /styles.mobile.css), /run-coach.js and everything under /lib/* are
  * served `max-age=31536000, immutable`. That is only safe because every
  * reference to them carries a `?v=` token: a version-pinned URL is a distinct
  * cache entry, so bumping the token is what delivers new code.
@@ -13,17 +14,38 @@
  * different tokens — which under ES module semantics also produces two
  * separate module instances with two copies of module-level state.
  *
- * Run: node Web/scripts/check-asset-versions.mjs   (or `npm run check:asset-versions`)
+ * It also guards the other half of the contract — "the token must be bumped
+ * whenever the file changes" — with a lock file, asset-versions.lock.json,
+ * that records the token and content hash of every immutable file as of the
+ * last deploy. If a file's content differs from the lock while its token is
+ * still the one that was deployed, returning visitors would keep the old copy
+ * for a year; that fails the build. Files not yet in the lock have never been
+ * deployed and may change freely. `--record` rewrites the lock and is run by
+ * `make deploy` after a successful deploy.
+ *
+ * Run:    node Web/scripts/check-asset-versions.mjs   (or `npm run check:asset-versions`)
+ * Record: node Web/scripts/check-asset-versions.mjs --record
  */
 
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { readFileSync, readdirSync, statSync, writeFileSync, existsSync } from "node:fs";
 import { join, relative, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { createHash } from "node:crypto";
 
-const WEB_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
+/** VAULT_WEB_ROOT lets the lock be seeded from another checkout (git worktree). */
+const WEB_ROOT = process.env.VAULT_WEB_ROOT || join(dirname(fileURLToPath(import.meta.url)), "..");
+const LOCK_FILE = join(dirname(fileURLToPath(import.meta.url)), "asset-versions.lock.json");
+const RECORD = process.argv.includes("--record");
 
 /** Path prefixes served with `immutable` in _headers. */
-const IMMUTABLE = [/^\/lib\//, /^\/script\.js$/, /^\/styles\.css$/, /^\/run-coach\.js$/];
+const IMMUTABLE = [
+  /^\/lib\//,
+  /^\/script\.js$/,
+  /^\/styles\.css$/,
+  /^\/styles\.next\.css$/,
+  /^\/styles\.mobile\.css$/,
+  /^\/run-coach\.js$/,
+];
 
 function isImmutablePath(p) {
   return IMMUTABLE.some((re) => re.test(p));
@@ -109,6 +131,9 @@ const PATTERNS = [
   /\bimport\(\s*["']([^"']+\.(?:js|mjs|css))(\?[^"']*)?["']\s*\)/g,
   /(?:src|href)\s*=\s*["']([^"']+\.(?:js|mjs|css))(\?[^"']*)?["']/g,
   /\.(?:src|href)\s*=\s*["']([^"']+\.(?:js|mjs|css))(\?[^"']*)?["']/g,
+  // CSS `@import url("/styles.css?v=N") layer(legacy)` — how the new UI loads
+  // the legacy sheet into a cascade layer (index.html, lib/ui/legacy-layer.js).
+  /\burl\(\s*["']?([^"')\s]+\.css)(\?[^"')\s]*)?["']?\s*\)/g,
 ];
 
 const errors = [];
@@ -154,6 +179,42 @@ for (const [abs, byToken] of tokensByPath) {
       `separate download and, for ES modules, a separate instance with its own ` +
       `module state.\n${detail}`
   );
+}
+
+// ---- Content vs. token ---------------------------------------------------------
+/** @type {Record<string, { v: string, sha256: string }>} */
+const lock = existsSync(LOCK_FILE) ? JSON.parse(readFileSync(LOCK_FILE, "utf8")) : {};
+/** @type {Record<string, { v: string, sha256: string }>} */
+const current = {};
+
+for (const [abs, byToken] of tokensByPath) {
+  if (byToken.size !== 1) continue; // already reported above
+  const [token] = byToken.keys();
+  const file = join(WEB_ROOT, abs);
+  if (!existsSync(file)) {
+    errors.push(`${abs} is referenced (v=${token}) but does not exist on disk.`);
+    continue;
+  }
+  const sha256 = createHash("sha256").update(readFileSync(file)).digest("hex");
+  current[abs] = { v: token, sha256 };
+  const deployed = lock[abs];
+  if (deployed && deployed.sha256 !== sha256 && deployed.v === token) {
+    errors.push(
+      `${abs} has changed since the last deploy but is still referenced at v=${token}. ` +
+        `It is cached immutable, so returning visitors would never receive the change. ` +
+        `Bump its ?v= token everywhere it is referenced.`
+    );
+  }
+}
+
+if (RECORD) {
+  if (errors.length > 0) {
+    console.error("Refusing to record asset versions while the check is failing.");
+  } else {
+    const sorted = Object.fromEntries(Object.keys(current).sort().map((key) => [key, current[key]]));
+    writeFileSync(LOCK_FILE, `${JSON.stringify(sorted, null, 2)}\n`);
+    console.log(`Recorded ${Object.keys(sorted).length} deployed asset versions in asset-versions.lock.json.`);
+  }
 }
 
 if (errors.length > 0) {

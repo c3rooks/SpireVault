@@ -1,0 +1,183 @@
+/* ==========================================================================
+   Themes. Each block overrides tokens only — no selectors reach components.
+   Switching is one attribute write on <html>; nothing re-renders.
+
+   `inked` needs no block: it is the default declared in tokens.css.
+   Every theme here is dark. A light theme has to wait until the legacy and
+   co-op stylesheets are gone — they hard-code ~1,600 dark colour literals
+   that tokens cannot reach.
+   ========================================================================== */
+
+/* ---- Classic Vault: today's ember-and-gold palette on the new layout ---- */
+[data-theme="vault"] {
+  --v-ink: #06040a;
+  --v-bg: #0c0a14;
+  --v-bg-deep: #07050d;
+  --v-surface-1: #14111e;
+  --v-surface-2: #1c1729;
+  --v-well: #06040a;
+  --v-line: #2c2640;
+  --v-text: #f4eddc;
+  --v-text-2: #b6abc4;
+  --v-text-3: #857c96;
+  --v-title: #f0c869;
+  --v-accent: #ff6b1a;
+  --v-accent-hi: #ffa05c;
+  --v-on-accent: #1a0c02;
+  --v-gold: #d4af37;
+  --v-win: #6dd97c;
+  --v-loss: #ff5f6d;
+  --v-info: #5ad6c8;
+  --v-violet: #a48bff;
+  --v-paper: #1f1a2d;
+  --v-paper-2: #171322;
+  --v-on-paper: #f4eddc;
+  --v-on-paper-2: #b6abc4;
+  --v-glow-a: #3a1d0c;
+  --v-glow-b: #2a1840;
+
+  --v-outline-w: 1px;
+  --v-outline-color: color-mix(in srgb, var(--v-gold) 38%, transparent);
+  --v-shadow-sm: 0 8px 18px -12px rgb(0 0 0 / 0.8);
+  --v-shadow: 0 14px 30px -16px rgb(0 0 0 / 0.85);
+  --v-shadow-lg: 0 22px 44px -20px rgb(0 0 0 / 0.9);
+  --v-shadow-pressed: 0 4px 10px -8px rgb(0 0 0 / 0.8);
+  --v-press: 1px;
+
+  --v-display-weight: 700;
+  --v-title-tilt: 0deg;
+  --v-title-shadow: 0 2px 0 rgb(0 0 0 / 0.55);
+  --v-texture: 0.05;
+
+  --v-stage-sky-1: #0c0a14;
+  --v-stage-sky-2: #3a1d0c;
+  --v-stage-sky-3: #ff6b1a;
+  --v-stage-moon: #f4d58a;
+  --v-stage-far: #171222;
+  --v-stage-spire: #221a30;
+  --v-stage-mid: #120e1c;
+  --v-stage-near: #07050d;
+  --v-stage-lit: #f0c869;
+  --v-stage-unlit: #3a3350;
+  --v-stage-flame: #ff6b1a;
+
+  --v-actor-outline: color-mix(in srgb, var(--v-gold) 46%, var(--v-ink));
+  --v-actor-shadow: drop-shadow(0 6px 5px rgb(0 0 0 / 0.6));
+}
+
+/* ---- Character accents: the Inked shape language, re-inked per hero ----- */
+[data-theme="ironclad"] {
+  --v-bg: #1d0f18;
+  --v-bg-deep: #150a11;
+  --v-surface-1: #331626;
+  --v-surface-2: #452036;
+  --v-line: #6a2c46;
+  --v-text-2: #e3afba;
+  --v-text-3: #b07f8c;
+  --v-accent: #ff5a44;
+  --v-accent-hi: #ff8a72;
+  --v-glow-a: #6a1f2a;
+  --v-glow-b: #4a2a12;
+  --v-stage-sky-1: #2a0f2a;
+  --v-stage-sky-2: #7a2a3a;
+  --v-stage-sky-3: #ff8a5a;
+  --v-stage-far: #3a1530;
+  --v-stage-spire: #4a1c38;
+  --v-stage-mid: #260c1c;
+  --v-stage-near: #150a11;
+  --v-stage-unlit: #6a3550;
+}
+
+[data-theme="silent"] {
+  --v-bg: #0c1d1a;
+  --v-bg-deep: #081512;
+  --v-surface-1: #14332d;
+  --v-surface-2: #1c453d;
+  --v-line: #2a6a5c;
+  --v-text-2: #a9dcc7;
+  --v-text-3: #78ab97;
+  --v-title: #e9ff8f;
+  --v-accent: #3fd97f;
+  --v-accent-hi: #7af0aa;
+  --v-glow-a: #1a6a4a;
+  --v-glow-b: #2a2a5a;
+  --v-stage-sky-1: #0b2424;
+  --v-stage-sky-2: #1f6a5a;
+  --v-stage-sky-3: #8af0b0;
+  --v-stage-far: #123a35;
+  --v-stage-spire: #184a42;
+  --v-stage-mid: #0c2824;
+  --v-stage-near: #081512;
+  --v-stage-lit: #e9ff8f;
+  --v-stage-unlit: #2f6a5e;
+}
+
+[data-theme="defect"] {
+  --v-bg: #0b1630;
+  --v-bg-deep: #070f22;
+  --v-surface-1: #142850;
+  --v-surface-2: #1c376c;
+  --v-line: #2c5290;
+  --v-text-2: #adc9f0;
+  --v-text-3: #7c9cc8;
+  --v-title: #8fe4ff;
+  --v-accent: #4fc6ff;
+  --v-accent-hi: #8fdcff;
+  --v-glow-a: #1a4a8a;
+  --v-glow-b: #3a1f6a;
+  --v-stage-sky-1: #0a1640;
+  --v-stage-sky-2: #1f5ca0;
+  --v-stage-sky-3: #7ae0ff;
+  --v-stage-far: #13306a;
+  --v-stage-spire: #1a3c80;
+  --v-stage-mid: #0c1c48;
+  --v-stage-near: #070f22;
+  --v-stage-lit: #b8f0ff;
+  --v-stage-unlit: #2e4f90;
+}
+
+[data-theme="regent"] {
+  --v-bg: #1b1409;
+  --v-bg-deep: #120d05;
+  --v-surface-1: #32250e;
+  --v-surface-2: #453415;
+  --v-line: #6a5020;
+  --v-text-2: #dfca9d;
+  --v-text-3: #ab976b;
+  --v-accent: #ffc53a;
+  --v-accent-hi: #ffdc7a;
+  --v-glow-a: #6a4a10;
+  --v-glow-b: #4a1f1a;
+  --v-stage-sky-1: #24160a;
+  --v-stage-sky-2: #8a5a1a;
+  --v-stage-sky-3: #ffd884;
+  --v-stage-far: #3a2a10;
+  --v-stage-spire: #4a3614;
+  --v-stage-mid: #261a08;
+  --v-stage-near: #120d05;
+  --v-stage-unlit: #6a5a30;
+}
+
+[data-theme="necrobinder"] {
+  --v-bg: #150e2b;
+  --v-bg-deep: #0e0920;
+  --v-surface-1: #26194e;
+  --v-surface-2: #33236a;
+  --v-line: #4a3690;
+  --v-text-2: #c6b4f0;
+  --v-text-3: #9785c6;
+  --v-title: #e2c8ff;
+  --v-accent: #b583ff;
+  --v-accent-hi: #d0adff;
+  --v-glow-a: #3a1f7a;
+  --v-glow-b: #1a4a4a;
+  --v-stage-sky-1: #170e3a;
+  --v-stage-sky-2: #4a2a8a;
+  --v-stage-sky-3: #c8a2ff;
+  --v-stage-far: #2a1a5a;
+  --v-stage-spire: #36226e;
+  --v-stage-mid: #1a1040;
+  --v-stage-near: #0e0920;
+  --v-stage-lit: #e2c8ff;
+  --v-stage-unlit: #4a3a8a;
+}

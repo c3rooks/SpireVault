@@ -1,0 +1,673 @@
+/* ==========================================================================
+   Settings. CSS over renderSettingsTab()'s markup (script.js), plus the
+   settings-like primitives Beta shares: section heads with an inked seal,
+   switches and text fields.
+
+   Layout (desktop):
+     Appearance ───────────────────────────
+     Save data          │ Preferences
+     Account            │   (+ keyboard shortcuts)
+     Reset              │ About
+   "Your data" reads down the left, "this app" down the right.
+   ========================================================================== */
+/* Laid out by the width of the Settings body: one column until there is
+   room for two real columns. */
+.settings-panel > .panel-body {
+  container: settings / inline-size;
+}
+.settings-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--v-space-4);
+  padding: 0;
+}
+@container settings (min-width: 940px) {
+  .settings-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-areas:
+      "look    look"
+      "save    prefs"
+      "account prefs"
+      "reset   about";
+    gap: var(--v-space-5);
+  }
+  .settings-card.v-appearance { grid-area: look; }
+  .settings-card:has([data-action="upload"]) { grid-area: save; }
+  .settings-card:has([data-action="settings-sign-in"], [data-action="settings-sign-out"], .settings-account-row) { grid-area: account; }
+  .settings-card:has(.settings-pref-list) { grid-area: prefs; }
+  .settings-card--danger { grid-area: reset; }
+  .settings-card--about { grid-area: about; }
+  /* Cards in a row share a height; a trailing action sits on the card's
+     foot instead of leaving a hole under it. */
+  .settings-card > .settings-action-row:last-child,
+  .settings-card > .settings-account-row:last-child {
+    margin-top: auto;
+  }
+}
+
+/* ---- Section card -------------------------------------------------------------- */
+.settings-card {
+  --tone: var(--v-accent);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--v-space-4);
+  min-width: 0;
+  padding: 22px 24px 24px;
+  border: var(--v-outline);
+  border-radius: var(--v-radius-lg);
+  background: var(--v-surface-1);
+  background-image: none;
+  box-shadow: var(--v-shadow);
+}
+.settings-card--danger {
+  border-color: var(--v-outline-color);
+  background: color-mix(in srgb, var(--v-loss) 7%, var(--v-surface-1));
+}
+.settings-card--about {
+  background: var(--v-surface-1);
+}
+
+/* Which section is which: an area on the grid, a tone and a glyph for the
+   seal. Keyed on content so the order in script.js can change safely. */
+.settings-card.v-appearance {
+  --tone: var(--v-violet);
+  --glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4' stroke-linejoin='round'%3E%3Cpath d='M12 3a9 9 0 1 0 0 18c1.2 0 1.7-.8 1.7-1.7 0-1-.7-1.4-.7-2.3 0-1 .8-1.8 1.9-1.8H17a4 4 0 0 0 4-4C21 6.8 17 3 12 3z'/%3E%3Ccircle cx='7.6' cy='11' r='1.3' fill='black' stroke='none'/%3E%3Ccircle cx='10.5' cy='7.2' r='1.3' fill='black' stroke='none'/%3E%3Ccircle cx='15.2' cy='7.6' r='1.3' fill='black' stroke='none'/%3E%3C/svg%3E");
+}
+.settings-card:has([data-action="upload"]) {
+  --tone: var(--v-info);
+  --glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4' stroke-linejoin='round'%3E%3Cpath d='M3 7a2 2 0 0 1 2-2h4.2l2 2.2H19a2 2 0 0 1 2 2V17a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z'/%3E%3C/svg%3E");
+}
+.settings-card:has([data-action="settings-sign-in"], [data-action="settings-sign-out"], .settings-account-row) {
+  --tone: var(--v-gold);
+  --glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round'%3E%3Ccircle cx='12' cy='8' r='4'/%3E%3Cpath d='M4.5 20.5a7.5 7.5 0 0 1 15 0'/%3E%3C/svg%3E");
+}
+.settings-card:has(.settings-pref-list) {
+  --tone: var(--v-accent);
+  --glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round'%3E%3Cpath d='M4 6h9M18 6h2M4 12h3M12 12h8M4 18h11M20 18h0'/%3E%3Ccircle cx='15.5' cy='6' r='2.2'/%3E%3Ccircle cx='9.5' cy='12' r='2.2'/%3E%3Ccircle cx='17.5' cy='18' r='2.2'/%3E%3C/svg%3E");
+}
+.settings-card--danger {
+  --tone: var(--v-loss);
+  --glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 7h16M9.5 7V4.5h5V7M6.5 7l1 13h9l1-13M10 11v5M14 11v5'/%3E%3C/svg%3E");
+}
+.settings-card--about {
+  --tone: var(--v-text-2);
+  --glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round'%3E%3Ccircle cx='12' cy='12' r='9'/%3E%3Cpath d='M12 11v6M12 7.6v.2'/%3E%3C/svg%3E");
+}
+
+/* Beta's sections use the same seals. */
+.beta-card[data-ui-beta-card] {
+  --tone: var(--v-title);
+  --glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 2.5l2.2 6.3 6.3 2.2-6.3 2.2L12 19.5l-2.2-6.3L3.5 11l6.3-2.2z' fill='black'/%3E%3Cpath d='M19 16l.9 2.1L22 19l-2.1.9L19 22l-.9-2.1L16 19l2.1-.9z' fill='black'/%3E%3C/svg%3E");
+}
+.beta-card[data-coop-beta-card] {
+  --tone: var(--v-win);
+  --glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round'%3E%3Ccircle cx='9' cy='8' r='3.4'/%3E%3Cpath d='M2.8 20a6.2 6.2 0 0 1 12.4 0M15.8 4.7a3.4 3.4 0 0 1 0 6.6M17.6 14.3A6.2 6.2 0 0 1 21.2 20'/%3E%3C/svg%3E");
+}
+.beta-card:has(.beta-form) {
+  --tone: var(--v-gold);
+  --glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round'%3E%3Ccircle cx='8' cy='15.5' r='4.5'/%3E%3Cpath d='M11.3 12.2 20 3.5M16.2 7.3l2.8 2.8M13.9 9.6l2 2'/%3E%3C/svg%3E");
+}
+.beta-card:has([data-rc-action="set-screenshot"]) {
+  --tone: var(--v-info);
+  --glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4' stroke-linejoin='round'%3E%3Cpath d='M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z'/%3E%3Ccircle cx='12' cy='12' r='3'/%3E%3C/svg%3E");
+}
+.beta-card:has(.beta-launch-btn) {
+  --tone: var(--v-accent);
+  --glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M8 4.8v14.4L19.5 12z' fill='black'/%3E%3C/svg%3E");
+}
+
+/* No glyph known for a section: an empty seal rather than a solid square.
+   Zero specificity, so every section rule above wins. */
+:where(.settings-card, .beta-card) {
+  --glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'/%3E");
+}
+
+/* ---- Section head: seal, title, one line of context ----------------------------- */
+.settings-card-head,
+.beta-card-head {
+  position: relative;
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr);
+  align-items: center;
+  gap: 3px 14px;
+  min-height: 40px;
+}
+.settings-card-head::before,
+.beta-card-head::before {
+  content: "";
+  grid-row: 1 / span 2;
+  grid-column: 1;
+  align-self: start;
+  width: 40px;
+  height: 40px;
+  border: var(--v-outline);
+  border-radius: 50%;
+  background: var(--tone, var(--v-accent));
+  box-shadow: var(--v-shadow-sm);
+}
+.settings-card-head::after,
+.beta-card-head::after {
+  content: "";
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  width: 20px;
+  height: 20px;
+  background: var(--v-ink);
+  -webkit-mask: var(--glyph) center / contain no-repeat;
+  mask: var(--glyph) center / contain no-repeat;
+}
+.settings-card-head > *,
+.beta-card-head > * {
+  grid-column: 2;
+}
+.settings-card-head h3,
+.beta-card-head h4 {
+  margin: 0;
+  color: var(--v-text);
+  font-family: var(--v-font-heading);
+  font-size: 1.375rem;
+  font-weight: 800;
+  letter-spacing: 0;
+  line-height: 1.1;
+  text-transform: none;
+}
+.settings-card-head h3 .muted {
+  color: var(--v-text-2);
+  font-family: var(--v-font-text);
+  font-size: var(--v-text-sm);
+}
+.settings-card-sub,
+.beta-card-sub {
+  margin: 0;
+  color: var(--v-text-2);
+  font-size: var(--v-text-sm);
+  line-height: 1.5;
+}
+.settings-card-sub strong {
+  color: var(--v-text);
+}
+.settings-card-sub code {
+  padding: 1px 5px;
+  border: 1px solid var(--v-line);
+  border-radius: 4px;
+  background: var(--v-bg-deep);
+  color: var(--v-title);
+}
+
+/* ---- Switch: inked track, paper knob ---------------------------------------------- */
+.settings-toggle,
+.beta-toggle-track {
+  position: relative;
+  flex: none;
+  width: 50px;
+  height: 28px;
+  margin: 0;
+  border: var(--v-outline);
+  border-radius: var(--v-radius-pill);
+  background: var(--v-well);
+  box-shadow: inset 2px 2px 0 color-mix(in srgb, var(--v-ink) 55%, transparent);
+  cursor: pointer;
+  transition: background-color var(--v-dur-2) ease;
+}
+.settings-toggle {
+  -webkit-appearance: none;
+  appearance: none;
+}
+.settings-toggle::after,
+.beta-toggle-track::after {
+  content: "";
+  position: absolute;
+  top: calc(50% - 9px);
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  border: var(--v-outline);
+  border-radius: 50%;
+  background: var(--v-text-3);
+  box-shadow: 1px 1px 0 var(--v-ink);
+  transition:
+    transform 240ms var(--v-ease-spring),
+    background-color var(--v-dur-2) ease;
+}
+.settings-toggle:checked,
+.beta-toggle input:checked + .beta-toggle-track {
+  border-color: var(--v-outline-color);
+  background: var(--v-win);
+}
+.settings-toggle:checked::after,
+.beta-toggle input:checked + .beta-toggle-track::after {
+  left: 3px;
+  background: var(--v-paper);
+  transform: translateX(calc(26px - 2 * var(--v-outline-w)));
+}
+.beta-toggle input:focus-visible + .beta-toggle-track {
+  outline: 3px solid var(--v-title);
+  outline-offset: 2px;
+}
+
+/* ---- Text fields ------------------------------------------------------------------- */
+.beta-input,
+.beta-textarea {
+  width: 100%;
+  min-height: 42px;
+  padding: 9px 12px;
+  border: var(--v-outline);
+  border-radius: var(--v-radius-sm);
+  background: var(--v-well);
+  box-shadow: inset 2px 2px 0 color-mix(in srgb, var(--v-ink) 45%, transparent);
+  color: var(--v-text);
+  font-family: var(--v-font-text);
+  font-size: var(--v-text-md);
+  line-height: 1.45;
+}
+.beta-textarea {
+  min-height: 104px;
+}
+.beta-input:focus,
+.beta-textarea:focus {
+  border-color: var(--v-outline-color);
+}
+.beta-input::placeholder,
+.beta-textarea::placeholder {
+  color: var(--v-text-3);
+}
+.beta-key {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: var(--v-text-sm);
+  letter-spacing: 0.03em;
+}
+.beta-label,
+.settings-shortcut-block h4 {
+  margin: 0;
+  color: var(--v-text-2);
+  font-size: 0.8rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.beta-hint {
+  color: var(--v-text-2);
+  font-size: 0.8125rem;
+  line-height: 1.5;
+}
+.beta-hint code {
+  padding: 1px 5px;
+  border: 1px solid var(--v-line);
+  border-radius: 4px;
+  background: var(--v-bg-deep);
+  color: var(--v-title);
+  font-size: 0.8rem;
+}
+
+/* ---- Toggle rows: what it does on the left, the switch on the right --------------- */
+.settings-pref-list,
+.beta-toggle-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+.settings-pref,
+.beta-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--v-space-5);
+  padding: 13px 0;
+  border-bottom: 0;
+  cursor: pointer;
+}
+.beta-toggle {
+  flex-direction: row-reverse;
+  padding: 2px 0;
+}
+.settings-pref + .settings-pref {
+  border-top: 2px dashed var(--v-line);
+}
+.settings-pref:first-child {
+  padding-top: 0;
+}
+.settings-pref:last-child {
+  padding-bottom: 0;
+}
+.settings-pref > span,
+.beta-toggle-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.settings-pref strong,
+.beta-toggle-text strong {
+  color: var(--v-text);
+  font-size: var(--v-text-md);
+  font-weight: 800;
+  transition: color var(--v-dur-1) ease;
+}
+.settings-pref .muted,
+.beta-toggle-text span {
+  color: var(--v-text-2);
+  font-size: var(--v-text-sm);
+  line-height: 1.45;
+}
+.settings-pref:hover strong,
+.beta-toggle:hover .beta-toggle-text strong {
+  color: var(--v-title);
+}
+
+/* ---- Save data -------------------------------------------------------------------- */
+.settings-status-row {
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--v-space-2);
+}
+.settings-status-cell {
+  gap: 3px;
+  padding: 10px 14px 12px;
+  border: var(--v-outline);
+  border-radius: var(--v-radius-md);
+  background: var(--v-bg-deep);
+}
+.settings-status-cell--ok {
+  border-color: var(--v-outline-color);
+  background: color-mix(in srgb, var(--v-win) 14%, var(--v-bg-deep));
+}
+.settings-status-cell--warn {
+  border-color: var(--v-outline-color);
+  background: color-mix(in srgb, var(--v-gold) 12%, var(--v-bg-deep));
+}
+.settings-stat-label {
+  color: var(--v-text-2);
+  font-size: 0.8rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+}
+.settings-stat-value {
+  color: var(--v-text);
+  font-family: var(--v-font-display);
+  font-size: var(--v-text-2xl);
+  font-weight: var(--v-display-weight);
+  letter-spacing: 0.01em;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.settings-status-cell--ok .settings-stat-value {
+  color: var(--v-win);
+}
+.settings-status-cell--warn .settings-stat-value {
+  color: var(--v-gold);
+}
+.settings-stat-foot {
+  color: var(--v-text-2);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+.settings-action-row {
+  gap: var(--v-space-2);
+}
+.settings-danger-row {
+  justify-content: flex-start;
+  margin-top: 0;
+  padding-top: var(--v-space-3);
+  border-top: 2px dashed var(--v-line);
+}
+
+/* Destructive actions: a real button, tinted, that presses like the rest. */
+.btn-link-danger {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 14px;
+  border: var(--v-outline);
+  border-radius: var(--v-radius-sm);
+  background: color-mix(in srgb, var(--v-loss) 18%, var(--v-surface-1));
+  box-shadow: var(--v-shadow-sm);
+  color: var(--v-text);
+  font-family: var(--v-font-text);
+  font-size: var(--v-text-sm);
+  font-weight: 800;
+  line-height: 1.2;
+  transition:
+    transform var(--v-dur-1) ease,
+    box-shadow var(--v-dur-1) ease,
+    background-color var(--v-dur-1) ease;
+}
+.btn-link-danger:not(:disabled):hover {
+  background: var(--v-loss);
+  color: var(--v-ink);
+  transform: translate(var(--v-press), var(--v-press));
+  box-shadow: var(--v-shadow-pressed);
+}
+.btn-link-danger:disabled {
+  box-shadow: none;
+  opacity: 0.55;
+}
+
+/* ---- Account ------------------------------------------------------------------------ */
+.settings-account-row {
+  gap: var(--v-space-3);
+  padding: 0;
+}
+.settings-avatar {
+  width: 48px;
+  height: 48px;
+  border: var(--v-outline);
+  background: var(--v-bg-deep);
+  box-shadow: var(--v-shadow-sm);
+}
+.settings-avatar--placeholder {
+  color: var(--v-text-2);
+  font-family: var(--v-font-display);
+}
+.settings-account-meta strong {
+  overflow: hidden;
+  color: var(--v-text);
+  font-size: var(--v-text-md);
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.settings-account-meta .muted {
+  color: var(--v-text-2);
+  font-size: 0.8rem;
+}
+
+/* ---- Keyboard shortcuts --------------------------------------------------------------- */
+.settings-shortcut-block {
+  margin-top: 0;
+  padding-top: var(--v-space-4);
+  border-top: 2px dashed var(--v-line);
+}
+.settings-shortcut-block h4 {
+  margin-bottom: var(--v-space-3);
+}
+.settings-shortcut-list {
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 10px var(--v-space-4);
+}
+.settings-shortcut-list li {
+  gap: 6px;
+  color: var(--v-text-2);
+  font-size: var(--v-text-sm);
+}
+.settings-shortcut-list li span {
+  margin-left: 4px;
+}
+.settings-shortcut-list kbd,
+.v-appearance kbd {
+  display: inline-grid;
+  place-items: center;
+  min-width: 26px;
+  height: 26px;
+  padding: 0 7px;
+  border: var(--v-outline);
+  border-radius: 6px;
+  background: var(--v-surface-2);
+  box-shadow: 0 2px 0 var(--v-ink);
+  color: var(--v-text);
+  font-family: var(--v-font-text);
+  font-size: 0.8rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
+/* ---- About ----------------------------------------------------------------------------- */
+.settings-about-list {
+  gap: 8px var(--v-space-4);
+  font-size: var(--v-text-sm);
+}
+.settings-about-list dt {
+  color: var(--v-text-2);
+  font-size: 0.8rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+}
+.settings-about-list dd {
+  min-width: 0;
+  color: var(--v-text);
+  overflow-wrap: anywhere;
+}
+.settings-about-list code {
+  padding: 2px 7px;
+  border: 1px solid var(--v-line);
+  border-radius: 5px;
+  background: var(--v-bg-deep);
+  color: var(--v-title);
+  font-size: 0.8125rem;
+}
+.settings-about-list a {
+  color: var(--v-accent-hi);
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.settings-about-list a:hover {
+  color: var(--v-title);
+}
+
+/* ==========================================================================
+   Appearance: the theme swatch grid (built by lib/ui/theme.js).
+   ========================================================================== */
+.v-appearance {
+  grid-column: 1 / -1;
+  container: appearance / inline-size;
+}
+/* Eight swatches: one row of eight, two of four, or four of two — never a
+   short last row. */
+.v-appearance .v-themes {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 0;
+}
+@container appearance (min-width: 460px) {
+  .v-appearance .v-themes {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+@container appearance (min-width: 960px) {
+  .v-appearance .v-themes {
+    grid-template-columns: repeat(8, minmax(0, 1fr));
+  }
+}
+.v-appearance .v-theme-prev {
+  height: 76px;
+}
+/* The picker's 11px notes are fine in a popover; on the Settings page they
+   are body text (and the root is 15px, so rem runs small). */
+.v-appearance .v-theme {
+  font-size: var(--v-text-sm);
+}
+.v-appearance .v-theme small {
+  font-size: 0.8rem;
+}
+.v-appearance-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--v-space-2);
+  margin-top: 0;
+  padding-top: var(--v-space-3);
+  border-top: 2px dashed var(--v-line);
+  color: var(--v-text-2);
+  font-size: var(--v-text-sm);
+}
+.v-appearance-links {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--v-space-2) var(--v-space-4);
+}
+.v-appearance-links .v-link {
+  font-size: var(--v-text-sm);
+}
+
+/* ==========================================================================
+   Motion preferences
+   ========================================================================== */
+@media (prefers-reduced-motion: reduce) {
+  .settings-toggle,
+  .settings-toggle::after,
+  .beta-toggle-track,
+  .beta-toggle-track::after,
+  .btn-link-danger,
+  .settings-pref strong,
+  .beta-toggle-text strong {
+    transition: none;
+  }
+}
+.prefer-reduced-motion .settings-toggle,
+.prefer-reduced-motion .settings-toggle::after,
+.prefer-reduced-motion .beta-toggle-track,
+.prefer-reduced-motion .beta-toggle-track::after,
+.prefer-reduced-motion .btn-link-danger,
+.prefer-reduced-motion .settings-pref strong,
+.prefer-reduced-motion .beta-toggle-text strong {
+  transition: none;
+}
+
+/* ==========================================================================
+   Tablets and phones
+   ========================================================================== */
+@media (max-width: 880px) {
+  .settings-card {
+    padding: 18px 16px 20px;
+  }
+  .settings-action-row .btn-primary,
+  .settings-action-row .btn-ghost,
+  .settings-account-row .btn-ghost,
+  .btn-link-danger {
+    min-height: 44px;
+  }
+  .settings-pref,
+  .beta-toggle {
+    min-height: 44px;
+  }
+  .beta-input,
+  .beta-textarea,
+  .beta-key {
+    min-height: 44px;
+    font-size: 1rem;
+  }
+  .beta-textarea {
+    min-height: 110px;
+  }
+  .v-appearance-foot {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .v-appearance-links .v-link {
+    min-height: 44px;
+  }
+  .settings-about-list dd > a {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    padding-block: 0;
+  }
+}
+/* "Press T" means nothing without a keyboard. */
+@media (hover: none) {
+  .v-appearance-foot > span:first-child {
+    display: none;
+  }
+}

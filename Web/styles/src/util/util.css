@@ -1,0 +1,4 @@
+/* Highest-priority single-purpose helpers. Keep this file tiny. */
+.v-nowrap {
+  white-space: nowrap;
+}

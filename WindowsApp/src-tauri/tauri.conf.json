@@ -68,7 +68,7 @@
     "copyright": "© 2025 Corey Crooks",
     "category": "Game",
     "shortDescription": "STS2 companion — run tracker, co-op finder, AI coach",
-    "longDescription": "Spire Vault is a free companion app for Slay the Spire 2. Track every run locally, find co-op partners, and get live AI coaching during your runs.",
+    "longDescription": "SpireVault is a free companion app for Slay the Spire 2. Track every run locally, find co-op partners, and get live AI coaching during your runs.",
     "windows": {
       "digestAlgorithm": "sha256",
       "timestampUrl": "http://timestamp.digicert.com",

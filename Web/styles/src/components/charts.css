@@ -1,0 +1,226 @@
+/* ==========================================================================
+   Charts. The SVG holds shapes only and stretches to its box
+   (preserveAspectRatio="none" + non-scaling strokes); every label, marker
+   and tooltip is HTML laid over it, so text stays crisp at any width.
+   Built by lib/ui/charts.js.
+   ========================================================================== */
+.v-chart-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v-space-3);
+  min-width: 0;
+}
+.v-chart-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px var(--v-space-3);
+}
+.v-chart-head h3 {
+  margin: 0;
+  font-family: var(--v-font-heading);
+  font-size: var(--v-text-xl);
+  font-weight: 800;
+  line-height: 1;
+  color: var(--v-text);
+}
+.v-chart-head p {
+  margin: 0;
+  color: var(--v-text-2);
+  font-size: var(--v-text-xs);
+  font-weight: 600;
+}
+.v-chart-empty {
+  margin: 0;
+  padding: var(--v-space-6) 0;
+  color: var(--v-text-2);
+  font-size: var(--v-text-sm);
+  text-align: center;
+}
+
+.v-chart {
+  --plot-h: 190px;
+  position: relative;
+  margin: 0;
+  padding-left: 34px;
+  outline-offset: 6px;
+}
+.v-chart-plot {
+  position: relative;
+  height: var(--plot-h);
+  cursor: crosshair;
+}
+.v-chart-plot svg {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.v-chart-grid {
+  stroke: var(--v-line);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+.v-chart-avg {
+  stroke: var(--v-text-2);
+  stroke-width: 1.5;
+  stroke-dasharray: 5 5;
+  vector-effect: non-scaling-stroke;
+}
+.v-chart-note {
+  flex-basis: 100%;
+}
+.v-chart-y .is-win {
+  color: var(--v-win);
+}
+.v-chart-y .is-loss {
+  color: var(--v-loss);
+}
+.v-chart-ink,
+.v-chart-line {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+.v-chart-ink {
+  stroke: var(--v-outline-color);
+  stroke-width: 7;
+}
+.v-chart-line {
+  stroke: var(--v-title);
+  stroke-width: 3;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 0;
+}
+[data-enter] .v-chart-line {
+  animation: v-draw 1400ms var(--v-ease-out) both;
+  animation-delay: calc(0ms - var(--enter-elapsed, 0ms));
+}
+@keyframes v-draw {
+  from {
+    stroke-dashoffset: 1;
+  }
+}
+
+/* HTML overlays positioned in % of the plot. */
+.v-chart-y {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 30px;
+  height: var(--plot-h);
+  color: var(--v-text-3);
+  font-size: var(--v-text-xs);
+  font-weight: 700;
+}
+.v-chart-y span {
+  position: absolute;
+  right: 0;
+  translate: 0 -50%;
+}
+.v-chart-x {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 6px;
+  color: var(--v-text-3);
+  font-size: var(--v-text-xs);
+  font-weight: 700;
+}
+.v-chart-avg-label {
+  position: absolute;
+  right: 0;
+  padding: 0 6px;
+  border-radius: var(--v-radius-pill);
+  background: var(--v-surface-1);
+  color: var(--v-text-2);
+  font-size: var(--v-text-xs);
+  font-weight: 800;
+  translate: 0 -50%;
+}
+.v-chart-dot,
+.v-chart-cross {
+  position: absolute;
+  pointer-events: none;
+}
+.v-chart-dot {
+  width: 13px;
+  height: 13px;
+  border: var(--v-outline);
+  border-radius: 50%;
+  background: var(--v-title);
+  translate: -50% -50%;
+}
+.v-chart-cross {
+  top: 0;
+  bottom: 0;
+  width: 0;
+  border-left: 2px dashed var(--v-text-2);
+  opacity: 0;
+}
+.v-chart.is-active .v-chart-cross {
+  opacity: 1;
+}
+
+/* ---- Where climbs end: wins rise, defeats fall -------------------------------- */
+.v-bar-win {
+  fill: var(--v-win);
+}
+.v-bar-loss {
+  fill: var(--v-loss);
+}
+.v-bar-win,
+.v-bar-loss {
+  stroke: var(--v-outline-color);
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+  transform-box: fill-box;
+  transition: opacity var(--v-dur-1) ease;
+}
+.v-bar-win {
+  transform-origin: 50% 100%;
+}
+.v-bar-loss {
+  transform-origin: 50% 0%;
+}
+[data-enter] .v-bar-win,
+[data-enter] .v-bar-loss {
+  animation: v-grow 700ms var(--v-ease-out) both;
+  animation-delay: calc(var(--i, 0) * 18ms - var(--enter-elapsed, 0ms));
+}
+@keyframes v-grow {
+  from {
+    transform: scaleY(0);
+  }
+}
+.v-bar-hit {
+  fill: transparent;
+}
+.v-chart-bars:hover .v-bar:not(:hover) .v-bar-win,
+.v-chart-bars:hover .v-bar:not(:hover) .v-bar-loss {
+  opacity: 0.45;
+}
+.v-chart-base {
+  stroke: var(--v-text-2);
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+.v-chart-legend {
+  display: flex;
+  gap: var(--v-space-2);
+}
+.v-chart-legend .v-chip i {
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  background: var(--c);
+}
+
+@media (max-width: 720px) {
+  .v-chart {
+    --plot-h: 160px;
+  }
+}

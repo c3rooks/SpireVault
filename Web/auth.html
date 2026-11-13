@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Signing in… · The Vault</title>
+  <title>Signing in… · SpireVault</title>
   <link rel="icon" type="image/svg+xml" href="/assets/vault-mark.svg" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/styles.css?v=158" />
@@ -29,7 +29,7 @@
     <h1>Finishing sign-in…</h1>
     <p class="muted" id="auth-status">Verifying your Steam session.</p>
     <p class="muted small" id="auth-detail" hidden></p>
-    <a class="btn-ghost" id="auth-retry" href="/" hidden>Back to The Vault</a>
+    <a class="btn-ghost" id="auth-retry" href="/" hidden>Back to SpireVault</a>
   </main>
 
   <script type="module">
@@ -120,7 +120,7 @@
       // the system browser instead.
       fail(
         "nonce-missing",
-        "Looks like you signed in from an in-app browser. Open The Vault in Safari, Chrome, or Firefox and try again.",
+        "Looks like you signed in from an in-app browser. Open SpireVault in Safari, Chrome, or Firefox and try again.",
         "expected stored nonce, got nothing"
       );
     } else if (!nonce || nonce !== expectedNonce) {

@@ -13,16 +13,16 @@
 //   Co-op (presence + canned-message invite system + Steam deep-links)
 // =========================================================================
 
-import * as Stats from "/lib/stats-engine.js?v=5";
+import * as Stats from "/lib/stats-engine.js?v=6";
 import * as HistoryStore from "/lib/history-store.js?v=8";
 import * as InviteAPI from "/lib/invites.js?v=4";
 import * as HighlightsAPI from "/lib/highlights.js?v=1";
-import * as CoopLobbies from "/lib/coop-lobbies.js?v=34";
-import { isCoopSandboxEnabled, openCoopSandboxPanel } from "/lib/coop-sandbox.js?v=13";
-import * as PartyRoom from "/lib/party-room.js?v=6";
-import * as AscInfo from "/lib/ascension-info.js?v=2";
+import * as CoopLobbies from "/lib/coop-lobbies.js?v=35";
+import { isCoopSandboxEnabled, openCoopSandboxPanel } from "/lib/coop-sandbox.js?v=14";
+import * as PartyRoom from "/lib/party-room.js?v=7";
+import * as AscInfo from "/lib/ascension-info.js?v=3";
 import * as CharInfo from "/lib/character-info.js?v=1";
-import * as RelicInfo from "/lib/relic-info.js?v=3";
+import * as RelicInfo from "/lib/relic-info.js?v=4";
 import * as OverlayEngine from "/lib/overlay-engine.js?v=1";
 
 // ─── Constants ─────────────────────────────────────────────────────────
@@ -71,7 +71,7 @@ const STS2_APP_ID = "2868840";
  * on an old client — instruct hard refresh. If it DOES match, the
  * bug is real and we can stop chasing cache ghosts.
  */
-const VAULT_BUILD = "v218-2026-09-02-architect-boss-size";
+const VAULT_BUILD = "v220-2026-11-13-ui-next-foundations";
 
 /** True on wrangler pages dev / local loopback — not production hostnames. */
 function isLocalDevHost() {
@@ -882,9 +882,9 @@ function renderWeeklyDigestStrip(sortedByDate) {
   if (weekRuns.length === 0) return "";
   const wins = weekRuns.filter((r) => r.won).length;
   const losses = weekRuns.length - wins;
-  const best = weekRuns.filter((r) => r.won).sort((a, b) => (b.ascension || 0) - (a.ascension || 0))[0];
+  const best = weekRuns.filter((r) => r.won && isLadderRun(r)).sort((a, b) => (b.ascension || 0) - (a.ascension || 0))[0];
   const bestLine = best
-    ? ` · best win A${best.ascension || 0} ${capitalize(best.character || "")}`
+    ? ` · best win A${best.ascension || 0} ${best.character ? prettifyCharacterName(best.character) : ""}`
     : "";
   return `
     <div class="weekly-digest-strip">
@@ -947,6 +947,11 @@ const COMPANIONS = [
   { id: "defect",     label: "Defect",     blurb: "Orbs and algorithms.",    color: "#4dc8ff", facesLeft: true },
   { id: "regent",     label: "Regent",     blurb: "Crown and consequence.",  color: "#d4af37", facesLeft: true },
   { id: "necrobinder",label: "Necrobinder",blurb: "Bone, blood, and will.",  color: "#9b83ff", facesLeft: true },
+  // The Fool, the STS2 public-beta character (v0.113.0). The blurb is Mega
+  // Crit's own patch-note line. No sprite exists yet, so both layouts fall
+  // back to the letter glyph; `beta` keeps it out of the Random roll and
+  // out of the picker until the user has a Fool run (see hasRunsAs).
+  { id: "fool",       label: "The Fool",   blurb: "A silly musician who wields a bow!", color: "#f27ec0", beta: true },
 ];
 
 // Last quote speaker, used to avoid streaks where one side talks
@@ -1259,7 +1264,11 @@ async function loadAssetManifest() {
     // relics (Kaleidoscope, Fishing Rod, Silken Tress) and the new
     // Act 3 boss Aeonglass. Labels-only (no art shipped yet); the
     // resolver falls back to the 2-letter glyph until we ship icons.
-    const MANIFEST_VERSION = 4;
+    // v5 (2026-11-13): STS2 beta v0.113.0 labels — My Shinies, Dingy
+    // Dagger, Mighty Weapon/Shield, and the seven new event relics
+    // (Wuppy, Obsidian Vice, Thumbscrew, Tormentous Collar, Mighty
+    // Wings, Bath Towel, Bath Robes). Labels-only, no art.
+    const MANIFEST_VERSION = 5;
     const [manRes, labRes] = await Promise.all([
       fetch(`${ASSET_BASE}/manifest.json?v=${MANIFEST_VERSION}`, { cache: "force-cache" }),
       fetch(`${ASSET_BASE}/labels.json?v=${MANIFEST_VERSION}`,   { cache: "force-cache" }).catch(() => null),
@@ -1384,6 +1393,7 @@ function cardSlug(id) {
 // never resolve to art anyway: the asset library ships no watcher_* files.
 const CLASS_PREFIXES = new Set([
   "ironclad", "silent", "defect", "regent", "necrobinder",
+  "fool", // The Fool, STS2 public beta (v0.113.0)
   "colorless", "curse", "status",
 ]);
 
@@ -1613,6 +1623,246 @@ const IS_DESKTOP_HOST = (() => {
 if (IS_DESKTOP_HOST) {
   try { document.documentElement.classList.add("is-desktop-host"); } catch {}
 }
+
+// =========================================================================
+// New UI ("next") — the Inked Codex redesign, see lib/ui/index.js.
+// -------------------------------------------------------------------------
+// The inline boot script in index.html decides the layout generation before
+// first paint and tags <html data-ui>. This only reads that decision.
+//
+// The module graph is fetched ONLY for next, so the classic layout never
+// downloads or parses it and cannot be broken by it.
+//
+// It is loaded with a promise, NOT a top-level `await`. Top-level await is
+// a parse error in engines that predate it (Safari < 15, Chrome < 89), and
+// a parse error takes the whole module down for every visitor — including
+// classic ones who would never execute that line. It would also delay the
+// early `window.SpireVault` stub below, which the macOS shell depends on.
+//
+// While the module is in flight, `UI` is null. Renders that need it call
+// `deferUntilUIReady()` and re-run once it arrives; nothing paints the
+// classic markup under the new stylesheet in the meantime.
+//
+// If the load fails, the visitor gets the classic layout for this page
+// view only (`?ui=classic-once` is not persisted), so a network blip does
+// not silently opt them out; the next visit tries the new UI again.
+//
+// Everything next-specific below is gated on `UI` being non-null.
+// =========================================================================
+const IS_UI_NEXT = (() => {
+  try { return document.documentElement.dataset.ui === "next"; }
+  catch { return false; }
+})();
+/** Tabs whose header is a Stage (the diorama). */
+const STAGE_TABS = Object.freeze(["overview", "characters", "ascensions", "relics", "cards"]);
+let UI = null;
+const uiReady = IS_UI_NEXT
+  ? import("/lib/ui/index.js?v=1")
+      .then((mod) => {
+        mod.bootUI({
+          stageTabs: STAGE_TABS,
+          track: (name, params) => vaultGtagEvent(name, params),
+        });
+        UI = mod;
+      })
+      .catch((e) => {
+        console.warn("[Vault] new UI failed to load; showing the classic layout for this visit", e);
+        const url = new URL(window.location.href);
+        url.searchParams.set("ui", "classic-once");
+        window.location.replace(url.toString());
+        // The page is navigating away; never let dependants resume.
+        return new Promise(() => {});
+      })
+  : null;
+
+/**
+ * New UI only. True while lib/ui is still loading, in which case `rerender`
+ * is queued to run when it arrives and the caller should return without
+ * painting. Always false for the classic layout.
+ */
+function deferUntilUIReady(rerender) {
+  if (!IS_UI_NEXT || UI) return false;
+  uiReady.then(rerender);
+  return true;
+}
+
+// =========================================================================
+// "New look" beta switch
+// -------------------------------------------------------------------------
+// The redesign ships opt-in: the classic layout is the default for everyone
+// (DEFAULT_UI_* in index.html), and a person switches this device to the new
+// look, or back, from Settings, the Beta tab, or the news post. The choice
+// is stored under the key the boot script in index.html reads before first
+// paint, so the page reloads straight into the chosen layout.
+// =========================================================================
+/** Must match the boot script in index.html. */
+const STORAGE_UI_VARIANT = "vault.web.ui";
+/** The news post that explains the beta; "What's new" links open it. */
+const UI_BETA_NEWS_POST_ID = "013";
+const UI_BETA_PITCH =
+  "SpireVault, redrawn: every tab, a header that shows your climb, and themes that switch instantly. " +
+  "Your runs, stats and co-op are untouched, and you can switch back any time.";
+const UI_BETA_ON_NOTE =
+  "You're on the new look. Every tab is redrawn; if something looks off, tell me. " +
+  "Switching back takes one click.";
+const UI_BETA_DEVICE_NOTE = "Only changes this device. The page reloads once.";
+const UI_BETA_UNSUPPORTED = "This browser is too old for the new look. Update it and this switch will work.";
+const UI_BETA_OVERLAY_NOTE = "The overlay window always uses the classic look. Switch from the main SpireVault window.";
+
+/** The same capability gate the boot script applies: cascade layers + color-mix(). */
+function canRunNextUI() {
+  try {
+    return typeof CSSLayerBlockRule !== "undefined" &&
+      !!(window.CSS && CSS.supports && CSS.supports("color", "color-mix(in srgb, red, blue)"));
+  } catch {
+    return false;
+  }
+}
+
+/** True in the pop-out overlay window, which always uses the classic layout
+ *  (the boot script in index.html forces it). */
+function isOverlayWindow() {
+  try { return new URLSearchParams(window.location.search).get("overlay") === "1"; }
+  catch { return false; }
+}
+
+/**
+ * Switches this device between the classic layout ("classic") and the new
+ * look ("next"), then reloads into it. Opting in lands on Overview, the
+ * screen the redesign starts with; opting out keeps the current tab.
+ * @param {string} variant
+ * @param {string} source  where the request came from, for analytics
+ * @returns {boolean} false when the request cannot be honoured
+ */
+function setUiVariant(variant, source) {
+  const want = String(variant || "").toLowerCase();
+  if (want !== "next" && want !== "classic") return false;
+  if (want === (IS_UI_NEXT ? "next" : "classic")) return true;
+  if (want === "next" && !canRunNextUI()) {
+    toast(UI_BETA_UNSUPPORTED);
+    return false;
+  }
+  if (want === "next" && isOverlayWindow()) {
+    // Reloading here would store the choice and still come back classic.
+    toast(UI_BETA_OVERLAY_NOTE);
+    return false;
+  }
+  try { vaultGtagEvent("ui_variant_set", { ui_variant: want, source: String(source || "unknown") }); } catch {}
+  try { localStorage.setItem(STORAGE_UI_VARIANT, want); } catch { /* private mode: ?ui= below still applies */ }
+  const url = new URL(window.location.href);
+  url.searchParams.set("ui", want);
+  if (want === "next") {
+    url.searchParams.delete("tab");
+    url.hash = "";
+    if (url.pathname === "/overlay") url.pathname = "/";
+  }
+  window.location.replace(url.toString());
+  return true;
+}
+
+/** Settings card for people on the classic layout. (On the new look the
+ *  Appearance card carries the way back.) */
+function renderUiBetaSettingsCard() {
+  if (IS_UI_NEXT) return "";
+  const isCapable = canRunNextUI();
+  return `
+      <section class="settings-card" data-ui-beta-card>
+        <header class="settings-card-head">
+          <h3>New look <span class="muted small">&middot; beta</span></h3>
+          <p class="settings-card-sub">${esc(UI_BETA_PITCH)}</p>
+        </header>
+        <div class="settings-action-row">
+          <button class="btn-primary" type="button" data-action="ui-set" data-ui="next" data-source="settings"${isCapable ? "" : " disabled"}>
+            <span>Try the new look</span>
+          </button>
+          <button class="btn-ghost" type="button" data-action="ui-open-news">
+            <span>What's new</span>
+          </button>
+        </div>
+        <p class="muted small">${esc(isCapable ? UI_BETA_DEVICE_NOTE : UI_BETA_UNSUPPORTED)}</p>
+      </section>`;
+}
+
+/** Beta-tab card: opt in from classic, opt out from the new look. */
+function renderUiBetaTabCard() {
+  const isCapable = canRunNextUI();
+  const action = IS_UI_NEXT
+    ? `<button class="btn-ghost" type="button" data-action="ui-set" data-ui="classic" data-source="beta-tab">Back to the classic look</button>`
+    : `<button class="btn-primary" type="button" data-action="ui-set" data-ui="next" data-source="beta-tab"${isCapable ? "" : " disabled"}>Try the new look</button>`;
+  const note = IS_UI_NEXT ? "" : `<p class="beta-hint">${esc(isCapable ? UI_BETA_DEVICE_NOTE : UI_BETA_UNSUPPORTED)}</p>`;
+  return `
+        <section class="beta-card" data-ui-beta-card style="grid-column: 1 / -1">
+          <header class="beta-card-head">
+            <h4>${IS_UI_NEXT ? "New look: on" : "New look"}</h4>
+            <p class="beta-card-sub">${esc(IS_UI_NEXT ? UI_BETA_ON_NOTE : UI_BETA_PITCH)}</p>
+          </header>
+          <div class="beta-launch">
+            ${action}
+            <button class="btn-ghost" type="button" data-action="ui-open-news">What's new</button>
+          </div>
+          ${note}
+        </section>`;
+}
+
+/**
+ * Keeps the new-look card at the top of the Beta tab. The tab's body is
+ * owned and re-rendered by run-coach.js (a frozen surface we do not edit),
+ * so the card is re-inserted whenever that render replaces the grid.
+ */
+function mountUiBetaTabCard() {
+  const $body = document.getElementById("beta-body");
+  if (!$body || $body.dataset.uiBetaMounted === "1") return;
+  $body.dataset.uiBetaMounted = "1";
+  const ensureCard = () => {
+    if (!$body.querySelector(".beta-grid")) {
+      // run-coach.js did not render (blocked or failed): the card still
+      // needs somewhere to live.
+      if ($body.childElementCount > 0) return;
+      $body.innerHTML = `<div class="beta-grid"></div>`;
+    }
+    const $grid = $body.querySelector(".beta-grid");
+    if ($grid.querySelector("[data-ui-beta-card]")) return;
+    $grid.insertAdjacentHTML("afterbegin", renderUiBetaTabCard());
+  };
+  ensureCard();
+  new MutationObserver(ensureCard).observe($body, { childList: true });
+}
+
+/**
+ * Static switch buttons (the ones written into the news post) cannot know
+ * which layout is showing. Disable the one that would be a no-op and say so.
+ */
+function syncUiSwitchButtons() {
+  const current = IS_UI_NEXT ? "next" : "classic";
+  const isCapable = canRunNextUI();
+  document.querySelectorAll('[data-action="ui-set"][data-active-label]').forEach(($btn) => {
+    const target = $btn.getAttribute("data-ui");
+    if (target === current) {
+      $btn.disabled = true;
+      $btn.textContent = $btn.getAttribute("data-active-label") || $btn.textContent;
+    } else if (target === "next" && !isCapable) {
+      $btn.disabled = true;
+      $btn.title = UI_BETA_UNSUPPORTED;
+    }
+  });
+}
+
+document.addEventListener("click", (event) => {
+  const $target = event.target instanceof Element ? event.target : null;
+  if (!$target) return;
+  const $switch = $target.closest('[data-action="ui-set"]');
+  if ($switch) {
+    event.preventDefault();
+    setUiVariant($switch.getAttribute("data-ui"), $switch.getAttribute("data-source") || "unknown");
+    return;
+  }
+  if ($target.closest('[data-action="ui-open-news"]')) {
+    event.preventDefault();
+    switchTab("news");
+    selectNewsPost(UI_BETA_NEWS_POST_ID, { updateHash: true });
+  }
+});
+syncUiSwitchButtons();
 
 // =========================================================================
 // Native host bridge — early stub
@@ -1969,7 +2219,7 @@ function startSteamSignIn() {
     maybeBeaconDiagnostic("storage-broken-pre-redirect", `ua=${navigator.userAgent}`);
     alert(
       "Your browser blocked sign-in storage. " +
-      "Open The Vault in Safari, Chrome, or Firefox " +
+      "Open SpireVault in Safari, Chrome, or Firefox " +
       "and try again from there."
     );
     return;
@@ -3269,6 +3519,16 @@ async function refreshGuestRooms() {
     $grid.innerHTML = rooms.map(renderGuestRoomCard).join("");
   } catch {
     if ($pulse) $pulse.textContent = "Room list momentarily unavailable.";
+    // New UI: the never-ending "Loading live rooms…" placeholder becomes an
+    // invitation to host. Rooms already on screen are left as they are. At
+    // boot the request can fail before lib/ui has loaded, hence uiReady.
+    if (IS_UI_NEXT) {
+      const paintOffline = () => {
+        const $g = document.getElementById("guest-rooms-grid");
+        if ($g?.querySelector(".guest-room-card--skeleton")) $g.innerHTML = UI.CoopView.guestRoomsUnavailable();
+      };
+      if (UI) paintOffline(); else uiReady.then(paintOffline);
+    }
   }
 }
 
@@ -3506,6 +3766,7 @@ function switchTab(tab) {
     page_location: typeof window !== "undefined" ? window.location.href : "",
     page_path: `/?tab=${tab}`,
     tab,
+    ui_variant: IS_UI_NEXT ? "next" : "classic",
   });
   document.querySelectorAll(".nav-row").forEach((b) => {
     const isActive = b.dataset.tab === tab;
@@ -3614,6 +3875,12 @@ function switchTab(tab) {
       });
     } catch { /* non-fatal */ }
   }
+  // New UI: a tab entry arms the entrance animation for the render below.
+  // Background refreshes re-render without arming, so nothing replays.
+  if (UI) {
+    UI.Motion.arm();
+    UI.hideChartTip();
+  }
   try { renderActiveTab(); } catch (e) {
     console.warn("renderActiveTab failed", e);
     try { paintInitialTabShell(); } catch {}
@@ -3633,7 +3900,7 @@ function switchTab(tab) {
  * thing I read still the latest thing published?" — without forcing
  * a chronological compare that could go wrong on a typo.
  */
-const LATEST_NEWS_POST_ID = "post-011-2026-08-23-v211-thank-you";
+const LATEST_NEWS_POST_ID = "post-014-2026-11-13-sts2-v0113";
 const STORAGE_NEWS_LAST_READ = "vault.web.news.lastRead";
 
 /** Show the "NEW" pill on the sidebar News button when the user
@@ -3691,7 +3958,7 @@ function getCompanionSetting() {
  *  rather than re-rolling on every observer. */
 function rollClimberFor(setting) {
   if (setting.isRandom) {
-    const real = COMPANIONS.filter((c) => !c.isRandom);
+    const real = COMPANIONS.filter((c) => !c.isRandom && !c.beta);
     return real[Math.floor(Math.random() * real.length)];
   }
   return setting;
@@ -3758,6 +4025,9 @@ function rollCompanionScene() {
 function renderCompanion() {
   const slots = document.querySelectorAll(".companion-slot");
   if (!slots.length) return;
+  // New UI: the duel is drawn by lib/ui/stage.js with re-inked sprites, so
+  // wait for that module instead of flashing the classic art first.
+  if (deferUntilUIReady(renderCompanion)) return;
 
   // Use the cached scene if we have one; otherwise roll once. Cache is
   // cleared on tab changes (stats tabs), companion picker, and bubble tap.
@@ -3780,13 +4050,19 @@ function renderCompanion() {
   // only, no id) so clicking the climber on any tab opens that
   // tab's picker rather than trying to reach across to a hidden
   // panel's picker.
-  const sceneHtml = `
+  const climberHint = `Change companion (currently ${climber.label})`;
+  const climberAria = `Change companion. Current: ${climber.label}${setting.isRandom ? " (rolled randomly)" : ""}`;
+  const sceneHtml = UI ? UI.Stage.duelHtml({
+    climber: { id: climber.id, label: climber.label, fallbackSrc: climberSrc, ariaLabel: climberAria, hint: climberHint },
+    boss: { id: boss.id, label: boss.label, fallbackSrc: bossSrc, fallbackSrcset: bossSrcset },
+    quote,
+  }) : `
     <div class="scene scene-${speakerIsClimber ? "climber-speaks" : "boss-speaks"}"
          style="--scene-color:${climber.color};--scene-bubble-color:${bubbleColor};--scene-boss-color:${bossColor}">
       <button class="scene-figure scene-figure-climber" type="button"
               data-action="companion-toggle"
-              aria-label="Change companion. Current: ${esc(climber.label)}${setting.isRandom ? " (rolled randomly)" : ""}"
-              title="Change companion (currently ${esc(climber.label)})">
+              aria-label="${esc(climberAria)}"
+              title="${esc(climberHint)}">
         <span class="scene-shadow" aria-hidden="true"></span>
         ${climberSrc
           ? `<img class="scene-art${climber.facesLeft ? " scene-art-flip" : ""}" src="${esc(climberSrc)}" alt="${esc(climber.label)}" draggable="false">`
@@ -3812,8 +4088,9 @@ function renderCompanion() {
 
   const pickerHtml = `
     <div class="companion-picker" hidden role="listbox" aria-label="Pick companion">
-      ${COMPANIONS.map((opt) => {
-        const src = opt.isRandom ? "" : (characterImageSrc(opt.id) || "");
+      ${COMPANIONS.filter((opt) => !opt.beta || opt.id === setting.id || hasRunsAs(opt.id)).map((opt) => {
+        const inked = UI && !opt.isRandom ? UI.Stage.actorArt(opt.id) : null;
+        const src = opt.isRandom ? "" : (inked ? inked.src : (characterImageSrc(opt.id) || ""));
         const isActive = opt.id === setting.id;
         const glyph = opt.isRandom
           ? `<span class="companion-option-glyph" aria-hidden="true">⚂</span>`
@@ -3832,9 +4109,26 @@ function renderCompanion() {
       }).join("")}
     </div>`;
 
+  // Re-rendering replaces the focused control (the speech bubble after a
+  // re-roll, a picker option after a pick). Put focus back so a keyboard
+  // user is not dropped to the top of the page.
+  const $focused = document.activeElement instanceof Element ? document.activeElement : null;
+  const $focusedSlot = $focused ? $focused.closest(".companion-slot") : null;
+  const focusedAction = $focusedSlot ? ($focused.closest("[data-action]")?.getAttribute("data-action") || "") : "";
+
   slots.forEach((slot) => {
     slot.innerHTML = sceneHtml + pickerHtml;
   });
+  // New UI: the scenery (spire, moon) is laid out around the climber's real
+  // width, which lives on the duel; hand it up to each stage header.
+  if (UI) UI.Stage.syncDuelGeometry();
+
+  if ($focusedSlot && focusedAction) {
+    // The picker closes on render, so a picked option hands focus to the climber.
+    const nextAction = focusedAction === "companion-pick" ? "companion-toggle" : focusedAction;
+    const $again = $focusedSlot.querySelector(`[data-action="${cssEscape(nextAction)}"]`);
+    if ($again) $again.focus({ preventScroll: true });
+  }
 }
 
 function wireCompanion() {
@@ -3923,6 +4217,7 @@ function renderActiveTab() {
     renderOverlayTab();
   } else if (activeTab === "beta") {
     if (window.RunCoach?.renderBetaTab) window.RunCoach.renderBetaTab();
+    mountUiBetaTabCard();
   } else if (activeTab === "settings") {
     renderSettingsTab();
   }
@@ -4232,6 +4527,9 @@ function ensureCoopLobbiesMounted() {
           void pullFeed();
           void pullInbox();
         },
+        // Co-op pickers offer the beta-only Fool (STS2 v0.113.0) only to
+        // players with Fool runs, so main-branch pickers keep five portraits.
+        offersBetaCharacter: (id) => hasRunsAs(id),
       },
     });
   } catch (err) {
@@ -4819,6 +5117,21 @@ function forceHideRunRowPreview() {
   runPreviewAnchor = null;
 }
 
+/**
+ * True when the element holds focus the browser would draw a focus ring for
+ * (keyboard, not a tap or click). Browsers without `:focus-visible` throw on
+ * the selector; there, any focus counts, which is how this behaved before.
+ * @param {Element} el
+ * @returns {boolean}
+ */
+function isKeyboardFocus(el) {
+  try {
+    return el.matches(":focus-visible");
+  } catch {
+    return true;
+  }
+}
+
 function wireRunRowPreview() {
   if (window.__runPreviewWired) return;
   window.__runPreviewWired = true;
@@ -4858,6 +5171,10 @@ function wireRunRowPreview() {
   }
 
   document.body.addEventListener("pointerover", (e) => {
+    // A finger cannot hover. On a touch screen this card opened on the tap
+    // that opens the run, never got its pointerout, and stayed on top of the
+    // run-detail dialog.
+    if (e.pointerType === "touch") return;
     const row = e.target instanceof Element ? e.target.closest('[data-run-preview="1"]') : null;
     if (!row) return;
     show(row);
@@ -4886,7 +5203,10 @@ function wireRunRowPreview() {
   });
   document.body.addEventListener("focusin", (e) => {
     const row = e.target instanceof Element ? e.target.closest('[data-run-preview="1"]') : null;
-    if (row) show(row);
+    // Keyboard focus only: a tap or click focuses the row too, and that is
+    // not someone asking for a preview. Asked of the element that took focus
+    // (the row, or a button inside it), so tabbing along a row keeps the card.
+    if (row && isKeyboardFocus(e.target)) show(row);
   });
   document.body.addEventListener("focusout", (e) => {
     const row = e.target instanceof Element ? e.target.closest('[data-run-preview="1"]') : null;
@@ -4906,7 +5226,7 @@ function wireRunRowPreview() {
  *  pointerover and focusin. Showcases the data the user most cares
  *  about when deciding whether to open the run modal. */
 function renderRunRowPreview(r) {
-  const charName = r.character ? capitalize(r.character) : "Unknown";
+  const charName = r.character ? prettifyCharacterName(r.character) : "Unknown";
   const theme = charTheme(r.character);
   const relicArr = Array.isArray(r.relics) ? r.relics : [];
   const deckArr = Array.isArray(r.deckAtEnd) ? r.deckAtEnd : [];
@@ -4931,10 +5251,10 @@ function renderRunRowPreview(r) {
   const moreRelics = Math.max(0, relicArr.length - 6);
 
   return `
-    <header class="run-preview-head" style="--char-color:${theme.color}">
+    <header class="run-preview-head" style="--char-color:${theme.color}"${UI ? ` data-char="${esc(String(r.character || "").toLowerCase())}"` : ""}>
       <div class="run-preview-name">
         <strong>${esc(charName)}</strong>
-        ${Number.isFinite(r.ascension) && r.ascension > 0 ? `<span class="run-preview-asc">A${r.ascension}</span>` : ""}
+        ${!isLadderRun(r) ? `<span class="run-preview-asc">${esc(runAscText(r))}</span>` : Number.isFinite(r.ascension) && r.ascension > 0 ? `<span class="run-preview-asc">A${r.ascension}</span>` : ""}
       </div>
       <span class="run-preview-result ${resultClass}">${result}</span>
     </header>
@@ -5468,7 +5788,7 @@ function renderHighlightCard(h) {
   if (run.won) { resultLabel = "Victory"; resultClass = "is-win"; }
   else if (run.wasAbandoned) { resultLabel = "Abandoned"; resultClass = "is-abandoned"; }
   else { resultLabel = "Defeat"; resultClass = "is-loss"; }
-  const ascLabel = `Ascension ${run.ascension ?? 0}`;
+  const ascLabel = `${Stats.offLadderMode(run.gameMode) === "blitz" ? "Blitz Ascension" : "Ascension"} ${run.ascension ?? 0}`;
   // Daily-run detection: trust the `gameMode` field if present.
   // Fallback: highlights shared before we wired the field through can
   // still be rescued by checking the user-supplied caption for the
@@ -5481,6 +5801,7 @@ function renderHighlightCard(h) {
   const gameMode = explicitMode || (captionImpliesDaily ? "daily" : "");
   const isDaily = gameMode === "daily";
   const isCustom = gameMode === "custom" || gameMode === "trial";
+  const offLadder = Stats.offLadderMode(gameMode); // "blitz" | "dread" | "" (STS2 beta modes)
   const startDate = run.startedAt ? new Date(run.startedAt) : null;
   const dailyDateLabel = startDate && !Number.isNaN(startDate.getTime())
     ? startDate.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })
@@ -5635,6 +5956,13 @@ function renderHighlightCard(h) {
       <span class="h-mode-icon" aria-hidden="true">⚙︎</span>
       <span>${esc(prettifyId(gameMode))}</span>
     </span>`;
+  } else if (offLadder) {
+    // Beta-branch modes (v0.113.0); reuses the custom badge styling.
+    const modeName = offLadder === "blitz" ? "Blitz" : "Dread";
+    heroBadge = `<span class="h-mode-badge h-mode-custom h-mode-${offLadder}" title="${modeName} run">
+      <span class="h-mode-icon" aria-hidden="true">${offLadder === "blitz" ? "⚡︎" : "☠︎"}</span>
+      <span>${modeName}</span>
+    </span>`;
   }
   const modifiersLine = modifierChips.length > 0
     ? `<ul class="h-modifier-strip" aria-label="Run modifiers">
@@ -5655,7 +5983,7 @@ function renderHighlightCard(h) {
         </div>
         <h3 class="h-hero-character">
           ${esc(characterLabel)}
-          ${isDaily ? "" : `<span class="h-hero-asc">${esc(ascLabel)}</span>`}
+          ${isDaily || offLadder === "dread" ? "" : `<span class="h-hero-asc">${esc(ascLabel)}</span>`}
         </h3>
         <p class="h-hero-meta">
           <span>${esc(floorLabel)}</span>
@@ -5685,13 +6013,13 @@ function renderHighlightCard(h) {
       ${h.caption ? `<blockquote class="h-caption">${esc(h.caption)}</blockquote>` : ""}
 
       <dl class="h-stat-grid">
-        ${isDaily
+        ${isDaily || offLadder === "dread"
           ? `<div class="h-stat">
               <dt class="h-stat-label">Mode</dt>
-              <dd class="h-stat-num h-stat-num-sm">Daily</dd>
+              <dd class="h-stat-num h-stat-num-sm">${isDaily ? "Daily" : "Dread"}</dd>
             </div>`
           : `<div class="h-stat">
-              <dt class="h-stat-label">Ascension</dt>
+              <dt class="h-stat-label">${offLadder === "blitz" ? "Blitz ascension" : "Ascension"}</dt>
               <dd class="h-stat-num">A${run.ascension ?? 0}</dd>
             </div>`}
         <div class="h-stat">
@@ -6085,10 +6413,51 @@ function prettifyCharacterName(c) {
   if (!c) return "Unknown";
   const map = {
     ironclad: "Ironclad", silent: "Silent", regent: "Regent",
-    necrobinder: "Necrobinder", defect: "Defect",
+    necrobinder: "Necrobinder", defect: "Defect", fool: "The Fool",
   };
   const k = String(c).toLowerCase();
   return map[k] || c;
+}
+
+// ---- STS2 beta content (v0.113.0) -----------------------------------------
+// The Fool is a beta-branch character with no art yet; Blitz and Dread are
+// beta game modes whose `ascension` is not a standard-ladder level (Blitz
+// has its own 5-level ladder, Dread forces every modifier on). Main-branch
+// histories contain none of these, so each helper below is a no-op for
+// them and their layouts stay exactly as before.
+
+/** True when at least one loaded run was played as `key`. */
+function hasRunsAs(key) {
+  return parsedRuns.some((r) => r.character === key);
+}
+
+/** `roster` plus any beta character the report has runs for. */
+function rosterWithPlayedBeta(roster, byCharacter) {
+  const played = new Set((byCharacter || []).filter((b) => b.runs > 0).map((b) => String(b.key).toLowerCase()));
+  return [...roster, ...["fool"].filter((key) => played.has(key) && !roster.includes(key))];
+}
+
+/** False for Blitz and Dread runs, whose ascension is off the standard ladder. */
+function isLadderRun(run) {
+  return !Stats.offLadderMode(run?.gameMode);
+}
+
+/** "A7" for a standard run, "Blitz A2" / "Dread" for the beta modes, "" when unknown. */
+function runAscText(run) {
+  const mode = Stats.offLadderMode(run?.gameMode);
+  const level = Number.isFinite(run?.ascension) ? run.ascension : null;
+  if (mode === "dread") return "Dread";
+  if (mode === "blitz") return level === null ? "Blitz" : `Blitz A${level}`;
+  return level === null ? "" : `A${level}`;
+}
+
+/** Ascension pill on a run row: the same gold "A7" as always for standard
+ *  runs, a "Blitz A2" / "Dread" tag for the beta modes. */
+function runAscPillHtml(run) {
+  const text = runAscText(run);
+  if (!text) return "";
+  const title = isLadderRun(run) ? "" : ` title="${esc(text)} run, not counted on the Ascension ladder"`;
+  return `<span class="pill pill-gold"${title}>${esc(text)}</span>`;
 }
 
 function formatHighlightDuration(seconds) {
@@ -6348,7 +6717,7 @@ function setShareCommunityStatus(msg, kind) {
 
 /**
  * Mirror the pending-invite count into the document.title so the user can see
- * "(1) The Vault · Web" in the OS tab/window list even when the tab is in
+ * "(1) SpireVault · Slay the Spire 2" in the OS tab/window list even when the tab is in
  * the background. Cheap and effective.
  */
 function updateTabTitle() {
@@ -9212,6 +9581,9 @@ const CloudRuns = (() => {
           }))
         : undefined,
       neowBonus: r.neowBonus ? String(r.neowBonus) : undefined,
+      // Only the off-ladder beta modes travel, so main-branch payloads are
+      // byte-identical. Needs the matching Backend/src/runs.ts field.
+      gameMode: Stats.offLadderMode(r.gameMode) || undefined,
     };
   }
 
@@ -9463,11 +9835,17 @@ function hideBootSkeleton() {
 function renderStatsTab(tab) {
   const $body = document.getElementById(`${tab}-body`);
   if (!$body) return;
+  if (deferUntilUIReady(() => renderActiveTab())) return;
   // While the boot skeleton is up, leave it alone. The hydrate
   // promise will trigger a re-render once cloud responds.
   if (bootSkeletonActive && tab === "overview") return;
   if (parsedRuns.length === 0) {
     $body.innerHTML = renderEmptyState();
+    if (UI) {
+      // No runs yet: the stage stays up, with a dark spire and no torches.
+      UI.Stage.renderStage({ hiLevel: -1, recent: [] });
+      UI.Motion.afterRender($body);
+    }
     $body.querySelectorAll("[data-action='scan']").forEach((btn) => {
       btn.addEventListener("click", () => void scanForHistory());
     });
@@ -9554,13 +9932,14 @@ function renderStatsTab(tab) {
   const liveCard = (!isDemoMode && tab === "overview" && currentRun) ? renderCurrentRunCard(currentRun) : "";
   const prefix = banner + liveCard;
   switch (tab) {
-    case "overview":   $body.innerHTML = prefix + renderOverview(report);     break;
-    case "characters": $body.innerHTML = prefix + renderCharactersTab(report); break;
-    case "ascensions": $body.innerHTML = prefix + renderAscensionsTab(report); break;
-    case "relics":     $body.innerHTML = prefix + renderRelicsTab(report);     break;
-    case "cards":      $body.innerHTML = prefix + renderCards(report);         break;
+    case "overview":   $body.innerHTML = prefix + (UI ? renderOverviewNext(report) : renderOverview(report)); break;
+    case "characters": $body.innerHTML = prefix + (UI ? renderCharactersTabNext(report) : renderCharactersTab(report)); break;
+    case "ascensions": $body.innerHTML = prefix + (UI ? renderAscensionsTabNext(report) : renderAscensionsTab(report)); if (UI) wireAscensionSpire($body); break;
+    case "relics":     $body.innerHTML = prefix + (UI ? renderRelicsNext(report) : renderRelicsTab(report)); break;
+    case "cards":      $body.innerHTML = prefix + (UI ? renderCardsNext(report) : renderCards(report)); break;
     case "runs":       $body.innerHTML = prefix + renderRecentRuns(parsedRuns); break;
   }
+  if (UI) UI.Motion.afterRender($body);
   // Demo banner CTAs route to the existing scan/upload flow.
   if (isDemoMode) {
     $body.querySelectorAll('[data-action="scan"]').forEach((btn) => {
@@ -9669,13 +10048,13 @@ function renderStatsTab(tab) {
       const isOpenSame = slot.querySelector(`[data-relic-detail="${CSS.escape(key)}"]`);
       if (isOpenSame) {
         slot.innerHTML = "";
-        $body.querySelectorAll(".relic-card.is-active").forEach((c) => c.classList.remove("is-active"));
+        $body.querySelectorAll('[data-action="relic-expand"].is-active').forEach((c) => c.classList.remove("is-active"));
         return;
       }
       const report = Stats.summarize(parsedRuns);
       const bucket = (report.byRelic || []).find((b) => b.key === key) || null;
       slot.innerHTML = renderRelicDetail(key, bucket);
-      $body.querySelectorAll(".relic-card.is-active").forEach((c) => c.classList.remove("is-active"));
+      $body.querySelectorAll('[data-action="relic-expand"].is-active').forEach((c) => c.classList.remove("is-active"));
       el.classList.add("is-active");
       slot.querySelectorAll('[data-action="relic-collapse"]').forEach((btn) => {
         btn.addEventListener("click", () => {
@@ -9704,13 +10083,13 @@ function renderStatsTab(tab) {
       const isOpenSame = slot.querySelector(`[data-char-detail="${CSS.escape(key)}"]`);
       if (isOpenSame) {
         slot.innerHTML = "";
-        $body.querySelectorAll(".char-card.is-active").forEach((c) => c.classList.remove("is-active"));
+        $body.querySelectorAll(".char-card.is-active, .v-cb.is-active").forEach((c) => c.classList.remove("is-active"));
         return;
       }
       const report = Stats.summarize(parsedRuns);
       const bucket = (report.byCharacter || []).find((b) => b.key === key) || null;
       slot.innerHTML = renderCharacterDetail(key, bucket);
-      $body.querySelectorAll(".char-card.is-active").forEach((c) => c.classList.remove("is-active"));
+      $body.querySelectorAll(".char-card.is-active, .v-cb.is-active").forEach((c) => c.classList.remove("is-active"));
       el.classList.add("is-active");
       // Wire the close button inside the freshly-rendered detail.
       slot.querySelectorAll('[data-action="char-collapse"]').forEach((btn) => {
@@ -9768,9 +10147,20 @@ function renderHeadCrests(report) {
     .find((b) => b.runs > 0) || null;
   const hiLevel = highestAsc ? parseAsc(highestAsc.key) : -1;
 
+  // New UI: the stage itself carries this data on every stats tab — spire
+  // windows lit to the highest ascension, torches for the last ten runs —
+  // so the Overview plaques (which repeated numbers shown again below)
+  // are dropped. The Auto theme follows the most-played character.
+  if (UI) {
+    UI.Stage.renderStage(buildStageModel(hiLevel));
+    UI.Theme.setAutoCharacter(mostPlayedCharacterKey(report));
+  }
+
   // ---- Overview: war-table stat plaques --------------------------------
   const $ov = crest("overview");
-  if ($ov) {
+  if ($ov && UI) {
+    $ov.innerHTML = "";
+  } else if ($ov) {
     const chrono = parsedRuns
       .slice()
       .sort((a, b) => (a.endedAt ? a.endedAt.getTime() : 0) - (b.endedAt ? b.endedAt.getTime() : 0));
@@ -9800,7 +10190,7 @@ function renderHeadCrests(report) {
   if ($ch) {
     $ch.innerHTML = `
       <div class="crest-heroes">
-        ${CREST_ROSTER.map((key) => {
+        ${rosterWithPlayedBeta(CREST_ROSTER, report.byCharacter).map((key) => {
           const b = (report.byCharacter || []).find((x) => x.key === key) || null;
           const theme = charTheme(key);
           const src = characterImageSrc(key);
@@ -9809,9 +10199,9 @@ function renderHeadCrests(report) {
             ? `<img src="${src}" alt="" loading="lazy" decoding="async" />`
             : charIcon(theme.icon);
           return `
-            <div class="crest-hero${b ? "" : " is-unplayed"}" style="--hero-color:${theme.color}" title="${esc(capitalize(key))}${b ? ` — ${b.wins}W / ${b.runs - b.wins}L` : " — no runs yet"}">
+            <div class="crest-hero${b ? "" : " is-unplayed"}" style="--hero-color:${theme.color}" title="${esc(prettifyCharacterName(key))}${b ? ` — ${b.wins}W / ${b.runs - b.wins}L` : " — no runs yet"}">
               <div class="crest-hero-frame">${art}</div>
-              <span class="crest-hero-name">${esc(capitalize(key))}</span>
+              <span class="crest-hero-name">${esc(prettifyCharacterName(key))}</span>
               <span class="crest-hero-bar"><i style="width:${wr ?? 0}%"></i></span>
               <span class="crest-hero-wr">${wr === null ? "—" : `${wr}%`}</span>
             </div>`;
@@ -10057,7 +10447,7 @@ function renderDemoBanner() {
 let cachedKnownSchemas = null;
 async function loadKnownSchemas() {
   if (cachedKnownSchemas) return cachedKnownSchemas;
-  const mod = await import("./lib/sts2-run-parser.js?v=1");
+  const mod = await import("./lib/sts2-run-parser.js?v=2");
   cachedKnownSchemas = mod.KNOWN_SCHEMA_VERSIONS || new Set();
   return cachedKnownSchemas;
 }
@@ -10085,7 +10475,7 @@ function renderCurrentRunCard(run) {
   if (!run) return "";
   const charKey = String(run.character || "").toLowerCase();
   const theme = charTheme(charKey);
-  const charLabel = run.character ? capitalize(run.character) : "Unknown character";
+  const charLabel = run.character ? prettifyCharacterName(run.character) : "Unknown character";
   const portrait = charPortraitOrIcon(charKey, theme);
   const asc = run.ascension != null ? `A${run.ascension}` : "—";
   const floor = run.floorReached || 0;
@@ -10451,7 +10841,39 @@ function wireAltPathsPanel(root) {
   }
 }
 
+// ---- No-runs empty state in the new UI (lib/ui/views-empty.js) -------------
+// Same CTAs, paths, alt-path panel and data-action hooks as the classic
+// markup below, so renderStatsTab's wiring (scan, upload, copy, alt paths,
+// restore, sign-in) serves both. The sequence keeps ids unique when more
+// than one tab body holds an empty state.
+let nextEmptyStateSeq = 0;
+
+function renderEmptyStateNext() {
+  const platform = detectPlatform();
+  let backupCount = 0;
+  try {
+    const backup = JSON.parse(localStorage.getItem(STORAGE_LOCAL_BACKUP) || "null");
+    if (backup?.count > 0) backupCount = backup.count;
+  } catch { /* storage unavailable: no hint */ }
+  nextEmptyStateSeq += 1;
+  return UI.EmptyView.emptyStateHtml({
+    uid: String(nextEmptyStateSeq),
+    platform: platform === "mac" || platform === "windows" || platform === "linux" ? platform : "other",
+    hasDirPicker: typeof window.showDirectoryPicker === "function",
+    signedIn: !!session?.steamID,
+    personaName: session?.personaName || "Steam User",
+    backupCount,
+    paths: {
+      mac: { folder: HISTORY_PATH_MAC, full: HISTORY_PATH_MAC_FULL },
+      windows: { folder: HISTORY_PATH_WIN, full: HISTORY_PATH_WIN_FULL },
+      linux: { folder: HISTORY_PATH_LINUX, full: HISTORY_PATH_LINUX_FULL },
+    },
+    altPaths: platform === "mac" ? ALT_SAVE_PATHS_MAC : platform === "linux" ? ALT_SAVE_PATHS_LINUX : ALT_SAVE_PATHS_WIN,
+  });
+}
+
 function renderEmptyState() {
+  if (UI?.EmptyView) return renderEmptyStateNext();
   const platform = detectPlatform();
   const hasDirPicker = typeof window.showDirectoryPicker === "function";
 
@@ -10606,6 +11028,7 @@ const CHAR_THEME = {
   defect:      { color: "#5dc1ff", icon: "bolt"   },
   regent:      { color: "#d4af37", icon: "crown"  },
   necrobinder: { color: "#b27dff", icon: "skull"  },
+  fool:        { color: "#f27ec0", icon: "note"   }, // STS2 public beta (v0.113.0)
 };
 
 function charTheme(name) {
@@ -10622,6 +11045,7 @@ function charIcon(key) {
     eye:    '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/>',
     crown:  '<path d="M3 8l4 4 5-7 5 7 4-4-1 11H4L3 8z"/>',
     skull:  '<path d="M12 3a8 8 0 0 0-8 8v3l2 2v4h12v-4l2-2v-3a8 8 0 0 0-8-8z"/><circle cx="9" cy="12" r="1.5" fill="currentColor"/><circle cx="15" cy="12" r="1.5" fill="currentColor"/>',
+    note:   '<path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>',
   };
   return `<svg class="char-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${map[key] || map.shield}</svg>`;
 }
@@ -10735,6 +11159,7 @@ function longestWinStreakDetails(runs) {
     endedAt: ender.endedAt || null,
     character: ender.character || null,
     ascension: Number.isFinite(ender.ascension) ? ender.ascension : null,
+    gameMode: ender.gameMode || null,
   };
 }
 
@@ -10899,7 +11324,7 @@ function renderKPIStrip(runs) {
   // dedicated Characters tab.
   const longestSub = longest > 0
     ? (longestDetail.character
-        ? `Set on <strong>${esc(capitalize(longestDetail.character))}</strong>${ascAtPhrase(longestDetail.ascension)}`
+        ? `Set on <strong>${esc(prettifyCharacterName(longestDetail.character))}</strong>${ascAtPhrase(longestDetail.ascension, longestDetail.gameMode)}`
         : `Set across your run history`)
     : `Win two in a row to start one`;
   const longestCard = `
@@ -10916,7 +11341,7 @@ function renderKPIStrip(runs) {
   const pb = pbFloorRun(runs);
   const pbValue = pb ? `${pb.floorReached}` : "&mdash;";
   const pbSub = pb
-    ? `<strong>${esc(capitalize(pb.character || "Unknown"))}</strong>${ascAtPhrase(pb.ascension)}${pb.won ? ` &middot; Victory` : ""}`
+    ? `<strong>${esc(prettifyCharacterName(pb.character || "Unknown"))}</strong>${ascAtPhrase(pb.ascension, pb.gameMode)}${pb.won ? ` &middot; Victory` : ""}`
     : `Play one run to set this`;
   const pbCard = `
       <div class="kpi-card" role="listitem" data-tone="accent">
@@ -10931,7 +11356,7 @@ function renderKPIStrip(runs) {
     ? formatPlayTimeStrict(fastest.playTimeSeconds) || `${Math.round(fastest.playTimeSeconds / 60)}m`
     : "—";
   const fastestSub = fastest
-    ? `<strong>${esc(capitalize(fastest.character || "Unknown"))}</strong>${ascAtPhrase(fastest.ascension)}`
+    ? `<strong>${esc(prettifyCharacterName(fastest.character || "Unknown"))}</strong>${ascAtPhrase(fastest.ascension, fastest.gameMode)}`
     : `No victories yet`;
   const fastestCard = `
       <div class="kpi-card" role="listitem" data-tone="win">
@@ -11269,7 +11694,7 @@ function renderOverview(report) {
   // Recent Form tile below.
   const last20 = sortedByDate.slice(0, 20).reverse();
   const sparkline = renderRecentFormSparkline(last20);
-  const ascNums = parsedRuns.map((r) => Number(r.ascension)).filter((n) => Number.isFinite(n));
+  const ascNums = parsedRuns.filter(isLadderRun).map((r) => Number(r.ascension)).filter((n) => Number.isFinite(n));
   const avgAsc = ascNums.length > 0 ? (ascNums.reduce((a, b) => a + b, 0) / ascNums.length).toFixed(1) : "—";
 
   const heroPanel = `
@@ -11301,7 +11726,7 @@ function renderOverview(report) {
           <div class="hero-best">
             <span class="hero-best-icon"><svg viewBox="0 0 24 24" fill="#5dc1ff"><path d="M13 2L4 14h7l-1 8 9-12h-7l1-8z"/></svg></span>
             <span class="hero-best-text">
-              Best: <strong style="color:${charTheme(bestChar.key).color}">${esc(capitalize(bestChar.key))}</strong>
+              Best: <strong style="color:${charTheme(bestChar.key).color}">${esc(prettifyCharacterName(bestChar.key))}</strong>
               <span class="muted"> · ${(bestChar.winrate * 100).toFixed(1)}% over ${bestChar.runs} run${bestChar.runs === 1 ? "" : "s"}</span>
             </span>
           </div>
@@ -11376,6 +11801,249 @@ function renderOverview(report) {
     ${charCards}
     ${secTitle("Top relics", "sparkles", "gold")}
     ${renderRelicCards(report.byRelic.slice(0, 6))}`;
+}
+
+// =========================================================================
+// Overview — new UI
+// -------------------------------------------------------------------------
+// Builds the data model for lib/ui/views.js from the same report and the
+// same helpers the classic Overview uses (currentStreak, pbFloorRun,
+// weeklyCadence, …), so the two layouts cannot disagree about a number.
+//
+// The KPI wording is restated here rather than shared with
+// renderKPIStrip() on purpose: the classic renderer stays untouched until
+// it is deleted, and then this is the only copy.
+// =========================================================================
+const NEXT_RECENT_PATH_RUNS = 20;
+const NEXT_STAGE_TORCH_RUNS = 10;
+const NEXT_RECENT_FORM_RUNS = 10;
+const NEXT_TOP_RELICS = 6;
+const NEXT_MAX_FLOOR_BINS = 30;
+const NEXT_MIN_CHART_RUNS = 5;
+
+/** Key of the character with the most runs, or null. Drives the Auto theme. */
+function mostPlayedCharacterKey(report) {
+  const top = (report.byCharacter || []).slice().sort((a, b) => b.runs - a.runs)[0];
+  return top && top.runs > 0 ? String(top.key).toLowerCase() : null;
+}
+
+/** Stage data: the spire is lit to `hiLevel`, torches are the last ten runs. */
+function buildStageModel(hiLevel) {
+  const recent = runsByDateDesc(parsedRuns)
+    .slice(0, NEXT_STAGE_TORCH_RUNS)
+    .reverse()
+    .map((r) => ({
+      won: !!r.won,
+      label: `${prettifyCharacterName(r.character || "Unknown")}${runAscText(r) ? ` ${runAscText(r)}` : ""}`,
+    }));
+  return { hiLevel, recent };
+}
+
+function nextRecentFormCard(runs) {
+  const last = runsByDateDesc(runs).slice(0, NEXT_RECENT_FORM_RUNS);
+  const wins = last.filter((r) => r.won).length;
+  const losses = last.length - wins;
+  const pct = last.length ? Math.round((wins / last.length) * 100) : 0;
+  const lifetimePct = Math.round((runs.filter((r) => r.won).length / runs.length) * 100);
+  const trend = pct - lifetimePct;
+  const record = `${wins}W&ndash;${losses}L`;
+  const textHtml = runs.length <= NEXT_RECENT_FORM_RUNS
+    ? `${record} &middot; need 11+ runs for a trend`
+    : trend > 0
+      ? `${record} &middot; <strong>+${trend}</strong> vs. lifetime`
+      : trend < 0
+        ? `${record} &middot; <strong>&minus;${Math.abs(trend)}</strong> vs. lifetime`
+        : `${record} &middot; on par with lifetime`;
+  const tone = pct >= lifetimePct + 1 ? "win" : (pct + 5 < lifetimePct ? "loss" : "accent");
+  return { title: "Recent form", tone, icon: "bolt", value: String(pct), unit: "%", textHtml };
+}
+
+function nextStreakCards(runs) {
+  const streak = currentStreak(runs);
+  const longest = longestWinStreakDetails(runs);
+  const activeText = streak.kind === "win"
+    ? (streak.count === 1
+        ? "One win &mdash; keep the momentum"
+        : longest.count > streak.count
+          ? `${streak.count} in a row &middot; best is <strong>${longest.count}</strong>`
+          : `${streak.count} in a row &mdash; a new personal best`)
+    : streak.kind === "loss"
+      ? (streak.count === 1 ? "One loss &mdash; reset and re-roll" : `${streak.count} in a row &mdash; reset and re-roll`)
+      : "No active streak yet &mdash; play a run";
+  const active = {
+    title: streak.kind === "win" ? "Win streak" : streak.kind === "loss" ? "Loss streak" : "Active streak",
+    tone: streak.kind === "win" ? "win" : streak.kind === "loss" ? "loss" : "accent",
+    icon: "flame",
+    value: String(streak.kind === "none" ? 0 : streak.count),
+    textHtml: activeText,
+  };
+  const best = {
+    title: "Best streak",
+    tone: "gold",
+    icon: "crown",
+    value: String(longest.count),
+    unit: longest.count === 1 ? "win" : "wins",
+    textHtml: longest.count > 0
+      ? (longest.character
+          ? `Set on <strong>${esc(prettifyCharacterName(longest.character))}</strong>${ascAtPhrase(longest.ascension, longest.gameMode)}`
+          : "Set across your run history")
+      : "Win two in a row to start one",
+  };
+  return [active, best];
+}
+
+function nextRecordCards(runs) {
+  const pb = pbFloorRun(runs);
+  const fastest = fastestWinRun(runs);
+  const cadence = weeklyCadence(runs);
+  const bestFloor = {
+    title: "Best floor",
+    tone: "violet",
+    icon: "stairs",
+    value: pb ? String(pb.floorReached) : "&mdash;",
+    textHtml: pb
+      ? `<strong>${esc(prettifyCharacterName(pb.character || "Unknown"))}</strong>${ascAtPhrase(pb.ascension, pb.gameMode)}${pb.won ? " &middot; Victory" : ""}`
+      : "Play one run to set this",
+  };
+  const fastestWin = {
+    title: "Fastest win",
+    tone: "info",
+    icon: "clock",
+    value: fastest
+      ? esc(formatPlayTimeStrict(fastest.playTimeSeconds) || `${Math.round(fastest.playTimeSeconds / 60)}m`)
+      : "&mdash;",
+    textHtml: fastest
+      ? `<strong>${esc(prettifyCharacterName(fastest.character || "Unknown"))}</strong>${ascAtPhrase(fastest.ascension, fastest.gameMode)}`
+      : "No victories yet",
+  };
+  const thisWeek = {
+    title: "This week",
+    tone: cadence.delta > 0 ? "win" : cadence.delta < 0 ? "loss" : "accent",
+    icon: "calendar",
+    value: String(cadence.thisWeek),
+    unit: cadence.thisWeek === 1 ? "run" : "runs",
+    textHtml: cadence.prevWeek === 0 && cadence.thisWeek > 0
+      ? "Back at it after a quiet stretch"
+      : cadence.delta > 0
+        ? `<strong>+${cadence.delta}</strong> vs. last week`
+        : cadence.delta < 0
+          ? `<strong>&minus;${Math.abs(cadence.delta)}</strong> vs. last week`
+          : "Same pace as last week",
+  };
+  return [bestFloor, fastestWin, thisWeek];
+}
+
+/** Trailing win rate per run, oldest → newest. Null below the chart minimum. */
+function buildTrendData(runs) {
+  const sorted = runsByDateDesc(runs).slice().reverse();
+  if (sorted.length < NEXT_MIN_CHART_RUNS) return null;
+  const windowSize = Math.min(10, Math.max(3, Math.floor(sorted.length / 4)));
+  const values = sorted.map((_, i) => {
+    const slice = sorted.slice(Math.max(0, i - windowSize + 1), i + 1);
+    return slice.filter((r) => r.won).length / slice.length;
+  });
+  const lifetime = sorted.filter((r) => r.won).length / sorted.length;
+  return { values, lifetime, windowSize };
+}
+
+/**
+ * Wins and losses by the floor a run ended on. Unlike the classic chart the
+ * axis is continuous — floors where no run ended get an empty bin — so the
+ * distance between two bars means the distance between two floors.
+ */
+function buildFloorData(runs) {
+  const ended = runs.filter((r) => Number.isFinite(r.floorReached) && r.floorReached > 0);
+  if (ended.length < NEXT_MIN_CHART_RUNS) return null;
+  const floors = ended.map((r) => r.floorReached);
+  const minFloor = Math.min(...floors);
+  const maxFloor = Math.max(...floors);
+  const binSize = Math.max(1, Math.ceil((maxFloor - minFloor + 1) / NEXT_MAX_FLOOR_BINS));
+  const binCount = Math.floor((maxFloor - minFloor) / binSize) + 1;
+  const bins = Array.from({ length: binCount }, (_, i) => {
+    const start = minFloor + i * binSize;
+    const inBin = ended.filter((r) => r.floorReached >= start && r.floorReached < start + binSize);
+    const wins = inBin.filter((r) => r.won).length;
+    return {
+      label: binSize > 1 ? `${start}–${start + binSize - 1}` : `${start}`,
+      wins,
+      losses: inBin.length - wins,
+    };
+  });
+  return { bins };
+}
+
+/** One banner per roster character, then any other characters in the data. */
+function buildCharacterRows(report) {
+  const byKey = new Map((report.byCharacter || []).map((b) => [String(b.key).toLowerCase(), b]));
+  const extras = [...byKey.keys()].filter((key) => !CREST_ROSTER.includes(key));
+  return [...CREST_ROSTER, ...extras].map((key) => {
+    const bucket = byKey.get(key) || null;
+    const inked = UI ? UI.Stage.actorArt(key) : null;
+    return {
+      key,
+      label: prettifyCharacterName(key),
+      runs: bucket ? bucket.runs : 0,
+      wins: bucket ? bucket.wins : 0,
+      winratePct: bucket ? bucket.winrate * 100 : 0,
+      // Same re-inked figure as the header duel, so one character is not
+      // drawn two different ways on one screen.
+      portraitSrc: inked ? inked.src : characterImageSrc(key),
+      isPortraitInked: !!inked,
+      iconHtml: charIcon(charTheme(key).icon),
+    };
+  });
+}
+
+function buildOverviewModel(report) {
+  const total = report.totalRuns;
+  const byDateDesc = runsByDateDesc(parsedRuns);
+  const lastTen = byDateDesc.slice(0, NEXT_RECENT_FORM_RUNS);
+  const lastTenWins = lastTen.filter((r) => r.won).length;
+  const bestChar = report.byCharacter
+    .filter((b) => b.runs >= 3)
+    .slice()
+    .sort((a, b) => b.winrate - a.winrate)[0] || report.byCharacter[0] || null;
+  const highestAsc = report.byAscension
+    .slice()
+    .sort((a, b) => parseAsc(b.key) - parseAsc(a.key))
+    .find((b) => b.runs > 0) || null;
+  const ascNums = parsedRuns.filter(isLadderRun).map((r) => Number(r.ascension)).filter((n) => Number.isFinite(n));
+  return {
+    noticesHtml: renderSinceLastVisitStrip(byDateDesc) + renderWeeklyDigestStrip(byDateDesc),
+    totals: {
+      total,
+      wins: report.totalWins,
+      losses: total - report.totalWins,
+      winratePct: report.overallWinrate * 100,
+    },
+    bestCharacter: bestChar
+      ? { key: String(bestChar.key).toLowerCase(), label: prettifyCharacterName(bestChar.key), winratePct: bestChar.winrate * 100, runs: bestChar.runs }
+      : null,
+    highestAscension: highestAsc ? { level: parseAsc(highestAsc.key), runs: highestAsc.runs } : null,
+    avgAscension: ascNums.length > 0 ? (ascNums.reduce((a, b) => a + b, 0) / ascNums.length).toFixed(1) : "—",
+    recentRuns: byDateDesc
+      .slice(0, NEXT_RECENT_PATH_RUNS)
+      .reverse()
+      .map((r) => ({ won: !!r.won, abandoned: !!r.wasAbandoned })),
+    lastTen: { wins: lastTenWins, losses: lastTen.length - lastTenWins, count: lastTen.length },
+    characters: buildCharacterRows(report),
+    kpis: total > 0
+      ? [nextRecentFormCard(parsedRuns), ...nextStreakCards(parsedRuns), ...nextRecordCards(parsedRuns)]
+      : [],
+    trend: buildTrendData(parsedRuns),
+    floors: buildFloorData(parsedRuns),
+    relics: report.byRelic.slice(0, NEXT_TOP_RELICS).map((b) => ({
+      label: relicLabel(b.key),
+      src: relicImageSrc(b.key),
+      runs: b.runs,
+      wins: b.wins,
+      winratePct: b.winrate * 100,
+    })),
+  };
+}
+
+function renderOverviewNext(report) {
+  return UI.Views.overviewHtml(buildOverviewModel(report));
 }
 
 const OVERLAY_TAGS = ["damage", "block", "scaling", "draw", "energy", "exhaust", "poison", "orbs", "stance", "strength", "defensive", "unknown"];
@@ -11535,9 +12203,33 @@ function renderRecommendationCardHtml(rec, source) {
 // linked-folder / cloud-sync status consistent with reality.
 // =========================================================================
 
+/**
+ * Settings → Appearance (new UI only). The swatches are rendered by the
+ * theme engine and their clicks are handled by its delegated listener, so
+ * nothing needs wiring here.
+ */
+function renderAppearanceCard() {
+  return `
+      <section class="settings-card v-appearance">
+        <header class="settings-card-head">
+          <h3>Appearance</h3>
+          <p class="settings-card-sub">Pick a theme. It switches instantly and is saved on this device.</p>
+        </header>
+        ${UI.Theme.themeSwatchesHtml()}
+        <div class="v-appearance-foot">
+          <span>Press <kbd>T</kbd> anywhere to cycle themes.</span>
+          <span class="v-appearance-links">
+            <button class="v-link" type="button" data-action="ui-open-news">What's new in the beta</button>
+            <button class="v-link" type="button" data-action="ui-set" data-ui="classic" data-source="settings">Back to the classic look</button>
+          </span>
+        </div>
+      </section>`;
+}
+
 function renderSettingsTab() {
   const $body = document.getElementById("settings-body");
   if (!$body) return;
+  if (deferUntilUIReady(() => renderActiveTab())) return;
 
   const linkedName = getLinkedFolderName();
   const isLinked = !!linkedName;
@@ -11551,6 +12243,7 @@ function renderSettingsTab() {
 
   $body.innerHTML = `
     <div class="settings-grid">
+      ${UI ? renderAppearanceCard() : renderUiBetaSettingsCard()}
       <!-- ───────── Save Data card ───────── -->
       <section class="settings-card">
         <header class="settings-card-head">
@@ -11811,7 +12504,7 @@ function renderOverlayTab() {
   const previewTag = isOverlayProductionPreview() ? `<span class="overlay-kicker">Preview · Beta</span>` : `<span class="overlay-kicker">Local preview</span>`;
   const selectedTagSet = new Set(s.tags);
   const selectedReminderSet = new Set(s.reminders);
-  const charOptions = COMPANIONS.filter((c) => !c.isRandom);
+  const charOptions = COMPANIONS.filter((c) => !c.isRandom && (!c.beta || hasRunsAs(c.id)));
 
   // Compute the local recommendation up front. Cheap, deterministic,
   // and always available even without an API key. The AI screenshot
@@ -12269,12 +12962,12 @@ function renderCharCards(buckets, opts = {}) {
           <div class="${cardClass}" style="--char-color:${theme.color}"
                role="button" tabindex="0"
                ${dataAttrs}
-               aria-label="${esc(capitalize(c.key))}: ${wr}% winrate over ${c.runs} runs.${expandable ? " Tap to view details." : ""}">
+               aria-label="${esc(prettifyCharacterName(c.key))}: ${wr}% winrate over ${c.runs} runs.${expandable ? " Tap to view details." : ""}">
             <div class="char-card-head">
               <div class="char-card-icon">${charPortraitOrIcon(c.key, theme)}</div>
               <span class="char-card-runs">${c.runs} runs</span>
             </div>
-            <div class="char-card-name">${esc(capitalize(c.key))}</div>
+            <div class="char-card-name">${esc(prettifyCharacterName(c.key))}</div>
             <div class="char-card-record">${c.wins} win${c.wins === 1 ? "" : "s"} &middot; ${lossCount} loss${lossCount === 1 ? "" : "es"}</div>
             <div class="char-card-wr">
               <strong class="char-card-pct">${wr}%</strong>
@@ -12334,7 +13027,7 @@ function evaluateMilestones() {
   const longestWinStreak = computeLongestWinStreak(parsedRuns);
 
   // Run-count tiers
-  if (total >= 1)   awardMilestone("runs.1",   { title: "First run logged",      body: "Welcome to The Vault. Your run history is now tracked.", icon: "🎉" });
+  if (total >= 1)   awardMilestone("runs.1",   { title: "First run logged",      body: "Welcome to SpireVault. Your run history is now tracked.", icon: "🎉" });
   if (total >= 10)  awardMilestone("runs.10",  { title: "10 runs",                body: "You're warmed up. Keep climbing.", icon: "📈" });
   if (total >= 25)  awardMilestone("runs.25",  { title: "25 runs logged",         body: "Patterns starting to show. Check the Cards tab.", icon: "🃏" });
   if (total >= 50)  awardMilestone("runs.50",  { title: "50 runs",                body: "Half a hundred climbs. Your stats are getting trustworthy.", icon: "🏔️" });
@@ -12364,8 +13057,8 @@ function evaluateMilestones() {
   for (const [character, n] of winsByChar) {
     if (n >= 1) {
       awardMilestone(`char.first-clear.${character}`, {
-        title: `First ${capitalize(character)} clear`,
-        body: `You beat the Spire as ${capitalize(character)} for the first time. Every character clear unlocks a new flavor of mastery.`,
+        title: `First ${prettifyCharacterName(character)} clear`,
+        body: `You beat the Spire as ${prettifyCharacterName(character)} for the first time. Every character clear unlocks a new flavor of mastery.`,
         icon: "✨",
       });
     }
@@ -12445,6 +13138,7 @@ const CHAR_META = (() => {
     { id: "defect",      label: "Defect",      color: "#4dc8ff" },
     { id: "regent",      label: "Regent",      color: "#fbbf24" },
     { id: "necrobinder", label: "Necrobinder", color: "#a78bfa" },
+    { id: "fool",        label: "The Fool",    color: "#f27ec0" }, // STS2 public beta
   ]) map[c.id] = c;
   return map;
 })();
@@ -12461,7 +13155,7 @@ function showVictoryCelebration(run, streakCount) {
   document.getElementById("victory-overlay")?.remove();
 
   const meta = CHAR_META[run.character] || { label: capitalize(run.character || "Unknown"), color: "#d4af37" };
-  const ascStr = run.ascension > 0 ? ` · A${run.ascension}` : "";
+  const ascStr = !isLadderRun(run) ? ` · ${runAscText(run)}` : run.ascension > 0 ? ` · A${run.ascension}` : "";
   const floorStr = run.floorReached ? `Floor ${run.floorReached}` : "";
   const streakHtml = streakCount >= 2 ? `
     <div class="victory-streak">
@@ -12734,6 +13428,7 @@ function toggleKbdHelp() {
  *  for hand-written copy and from the per-character bucket for
  *  the user's personal stats. */
 function renderCharacterDetail(charKey, bucket) {
+  if (UI) return renderCharacterDetailNext(charKey, bucket);
   const info = CharInfo.characterInfoFor(charKey);
   const theme = charTheme(charKey);
   const personal = bucket
@@ -12755,13 +13450,13 @@ function renderCharacterDetail(charKey, bucket) {
            <strong class="char-detail-stat-value" style="color:${theme.color}">${(bucket.winrate * 100).toFixed(1)}%</strong>
          </div>
        </div>`
-    : `<p class="muted small">You haven't played ${esc(capitalize(charKey))} yet.</p>`;
+    : `<p class="muted small">You haven't played ${esc(prettifyCharacterName(charKey))} yet.</p>`;
 
   if (!info) {
     return `
       <div class="char-detail" data-char-detail="${esc(charKey)}">
         <div class="char-detail-head">
-          <h3 class="char-detail-name">${esc(capitalize(charKey))}</h3>
+          <h3 class="char-detail-name">${esc(prettifyCharacterName(charKey))}</h3>
           <button class="char-detail-close" type="button" data-action="char-collapse" aria-label="Close">&times;</button>
         </div>
         ${personal}
@@ -12838,6 +13533,44 @@ function renderCharactersTab(report) {
     ${secTitle("Winrate by character", "people")}
     ${renderCharCards(report.byCharacter, { expandable: true })}
     <div id="char-detail-slot" class="char-detail-slot"></div>`;
+}
+
+/** New look: one banner per roster character (played or not) from the
+ *  shared Overview rows, plus the codex role and difficulty. data-char-key
+ *  keeps the bucket's own key so the shared char-expand handler finds it. */
+function buildCharactersTabModel(report) {
+  const bucketKeys = new Map((report.byCharacter || []).map((b) => [String(b.key).toLowerCase(), String(b.key)]));
+  return {
+    characters: buildCharacterRows(report).map((row) => {
+      const info = CharInfo.characterInfoFor(row.key);
+      return {
+        ...row,
+        actionKey: bucketKeys.get(row.key) || row.key,
+        role: info ? info.role : "",
+        difficulty: info ? info.difficulty : 0,
+      };
+    }),
+  };
+}
+
+function renderCharactersTabNext(report) {
+  return UI.CharactersView.charactersHtml(buildCharactersTabModel(report));
+}
+
+/** New look: the drill-down as a codex page (record, meter, accordions). */
+function renderCharacterDetailNext(charKey, bucket) {
+  const key = String(charKey || "").toLowerCase();
+  const inked = UI.Stage.actorArt(key);
+  return UI.CharactersView.characterCodexHtml({
+    key,
+    detailKey: String(charKey || ""),
+    label: prettifyCharacterName(key),
+    portraitSrc: inked ? inked.src : characterImageSrc(key),
+    isPortraitInked: !!inked,
+    iconHtml: charIcon(charTheme(key).icon),
+    record: bucket ? { runs: bucket.runs, wins: bucket.wins, winratePct: bucket.winrate * 100 } : null,
+    info: CharInfo.characterInfoFor(key),
+  });
 }
 
 /** Bar chart matching the desktop app's "Per ascension" panel.
@@ -12957,6 +13690,112 @@ function renderAscensionsTab(report) {
     ${detailRows}`;
 }
 
+/** Highest ascension the new-look spire draws (same Early Access cap as
+ *  renderAscensionsTab: levels above it are counted, not drawn). */
+const NEXT_ASC_CAP = 10;
+
+/** New look: every level A0 → cap (played or not) with its tier and
+ *  modifier, plus each tier's combined record. */
+function buildAscensionsModel(report) {
+  const byLevel = new Map((report.byAscension || []).map((b) => [parseAsc(b.key), b]));
+  const levels = Array.from({ length: NEXT_ASC_CAP + 1 }, (_, level) => {
+    const bucket = byLevel.get(level) || null;
+    const info = AscInfo.modifierFor(level);
+    return {
+      level,
+      tierKey: info.tier.key,
+      tierLabel: info.tier.label,
+      runs: bucket ? bucket.runs : 0,
+      wins: bucket ? bucket.wins : 0,
+      winratePct: bucket ? bucket.winrate * 100 : 0,
+      title: info.title,
+      modifier: info.modifier,
+      detail: info.detail,
+    };
+  });
+  const tiers = AscInfo.ASCENSION_TIERS.filter((t) => t.band[0] <= NEXT_ASC_CAP).map((t) => {
+    const inBand = levels.filter((l) => l.level >= t.band[0] && l.level <= t.band[1]);
+    return {
+      key: t.key,
+      label: t.label,
+      range: t.band[0] === t.band[1] ? `A${t.band[0]}` : `A${t.band[0]}–A${t.band[1]}`,
+      blurb: t.blurb,
+      runs: inBand.reduce((sum, l) => sum + l.runs, 0),
+      wins: inBand.reduce((sum, l) => sum + l.wins, 0),
+    };
+  });
+  const played = levels.filter((l) => l.runs > 0);
+  return {
+    levels,
+    tiers,
+    cap: NEXT_ASC_CAP,
+    hiddenAbove: [...byLevel.keys()].filter((level) => level > NEXT_ASC_CAP).length,
+    peak: played.length > 0 ? played[played.length - 1].level : null,
+  };
+}
+
+function renderAscensionsTabNext(report) {
+  return UI.AscensionsView.ascensionsHtml(buildAscensionsModel(report));
+}
+
+/** Spire storeys open their row in the breakdown and bring it into view. */
+function wireAscensionSpire($body) {
+  $body.querySelectorAll("[data-asc-jump]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const row = $body.querySelector(`details[data-asc="${CSS.escape(btn.dataset.ascJump || "")}"]`);
+      if (!row) return;
+      row.open = true;
+      row.classList.remove("is-flash");
+      void row.offsetWidth;
+      row.classList.add("is-flash");
+      row.scrollIntoView({ behavior: UI.Motion.reduced() ? "auto" : "smooth", block: "center" });
+      row.querySelector("summary")?.focus({ preventScroll: true });
+    });
+  });
+}
+
+// ---- Top Relics in the new UI (lib/ui/views-relics.js) ---------------------
+// Same buckets, filter, ranking and Wilson tone as the classic tab below;
+// only the markup differs. Fewer than NEXT_LOW_SAMPLE_RUNS runs is flagged,
+// matching the classic "small sample" pill.
+const NEXT_RELIC_MIN_RUNS = 3;
+const NEXT_LOW_SAMPLE_RUNS = 10;
+
+function renderRelicsNext(report) {
+  const relics = report.byRelic
+    .filter((b) => b.runs >= NEXT_RELIC_MIN_RUNS)
+    .map((b) => ({
+      key: b.key,
+      label: relicLabel(b.key),
+      src: relicImageSrc(b.key),
+      runs: b.runs,
+      wins: b.wins,
+      winratePct: b.winrate * 100,
+      tone: winrateTone(b),
+      rarity: RelicInfo.relicInfoFor(b.key)?.rarity || null,
+    }));
+  return UI.RelicsView.relicsTabHtml({
+    relics,
+    minRuns: NEXT_RELIC_MIN_RUNS,
+    lowSampleRuns: NEXT_LOW_SAMPLE_RUNS,
+  });
+}
+
+function renderRelicDetailNext(relicKey, bucket) {
+  const info = RelicInfo.relicInfoFor(relicKey);
+  return UI.RelicsView.relicDetailHtml({
+    key: relicKey,
+    label: relicLabel(relicKey),
+    src: relicImageSrc(relicKey),
+    rarity: info?.rarity || null,
+    info: info ? { effect: info.effect, tip: info.tip, synergy: info.synergy || [] } : null,
+    record: bucket
+      ? { runs: bucket.runs, wins: bucket.wins, winratePct: bucket.winrate * 100, tone: winrateTone(bucket) }
+      : null,
+    lowSampleRuns: NEXT_LOW_SAMPLE_RUNS,
+  });
+}
+
 /** Top Relics — 2-column card grid matching the desktop app's RelicCard.
  *  Gold sparkle in a circle, name, "X seen" + "Yw" pills, big colored % on
  *  the right. Suppresses one-run flukes by filtering to runs >= 3. */
@@ -13030,6 +13869,7 @@ function renderRelicCards(buckets, opts = {}) {
  *  RelicInfo for the in-game effect + when-to-pick advice; pulls
  *  the user's personal numbers from the bucket. */
 function renderRelicDetail(relicKey, bucket) {
+  if (UI) return renderRelicDetailNext(relicKey, bucket);
   const info = RelicInfo.relicInfoFor(relicKey);
   const art = relicImageSrc(relicKey);
   const wr = bucket ? (bucket.winrate * 100).toFixed(1) : "—";
@@ -13180,6 +14020,48 @@ function renderBucketTable(buckets, opts = {}) {
         }).join("")}
       </tbody>
     </table>`;
+}
+
+// ---- Cards in the new UI (lib/ui/views-cards.js) ---------------------------
+// Same top-picked / top-skipped buckets as the classic tab below.
+
+/** The card's class (ironclad … necrobinder, colorless, curse, status) from
+ *  its resolved art filename, else from the id itself; null when unknown. */
+function cardClassKey(id, src) {
+  const file = src ? src.slice(src.lastIndexOf("/") + 1) : "";
+  const fromArt = file.split("_")[0];
+  if (CLASS_PREFIXES.has(fromArt)) return fromArt;
+  return cardSlug(id).split("_").find((part) => CLASS_PREFIXES.has(part)) || null;
+}
+
+/** Pick rate needs to know what was offered. Demo runs and older imports
+ *  record only the pick, and the engine then reports every pick rate as
+ *  100%, so the view falls back to comparing pick counts. */
+function historyHasCardOffers(runs) {
+  return runs.some((r) => (r.cardPicks || []).some((p) => Array.isArray(p.offered) && p.offered.length > 0));
+}
+
+function renderCardsNext(report) {
+  const hasOffers = historyHasCardOffers(parsedRuns);
+  const identity = (b) => {
+    const src = cardImageSrc(b.key);
+    return { key: b.key, label: cardLabel(b.key), src, classKey: cardClassKey(b.key, src) };
+  };
+  const picked = (report.topPickedCards || []).map((b) => ({
+    ...identity(b),
+    picks: b.runs,
+    wins: b.wins,
+    winratePct: b.winrate * 100,
+    pickRatePct: hasOffers ? Math.min(1, b.pickedRate ?? 0) * 100 : null,
+    tone: winrateTone(b),
+  }));
+  const skipped = (report.topSkippedCards || []).map((b) => ({
+    ...identity(b),
+    offered: b.runs,
+    picks: b.wins,
+    pickRatePct: (b.pickedRate ?? 0) * 100,
+  }));
+  return UI.CardsView.cardsTabHtml({ picked, skipped, hasOffers, lowSampleRuns: NEXT_LOW_SAMPLE_RUNS });
 }
 
 /** Cards tab — mirrors VaultApp/App/DetailView.swift CardsView.
@@ -13377,6 +14259,8 @@ function applyRunFilters(runs) {
     if (runFilters.outcome === "wins" && !r.won) return false;
     if (runFilters.outcome === "losses" && r.won) return false;
     if (runFilters.ascensionTier !== "all") {
+      // Blitz/Dread ascensions are not standard-ladder levels (STS2 beta).
+      if (!isLadderRun(r)) return false;
       // Clamp legacy / out-of-range ascensions into the STS2 ladder so
       // a stray A20 save from a STS1-leftover importer still buckets
       // cleanly into the top tier instead of vanishing from results.
@@ -13388,7 +14272,7 @@ function applyRunFilters(runs) {
       if (runFilters.ascensionTier === "high" && !(a >= 9 && a <= STS2_MAX_ASCENSION)) return false;
     }
     if (q) {
-      const hay = [r.character, r.seed, r.sourceFile, r.won ? "victory win" : "defeat loss"]
+      const hay = [r.character, Stats.offLadderMode(r.gameMode), r.seed, r.sourceFile, r.won ? "victory win" : "defeat loss"]
         .filter(Boolean).join(" ").toLowerCase();
       if (!hay.includes(q)) return false;
     }
@@ -13396,7 +14280,9 @@ function applyRunFilters(runs) {
   });
 }
 
-const RUN_FILTER_CHARACTERS = ["ironclad", "silent", "defect", "regent", "necrobinder"];
+// Chips render only for characters with runs, so the beta-only Fool never
+// shows for main-branch players.
+const RUN_FILTER_CHARACTERS = ["ironclad", "silent", "defect", "regent", "necrobinder", "fool"];
 // STS2 ascension buckets: A0 is the default "any character can pick it"
 // entry point so it stands alone; A1–A4 covers the early climb;
 // A5–A8 the mid climb; A9–A10 is the high-asc bucket where the meta
@@ -13425,7 +14311,7 @@ function renderRunFilters(allRuns, filteredCount) {
     `<button class="chart-chip" type="button" data-filter-kind="character" data-filter-value="all" aria-pressed="${runFilters.character === "all"}">All</button>`,
     ...charsToShow.map((c) => {
       const theme = charTheme(c);
-      return `<button class="chart-chip" type="button" data-char data-filter-kind="character" data-filter-value="${esc(c)}" aria-pressed="${runFilters.character === c}" style="--char-color:${theme.color}">${esc(capitalize(c))}</button>`;
+      return `<button class="chart-chip" type="button" data-char data-filter-kind="character" data-filter-value="${esc(c)}" aria-pressed="${runFilters.character === c}" style="--char-color:${theme.color}">${esc(prettifyCharacterName(c))}</button>`;
     }),
   ].join("");
 
@@ -13483,6 +14369,7 @@ function renderRunFilters(allRuns, filteredCount) {
 }
 
 function renderRecentRuns(runs) {
+  if (UI) return renderRecentRunsNext(runs);
   const filtered = applyRunFilters(runs);
   const sorted = filtered.slice().sort((a, b) => {
     const at = a.endedAt?.getTime() ?? 0;
@@ -13509,7 +14396,7 @@ function renderRecentRuns(runs) {
     <div class="run-list">
       ${slice.map((r) => {
         const theme = charTheme(r.character);
-        const charName = r.character ? capitalize(r.character) : "Unknown";
+        const charName = r.character ? prettifyCharacterName(r.character) : "Unknown";
         const dateStr = r.endedAt ? formatRunDate(r.endedAt) : (r.startedAt ? formatRunDate(r.startedAt) : "");
         const durStr = formatPlayTimeStrict(r.playTimeSeconds);
         const wonClass = r.won ? "is-victory" : "is-defeat";
@@ -13528,7 +14415,7 @@ function renderRecentRuns(runs) {
               <div class="run-meta">
                 <div class="run-meta-top">
                   <span class="run-name">${esc(charName)}</span>
-                  ${Number.isFinite(r.ascension) ? `<span class="pill pill-gold">A${r.ascension}</span>` : ""}
+                  ${runAscPillHtml(r)}
                   ${Number.isFinite(r.floorReached) ? `<span class="pill pill-muted">Floor ${r.floorReached}</span>` : ""}
                 </div>
                 ${dateStr ? `<span class="run-date">${esc(dateStr)}</span>` : ""}
@@ -13555,6 +14442,114 @@ function renderRecentRuns(runs) {
           </div>`;
       }).join("")}
     </div>`;
+}
+
+// ---- Recent Runs, new UI (lib/ui/views-runs.js) ---------------------------
+// The new look pages the ledger 20 at a time ("Show more"); classic above
+// keeps its single list. The page grows only by the user's click and resets
+// when the filters change, so the background refresh never collapses it.
+const RUNS_NEXT_PAGE_SIZE = 20;
+let runsNextPage = { key: "", limit: RUNS_NEXT_PAGE_SIZE };
+let runsNextPagingWired = false;
+
+/** @returns {"win"|"loss"|"abandon"} */
+function runResultNext(r) {
+  if (r.won === true) return "win";
+  return r.wasAbandoned === true ? "abandon" : "loss";
+}
+
+/** Character plate art shared by the ledger, run detail and compare. */
+function runArtNext(character) {
+  const key = String(character || "").toLowerCase();
+  const inked = UI && key ? UI.Stage.actorArt(key) : null;
+  return {
+    charKey: key,
+    charName: character ? prettifyCharacterName(character) : "Unknown",
+    artSrc: inked ? inked.src : characterImageSrc(key),
+    isArtInked: !!inked,
+    iconHtml: charIcon(charTheme(key).icon),
+  };
+}
+
+/** Ledger divider for a run's date: Today, Yesterday, This week, Last week, then the month. */
+function runGroupLabelNext(date, now) {
+  if (!date) return "Undated";
+  const dayStart = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const days = Math.round((dayStart(now) - dayStart(date)) / 86_400_000);
+  if (days <= 0) return "Today";
+  if (days === 1) return "Yesterday";
+  if (days < 7) return "This week";
+  if (days < 14) return "Last week";
+  return date.toLocaleDateString(undefined, { month: "long", year: "numeric" });
+}
+
+function runsNextFilterKey() {
+  const f = runFilters;
+  return [f.character, f.outcome, f.ascensionTier, (f.search || "").trim().toLowerCase()].join("|");
+}
+
+function wireRunsNextPaging() {
+  if (runsNextPagingWired) return;
+  runsNextPagingWired = true;
+  document.addEventListener("click", (e) => {
+    const btn = e.target instanceof Element ? e.target.closest('[data-action="runs-show-more"], [data-action="runs-show-all"]') : null;
+    if (!btn || !UI) return;
+    e.preventDefault();
+    const before = document.querySelectorAll("#runs-body .run-row").length;
+    const limit = btn.dataset.action === "runs-show-all" ? Infinity : runsNextPage.limit + RUNS_NEXT_PAGE_SIZE;
+    runsNextPage = { key: runsNextPage.key, limit };
+    renderStatsTab("runs");
+    // The button is gone after the re-render; keyboard focus moves to the
+    // first run it revealed.
+    const firstNew = document.querySelectorAll("#runs-body .run-row")[before];
+    if (firstNew instanceof HTMLElement) firstNew.focus({ preventScroll: true });
+  });
+}
+
+function renderRecentRunsNext(runs) {
+  wireRunsNextPaging();
+  const key = runsNextFilterKey();
+  if (runsNextPage.key !== key) runsNextPage = { key, limit: RUNS_NEXT_PAGE_SIZE };
+  const sorted = applyRunFilters(runs).slice().sort((a, b) => (b.endedAt?.getTime() ?? 0) - (a.endedAt?.getTime() ?? 0));
+  const maxFloor = Math.max(1, ...runs.map((r) => (Number.isFinite(r.floorReached) ? r.floorReached : 0)));
+  const played = new Set(runs.map((r) => r.character).filter(Boolean));
+  const isFiltered = runFilters.character !== "all" || runFilters.outcome !== "all" || runFilters.ascensionTier !== "all" || (runFilters.search || "").trim() !== "";
+  const now = new Date();
+  const rows = sorted.slice(0, runsNextPage.limit).map((r) => {
+    const id = String(r.id ?? "");
+    const date = r.endedAt || r.startedAt;
+    const full = date ? formatRunDate(date) : "";
+    const day = date ? date.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : "";
+    const splits = !!day && full.startsWith(day);
+    return {
+      ...runArtNext(r.character),
+      id,
+      dateDay: splits ? day : full,
+      dateRest: splits ? full.slice(day.length) : "",
+      ascension: Number.isFinite(r.ascension) ? r.ascension : null,
+      ascLabel: runAscText(r),
+      floor: Number.isFinite(r.floorReached) ? r.floorReached : null,
+      floorShare: Number.isFinite(r.floorReached) ? Math.min(1, Math.max(0, r.floorReached / maxFloor)) : 0,
+      duration: formatPlayTimeStrict(r.playTimeSeconds),
+      result: runResultNext(r),
+      killedBy: runResultNext(r) === "loss" && r.killedBy ? bossLabel(r.killedBy) : "",
+      group: runGroupLabelNext(date, now),
+      isSelected: compareSelected.has(id),
+    };
+  });
+  return UI.RunsView.runsHtml({
+    filters: { ...runFilters, search: runFilters.search || "" },
+    outcomes: RUN_FILTER_OUTCOMES,
+    tiers: RUN_FILTER_TIERS,
+    characters: RUN_FILTER_CHARACTERS.filter((c) => played.has(c)).map((c) => ({ key: c, label: prettifyCharacterName(c) })),
+    total: runs.length,
+    filteredCount: sorted.length,
+    isFiltered,
+    compareMode,
+    rows,
+    pageSize: RUNS_NEXT_PAGE_SIZE,
+    autoRefreshHtml: renderAutoRefreshPill(),
+  });
 }
 
 function formatRunDate(d) {
@@ -14381,8 +15376,13 @@ function capitalize(s) {
 
 // Ascension suffix for stat-card sub-copy. Ascension 0 is the game's
 // base difficulty; rendering it as "at A0" reads as odd jargon (D21),
-// so spell it out. Absent/non-finite values contribute nothing.
-function ascAtPhrase(a) {
+// so spell it out. Absent/non-finite values contribute nothing. Beta
+// Blitz/Dread runs (STS2 v0.113.0) are not standard-ladder levels, so
+// they read "in Blitz A2" / "in Dread"; standard runs are unchanged.
+function ascAtPhrase(a, gameMode) {
+  const mode = Stats.offLadderMode(gameMode);
+  if (mode === "dread") return " in Dread";
+  if (mode === "blitz") return Number.isFinite(a) ? ` in Blitz A${a}` : " in Blitz";
   if (!Number.isFinite(a)) return "";
   return a > 0 ? ` at A${a}` : " at base ascension";
 }
@@ -14542,6 +15542,8 @@ function openRunDetailModal(run, opts = {}) {
   const $modal = document.getElementById("run-detail-modal");
   const $body  = document.getElementById("run-detail-body");
   if (!$modal || !$body) return;
+  // The row preview floats above everything; never leave it over the dialog.
+  forceHideRunRowPreview();
   $body.innerHTML = renderRunDetail(run);
   // Wire the in-modal Share button to forward into the existing share
   // canvas flow. Same handler the row Share button uses.
@@ -14673,6 +15675,7 @@ function closeCompareModal() {
  *  vs what's unique to each column. */
 function renderCompare(runs) {
   if (!Array.isArray(runs) || runs.length < 2) return "";
+  if (UI) return renderCompareNext(runs);
 
   // Normalize: deck strips upgrade suffix (`+1`) for set membership,
   // but keeps the raw entry for the unique-cards display so we can
@@ -14700,7 +15703,7 @@ function renderCompare(runs) {
   // (cards in this run's deck that no other selected run has).
   const columns = runs.map((r, i) => {
     const theme = charTheme(r.character);
-    const charName = r.character ? capitalize(r.character) : "Unknown";
+    const charName = r.character ? prettifyCharacterName(r.character) : "Unknown";
     const won = r.won === true;
     const abandoned = r.wasAbandoned === true;
     const result = won ? "Victory" : abandoned ? "Abandoned" : "Defeat";
@@ -14765,7 +15768,7 @@ function renderCompare(runs) {
           <div class="run-compare-id">
             <h3 class="run-compare-name">${esc(charName)}</h3>
             <div class="run-compare-meta">
-              ${Number.isFinite(r.ascension) ? `<span class="pill pill-gold">A${r.ascension}</span>` : ""}
+              ${runAscPillHtml(r)}
               <span class="run-compare-result ${resultClass}">${result}</span>
             </div>
             ${dateStr ? `<p class="run-compare-date muted small">${esc(dateStr)}</p>` : ""}
@@ -14842,6 +15845,59 @@ function renderCompare(runs) {
     <p class="run-compare-foot muted small">Tip: press <kbd>Esc</kbd> to close · <kbd>c</kbd> to toggle compare mode on Recent Runs.</p>`;
 }
 
+// ---- Compare, new UI (lib/ui/views-runs.js). Same overlap maths as above. --
+const NEXT_COMPARE_RELICS = 8;
+const NEXT_COMPARE_CARDS = 8;
+const NEXT_SHARED_RELICS = 12;
+const NEXT_SHARED_CARDS = 16;
+
+function renderCompareNext(runs) {
+  const relicSets = runs.map((r) => new Set(Array.isArray(r.relics) ? r.relics : []));
+  const deckSets = runs.map((r) => new Set((Array.isArray(r.deckAtEnd) ? r.deckAtEnd : []).map((id) => String(id).split("+")[0])));
+  const inAll = (sets) => [...sets[0]].filter((v) => sets.every((s) => s.has(v)));
+  const sharedRelics = inAll(relicSets);
+  const sharedCards = inAll(deckSets);
+  const columns = runs.map((r, i) => {
+    const relics = Array.isArray(r.relics) ? r.relics : [];
+    const deck = Array.isArray(r.deckAtEnd) ? r.deckAtEnd : [];
+    const others = new Set(deckSets.filter((_, j) => j !== i).flatMap((s) => [...s]));
+    const date = r.endedAt || r.startedAt;
+    const result = runResultNext(r);
+    return {
+      ...runArtNext(r.character),
+      result,
+      ascension: Number.isFinite(r.ascension) ? r.ascension : null,
+      ascLabel: runAscText(r),
+      date: date ? formatRunDate(date) : "",
+      stats: [
+        { label: "Floor", value: Number.isFinite(r.floorReached) ? String(r.floorReached) : "—" },
+        { label: "Time", value: formatPlayTimeStrict(r.playTimeSeconds) || "—" },
+        { label: "Deck", value: String(deck.length) },
+        { label: "Relics", value: String(relics.length) },
+      ],
+      relics: relics.slice(0, NEXT_COMPARE_RELICS).map((id) => ({
+        label: relicLabel(id), src: relicImageSrc(id), isShared: sharedRelics.includes(id),
+      })),
+      relicTotal: relics.length,
+      uniqueCards: deck
+        .filter((id) => !others.has(String(id).split("+")[0]))
+        .slice(0, NEXT_COMPARE_CARDS)
+        .map((id) => {
+          const base = String(id).split("+")[0];
+          return { label: cardLabel(base), src: cardImageSrc(id) || cardImageSrc(base), upgraded: String(id).includes("+") };
+        }),
+      killedBy: result === "loss" && r.killedBy ? bossLabel(r.killedBy) : "",
+    };
+  });
+  return UI.RunsView.compareHtml({
+    columns,
+    sharedRelics: sharedRelics.slice(0, NEXT_SHARED_RELICS).map((id) => ({ label: relicLabel(id), src: relicImageSrc(id) })),
+    sharedCards: sharedCards.slice(0, NEXT_SHARED_CARDS).map((id) => ({ label: cardLabel(id), src: cardImageSrc(id) })),
+    sharedRelicTotal: sharedRelics.length,
+    sharedCardTotal: sharedCards.length,
+  });
+}
+
 /** Set or clear the `?run=…` query param without scrolling or
  *  re-rendering. Used by openRunDetailModal/closeRunDetailModal so
  *  the URL stays a permanent identity for whatever the user is
@@ -14907,8 +15963,9 @@ function openDeepLinkedRunIfPresent() {
 }
 
 function renderRunDetail(r) {
+  if (UI) return renderRunDetailNext(r);
   const theme = charTheme(r.character);
-  const charName = r.character ? capitalize(r.character) : "Unknown";
+  const charName = r.character ? prettifyCharacterName(r.character) : "Unknown";
   const outcomeText = r.won ? "VICTORY" : "DEFEAT";
   const outcomeClass = r.won ? "is-victory" : "is-defeat";
   const dateStr = r.endedAt
@@ -14931,7 +15988,7 @@ function renderRunDetail(r) {
       <div class="run-detail-id">
         <div class="run-detail-name">
           <span>${esc(charName)}</span>
-          ${Number.isFinite(r.ascension) ? `<span class="pill pill-gold">A${r.ascension}</span>` : ""}
+          ${runAscPillHtml(r)}
         </div>
         <div class="run-detail-meta">
           <span>${esc(dateStr)}</span>
@@ -15065,6 +16122,123 @@ function renderRunDetail(r) {
     </div>`;
 
   return heroHTML + statsHTML + pathHTML + relicsHTML + deckHTML + picksHTML + actionsHTML;
+}
+
+// ---- Run detail, new UI (lib/ui/views-runs.js) -----------------------------
+const NEXT_ACT_NAMES = { 1: "The Crawl", 2: "The Climb", 3: "The Final Push" };
+const NEXT_ACT_NUMERALS = ["I", "II", "III", "IV", "V", "VI"];
+const NEXT_NODE_NAMES = {
+  combat: ["Enemy", "enemies"], elite: ["Elite", "elites"], shop: ["Merchant", "merchants"],
+  rest: ["Rest", "rests"], event: ["Unknown", "unknowns"], chest: ["Treasure", "treasures"],
+  boss: ["Boss", "bosses"], unknown: ["Unknown", "unknowns"],
+};
+const NEXT_NODE_ORDER = ["combat", "elite", "shop", "rest", "event", "chest", "boss"];
+const NEXT_PICKS_MAX = 60;
+const NEXT_BASIC_CARDS = new Set(["strike", "defend"]);
+
+/** The road taken, act by act, with the run's end marked on its last room. */
+function buildActPathNext(r) {
+  const acts = (Array.isArray(r.pathByAct) ? r.pathByAct : []).filter((a) => a && Array.isArray(a.nodes) && a.nodes.length);
+  const endMark = r.won === true ? "win" : r.wasAbandoned === true ? "abandon" : "death";
+  return acts.map((act, actIndex) => {
+    const counts = {};
+    act.nodes.forEach((n) => { counts[n.type] = (counts[n.type] || 0) + 1; });
+    const summary = NEXT_NODE_ORDER
+      .filter((type) => counts[type])
+      .map((type) => `${counts[type]} ${counts[type] === 1 ? NEXT_NODE_NAMES[type][0].toLowerCase() : NEXT_NODE_NAMES[type][1]}`)
+      .join(" · ");
+    const isLastAct = actIndex === acts.length - 1;
+    const actNum = Number(act.act) || actIndex + 1;
+    return {
+      act: actNum,
+      numeral: NEXT_ACT_NUMERALS[actNum - 1] || String(actNum),
+      name: NEXT_ACT_NAMES[actNum] || "Beyond",
+      summary,
+      nodes: act.nodes.map((n, i) => ({
+        floor: n.floor,
+        type: NEXT_NODE_NAMES[n.type] ? n.type : "unknown",
+        typeLabel: (NEXT_NODE_NAMES[n.type] || NEXT_NODE_NAMES.unknown)[0],
+        mark: isLastAct && i === act.nodes.length - 1 ? endMark : "",
+      })),
+    };
+  });
+}
+
+/** Final deck grouped by card (Strike ×4), interesting cards before the basics. */
+function buildDeckNext(deckAtEnd) {
+  const groups = new Map();
+  (Array.isArray(deckAtEnd) ? deckAtEnd : []).forEach((id) => {
+    const raw = String(id);
+    const prev = groups.get(raw);
+    groups.set(raw, prev ? { ...prev, count: prev.count + 1 } : { raw, count: 1 });
+  });
+  const isBasic = (raw) => {
+    const core = raw.split("+")[0].toLowerCase().split("_").filter((p) => !CLASS_PREFIXES.has(p));
+    return core.length === 1 && NEXT_BASIC_CARDS.has(core[0]);
+  };
+  return [...groups.values()]
+    .map((g, order) => ({ ...g, order, basic: isBasic(g.raw) }))
+    .sort((a, b) => Number(a.basic) - Number(b.basic) || a.order - b.order)
+    .map((g) => {
+      const base = g.raw.split("+")[0];
+      return {
+        label: cardLabel(base),
+        src: cardImageSrc(g.raw) || cardImageSrc(base),
+        count: g.count,
+        upgraded: g.raw.includes("+"),
+      };
+    });
+}
+
+function runFateNext(r) {
+  const floor = Number.isFinite(r.floorReached) ? ` on floor ${r.floorReached}` : "";
+  if (r.won === true) {
+    return Number.isFinite(r.playTimeSeconds) && r.playTimeSeconds > 0
+      ? `Conquered the Spire in ${formatPlayTime(r.playTimeSeconds)}`
+      : "Conquered the Spire";
+  }
+  if (r.wasAbandoned === true) return `Abandoned${floor}`;
+  return r.killedBy ? `Slain by ${bossLabel(r.killedBy)}${floor}` : `Fell${floor}`;
+}
+
+function renderRunDetailNext(r) {
+  const deck = Array.isArray(r.deckAtEnd) ? r.deckAtEnd : [];
+  const relics = Array.isArray(r.relics) ? r.relics : [];
+  const picks = Array.isArray(r.cardPicks) ? r.cardPicks : [];
+  const date = r.endedAt || r.startedAt;
+  const acts = buildActPathNext(r);
+  return UI.RunsView.runDetailHtml({
+    ...runArtNext(r.character),
+    result: runResultNext(r),
+    ascension: Number.isFinite(r.ascension) ? r.ascension : null,
+    ascLabel: runAscText(r),
+    date: date ? formatRunDate(date) : "Date unknown",
+    seed: r.seed ? String(r.seed) : "",
+    sourceFile: r.sourceFile ? String(r.sourceFile) : "",
+    fate: runFateNext(r),
+    stats: [
+      { label: "Floor", value: Number.isFinite(r.floorReached) ? String(r.floorReached) : "—" },
+      { label: "Time", value: formatPlayTime(r.playTimeSeconds) },
+      { label: "Deck", value: String(deck.length) },
+      { label: "Relics", value: String(relics.length) },
+      { label: "Choices", value: String(picks.length) },
+    ],
+    acts,
+    roomCount: acts.reduce((n, a) => n + a.nodes.length, 0),
+    legend: NEXT_NODE_ORDER.map((type) => ({ type, label: NEXT_NODE_NAMES[type][0] })),
+    relics: relics.map((id) => ({ label: relicLabel(id), src: relicImageSrc(id) })),
+    deck: buildDeckNext(deck),
+    deckCount: deck.length,
+    picks: picks.slice(0, NEXT_PICKS_MAX).map((p) => {
+      const picked = p.picked ? cardLabel(p.picked) : null;
+      return {
+        floor: p.floor,
+        picked,
+        skipped: (p.offered || []).map((c) => cardLabel(c)).filter((c) => c !== picked),
+      };
+    }),
+    pickCount: picks.length,
+  });
 }
 
 /**
@@ -15365,6 +16539,7 @@ function wireShareModal() {
 
 function openShareModal(run) {
   currentShareRun = run;
+  forceHideRunRowPreview();
   const $modal = document.getElementById("share-modal");
   setShareHint("Drop the image straight into Discord, Reddit, or X.", "");
   // Reset the community-share status so a previous "Shared!" pill
@@ -15480,9 +16655,9 @@ function shareFilenameSlug(run) {
  *  markdown so a run shared from the desktop app and from the web look
  *  identical in a Discord embed or Reddit post. */
 function buildShareMarkdown(run) {
-  const charName = run.character ? capitalize(run.character) : "Unknown";
+  const charName = run.character ? prettifyCharacterName(run.character) : "Unknown";
   const outcome  = run.won === true ? "✅ **VICTORY**" : "💀 **DEFEAT**";
-  const asc      = Number.isFinite(run.ascension) ? `A${run.ascension}` : "?";
+  const asc      = runAscText(run) || "?";
   const floor    = Number.isFinite(run.floorReached) ? `f${run.floorReached}` : "?";
   const dur      = formatPlayTimeStrict(run.playTimeSeconds) || "?";
   const relics   = (run.relics || []).slice(0, 6).map((r) => `\`${relicLabel(r)}\``).join(", ");
@@ -15545,7 +16720,7 @@ function drawShareCard(run, opts = {}) {
 
   const theme = charTheme(run.character);
   const charColor = theme.color;
-  const charName = run.character ? capitalize(run.character) : "Unknown";
+  const charName = run.character ? prettifyCharacterName(run.character) : "Unknown";
   const isWin = run.won === true;
 
   // ── Background: solid dark + character-tinted radial in the corner ──
@@ -15611,7 +16786,7 @@ function drawShareCard(run, opts = {}) {
     // imported with an STS1 value (A11–A20) never renders on a card
     // that gets shared to Discord/Reddit/X.
     const ascDisplay = Math.max(0, Math.min(STS2_MAX_ASCENSION, run.ascension));
-    pillX += drawPill(ctx, pillX, pillY, `ASCENSION ${ascDisplay}`, "#d4af37", true) + 8;
+    pillX += drawPill(ctx, pillX, pillY, isLadderRun(run) ? `ASCENSION ${ascDisplay}` : runAscText(run).toUpperCase(), "#d4af37", true) + 8;
   }
   if (Number.isFinite(run.floorReached)) {
     pillX += drawPill(ctx, pillX, pillY, `FLOOR ${run.floorReached}`, "#9aa3b2", false) + 8;
@@ -15716,7 +16891,7 @@ function drawShareCard(run, opts = {}) {
   // takes down the whole module.)
   const brandMarkPadX = 14;
   const brandMarkText = "SPIREVAULT";
-  const brandTagText  = "The Vault · run tracker for Slay the Spire 2";
+  const brandTagText  = "Run tracker for Slay the Spire 2";
   ctx.font = "900 13px 'Inter', 'Helvetica Neue', Arial, sans-serif";
   const brandMarkW = ctx.measureText(brandMarkText).width;
   const brandPillH = 26;
@@ -16103,6 +17278,15 @@ try {
           return false;
         }
       },
+      // Layout generation and theme controls for native hosts. The macOS
+      // app's Settings screen is native, so the in-page pickers are not
+      // reachable there; these let the shell (or Web Inspector) switch.
+      // `setTheme` is instant. `setUI` reloads the page.
+      ui: () => (IS_UI_NEXT ? "next" : "classic"),
+      setUI: (variant) => setUiVariant(variant, "host"),
+      themes: () => (UI ? UI.Theme.THEMES.map((t) => t.id) : []),
+      theme: () => (UI ? UI.Theme.getThemePreference() : null),
+      setTheme: (id) => (UI ? UI.Theme.setTheme(String(id || ""), { source: "host" }) : false),
     });
 
     // ---- Drain host-side queue ---------------------------------------

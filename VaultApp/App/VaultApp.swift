@@ -94,7 +94,7 @@ struct VaultApp: App {
             // resources users actually need: README, changelog, issue
             // tracker, and the in-app News tab.
             CommandGroup(replacing: .help) {
-                Button("Spire Vault Help") {
+                Button("SpireVault Help") {
                     NSWorkspace.shared.open(URL(string: "https://github.com/c3rooks/SpireVault#readme")!)
                 }
                 .keyboardShortcut("?", modifiers: [.command])

@@ -1,0 +1,24 @@
+/* ==========================================================================
+   Desktop-host mode (?desktop=1 / window.__VAULT_DESKTOP__).
+
+   The macOS and Windows shells load this page with their own native chrome
+   around it. The legacy sheet hides the web sidebar there with !important,
+   which still wins. Its normal-priority rules do NOT survive the new base
+   layer, so the ones that matter are re-declared here.
+   ========================================================================== */
+html.is-desktop-host,
+html.is-desktop-host body {
+  background: transparent;
+}
+html.is-desktop-host .bg-glow {
+  display: none;
+}
+html.is-desktop-host .content,
+html.is-desktop-host body {
+  padding-bottom: 0;
+}
+/* The rail is hidden in the shells, so its theme button is too; the toolbar
+   button is the way to themes there. */
+html:not(.is-desktop-host) .v-theme-btn--toolbar {
+  display: none;
+}

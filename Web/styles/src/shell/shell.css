@@ -1,0 +1,580 @@
+/* ==========================================================================
+   App shell: sticky rail + content column. Restyles the existing sidebar
+   DOM — no markup is duplicated, so the 1–9 shortcuts, analytics selectors
+   and the desktop-host hides all keep working.
+   ========================================================================== */
+.app-shell {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: var(--v-rail-w) minmax(0, 1fr);
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+/* ---- Rail --------------------------------------------------------------- */
+.sidebar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: var(--v-space-4);
+  height: 100vh;
+  height: 100dvh;
+  padding: var(--v-space-4) var(--v-space-3) var(--v-space-3);
+  background: var(--v-bg-deep);
+  border-right: var(--v-outline);
+}
+
+.sidebar-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 2px;
+}
+.sidebar-brand img {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  object-fit: cover;
+  border-radius: var(--v-radius-sm);
+  border: var(--v-outline);
+  box-shadow: var(--v-shadow-sm);
+}
+.sidebar-brand > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+.sidebar-wordmark {
+  font-family: var(--v-font-display);
+  font-weight: var(--v-display-weight);
+  font-size: 1.625rem;
+  line-height: 0.95;
+  color: var(--v-title);
+  text-shadow: 2px 2px 0 var(--v-ink);
+}
+.sidebar-sub {
+  font-size: var(--v-text-xs);
+  font-weight: 700;
+  /* One line beside the wordmark at the 12px floor. */
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+  text-transform: uppercase;
+  color: var(--v-text-3);
+}
+.sidebar-divider,
+.sidebar-spacer {
+  display: none;
+}
+
+/* The nav scrolls on short viewports. It is 10px wider than the rail so the
+   active row can poke past the rail edge like a bookmark tab. */
+.sidebar-nav {
+  --nav-poke: calc(var(--v-space-3) + 10px);
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--v-space-4);
+  min-height: 0;
+  margin-right: calc(-1 * var(--nav-poke));
+  padding: 4px var(--nav-poke) 4px 0;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+.sidebar-nav::-webkit-scrollbar {
+  display: none;
+}
+.nav-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.nav-group-label {
+  padding: 0 10px 2px;
+  font-size: var(--v-text-xs);
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  color: var(--v-text-3);
+}
+.nav-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border: var(--v-outline-w) solid transparent;
+  border-radius: var(--v-radius-md);
+  background: none;
+  color: var(--v-text-2);
+  font-family: var(--v-font-text);
+  font-size: var(--v-text-md);
+  font-weight: 700;
+  line-height: 1.2;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background-color var(--v-dur-1) ease,
+    color var(--v-dur-1) ease,
+    transform var(--v-dur-2) var(--v-ease-spring);
+}
+.nav-row:hover {
+  background: var(--v-surface-1);
+  color: var(--v-text);
+  transform: translateX(3px);
+}
+.nav-row:active {
+  transform: translateX(1px) scale(0.98);
+}
+.nav-row.is-active {
+  margin-right: calc(-1 * var(--nav-poke));
+  background: var(--v-title);
+  border-color: var(--v-outline-color);
+  box-shadow: var(--v-shadow-sm);
+  color: var(--v-ink);
+  transform: none;
+}
+.nav-icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+}
+.nav-icon svg {
+  width: 18px;
+  height: 18px;
+}
+.nav-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.nav-badge {
+  flex: none;
+  min-width: 20px;
+  padding: 1px 6px;
+  border: var(--v-outline);
+  border-radius: var(--v-radius-pill);
+  background: var(--v-accent);
+  color: var(--v-on-accent);
+  font-size: var(--v-text-xs);
+  font-weight: 800;
+  line-height: 1.3;
+  text-align: center;
+}
+.nav-badge--dot {
+  width: 11px;
+  min-width: 0;
+  height: 11px;
+  padding: 0;
+  background: var(--v-loss);
+}
+.nav-badge--new {
+  background: var(--v-info);
+  color: var(--v-ink);
+  letter-spacing: 0.06em;
+}
+
+/* ---- Account dock --------------------------------------------------------- */
+.sidebar-footer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v-space-2);
+}
+.me-pill {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  border: var(--v-outline);
+  border-radius: var(--v-radius-md);
+  background: var(--v-surface-1);
+  box-shadow: var(--v-shadow-sm);
+  color: var(--v-text);
+  font-family: var(--v-font-text);
+  text-align: left;
+  cursor: pointer;
+  transition: transform var(--v-dur-1) ease, box-shadow var(--v-dur-1) ease;
+}
+.me-pill:not(.me-pill-guest):hover {
+  transform: translate(var(--v-press), var(--v-press));
+  box-shadow: var(--v-shadow-pressed);
+}
+.me-pill-avatar {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  border: var(--v-outline);
+  border-radius: 50%;
+  object-fit: cover;
+}
+.me-pill-meta {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+.me-pill-meta strong {
+  overflow: hidden;
+  font-size: var(--v-text-sm);
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.me-pill-meta span {
+  color: var(--v-text-2);
+  font-size: var(--v-text-xs);
+}
+.me-pill-caret {
+  display: grid;
+  color: var(--v-text-3);
+}
+.me-pill-dot {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  width: 13px;
+  height: 13px;
+  border: var(--v-outline);
+  border-radius: 50%;
+  background: var(--v-loss);
+}
+.me-pill-guest {
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--v-space-2);
+  padding: var(--v-space-3);
+  cursor: default;
+}
+.me-pill-signin {
+  justify-content: center;
+  width: 100%;
+}
+.me-pill-guest-note {
+  margin: 0;
+  color: var(--v-text-2);
+  font-size: var(--v-text-xs);
+  line-height: 1.35;
+}
+.me-pill-guest-settings {
+  display: inline-flex;
+  align-items: center;
+  align-self: center;
+  gap: 6px;
+  padding: 2px 0;
+  border: 0;
+  background: none;
+  color: var(--v-text-2);
+  font-family: var(--v-font-text);
+  font-size: var(--v-text-xs);
+  font-weight: 700;
+  cursor: pointer;
+}
+.me-pill-guest-settings:hover {
+  color: var(--v-title);
+}
+.sidebar-status-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 20px;
+  padding: 0 4px;
+  color: var(--v-text-2);
+  font-size: var(--v-text-xs);
+  font-weight: 600;
+}
+.status-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--v-text-3);
+}
+.status-dot[data-state="online"],
+.status-dot[data-state="live"] {
+  background: var(--v-win);
+}
+.status-dot[data-state="connecting"] {
+  background: var(--v-gold);
+}
+.me-pill-status-pill,
+.me-pill-invites {
+  margin-left: auto;
+  padding: 1px 8px;
+  border: var(--v-outline);
+  border-radius: var(--v-radius-pill);
+  background: var(--v-surface-2);
+  color: var(--v-text);
+  font-family: var(--v-font-text);
+  font-size: var(--v-text-xs);
+  font-weight: 800;
+}
+.me-pill-invites {
+  margin-left: 0;
+  background: var(--v-accent);
+  color: var(--v-on-accent);
+  cursor: pointer;
+}
+.mobile-account-row {
+  display: none;
+}
+
+/* ---- Content column ------------------------------------------------------- */
+.content {
+  position: relative;
+  min-width: 0;
+}
+.tab-panel {
+  display: block;
+}
+.panel-body {
+  max-width: var(--v-content-max);
+  margin-inline: auto;
+  padding: var(--v-space-5) clamp(16px, 3vw, 36px) var(--v-space-8);
+}
+
+/* ---- Phones and small tablets: top bar + bottom tab bar ------------------- */
+@media (max-width: 880px) {
+  .app-shell {
+    grid-template-columns: minmax(0, 1fr);
+    /* The bar keeps its own height and the content row takes the rest.
+       Without this a short tab left spare height in the full-screen grid and
+       the two rows shared it: the top bar grew to 97–187px. */
+    grid-template-rows: auto 1fr;
+  }
+  .sidebar {
+    z-index: 30;
+    flex-direction: row;
+    align-items: center;
+    gap: 10px;
+    height: auto;
+    padding: 8px 12px;
+    border-right: 0;
+    border-bottom: var(--v-outline);
+  }
+  .sidebar-brand {
+    flex: none;
+    padding: 0;
+  }
+  .sidebar-brand img {
+    width: 32px;
+    height: 32px;
+  }
+  .sidebar-brand > div {
+    flex: none;
+  }
+  .sidebar-wordmark {
+    font-size: 1.375rem;
+  }
+  .sidebar-sub,
+  .sidebar-footer {
+    display: none;
+  }
+
+  .mobile-account-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    margin-left: auto;
+    color: var(--v-text-2);
+    font-size: var(--v-text-xs);
+    font-weight: 600;
+  }
+  .me-pill-mini {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+  }
+  .me-pill-mini img {
+    width: 24px;
+    height: 24px;
+    border: var(--v-outline);
+    border-radius: 50%;
+  }
+  .me-pill-mini strong {
+    max-width: 9ch;
+    overflow: hidden;
+    color: var(--v-text);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .muted-status {
+    display: none;
+  }
+  .mobile-account-action {
+    display: flex;
+    flex: none;
+  }
+  /* Top bar on phones: 44px targets, nothing under 12px. */
+  .mobile-account-row {
+    font-size: 0.8125rem;
+  }
+  .sidebar-brand .v-theme-btn {
+    min-width: 44px;
+    min-height: 44px;
+  }
+  .mobile-signin-cta,
+  .mobile-account-row .status-signout {
+    min-height: 44px;
+  }
+  /* The new look draws edge to edge (viewport-fit=cover, set by the boot
+     script); keep content out of the notch on a phone held sideways. */
+  body {
+    padding-right: env(safe-area-inset-right);
+    padding-left: env(safe-area-inset-left);
+  }
+  .mobile-signin-cta,
+  .mobile-account-row .status-signout {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    border: var(--v-outline);
+    border-radius: var(--v-radius-sm);
+    background: var(--v-accent);
+    box-shadow: var(--v-shadow-sm);
+    color: var(--v-on-accent);
+    font-family: var(--v-font-text);
+    font-size: 0.8125rem;
+    font-weight: 800;
+    cursor: pointer;
+  }
+  .mobile-account-row .status-signout {
+    background: var(--v-surface-1);
+    color: var(--v-text);
+  }
+
+  .sidebar-nav {
+    position: fixed;
+    inset: auto 0 0 0;
+    z-index: 40;
+    box-sizing: border-box;
+    flex-direction: row;
+    gap: 4px;
+    height: calc(var(--v-tabbar-h) + env(safe-area-inset-bottom));
+    margin: 0;
+    padding: 6px 8px calc(6px + env(safe-area-inset-bottom));
+    overflow: auto hidden;
+    border-top: var(--v-outline);
+    background: var(--v-bg-deep);
+    scroll-snap-type: x proximity;
+  }
+  .sidebar-nav[data-edge-right="1"] {
+    mask-image: linear-gradient(90deg, #000 calc(100% - 44px), transparent);
+  }
+  .sidebar-nav[data-edge-left="1"] {
+    mask-image: linear-gradient(270deg, #000 calc(100% - 44px), transparent);
+  }
+  .sidebar-nav[data-edge-left="1"][data-edge-right="1"] {
+    mask-image: linear-gradient(90deg, transparent, #000 44px, #000 calc(100% - 44px), transparent);
+  }
+  .nav-group {
+    display: contents;
+  }
+  .nav-group-label {
+    display: none;
+  }
+  .nav-row {
+    flex: 0 0 auto;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 66px;
+    padding: 6px 8px;
+    /* 11px on the 15px root; the xs token (10.3px) is too small to read here. */
+    font-size: var(--v-text-xs);
+    scroll-snap-align: center;
+  }
+  .nav-row:hover {
+    transform: none;
+  }
+  .nav-row.is-active {
+    margin-right: 0;
+  }
+  .nav-label {
+    flex: none;
+    max-width: 11ch;
+  }
+  .nav-badge {
+    position: absolute;
+    top: 2px;
+    right: 6px;
+  }
+
+  /* The tab bar is fixed to the bottom edge, so the page ends one bar early
+     — the page, not .content: the footer comes after .content and its last
+     links sat underneath the bar. */
+  body {
+    padding-bottom: calc(var(--v-tabbar-h) + env(safe-area-inset-bottom));
+  }
+  .content {
+    padding-bottom: var(--v-space-5);
+  }
+  /* Whatever the app anchors to the bottom edge — toasts, the compare bar,
+     the folder-access nudge — floats above the tab bar instead of on it. */
+  .toast,
+  .compare-bar,
+  .vault-no-fsa-nudge {
+    bottom: calc(var(--v-tabbar-h) + 12px + env(safe-area-inset-bottom));
+  }
+}
+
+/* Mid-size phones keep the wordmark (a size down); a guest's placeholder
+   avatar, "Guest" label and status dot give way so "Sign in with Steam" fits
+   inside the bar's padding (it ran 11–19px past the edge at 360px). A
+   signed-in player has no sign-in button and keeps all three. */
+@media (max-width: 400px) {
+  .mobile-account-row:has(.mobile-signin-cta:not([hidden])) .me-pill-mini,
+  .mobile-account-row:has(.mobile-signin-cta:not([hidden])) .status-dot {
+    display: none;
+  }
+  .sidebar-wordmark {
+    font-size: 1.25rem;
+  }
+  .mobile-signin-cta {
+    padding-inline: 8px;
+  }
+}
+
+/* App footer (legacy markup, recoloured by the token bridge): nothing under
+   the 12px floor, and full-height links on phones. */
+.footer-inner p {
+  font-size: var(--v-text-xs);
+}
+@media (max-width: 880px) {
+  .footer-links {
+    flex-wrap: wrap;
+    column-gap: 18px;
+    row-gap: 0;
+  }
+  .footer-links a {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+  }
+}
+
+/* The narrowest phones: logo without the wordmark, so the sign-in button
+   stays on screen (it ran 37px past the edge at 320px). */
+@media (max-width: 350px) {
+  .sidebar-brand > div {
+    display: none;
+  }
+}
+
+/* A phone on its side has about 340px of height. The top bar scrolls away
+   there; the tab bar stays. */
+@media (max-width: 880px) and (max-height: 480px) {
+  .sidebar {
+    position: static;
+  }
+}

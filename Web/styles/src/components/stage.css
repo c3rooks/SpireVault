@@ -1,0 +1,750 @@
+/* ==========================================================================
+   The Stage — the diorama, rebuilt as part of the UI.
+
+   A layered night scene that doubles as a data display:
+     - the spire's windows are lit up to the highest ascension reached
+     - ten torches on the ledge are the last ten runs (lit = victory)
+     - the climber and the boss square off on the ledge, which is the top
+       edge of the page content
+   Every colour is a --v-stage-* token, so it re-inks with the theme.
+
+   Markup: `.v-stage-bg` is injected into `.panel-head.v-has-stage` by
+   lib/ui/stage.js; the duel (`.v-duel`) is written into the existing
+   `.companion-slot` by renderCompanion() using Stage.duelHtml().
+   ========================================================================== */
+.panel-head.v-has-stage {
+  /* The stage's inner column lines up with the page content beneath it; the
+     scenery itself runs edge to edge. */
+  --stage-gutter: calc(max(0px, (100% - var(--v-content-max)) / 2) + clamp(16px, 3vw, 36px));
+  /* Where feet meet the ground, measured up from the stage's bottom edge. */
+  --stage-ground: calc(var(--v-ledge-h) - 9px);
+
+  /* The duel is laid out from the right edge in px, not %, so the two
+     figures keep the same distance at every width: enemy on the right,
+     player a gap to its left, one shared ground line — the way an encounter
+     is staged in the game. */
+  --duel-scale: 1;
+  --duel-boss-right: calc(var(--stage-gutter) + 26px);
+  /* 0.67 (the boss's share of the stage height) x 399/620 (its art). */
+  --duel-boss-w: calc(var(--v-stage-h) * 0.4312 * var(--duel-scale));
+  --duel-gap: 224px;
+  --duel-float: 6px;
+  --duel-bubble-top: 58px;
+  /* Right offset of the climber's right edge. */
+  --duel-climber-right: calc(var(--duel-boss-right) + var(--duel-boss-w) + var(--duel-gap));
+  /* The climber's drawn width. --climber-h / --climber-aspect are copied up
+     from the duel by Stage.syncDuelGeometry(); the fallbacks are the widest
+     climber, so before that runs the spire errs on the side of clearance. */
+  --duel-climber-w: calc(
+    var(--v-stage-h) * var(--climber-h, 0.62) * var(--climber-aspect, 0.94) * var(--duel-scale)
+  );
+  /* The spire stands in the distance behind the climber's back — clear of
+     the figure, never behind it: open ground between the tower and the
+     fight, so nobody looks perched on it. */
+  --spire-clear: 48px;
+  --spire-right: calc(var(--duel-climber-right) + var(--duel-climber-w) + var(--spire-clear));
+  /* Its top stays below the toolbar row, so no button ever covers it.
+     --spire-fit-w is set by Stage.fitStages() when the gap between the
+     title and the climber is narrower than the tower. */
+  --spire-top: 60px;
+  --spire-h: calc(var(--v-stage-h) - var(--spire-top) - var(--v-ledge-h) + 8px);
+  --spire-w: var(--spire-fit-w, calc(var(--spire-h) * 120 / 230));
+
+  justify-content: space-between;
+  /* --stage-extra: added by Stage.fitStages() when a long line needs more
+     headroom above the boss on a small screen. */
+  min-height: calc(var(--v-stage-h) + var(--stage-extra, 0px));
+  padding-inline: var(--stage-gutter);
+  padding-bottom: 0;
+  --px: 0;
+}
+.v-has-stage .panel-head-stage {
+  position: static;
+  padding-bottom: calc(var(--v-ledge-h) + 50px);
+}
+.v-has-stage .head-crest {
+  display: none;
+}
+
+.v-stage-bg {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  background: linear-gradient(
+    180deg,
+    var(--v-stage-sky-1) 0%,
+    var(--v-stage-sky-2) 70%,
+    var(--v-stage-sky-3) 100%
+  );
+}
+.v-stage-layer {
+  position: absolute;
+  inset: 0;
+  transition: transform 260ms ease-out;
+  will-change: transform;
+}
+.v-stage-far {
+  transform: translate3d(calc(var(--px) * -8px), 0, 0);
+}
+.v-stage-mid {
+  transform: translate3d(calc(var(--px) * -18px), 0, 0);
+}
+.v-stage-near {
+  transform: translate3d(calc(var(--px) * -30px), 0, 0);
+}
+
+/* ---- Far layer: stars, moon, hills, spire ---------------------------------- */
+.v-stage-stars {
+  position: absolute;
+  inset: 0;
+  opacity: 0.85;
+  background-image:
+    radial-gradient(1.5px 1.5px at 8% 22%, var(--v-text) 99%, transparent),
+    radial-gradient(1px 1px at 19% 9%, var(--v-text) 99%, transparent),
+    radial-gradient(1.5px 1.5px at 31% 30%, var(--v-text) 99%, transparent),
+    radial-gradient(1px 1px at 44% 14%, var(--v-text) 99%, transparent),
+    radial-gradient(1.5px 1.5px at 58% 24%, var(--v-text) 99%, transparent),
+    radial-gradient(1px 1px at 71% 10%, var(--v-text) 99%, transparent),
+    radial-gradient(1px 1px at 83% 28%, var(--v-text) 99%, transparent),
+    radial-gradient(1.5px 1.5px at 93% 16%, var(--v-text) 99%, transparent);
+}
+/* The moon sits behind the spire's shoulder: the tower cuts into it. */
+.v-stage-moon {
+  position: absolute;
+  top: calc(var(--spire-top) - 4px);
+  right: calc(var(--spire-right) + var(--spire-w) * 0.55);
+  width: 86px;
+  height: 86px;
+  border: var(--v-outline);
+  border-radius: 50%;
+  background: var(--v-stage-moon);
+}
+.v-stage-hills {
+  position: absolute;
+  bottom: calc(var(--v-ledge-h) - 6px);
+  left: -3%;
+  width: 106%;
+  height: 50%;
+  fill: var(--v-stage-far);
+}
+.v-stage-hills .v-hills-back {
+  fill: color-mix(in srgb, var(--v-stage-far) 55%, var(--v-stage-sky-2));
+}
+/* The spire rises in the distance behind the climber's back — the tower
+   they are climbing — with open ground between it and the figure. */
+.v-spire {
+  position: absolute;
+  right: var(--spire-right);
+  bottom: calc(var(--v-ledge-h) - 8px);
+  width: var(--spire-w);
+  aspect-ratio: 120 / 230;
+}
+/* No room for the tower between the title and the fight on this layout. */
+.v-stage--no-spire .v-spire,
+.v-stage--no-spire .v-spire-cap,
+.v-stage--no-spire .v-stage-moon {
+  display: none;
+}
+.v-spire-svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.v-spire-body,
+.v-spire-roof {
+  fill: var(--v-stage-spire);
+  stroke: var(--v-outline-color);
+  stroke-width: 2.5;
+  stroke-linejoin: round;
+}
+.v-spire-win {
+  fill: var(--v-stage-unlit);
+}
+.v-spire-win.is-lit {
+  fill: var(--v-stage-lit);
+}
+.v-spire-win.is-peak {
+  animation: v-glint 2.6s ease-in-out infinite;
+}
+.v-spire-beacon {
+  fill: var(--v-stage-unlit);
+  stroke: var(--v-outline-color);
+  stroke-width: 2;
+}
+.v-spire-beacon.is-lit {
+  fill: var(--v-stage-sky-3);
+}
+@keyframes v-glint {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+/* ---- Mid layer: ruins -------------------------------------------------------- */
+.v-stage-arch,
+.v-stage-pillar {
+  position: absolute;
+  bottom: calc(var(--v-ledge-h) - 6px);
+  fill: var(--v-stage-mid);
+  stroke: var(--v-outline-color);
+  stroke-width: 2.5;
+  stroke-linejoin: round;
+}
+/* A ruined gate behind the boss; a broken column out in the open. */
+.v-stage-arch {
+  right: calc(var(--stage-gutter) - 22px);
+  height: 46%;
+}
+.v-stage-pillar {
+  left: 37%;
+  height: 30%;
+}
+
+/* ---- Near layer: ledge, torches, captions ------------------------------------- */
+.v-stage-ledge {
+  position: absolute;
+  bottom: 0;
+  left: -4%;
+  width: 108%;
+  height: calc(var(--v-ledge-h) + 10px);
+  fill: var(--v-bg);
+}
+.v-stage-ledge .v-ledge-edge {
+  fill: none;
+  stroke: var(--v-outline-color);
+  stroke-width: 2.5;
+  vector-effect: non-scaling-stroke;
+}
+.v-torches {
+  position: absolute;
+  bottom: calc(var(--v-ledge-h) - 10px);
+  left: var(--stage-gutter);
+  width: calc(var(--torch-count, 10) * 23.2px);
+}
+.v-torches svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+.v-torch-stick {
+  fill: var(--v-stage-wood);
+}
+.v-torch-cup {
+  fill: var(--v-stage-near);
+  stroke: var(--v-stage-wood);
+  stroke-width: 1.5;
+}
+.v-torch-ember {
+  fill: var(--v-stage-unlit);
+}
+.v-torch-flame {
+  fill: var(--v-stage-lit);
+  stroke: var(--v-stage-flame);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  animation: v-flicker 1.5s ease-in-out infinite;
+  animation-delay: calc(var(--d, 0) * -0.21s);
+}
+@keyframes v-flicker {
+  0%,
+  100% {
+    transform: scale(1, 1);
+  }
+  40% {
+    transform: scale(0.9, 1.12);
+  }
+  70% {
+    transform: scale(1.06, 0.92);
+  }
+}
+/* Captions sit on the ledge strip, under the thing they describe. */
+.v-stage-cap {
+  position: absolute;
+  color: var(--v-text-2);
+  font-size: var(--v-text-xs);
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-shadow: 1px 1px 0 var(--v-ink);
+  white-space: nowrap;
+}
+.v-torches .v-stage-cap {
+  top: 100%;
+  left: 2px;
+  margin-top: -2px;
+}
+.v-spire-cap {
+  right: calc(var(--spire-right) + var(--spire-w) * 0.5);
+  bottom: calc(var(--v-ledge-h) - 25px);
+  translate: 50% 0;
+}
+.v-spire-cap strong {
+  color: var(--v-stage-lit);
+  font-weight: 800;
+}
+
+/* ---- The duel ------------------------------------------------------------------ */
+.v-has-stage .companion-slot {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+.v-duel {
+  position: absolute;
+  inset: 0;
+  transform: translate3d(calc(var(--px) * -30px), 0, 0);
+  transition: transform 260ms ease-out;
+}
+.v-actor {
+  position: absolute;
+  display: block;
+  padding: 0;
+  border: 0;
+  background: none;
+}
+.v-actor--boss {
+  right: var(--duel-boss-right);
+  /* So his name shows on hover; nothing clickable sits behind him. */
+  pointer-events: auto;
+  /* He hovers: the art is a floating pose, and so is the fight. */
+  bottom: calc(var(--stage-ground) + var(--duel-float));
+  width: calc(var(--v-stage-h) * var(--boss-h) * var(--boss-aspect) * var(--duel-scale));
+  height: calc(var(--v-stage-h) * var(--boss-h) * var(--duel-scale));
+}
+.v-actor--climber {
+  right: var(--duel-climber-right);
+  bottom: var(--stage-ground);
+  width: calc(var(--v-stage-h) * var(--climber-h) * var(--climber-aspect) * var(--duel-scale));
+  height: calc(var(--v-stage-h) * var(--climber-h) * var(--duel-scale));
+  border-radius: var(--v-radius-sm);
+  pointer-events: auto;
+  cursor: pointer;
+}
+.v-actor--climber:focus-visible {
+  outline: 2px solid var(--v-title);
+  outline-offset: 6px;
+}
+/* The figures are inked here, not in the image: a constant-width outline and
+   the UI's hard shadow at every stage size, in the theme's own colours. */
+.v-actor-art {
+  position: relative;
+  z-index: 1;
+  display: block;
+  width: 100%;
+  height: 100%;
+  filter: var(--v-actor-ink);
+}
+.v-actor-art--raw {
+  object-fit: contain;
+  object-position: 50% 100%;
+}
+.v-actor--climber .v-actor-art {
+  transform-origin: 50% 100%;
+  animation: v-breathe 3.8s ease-in-out infinite;
+  transition: translate var(--v-dur-2) var(--v-ease-spring);
+}
+.v-actor--climber:hover .v-actor-art,
+.v-actor--climber:focus-visible .v-actor-art {
+  translate: 0 -3px;
+}
+.v-actor--boss .v-actor-art {
+  animation: v-hover 5.2s ease-in-out infinite;
+}
+@keyframes v-breathe {
+  50% {
+    transform: scaleY(1.02);
+  }
+}
+/* The boss bobs around his resting height, not above it: rising a full 6px
+   took the staff tip into the toolbar on wide screens. Same 6px of travel,
+   and he still never touches the ground (his lift is 4–6px). */
+@keyframes v-hover {
+  0%,
+  100% {
+    transform: translateY(3px);
+  }
+  50% {
+    transform: translateY(-3px);
+  }
+}
+/* Ground shadow: a flat ink ellipse under the feet, like the game's. */
+.v-actor-shadow {
+  position: absolute;
+  z-index: 0;
+  bottom: -6px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--v-ink);
+  opacity: 0.55;
+}
+.v-actor--boss .v-actor-shadow {
+  bottom: calc(-6px - var(--duel-float));
+  animation: v-hover-shadow 5.2s ease-in-out infinite;
+}
+@keyframes v-hover-shadow {
+  50% {
+    transform: scaleX(0.86);
+    opacity: 0.4;
+  }
+}
+/* Seat: a drum of fallen column for the seated poses to rest on. */
+.v-actor-seat {
+  position: absolute;
+  z-index: 0;
+  border: var(--v-outline);
+  border-radius: 50% / 24%;
+  background: var(--v-stage-spire);
+  box-shadow: var(--v-shadow-sm);
+}
+.v-actor-seat::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 46%;
+  border-bottom: var(--v-outline);
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--v-stage-spire) 70%, var(--v-text));
+}
+.v-actor-glyph {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  border: var(--v-outline);
+  border-radius: 50%;
+  background: var(--v-surface-2);
+  color: var(--v-text);
+  font-family: var(--v-font-display);
+  font-size: 2rem;
+}
+
+/* Speech balloon: in the gap between the two, beside the speaker's head. */
+.v-duel-gap {
+  position: absolute;
+  top: var(--duel-bubble-top);
+  right: calc(var(--duel-boss-right) + var(--duel-boss-w));
+  bottom: var(--stage-ground);
+  display: flex;
+  align-items: flex-start;
+  width: var(--duel-gap);
+  padding-inline: 16px;
+}
+.v-duel--climber-speaks .v-duel-gap {
+  justify-content: flex-start;
+}
+.v-duel--boss-speaks .v-duel-gap {
+  justify-content: flex-end;
+}
+.v-bubble {
+  position: relative;
+  max-width: 100%;
+  padding: 8px 12px;
+  border: var(--v-outline);
+  border-radius: 16px;
+  background: var(--v-paper);
+  box-shadow: var(--v-shadow-sm);
+  color: var(--v-on-paper);
+  font-family: var(--v-font-text);
+  font-size: var(--v-text-sm);
+  font-weight: 800;
+  line-height: 1.3;
+  text-align: left;
+  pointer-events: auto;
+  cursor: pointer;
+  transition: transform var(--v-dur-2) var(--v-ease-spring);
+  animation: v-pop 360ms var(--v-ease-spring) both;
+}
+/* The climber's line starts level with the climber's head, wherever that is
+   for this figure; never above the toolbar row. */
+.v-duel--climber-speaks .v-bubble {
+  margin-top: max(
+    0px,
+    calc(
+      var(--v-stage-h) - var(--stage-ground) - var(--v-stage-h) * var(--climber-h) * var(--duel-scale) -
+        var(--duel-bubble-top) - 4px
+    )
+  );
+}
+.v-bubble:hover {
+  transform: translateY(-2px) rotate(-1deg);
+}
+.v-bubble:focus-visible {
+  outline: 2px solid var(--v-title);
+  outline-offset: 3px;
+}
+.v-bubble-tail {
+  position: absolute;
+  top: 15px;
+  width: 13px;
+  height: 13px;
+  border-right: var(--v-outline);
+  border-bottom: var(--v-outline);
+  background: var(--v-paper);
+}
+.v-duel--climber-speaks .v-bubble-tail {
+  left: -8px;
+  transform: rotate(135deg);
+}
+.v-duel--boss-speaks .v-bubble-tail {
+  right: -8px;
+  transform: rotate(-45deg);
+}
+@keyframes v-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.7);
+  }
+}
+
+/* Companion picker: drops below the stage, under the climber. */
+.v-has-stage .companion-picker {
+  position: absolute;
+  top: calc(100% - 14px);
+  right: max(8px, calc(var(--duel-climber-right) - 110px));
+  z-index: 40;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  width: min(300px, calc(100% - 16px));
+  padding: 8px;
+  border: var(--v-outline);
+  border-radius: var(--v-radius-md);
+  background: var(--v-surface-1);
+  box-shadow: var(--v-shadow);
+  pointer-events: auto;
+}
+.v-has-stage .companion-picker[hidden] {
+  display: none;
+}
+.v-has-stage .companion-option {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 4px;
+  border: var(--v-outline-w) solid transparent;
+  border-radius: var(--v-radius-sm);
+  background: none;
+  color: var(--v-text);
+  font-family: var(--v-font-text);
+  font-size: var(--v-text-xs);
+  font-weight: 700;
+  cursor: pointer;
+}
+.v-has-stage .companion-option:hover {
+  background: var(--v-surface-2);
+}
+.v-has-stage .companion-option.is-active {
+  border-color: var(--v-title);
+  background: var(--v-surface-2);
+}
+.v-has-stage .companion-option img {
+  width: 48px;
+  height: 48px;
+  object-fit: contain;
+}
+.v-has-stage .companion-option-glyph {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  font-size: 1.5rem;
+}
+
+/* ---- Text-only header (Recent Runs): no scene, same title voice -------------- */
+.panel-head-stage--text-only {
+  padding-bottom: var(--v-space-2);
+}
+
+/* ---- Narrow desktops and tablets: same staging, tighter ------------------------ */
+@media (max-width: 1180px) {
+  .panel-head.v-has-stage {
+    --duel-scale: 0.92;
+    --duel-boss-right: calc(var(--stage-gutter) + 14px);
+    --duel-gap: 164px;
+    --spire-clear: 40px;
+  }
+  .v-stage-pillar {
+    display: none;
+  }
+  .v-stage-moon {
+    width: 62px;
+    height: 62px;
+  }
+  .v-duel-gap {
+    padding-inline: 12px;
+  }
+  .v-bubble {
+    padding: 7px 10px;
+    font-size: var(--v-text-xs);
+  }
+}
+@media (max-width: 1020px) {
+  .panel-head.v-has-stage {
+    --duel-scale: 0.86;
+    --duel-boss-right: calc(var(--stage-gutter) + 6px);
+    --duel-gap: 138px;
+    --spire-clear: 32px;
+  }
+  .v-stage-moon,
+  .v-spire-cap {
+    display: none;
+  }
+}
+
+/* ---- Small screens ------------------------------------------------------------ */
+@media (max-width: 880px) {
+  :root {
+    --v-stage-h: 224px;
+    --v-ledge-h: 28px;
+  }
+  .panel-head.v-has-stage {
+    --duel-scale: 0.72;
+    --duel-boss-right: var(--stage-gutter);
+    --duel-gap: 64px;
+    --duel-float: 4px;
+    /* Far enough back that the longest line (38 characters) fits in the
+       balloon above the boss without reaching over the tower. */
+    --spire-clear: 48px;
+    --spire-top: 57px;
+    --bubble-max: min(60%, 320px);
+  }
+  .v-has-stage .panel-head-stage {
+    padding-bottom: calc(var(--v-ledge-h) + 44px);
+  }
+  .v-stage-arch,
+  .v-stage-pillar,
+  .v-stage-cap {
+    display: none;
+  }
+  .v-stage-moon {
+    display: none;
+  }
+  .v-torches {
+    width: calc(var(--torch-count, 10) * 15px);
+  }
+  /* No room between the two for a balloon here, so the line sits just above
+     the boss's head with its tail dropping toward whoever is speaking. It is
+     anchored from the ground up: if the toolbar wraps to a second row the
+     header grows, and the balloon stays with the figures instead of sliding
+     under the buttons. */
+  .v-duel-gap {
+    top: auto;
+    right: var(--stage-gutter);
+    bottom: calc(var(--stage-ground) + var(--duel-float) + var(--v-stage-h) * var(--boss-h) * var(--duel-scale) + 8px);
+    align-items: flex-end;
+    /* ...and never reaches back over the spire or the title. Stage.fitStages()
+       measures both and sets --bubble-fit-w; the fallback is the spire rule. */
+    width: var(--bubble-fit-w, min(var(--bubble-max), calc(var(--spire-right) - var(--stage-gutter) - 10px)));
+    padding-inline: 0;
+  }
+  .v-stage--no-spire .v-duel-gap {
+    width: var(--bubble-fit-w, var(--bubble-max));
+  }
+  /* Only while Stage.fitStages() measures the widest the balloon may be. */
+  .v-stage--free-bubble .v-duel-gap {
+    width: var(--bubble-max);
+  }
+  .v-duel--climber-speaks .v-duel-gap,
+  .v-duel--boss-speaks .v-duel-gap {
+    justify-content: flex-end;
+  }
+  .v-bubble,
+  .v-duel--climber-speaks .v-bubble {
+    margin-top: 0;
+    padding: 6px 10px;
+    font-size: var(--v-text-xs);
+  }
+  .v-bubble-tail,
+  .v-duel--climber-speaks .v-bubble-tail,
+  .v-duel--boss-speaks .v-bubble-tail {
+    top: auto;
+    bottom: -8px;
+    left: auto;
+    transform: rotate(45deg);
+  }
+  .v-duel--boss-speaks .v-bubble-tail {
+    right: calc(var(--duel-boss-w) * 0.5);
+  }
+  .v-duel--climber-speaks .v-bubble-tail {
+    right: min(calc(100% - 26px), calc(var(--duel-boss-w) + var(--duel-gap) + 22px));
+  }
+  .v-has-stage .companion-picker {
+    right: 8px;
+  }
+  /* Both are buttons; keep them a full fingertip on touch screens. The
+     climber's art keeps its shape inside the wider box. */
+  .v-bubble {
+    min-height: 44px;
+  }
+  .v-actor--climber {
+    min-width: 44px;
+  }
+  .v-actor--climber .v-actor-art {
+    object-fit: contain;
+    object-position: 50% 100%;
+  }
+}
+
+/* ---- Phones --------------------------------------------------------------------- */
+@media (max-width: 599px) {
+  .panel-head.v-has-stage {
+    --duel-scale: 0.64;
+    --duel-boss-right: calc(var(--stage-gutter) - 4px);
+    --duel-gap: 30px;
+    --spire-clear: 20px;
+    --bubble-max: min(52%, 230px);
+  }
+}
+/* The narrowest phones: the title needs the room the spire would take. */
+@media (max-width: 360px) {
+  .v-spire {
+    display: none;
+  }
+  .panel-head.v-has-stage {
+    --bubble-max: 44%;
+    --duel-scale: 0.58;
+    --duel-gap: 24px;
+  }
+  .v-torches {
+    width: calc(var(--torch-count, 10) * 12px);
+  }
+  .v-duel-gap {
+    width: var(--bubble-fit-w, var(--bubble-max));
+  }
+}
+
+/* Reduced motion: no parallax, and nothing on the stage loops. (Today the
+   legacy sheet's global rule also flattens every animation; these keep the
+   stage honest once that sheet is gone.) */
+@media (prefers-reduced-motion: reduce) {
+  .v-stage-layer,
+  .v-duel {
+    transform: none;
+  }
+  .v-spire-win,
+  .v-torch-flame,
+  .v-actor-art,
+  .v-actor-shadow,
+  .v-bubble {
+    animation: none;
+  }
+}
+.prefer-reduced-motion .v-stage-layer,
+.prefer-reduced-motion .v-duel {
+  transform: none;
+}
+.prefer-reduced-motion .v-spire-win,
+.prefer-reduced-motion .v-torch-flame,
+.prefer-reduced-motion .v-actor-art,
+.prefer-reduced-motion .v-actor-shadow,
+.prefer-reduced-motion .v-bubble {
+  animation: none;
+}

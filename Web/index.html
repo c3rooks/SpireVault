@@ -36,10 +36,124 @@
   <meta name="twitter:title" content="SpireVault · Slay the Spire 2 stats &amp; co-op (web)" />
   <meta name="twitter:description" content="Drop your STS2 save folder, see your stats instantly. Nothing uploads. Optional Steam sign-in for the co-op partner feed." />
   <meta name="twitter:image" content="https://app.spirevault.app/assets/og.png?v=1" />
+  <!-- UI boot. Runs before first paint and before the stylesheets below.
+       Decides the layout generation (classic | next) and the theme, and tags
+       <html> so CSS responds with no flash. Also sets `is-desktop-host` and
+       the reduced-motion class early — script.js used to add those only
+       after the whole module graph loaded, which let the web sidebar flash
+       inside the desktop shells.
+
+       Resolution order for the layout: an overlay window is always classic
+       → ?ui= (persisted, then stripped from the URL) → stored choice → the
+       DEFAULT_UI_* constants → a capability gate (no cascade layers or
+       color-mix means classic). `?ui=classic-once` is the load-failure
+       fallback from script.js: classic for this page view, not persisted.
+
+       Rolling the new look out, or back, is a one-line change to
+       DEFAULT_UI_WEB / DEFAULT_UI_DESKTOP in this no-store HTML file.
+
+       Storage keys and the theme list must match lib/ui/theme.js. -->
+  <script>
+  (function () {
+    var DEFAULT_UI_WEB = "classic";
+    var DEFAULT_UI_DESKTOP = "classic";
+    var THEMES = ["inked", "vault", "auto", "ironclad", "silent", "defect", "regent", "necrobinder"];
+    var root = document.documentElement;
+
+    function read(key) { try { return window.localStorage.getItem(key); } catch (e) { return null; } }
+    function write(key, value) { try { window.localStorage.setItem(key, value); } catch (e) { /* private mode */ } }
+    function known(theme) { return THEMES.indexOf(theme) !== -1; }
+
+    var params = null;
+    try { params = new URLSearchParams(window.location.search); } catch (e) { /* very old engine */ }
+    function param(name) { return params ? params.get(name) : null; }
+
+    var isDesktop = !!window.__VAULT_DESKTOP__ || param("desktop") === "1";
+    var isOverlay = param("overlay") === "1" || window.location.pathname === "/overlay";
+    if (isDesktop) root.classList.add("is-desktop-host");
+    root.setAttribute("data-host", isDesktop ? "desktop" : "web");
+
+    var ui = param("ui");
+    if (ui === "classic-once") ui = "classic";
+    else if (ui === "next" || ui === "classic") write("vault.web.ui", ui);
+    else ui = read("vault.web.ui");
+    if (ui !== "next" && ui !== "classic") ui = isDesktop ? DEFAULT_UI_DESKTOP : DEFAULT_UI_WEB;
+    var capable = typeof CSSLayerBlockRule !== "undefined" &&
+      !!(window.CSS && CSS.supports && CSS.supports("color", "color-mix(in srgb, red, blue)"));
+    if (isOverlay || !capable) ui = "classic";
+    root.setAttribute("data-ui", ui);
+    window.__VAULT_UI__ = ui;
+    // The new look pads itself for notches and the home indicator with
+    // env(safe-area-inset-*), which only reports real values under
+    // viewport-fit=cover. Classic keeps the default viewport untouched.
+    if (ui === "next") {
+      var viewport = document.querySelector('meta[name="viewport"]');
+      if (viewport && viewport.content.indexOf("viewport-fit") === -1) {
+        viewport.setAttribute("content", viewport.content + ", viewport-fit=cover");
+      }
+    }
+
+    var theme = param("theme");
+    if (known(theme)) write("vault.web.theme", theme);
+    else theme = read("vault.web.theme");
+    if (!known(theme)) theme = "inked";
+    if (theme === "auto") {
+      theme = read("vault.web.theme.resolved");
+      if (!known(theme) || theme === "auto") theme = "inked";
+    }
+    if (ui === "next") root.setAttribute("data-theme", theme);
+
+    try {
+      var prefs = JSON.parse(read("vault.web.prefs.v1") || "{}") || {};
+      if (prefs.reducedMotion === true) root.classList.add("prefer-reduced-motion");
+    } catch (e) { /* corrupt prefs: script.js rewrites them */ }
+
+    if (params && (params.has("ui") || params.has("theme"))) {
+      try {
+        params.delete("ui");
+        params.delete("theme");
+        var query = params.toString();
+        history.replaceState(null, "", window.location.pathname + (query ? "?" + query : "") + window.location.hash);
+      } catch (e) { /* URL tidy-up is cosmetic */ }
+    }
+  })();
+  </script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Playfair+Display:wght@700;900&family=Cinzel:wght@700;800;900&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/styles.css?v=158" />
+  <link id="vault-legacy-fonts" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Playfair+Display:wght@700;900&family=Cinzel:wght@700;800;900&display=swap" rel="stylesheet" />
+  <link id="vault-legacy-css" rel="stylesheet" href="/styles.css?v=158" />
+  <!-- Phone fixes for the shared markup. The media attribute keeps it out of
+       desktop rendering entirely (a non-matching sheet is fetched at idle
+       priority and never applied). -->
+  <link id="vault-legacy-phone-css" rel="stylesheet" href="/styles.mobile.css?v=1" media="(max-width: 880px)" />
+  <!-- New-UI stylesheet swap. The classic layout keeps the two static links
+       above exactly as they were. For next, the legacy sheets are loaded again
+       INSIDE a cascade layer, so every rule in the new sheet outranks them
+       without a specificity fight, and the new sheet is added after it.
+       document.write is deliberate: a parser-inserted stylesheet is
+       render-blocking, a DOM-inserted one is not (Safari would flash the
+       unstyled legacy layout). The layer order here must match
+       scripts/build-css.mjs. -->
+  <script>
+  if (window.__VAULT_UI__ === "next") {
+    (function () {
+      ["vault-legacy-css", "vault-legacy-phone-css", "vault-legacy-fonts"].forEach(function (id) {
+        var el = document.getElementById(id);
+        if (el && el.parentNode) el.parentNode.removeChild(el);
+      });
+      document.write(
+        '<link rel="preload" as="font" type="font/woff2" crossorigin href="/assets/fonts/figtree-latin-var-v1.woff2">' +
+        '<link rel="preload" as="font" type="font/woff2" crossorigin href="/assets/fonts/grenze-gotisch-latin-var-v1.woff2">' +
+        '<style id="vault-legacy-layer">' +
+          '@layer v-override, legacy, v-reset, v-tokens, v-base, v-shell, v-components, v-surfaces, v-host, v-util;' +
+          '@import url("/styles.css?v=158") layer(legacy);' +
+          '@import url("/styles.mobile.css?v=1") layer(legacy) (max-width: 880px);' +
+        '</style>' +
+        '<link rel="stylesheet" href="/styles.next.css?v=1">'
+      );
+    })();
+  }
+  </script>
 
   <!-- Google tag (gtag.js) — SpireVault GA4 stream G-09LEQ247HN.
        Loaded async so it never blocks the critical rendering path; the
@@ -66,7 +180,10 @@
       // events fire from script.js on every tab switch). Without this
       // we'd double-count: once at boot for the bare URL, again when
       // the app routes to a tab.
-      send_page_view: false
+      send_page_view: false,
+      // Which layout generation this visitor is on (classic | next), set by
+      // the UI boot script above. Lets the rollout be compared like-for-like.
+      user_properties: { ui_variant: window.__VAULT_UI__ || "classic" }
     });
   </script>
 
@@ -177,7 +294,7 @@
   <header class="topbar topbar-public" id="topbar-public" hidden>
     <a class="brand" href="/">
       <img src="/assets/vault-mark.svg" alt="" class="brand-emblem" />
-      <span class="brand-mark">THE VAULT · WEB</span>
+      <span class="brand-mark">SpireVault · Web</span>
     </a>
     <div class="topbar-right">
       <a class="link-muted" href="https://spirevault.app">Marketing site →</a>
@@ -244,7 +361,7 @@
       <div class="sidebar-brand">
         <img src="/assets/vault-emblem.png" alt="" width="44" height="44" />
         <div>
-          <span class="sidebar-wordmark">THE VAULT</span>
+          <span class="sidebar-wordmark">SpireVault</span>
           <span class="sidebar-sub">web · for STS2</span>
         </div>
       </div>
@@ -1165,6 +1282,161 @@
             <!-- exactly what goes wrong if you reference a webp that isn't uploaded     -->
             <!-- yet (Cloudflare caches the SPA-fallback HTML at that path for a year).  -->
             <!-- Add the <figure class="news-post-banner"> block back once art ships.    -->
+            <!-- ====== Post 014 — Nov 13 2026 — STS2 beta v0.113.0 (The Fool, Blitz, Dread) ====== -->
+            <!-- ======                          + main branch promoted to v0.111.0          ====== -->
+            <!-- No banner figure: no uploaded art for this post (see the post-007 cache-key -->
+            <!-- note below before adding one).                                              -->
+            <article class="news-post" id="news-014" data-news-id="014" data-news-eyebrow="Game update · November 13, 2026" data-news-tags="Game data,v0.113.0,v0.111.0,The Fool" aria-labelledby="news-014-title">
+              <header class="news-post-head">
+                <span class="news-post-eyebrow">Game update &middot; November 13, 2026</span>
+                <h3 class="news-post-title" id="news-014-title">The Fool, Blitz and Dread are tracked &mdash; and main just caught up to v0.111.0</h3>
+                <p class="news-post-byline">
+                  Corey
+                  <span class="news-post-byline-sep">&middot;</span>
+                  <span class="news-post-byline-meta">~2 min read</span>
+                </p>
+              </header>
+
+              <div class="news-post-body">
+                <p class="news-lede">
+                  Mega Crit shipped their biggest beta patch yet last night &mdash; v0.113.0, with the first new character, two new modes and a stack of new events &mdash; and in the same breath brought the main branch up to v0.111.0. That&rsquo;s two game updates at once. Back in August I said the data checks we built were there so SpireVault could catch up within hours when the big one landed. This is the big one.
+                </p>
+
+                <h4 class="news-post-section">If you play main (most of you)</h4>
+                <p>
+                  Your game just picked up everything from the summer betas: Scare is now <strong>Sidestep</strong>, Silent&rsquo;s poison kit is rebuilt around Outbreak and Haze, the Ancients were rebalanced across the board, the A8&ndash;A9 enemies were retuned, and Neow can now offer <strong>Dowsing Rod</strong> and <strong>Neow&rsquo;s Sacrifice</strong>. SpireVault&rsquo;s tooltips now describe v0.111.0 &mdash; the &ldquo;beta watch&rdquo; notes we&rsquo;d been holding since August became the real text. Where a rework&rsquo;s exact wording isn&rsquo;t published, the tooltip steps aside and shows your own numbers instead of guessing.
+                </p>
+
+                <h4 class="news-post-section">If you&rsquo;re on the beta (v0.113.0)</h4>
+                <p>
+                  <strong>The Fool.</strong> Fool runs import like any other character. Once you&rsquo;ve played one, the Fool gets a place next to the other five and in the run filters; if you haven&rsquo;t, nothing on your screen moves. There&rsquo;s no Fool art or card guide yet &mdash; Mega Crit hasn&rsquo;t published the card list, and I&rsquo;m not going to make one up.
+                </p>
+                <p>
+                  <strong>Blitz and Dread.</strong> Both get their own tag in Recent Runs, and neither counts toward your normal Ascension climb. Blitz has its own five levels shared across every character, and Dread turns every modifier on at once, so folding either into your A0&ndash;A10 numbers would make them wrong.
+                </p>
+                <p>
+                  <strong>New things show their real names.</strong> The relics from the new events &mdash; Wuppy, Obsidian Vice, Thumbscrew, Tormentous Collar, Mighty Wings, Bath Towel and Bath Robes &mdash; and the new cards &mdash; My Shinies, Dingy Dagger, Mighty Weapon and Mighty Shield &mdash; are labelled properly in your history. The beta&rsquo;s balance changes (Expect a Fight, Expertise and Memento Mori reworked; Salvo, Phantom Blades and CHARGE!! trimmed; Speedster buffed; Brilliant Scarf moved to the 6th card; Dowsing Rod down to 4 ? rooms) are tracked, but tooltips stay on main until those changes reach it.
+                </p>
+
+                <h4 class="news-post-section">What isn&rsquo;t done yet</h4>
+                <p>
+                  Fool cards don&rsquo;t have proper names in SpireVault yet, so in a Fool deck they show a cleaned-up version of the game&rsquo;s internal name until Mega Crit publishes the list. If you&rsquo;ve played the Fool, the co-op lobby pickers offer it too. The Mac app&rsquo;s run coach learns the new card text with the next desktop release; everything else in the desktop app is already updated, because it loads this same page.
+                </p>
+                <p>
+                  If you&rsquo;re playing the Fool and something looks off, the report link below comes straight to me &mdash; a screenshot or a <code>.run</code> file from a Fool run is the most useful thing anyone can send right now.
+                </p>
+
+                <p class="news-post-signoff">
+                  &mdash; Corey
+                </p>
+              </div>
+
+              <footer class="news-post-foot">
+                <div class="news-post-foot-meta">
+                  <span class="news-post-tag">Game data</span>
+                  <span class="news-post-tag">v0.113.0</span>
+                  <span class="news-post-tag">The Fool</span>
+                </div>
+                <div class="news-post-foot-actions">
+                  <a class="action-link" href="https://github.com/c3rooks/SpireVault/issues/new" target="_blank" rel="noopener">Report an issue &rarr;</a>
+                </div>
+              </footer>
+            </article>
+
+            <!-- ====== Post 013 — Nov 11 2026 — New look beta (opt-in, classic stays default) ====== -->
+            <!-- The two [data-action="ui-set"] buttons are live controls: script.js       -->
+            <!-- (setUiVariant) switches this device between the classic layout and the    -->
+            <!-- new look, and syncUiSwitchButtons() disables whichever one is a no-op.    -->
+            <!-- Banner is a real screenshot of the new Overview; both files ship in the   -->
+            <!-- same deploy as this markup (see the post-007 cache-key note below).       -->
+            <article class="news-post" id="news-013" data-news-id="013" data-news-eyebrow="Beta · November 11, 2026" data-news-tags="Beta,New look,Themes" aria-labelledby="news-013-title">
+              <figure class="news-post-banner">
+                <picture>
+                  <source media="(max-width: 720px)" srcset="/assets/news/post-013-banner-1x.webp?v=1" />
+                  <img src="/assets/news/post-013-banner.webp?v=1" alt="The new SpireVault Overview. An inked night scene runs across the top: a spire with its windows lit, a row of torches, and the Ironclad seated facing the Architect. Below it, a win-rate ring, five character cards in one row, and a fanned hand of stat cards." decoding="async" />
+                </picture>
+              </figure>
+              <header class="news-post-head">
+                <span class="news-post-eyebrow">Beta &middot; November 11, 2026</span>
+                <h3 class="news-post-title" id="news-013-title">The new look is ready to try &mdash; on your terms</h3>
+                <p class="news-post-byline">
+                  Corey
+                  <span class="news-post-byline-sep">&middot;</span>
+                  <span class="news-post-byline-meta">~2 min read</span>
+                </p>
+              </header>
+
+              <div class="news-post-body">
+                <p class="news-lede">
+                  SpireVault is being redrawn. Not replaced &mdash; every number you rely on is still here &mdash; but the app finally looks like it belongs next to the game: inked outlines, bold colour, and a header that actually tells you something. It&rsquo;s a beta, it&rsquo;s <strong>off by default</strong>, and nothing changes for you unless you flip the switch below. There are 117 of you now. I&rsquo;m not rearranging your furniture without asking.
+                </p>
+
+                <h4 class="news-post-section">Turn it on</h4>
+                <p>
+                  One click. The page reloads once and you land on the new Overview.
+                </p>
+                <p>
+                  <button class="btn-primary" type="button" data-action="ui-set" data-ui="next" data-source="news" data-active-label="The new look is on">Turn on the new look</button>
+                </p>
+                <p>
+                  Other ways in: <strong>Settings &rarr; New look &rarr; Try the new look</strong>, the card at the top of the <strong>Beta</strong> tab, or open <code>app.spirevault.app/?ui=next</code>. The choice is saved per device, so your laptop can run the new look while your phone stays classic.
+                </p>
+
+                <h4 class="news-post-section">What&rsquo;s different</h4>
+                <p>
+                  <strong>Overview, redrawn.</strong> Your win rate sits in one ring with the totals beside it, all five characters fit across a single row, and the six headline stats &mdash; recent form, streak, best streak, best floor, fastest win, this week &mdash; are dealt out as a hand of cards. The win-rate trend is finally tall enough to read, and &ldquo;where your climbs end&rdquo; now shows victories rising and defeats falling from the same line.
+                </p>
+                <p>
+                  <strong>Every other tab, too.</strong> Characters are a row of banners, and each one opens a codex page with how to play them. Ascensions is a tower you climb, A0 at the bottom, with the levels you haven&rsquo;t touched still dark. Relics and cards stand on a podium with their real art. Every run gets a Victory or Defeat stamp, and opening one draws your path through each act as a map, with a mark where it ended. Co-op, Highlights, News and Settings are redrawn to match.
+                </p>
+                <p>
+                  <strong>A header that keeps score.</strong> The spire&rsquo;s windows light up to your highest ascension. The row of torches is your last ten runs &mdash; a lit one is a win. Your climber squares off against the Architect, both re-inked to match the rest of the app. Click the climber to swap characters; click the speech bubble for a new line.
+                </p>
+                <p>
+                  <strong>Themes, instantly.</strong> Eight of them: Inked Codex (the default), Classic Vault if you want today&rsquo;s ember-and-gold on the new layout, one for each character, and Auto, which follows whoever you play most. Hit the palette button next to the logo or press <kbd>T</kbd>. No reload.
+                </p>
+                <p>
+                  <strong>The small stuff.</strong> The sidebar stays put while you scroll. On a phone, Overview, Characters, Runs and Co-op sit in a bar at the bottom of the screen, where your thumb already is, and everything else is one tap away under More.
+                </p>
+
+                <h4 class="news-post-section">Same numbers, same saves</h4>
+                <p>
+                  Nothing about your data changes. Same runs, same stats, same co-op, no re-import. Both looks read the same saves, so you can flip back and forth as often as you like and lose nothing.
+                </p>
+
+                <h4 class="news-post-section">Go back whenever</h4>
+                <p>
+                  <button class="btn-ghost" type="button" data-action="ui-set" data-ui="classic" data-source="news" data-active-label="You&rsquo;re on the classic look">Go back to the classic look</button>
+                </p>
+                <p>
+                  Or: the palette button &rarr; <strong>Back to the classic look</strong>, the same link under <strong>Settings &rarr; Appearance</strong>, the card on the <strong>Beta</strong> tab, or open <code>app.spirevault.app/?ui=classic</code>. One reload and you&rsquo;re back on the tab you left.
+                </p>
+
+                <h4 class="news-post-section">What isn&rsquo;t done yet</h4>
+                <p>
+                  This is a real beta, so here&rsquo;s the honest state. <strong>Every tab in the app is redrawn.</strong> The standalone pages (Watch, Race, Tournaments, Coach) and the share images keep their current look for now. It has had the most testing in a regular browser; the Mac and Windows apps load this same page, so the switch is there too, but treat that as extra-beta.
+                </p>
+                <p>
+                  If something looks wrong, the report link below comes straight to me &mdash; a screenshot and which theme you were on is all I need. Once you&rsquo;ve had time to break it, the new look becomes the default, with the classic look still one click away for a while after. Until then: try it, pick a theme, tell me what&rsquo;s ugly.
+                </p>
+
+                <p class="news-post-signoff">
+                  &mdash; Corey
+                </p>
+              </div>
+
+              <footer class="news-post-foot">
+                <div class="news-post-foot-meta">
+                  <span class="news-post-tag">Beta</span>
+                  <span class="news-post-tag">New look</span>
+                  <span class="news-post-tag">Themes</span>
+                </div>
+                <div class="news-post-foot-actions">
+                  <a class="action-link" href="https://github.com/c3rooks/SpireVault/issues/new" target="_blank" rel="noopener">Report an issue &rarr;</a>
+                </div>
+              </footer>
+            </article>
+
             <article class="news-post" id="news-012" data-news-id="012" data-news-eyebrow="Update · September 2, 2026" data-news-tags="Update,Retention,Saves,Co-op" aria-labelledby="news-012-title">
               <header class="news-post-head">
                 <span class="news-post-eyebrow">Update &middot; September 2, 2026</span>
@@ -1212,7 +1484,7 @@
                   <span class="news-post-tag">Co-op</span>
                 </div>
                 <div class="news-post-foot-actions">
-                  <a class="action-link" href="https://app.spirevault.app/" target="_blank" rel="noopener">Open Spire Vault &rarr;</a>
+                  <a class="action-link" href="https://app.spirevault.app/" target="_blank" rel="noopener">Open SpireVault &rarr;</a>
                   <a class="action-link" href="https://github.com/c3rooks/SpireVault/issues/new" target="_blank" rel="noopener">Report an issue &rarr;</a>
                 </div>
               </footer>
@@ -2222,6 +2494,13 @@
                 <img src="/assets/sts2/characters/necrobinder-v2.webp" alt="" />
                 <span class="coop-character-name">Necrobinder</span>
               </label>
+              <!-- The Fool: STS2 public-beta character (v0.113.0), no portrait yet.
+                   coop-lobbies.js reveals this tile only for viewers with Fool runs. -->
+              <label class="coop-character-choice" data-beta-character="fool" hidden>
+                <input type="radio" name="intentPreferredCharacter" value="fool" />
+                <span class="coop-character-any-mark" aria-hidden="true">F</span>
+                <span class="coop-character-name">The Fool (beta)</span>
+              </label>
             </div>
           </fieldset>
           <div class="coop-form-grid">
@@ -2321,6 +2600,13 @@
                 <input type="radio" name="preferredCharacter" value="necrobinder" />
                 <img src="/assets/sts2/characters/necrobinder-v2.webp" alt="" />
                 <span class="coop-character-name">Necrobinder</span>
+              </label>
+              <!-- The Fool: STS2 public-beta character (v0.113.0), no portrait yet.
+                   coop-lobbies.js reveals this tile only for viewers with Fool runs. -->
+              <label class="coop-character-choice" data-beta-character="fool" hidden>
+                <input type="radio" name="preferredCharacter" value="fool" />
+                <span class="coop-character-any-mark" aria-hidden="true">F</span>
+                <span class="coop-character-name">The Fool (beta)</span>
               </label>
             </div>
           </fieldset>
@@ -2561,7 +2847,7 @@
   <footer class="footer">
     <div class="footer-inner">
       <div>
-        <strong>The Vault · Web</strong>
+        <strong>SpireVault · Web</strong>
         <p>Built by <a href="https://coreycrooks.com" target="_blank" rel="noopener">Corey Crooks</a>. Free, open source, fan-made. Not affiliated with Mega Crit Games.</p>
       </div>
       <div class="footer-links">
@@ -2634,6 +2920,6 @@
        Pinned with its own ?v= cache key so it does NOT require bumping
        script.js / styles.css when only this module changes. -->
   <script src="/lib/analytics-coop.js?v=1" defer></script>
-  <script src="/script.js?v=218" type="module"></script>
+  <script src="/script.js?v=220" type="module"></script>
 </body>
 </html>

@@ -1,0 +1,1091 @@
+/* ==========================================================================
+   Top Relics. Markup from lib/ui/views-relics.js.
+     intro   → the sorting / minimum-sample note and a legend for the bars
+     podium  → the top three: relic art standing on a parchment plate,
+               #1 in the middle and tallest
+     ledger  → ranks 4+ as rows: rank, icon, name + rarity, runs, wins,
+               win-rate bar, win rate
+     page    → the relic's parchment page (#relic-detail-slot), opened by
+               either of the above through data-action="relic-expand"
+   Bar colour is the Wilson-bound confidence (data-tone); a hatched bar and a
+   "Low sample" tag mark anything under ten runs.
+   ========================================================================== */
+.v-rl {
+  /* Label sizes step up to 12px+ on phones (see the 880px block). */
+  --rl-label: var(--v-text-xs);
+  --rl-small: 0.75rem;
+  --tone: var(--v-text-2);
+  --rarity: var(--v-text-2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--v-space-5);
+}
+.v-rl [data-tone="win"] { --tone: var(--v-win); }
+.v-rl [data-tone="gold"] { --tone: var(--v-gold); }
+.v-rl [data-tone="accent"] { --tone: var(--v-text-2); }
+.v-rl [data-rarity="starter"] { --rarity: var(--v-text-3); }
+.v-rl [data-rarity="common"],
+.v-rl [data-rarity="unknown"] { --rarity: var(--v-text-2); }
+.v-rl [data-rarity="uncommon"] { --rarity: var(--v-info); }
+.v-rl [data-rarity="rare"] { --rarity: var(--v-gold); }
+.v-rl [data-rarity="ancient"],
+.v-rl [data-rarity="boss"] { --rarity: var(--v-violet); }
+.v-rl [data-rarity="shop"] { --rarity: var(--v-win); }
+.v-rl [data-rarity="event"] { --rarity: var(--v-accent-hi); }
+
+/* ---- Win-rate meter (podium, ledger, page) ----------------------------------- */
+.v-rl-bar {
+  display: block;
+  width: 100%;
+  height: 10px;
+  overflow: hidden;
+  border: var(--v-outline);
+  border-radius: var(--v-radius-pill);
+  background: var(--v-well);
+}
+.v-rl-bar i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--tone);
+  transform-origin: 0 50%;
+}
+.is-low .v-rl-bar i {
+  background: repeating-linear-gradient(
+    -45deg,
+    var(--tone) 0 5px,
+    color-mix(in srgb, var(--tone) 38%, var(--v-well)) 5px 9px
+  );
+}
+[data-enter] .v-rl-bar i {
+  animation: v-rl-fill 900ms var(--v-ease-out) both;
+  animation-delay: calc(260ms - var(--enter-elapsed, 0ms));
+}
+@keyframes v-rl-fill {
+  from {
+    transform: scaleX(0);
+  }
+}
+
+/* ---- Intro + legend ------------------------------------------------------------ */
+.v-rl-intro {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--v-space-3) var(--v-space-5);
+}
+.v-rl-lede {
+  max-width: 62ch;
+  margin: 0;
+  color: var(--v-text-2);
+  font-size: var(--v-text-sm);
+  font-weight: 600;
+  line-height: 1.5;
+}
+.v-rl-lede strong {
+  color: var(--v-text);
+  font-weight: 800;
+}
+.v-rl-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.v-rl-legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 3px 10px;
+  border: var(--v-outline);
+  border-radius: var(--v-radius-pill);
+  background: var(--v-bg-deep);
+  color: var(--v-text);
+  font-size: var(--rl-small);
+  font-weight: 700;
+  white-space: nowrap;
+}
+.v-rl-legend i {
+  width: 18px;
+  height: 8px;
+  border-radius: var(--v-radius-pill);
+  background: var(--tone);
+  box-shadow: 0 0 0 1.5px var(--v-outline-color);
+}
+.v-rl-legend .is-low i {
+  background: repeating-linear-gradient(-45deg, var(--v-text-2) 0 3px, transparent 3px 6px);
+}
+
+/* ---- Podium ------------------------------------------------------------------ */
+.v-rl-podium {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.12fr) minmax(0, 1fr);
+  align-items: end;
+  gap: var(--v-space-5);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.v-rl-podium[data-size="2"] {
+  grid-template-columns: repeat(2, minmax(0, 320px));
+  justify-content: center;
+}
+.v-rl-podium[data-size="1"] {
+  grid-template-columns: minmax(0, 360px);
+  justify-content: center;
+}
+.v-rl-podium[data-size="3"] [data-rank="2"] { order: 1; }
+.v-rl-podium[data-size="3"] [data-rank="1"] { order: 2; }
+.v-rl-podium[data-size="3"] [data-rank="3"] { order: 3; }
+.v-rl-step {
+  display: flex;
+  min-width: 0;
+}
+.v-rl-top {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--v-radius-lg);
+  background: none;
+  box-shadow: none;
+  color: var(--v-on-paper);
+  font-family: var(--v-font-text);
+  text-align: center;
+  cursor: pointer;
+}
+/* The relic stands on the plate: its art box overlaps the plate's top edge. */
+.v-rl-top-art {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  place-items: end center;
+  width: 100%;
+  height: 118px;
+  margin-bottom: -26px;
+  pointer-events: none;
+}
+.v-rl-top-art::before {
+  content: "";
+  position: absolute;
+  bottom: 4px;
+  left: 50%;
+  z-index: -1;
+  width: 168px;
+  height: 128px;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--tone) 46%, transparent) 0%, transparent 100%);
+  translate: -50% 0;
+}
+.v-rl-top-art img {
+  width: 96px;
+  height: 96px;
+  object-fit: contain;
+  filter: var(--v-actor-ink);
+  transition: transform var(--v-dur-2) var(--v-ease-spring);
+}
+.v-rl-top-art svg {
+  width: 64px;
+  height: 64px;
+  margin-bottom: 18px;
+  color: var(--v-gold);
+  filter: var(--v-actor-ink);
+}
+[data-rank="1"] .v-rl-top-art {
+  height: 150px;
+}
+[data-rank="1"] .v-rl-top-art img {
+  width: 128px;
+  height: 128px;
+}
+[data-rank="1"] .v-rl-top-art::before {
+  width: 220px;
+  height: 160px;
+}
+
+.v-rl-top-plate {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 36px 20px 18px;
+  border: var(--v-outline);
+  border-radius: var(--v-radius-lg);
+  background: var(--v-paper-2);
+  /* A strip of the confidence colour along the top edge, under the relic. */
+  box-shadow: inset 0 7px 0 var(--tone), var(--v-shadow);
+  transition:
+    transform var(--v-dur-2) var(--v-ease-spring),
+    box-shadow var(--v-dur-2) ease;
+}
+[data-rank="1"] .v-rl-top-plate {
+  padding-top: 40px;
+  padding-bottom: 22px;
+  background: var(--v-paper);
+  box-shadow: inset 0 7px 0 var(--tone), var(--v-shadow-lg);
+}
+/* Rank orb (top-left corner, like a card's cost orb) and rarity (top-right). */
+.v-rl-top-band {
+  position: absolute;
+  top: -12px;
+  right: 10px;
+  left: -10px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  pointer-events: none;
+}
+.v-rl-top-rank {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  border: var(--v-outline);
+  border-radius: 50%;
+  background: var(--v-paper);
+  box-shadow: var(--v-shadow-sm);
+  color: var(--v-on-paper);
+  font-family: var(--v-font-display);
+  font-size: 1.125rem;
+  font-weight: var(--v-display-weight);
+  line-height: 1;
+}
+[data-rank="1"] .v-rl-top-rank {
+  width: 54px;
+  height: 54px;
+  background: var(--v-title);
+  color: var(--v-ink);
+  font-size: 1.375rem;
+}
+.v-rl-top-rarity {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 22px;
+  padding: 1px 9px;
+  border: var(--v-outline);
+  border-radius: var(--v-radius-pill);
+  background: var(--v-paper);
+  color: var(--v-on-paper);
+  font-size: var(--rl-label);
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+/* The dot carries the rarity colour; the pill itself stays inked. */
+.v-rl-top-rarity::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--rarity);
+  box-shadow: 0 0 0 1.5px var(--v-ink);
+}
+.v-rl-top-rarity.is-empty {
+  visibility: hidden;
+}
+.v-rl-top-name {
+  max-width: 100%;
+  overflow: hidden;
+  font-family: var(--v-font-heading);
+  font-size: var(--v-text-xl);
+  font-weight: 800;
+  line-height: 1.1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.v-rl-top-wr {
+  font-family: var(--v-font-display);
+  font-size: 3rem;
+  font-weight: var(--v-display-weight);
+  line-height: 0.95;
+  font-variant-numeric: tabular-nums;
+}
+[data-rank="1"] .v-rl-top-wr {
+  font-size: 3.75rem;
+}
+.v-rl-top-wr small {
+  margin-left: 2px;
+  font-size: 0.45em;
+}
+.v-rl-top-plate .v-rl-bar {
+  max-width: 220px;
+  margin-top: 2px;
+}
+.v-rl-top-meta {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  color: var(--v-on-paper-2);
+  font-size: var(--v-text-sm);
+  font-weight: 700;
+}
+.v-rl-top-meta > span + span::before {
+  content: "·";
+  margin: 0 6px;
+}
+/* A rubber stamp, so a lucky three-run streak cannot pass as a sure thing. */
+.v-rl-stamp {
+  position: absolute;
+  right: 12px;
+  bottom: -13px;
+  padding: 2px 9px;
+  border: 2px dashed var(--v-on-paper-2);
+  border-radius: var(--v-radius-sm);
+  background: var(--v-paper);
+  color: var(--v-on-paper);
+  font-size: var(--rl-label);
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  rotate: -5deg;
+}
+.v-rl-top.is-active .v-rl-top-plate {
+  box-shadow: inset 0 7px 0 var(--tone), 0 0 0 3px var(--v-title), var(--v-shadow-lg);
+}
+
+/* ---- Ledger -------------------------------------------------------------------- */
+.v-rl-ledger {
+  padding: var(--v-space-2) var(--v-space-3) var(--v-space-3);
+}
+.v-rl-head,
+.v-rl-row {
+  display: grid;
+  grid-template-columns: 34px 46px minmax(0, 1.5fr) 140px minmax(90px, 1fr) 78px 16px;
+  align-items: center;
+  column-gap: var(--v-space-3);
+}
+.v-rl-head {
+  padding: 8px 12px 10px;
+  border-bottom: 2px dashed var(--v-line);
+  color: var(--v-text-2);
+  font-size: var(--rl-label);
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.v-rl-head > span:first-child {
+  text-align: center;
+}
+.v-rl-head-counts {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+.v-rl-head-wr {
+  grid-column: span 3;
+}
+.v-rl-list {
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.v-rl-list > li + li {
+  border-top: 1px dashed var(--v-line);
+}
+.v-rl-row {
+  width: 100%;
+  min-height: 62px;
+  margin: 0;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: var(--v-radius-md);
+  background: transparent;
+  box-shadow: none;
+  color: var(--v-text);
+  font-family: var(--v-font-text);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background-color var(--v-dur-1) ease,
+    transform var(--v-dur-1) ease;
+}
+.v-rl-row:hover {
+  background: var(--v-surface-2);
+}
+.v-rl-row.is-active {
+  background: var(--v-surface-2);
+  box-shadow: inset 4px 0 0 var(--v-title);
+}
+.v-rl-rank {
+  color: var(--v-text-2);
+  font-family: var(--v-font-display);
+  font-size: var(--v-text-xl);
+  font-weight: var(--v-display-weight);
+  line-height: 1;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.v-rl-orb {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  border: var(--v-outline);
+  border-radius: 50%;
+  background: radial-gradient(circle, color-mix(in srgb, var(--tone) 26%, var(--v-well)) 0%, var(--v-well) 72%);
+}
+.v-rl-orb img {
+  width: 36px;
+  height: 36px;
+  object-fit: contain;
+  transition: transform var(--v-dur-2) var(--v-ease-spring);
+}
+.v-rl-orb svg {
+  width: 22px;
+  height: 22px;
+  color: var(--v-gold);
+}
+.v-rl-id {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.v-rl-name {
+  overflow: hidden;
+  font-size: var(--v-text-md);
+  font-weight: 800;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.v-rl-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+}
+.v-rl-tag {
+  padding: 0 8px;
+  border: 1.5px solid color-mix(in srgb, var(--rarity) 60%, transparent);
+  border-radius: var(--v-radius-pill);
+  background: color-mix(in srgb, var(--rarity) 14%, transparent);
+  color: color-mix(in srgb, var(--rarity) 55%, var(--v-text));
+  font-size: var(--rl-label);
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  line-height: 1.6;
+  text-transform: uppercase;
+}
+.v-rl-tag.is-low {
+  border: 1.5px dashed var(--v-text-2);
+  background: transparent;
+  color: var(--v-text-2);
+}
+.v-rl-counts {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  color: var(--v-text-2);
+  font-size: var(--v-text-sm);
+  font-weight: 600;
+}
+.v-rl-counts b {
+  color: var(--v-text);
+  font-size: var(--v-text-md);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+.v-rl-wr {
+  color: color-mix(in srgb, var(--tone) 82%, var(--v-text));
+  font-family: var(--v-font-display);
+  font-size: 1.75rem;
+  font-weight: var(--v-display-weight);
+  line-height: 1;
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.v-rl-wr small {
+  margin-left: 1px;
+  font-size: 0.55em;
+}
+.v-rl-chev {
+  width: 16px;
+  height: 16px;
+  color: var(--v-text-2);
+  transition: transform var(--v-dur-2) var(--v-ease-out);
+}
+.v-rl-row.is-active .v-rl-chev {
+  color: var(--v-title);
+  transform: rotate(90deg);
+}
+
+/* ---- Relic page (detail) -------------------------------------------------------- */
+.v-rl-slot,
+.relic-detail-slot.v-rl-slot:not(:empty) {
+  margin: 0;
+}
+.v-rl-slot:empty {
+  display: none;
+}
+.v-rl-page {
+  position: relative;
+  overflow: hidden;
+  border: var(--v-outline);
+  border-radius: var(--v-radius-lg);
+  background: var(--v-paper);
+  box-shadow: var(--v-shadow-lg);
+  color: var(--v-on-paper);
+  scroll-margin: var(--v-space-5);
+}
+.v-rl-page-band {
+  display: flex;
+  align-items: center;
+  gap: var(--v-space-4);
+  padding: 14px 16px 14px 14px;
+  border-bottom: var(--v-outline);
+  background: var(--rarity);
+  color: var(--v-ink);
+}
+.v-rl-page-orb {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 78px;
+  height: 78px;
+  border: var(--v-outline);
+  border-radius: 50%;
+  background: radial-gradient(circle, color-mix(in srgb, var(--rarity) 42%, var(--v-bg-deep)) 0%, var(--v-bg-deep) 72%);
+  box-shadow: var(--v-shadow-sm);
+}
+.v-rl-page-orb img {
+  width: 60px;
+  height: 60px;
+  object-fit: contain;
+}
+.v-rl-page-orb svg {
+  width: 36px;
+  height: 36px;
+  color: var(--v-gold);
+}
+.v-rl-page-titles {
+  flex: 1;
+  min-width: 0;
+}
+.v-rl-page-kicker {
+  margin: 0 0 2px;
+  font-size: var(--rl-label);
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.v-rl-page-name {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-family: var(--v-font-display);
+  font-size: var(--v-text-2xl);
+  font-weight: var(--v-display-weight);
+  line-height: 1;
+}
+.v-icon-btn.v-rl-page-close {
+  align-self: flex-start;
+  width: 42px;
+  height: 42px;
+  background: var(--v-paper);
+  color: var(--v-on-paper);
+}
+.v-icon-btn.v-rl-page-close:hover {
+  color: var(--v-on-paper);
+}
+.v-rl-page-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1.55fr) minmax(280px, 1fr);
+  align-items: start;
+  gap: var(--v-space-5);
+  padding: var(--v-space-5);
+}
+.v-rl-lore {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v-space-4);
+}
+.v-rl-lore section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.v-rl-lore h4,
+.v-rl-record h4 {
+  margin: 0;
+  color: var(--v-on-paper);
+  font-family: var(--v-font-heading);
+  font-size: var(--v-text-lg);
+  font-weight: 800;
+  line-height: 1.15;
+}
+.v-rl-lore p {
+  margin: 0;
+  color: var(--v-on-paper-2);
+  font-size: var(--v-text-md);
+  font-weight: 500;
+  line-height: 1.55;
+}
+.v-rl-lore .v-rl-effect {
+  padding: 10px 14px;
+  border: var(--v-outline);
+  border-radius: var(--v-radius-sm);
+  background: var(--v-paper-2);
+  color: var(--v-on-paper);
+  font-weight: 700;
+}
+.v-rl-page-tagline {
+  margin: 6px 0 0;
+  font-size: var(--v-text-sm);
+  font-weight: 700;
+}
+.v-rl-pairs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.v-rl-pairs li {
+  padding: 3px 11px;
+  border: var(--v-outline);
+  border-radius: var(--v-radius-pill);
+  background: color-mix(in srgb, var(--rarity) 30%, var(--v-paper));
+  color: var(--v-on-paper);
+  font-size: var(--v-text-sm);
+  font-weight: 700;
+}
+.v-rl-record,
+.v-rl-record-main {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.v-rl-record {
+  padding: var(--v-space-4);
+  border: var(--v-outline);
+  border-radius: var(--v-radius-md);
+  background: var(--v-paper-2);
+}
+.v-rl-record-wr {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 4px 0 0;
+  color: var(--v-on-paper-2);
+  font-size: var(--v-text-sm);
+  font-weight: 700;
+}
+.v-rl-record-wr span {
+  color: var(--v-on-paper);
+  font-family: var(--v-font-display);
+  font-size: 3rem;
+  font-weight: var(--v-display-weight);
+  line-height: 0.9;
+  font-variant-numeric: tabular-nums;
+}
+.v-rl-record-wr small {
+  font-size: 0.45em;
+}
+.v-rl-record-tone {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0;
+  color: var(--v-on-paper-2);
+  font-size: var(--v-text-sm);
+  font-weight: 700;
+  line-height: 1.35;
+}
+.v-rl-record-tone i,
+.v-rl-record-nums dt i {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  background: var(--tone);
+  box-shadow: 0 0 0 1.5px var(--v-ink);
+}
+.v-rl-record-nums {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  margin: 4px 0 0;
+}
+.v-rl-record-nums div {
+  display: flex;
+  flex-direction: column-reverse;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 4px 7px;
+  border: var(--v-outline);
+  border-radius: var(--v-radius-sm);
+  background: var(--v-paper);
+}
+.v-rl-record-nums dt {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--v-on-paper-2);
+  font-size: var(--rl-label);
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.v-rl-record-nums .is-win dt i {
+  background: var(--v-win);
+}
+.v-rl-record-nums .is-loss dt i {
+  background: var(--v-loss);
+}
+.v-rl-record-nums dd {
+  margin: 0;
+  color: var(--v-on-paper);
+  font-family: var(--v-font-display);
+  font-size: var(--v-text-xl);
+  font-weight: var(--v-display-weight);
+  line-height: 1;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.v-rl-record-nums dd small {
+  font-family: var(--v-font-text);
+  font-size: 0.5em;
+  font-weight: 700;
+}
+/* No sourced copy: the record takes the whole page, numbers beside it. */
+.v-rl-page-body.is-bare {
+  grid-template-columns: minmax(0, 1fr);
+}
+.v-rl-page-body.is-bare .v-rl-record {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: center;
+  gap: var(--v-space-3) var(--v-space-6);
+}
+.v-rl-page-body.is-bare .v-rl-record-nums {
+  margin: 0;
+}
+.v-rl-record-none {
+  margin: 0;
+  color: var(--v-on-paper-2);
+  font-size: var(--v-text-md);
+}
+
+/* ---- Not enough data yet --------------------------------------------------------- */
+.v-rl-empty {
+  display: flex;
+  align-items: center;
+  gap: var(--v-space-4);
+}
+.v-rl-empty-art {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 60px;
+  height: 60px;
+  border: var(--v-outline);
+  border-radius: 50%;
+  background: var(--v-well);
+  color: var(--v-gold);
+}
+.v-rl-empty-art svg {
+  width: 30px;
+  height: 30px;
+}
+.v-rl-empty h3 {
+  margin: 0 0 4px;
+  color: var(--v-title);
+  font-family: var(--v-font-heading);
+  font-size: var(--v-text-xl);
+  font-weight: 800;
+  line-height: 1.1;
+}
+.v-rl-empty p {
+  margin: 0;
+  color: var(--v-text-2);
+  font-size: var(--v-text-md);
+}
+
+/* ---- Motion (hover lifts and the page opening) ---------------------------------- */
+@media (prefers-reduced-motion: no-preference) {
+  :root:not(.prefer-reduced-motion) .v-rl-top:hover .v-rl-top-plate,
+  :root:not(.prefer-reduced-motion) .v-rl-top:focus-visible .v-rl-top-plate {
+    transform: translateY(-4px);
+  }
+  :root:not(.prefer-reduced-motion) .v-rl-top:hover .v-rl-top-art img {
+    transform: translateY(-8px) scale(1.06);
+  }
+  :root:not(.prefer-reduced-motion) .v-rl-row:hover .v-rl-orb img {
+    transform: scale(1.14) rotate(-6deg);
+  }
+  :root:not(.prefer-reduced-motion) .v-rl-row:not(.is-active):hover .v-rl-chev {
+    transform: translateX(3px);
+  }
+  :root:not(.prefer-reduced-motion) .v-rl-page {
+    animation: v-rl-page-in var(--v-dur-3) var(--v-ease-out) both;
+  }
+}
+@keyframes v-rl-page-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+}
+.prefer-reduced-motion .v-rl-top-plate,
+.prefer-reduced-motion .v-rl-top-art img,
+.prefer-reduced-motion .v-rl-row,
+.prefer-reduced-motion .v-rl-orb img,
+.prefer-reduced-motion .v-rl-chev {
+  transition: none;
+}
+
+/* ---- Responsive ------------------------------------------------------------------ */
+@media (max-width: 1100px) {
+  .v-rl-head,
+  .v-rl-row {
+    grid-template-columns: 30px 44px minmax(0, 1.4fr) 116px minmax(70px, 1fr) 70px 14px;
+    column-gap: 10px;
+  }
+  .v-rl-page-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (max-width: 880px) {
+  .v-rl {
+    --rl-label: 0.8125rem;
+    --rl-small: 0.8125rem;
+  }
+  .v-icon-btn.v-rl-page-close {
+    width: 44px;
+    height: 44px;
+  }
+  /* Unit glyphs (%) never drop under 12px. */
+  .v-rl .v-rl-top-wr small {
+    font-size: max(0.45em, 0.8125rem);
+  }
+  .v-rl .v-rl-record-nums dd small {
+    font-size: max(0.5em, 0.8125rem);
+  }
+  .v-rl .v-rl-wr small {
+    font-size: max(0.55em, 0.8125rem);
+  }
+  .v-rl-podium {
+    gap: var(--v-space-3);
+  }
+  .v-rl-top-plate {
+    padding: 32px 10px 16px;
+  }
+  .v-rl-top-name {
+    font-size: var(--v-text-lg);
+  }
+  .v-rl-top-wr {
+    font-size: 2.375rem;
+  }
+  [data-rank="1"] .v-rl-top-wr {
+    font-size: 2.875rem;
+  }
+}
+@media (max-width: 640px) {
+  .v-rl {
+    gap: var(--v-space-4);
+  }
+  .v-rl-legend li {
+    padding: 3px 9px;
+  }
+  /* Podium: still three across, tighter. Rarity moves to the page. */
+  .v-rl-podium {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+    margin-top: var(--v-space-2);
+  }
+  .v-rl-top-art {
+    height: 78px;
+    margin-bottom: -18px;
+  }
+  .v-rl-top-art img {
+    width: 62px;
+    height: 62px;
+  }
+  .v-rl-top-art svg {
+    width: 40px;
+    height: 40px;
+    margin-bottom: 14px;
+  }
+  .v-rl-top-art::before {
+    width: 110px;
+    height: 90px;
+  }
+  [data-rank="1"] .v-rl-top-art {
+    height: 98px;
+  }
+  [data-rank="1"] .v-rl-top-art img {
+    width: 82px;
+    height: 82px;
+  }
+  [data-rank="1"] .v-rl-top-art::before {
+    width: 130px;
+    height: 104px;
+  }
+  .v-rl-top-plate,
+  [data-rank="1"] .v-rl-top-plate {
+    gap: 4px;
+    padding: 26px 6px 12px;
+  }
+  .v-rl-top-band {
+    top: -10px;
+    left: -6px;
+  }
+  .v-rl-top-rank,
+  [data-rank="1"] .v-rl-top-rank {
+    width: 36px;
+    height: 36px;
+    font-size: 0.9375rem;
+  }
+  [data-rank="1"] .v-rl-top-rank {
+    width: 40px;
+    height: 40px;
+    font-size: 1.0625rem;
+  }
+  .v-rl-top-rarity {
+    display: none;
+  }
+  /* Two lines reserved so the three plates line up; short names sit
+     in the middle of that space. */
+  .v-rl-top-name {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 2.3em;
+    font-size: var(--v-text-sm);
+    line-height: 1.15;
+    white-space: normal;
+  }
+  .v-rl-top-wr {
+    font-size: 1.75rem;
+  }
+  [data-rank="1"] .v-rl-top-wr {
+    font-size: 2.125rem;
+  }
+  .v-rl-top-plate .v-rl-bar {
+    height: 8px;
+  }
+  .v-rl-top-meta {
+    flex-direction: column;
+    font-size: var(--rl-small);
+    line-height: 1.3;
+  }
+  .v-rl-top-meta > span + span::before {
+    content: none;
+  }
+  .v-rl-stamp {
+    position: static;
+    margin-top: 2px;
+    padding: 1px 5px;
+    font-size: var(--rl-small);
+    letter-spacing: 0.02em;
+    rotate: -3deg;
+  }
+
+  /* Ledger rows stack: name over counts, the bar along the bottom. */
+  .v-rl-ledger {
+    padding: 4px 6px 6px;
+  }
+  .v-rl-head {
+    display: none;
+  }
+  .v-rl-list {
+    margin-top: 0;
+  }
+  .v-rl-row {
+    grid-template-columns: 22px 44px minmax(0, 1fr) auto;
+    grid-template-areas:
+      "rank orb id wr"
+      "rank orb counts wr"
+      "rank orb bar bar";
+    row-gap: 5px;
+    column-gap: 10px;
+    padding: 10px 8px;
+  }
+  .v-rl-rank {
+    grid-area: rank;
+    font-size: var(--v-text-lg);
+  }
+  .v-rl-orb {
+    grid-area: orb;
+    width: 44px;
+    height: 44px;
+  }
+  .v-rl-id {
+    grid-area: id;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 8px;
+  }
+  .v-rl-name {
+    flex: 0 1 auto;
+    max-width: 100%;
+    white-space: normal;
+  }
+  .v-rl-tag {
+    font-size: var(--rl-small);
+  }
+  .v-rl-counts {
+    display: flex;
+    grid-area: counts;
+    gap: 12px;
+    font-size: var(--rl-small);
+  }
+  .v-rl-counts b {
+    font-size: var(--v-text-sm);
+  }
+  .v-rl-row > .v-rl-bar {
+    grid-area: bar;
+    height: 8px;
+  }
+  .v-rl-wr {
+    grid-area: wr;
+    font-size: 1.625rem;
+  }
+  .v-rl-chev {
+    display: none;
+  }
+
+  /* Page: one column. */
+  .v-rl-page-band {
+    gap: var(--v-space-3);
+    padding: 12px;
+  }
+  .v-rl-page-orb {
+    width: 62px;
+    height: 62px;
+  }
+  .v-rl-page-orb img {
+    width: 48px;
+    height: 48px;
+  }
+  .v-rl-page-name {
+    font-size: var(--v-text-xl);
+  }
+  .v-icon-btn.v-rl-page-close {
+    width: 44px;
+    height: 44px;
+  }
+  .v-rl-page-body.is-bare .v-rl-record {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .v-rl-page-body {
+    gap: var(--v-space-4);
+    padding: var(--v-space-4);
+  }
+  .v-rl-pairs li {
+    padding: 5px 12px;
+  }
+  .v-rl-empty {
+    align-items: flex-start;
+  }
+}

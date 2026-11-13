@@ -111,7 +111,7 @@ struct HighlightsView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Community highlights")
                     .font(.system(size: 22, weight: .bold, design: .rounded))
-                Text("Standout runs shared by other Spire Vault players. Reactions and comments are read-only here — open the web app to participate.")
+                Text("Standout runs shared by other SpireVault players. Reactions and comments are read-only here — open the web app to participate.")
                     .font(.system(size: 12))
                     .foregroundStyle(Theme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)

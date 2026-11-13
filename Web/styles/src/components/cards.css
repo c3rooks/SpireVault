@@ -1,0 +1,170 @@
+/* ==========================================================================
+   "Your hand" — the six at-a-glance KPIs as a fanned hand of cards.
+
+   Each card has real card anatomy: a cost-orb icon, a title band, an art
+   window holding the number, and a rules-text box with the context line.
+   The fan angle and lift are set per card as --rot / --lift by the view;
+   hover straightens and lifts the card, pointer tilt adds --rx / --ry.
+   ========================================================================== */
+.v-hand {
+  display: flex;
+  justify-content: center;
+  padding: 26px 0 40px;
+  perspective: 1400px;
+}
+.v-card {
+  --tone: var(--v-accent-hi);
+  --rot: 0deg;
+  --lift: 0px;
+  position: relative;
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  width: 142px;
+  height: 196px;
+  margin-inline: 3px;
+  border: var(--v-outline);
+  border-radius: var(--v-radius-md);
+  background: var(--v-paper);
+  box-shadow: var(--v-shadow);
+  color: var(--v-on-paper);
+  text-align: center;
+  transform: translateY(var(--lift)) rotate(var(--rot)) rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg));
+  transform-origin: 50% 100%;
+  transition:
+    transform 260ms var(--v-ease-spring),
+    box-shadow var(--v-dur-2) ease;
+}
+.v-card:hover,
+.v-card:focus-visible {
+  --rot: 0deg;
+  --lift: -22px;
+  z-index: 5;
+  box-shadow: var(--v-shadow-lg);
+}
+.v-card[data-tone="win"] { --tone: var(--v-win); }
+.v-card[data-tone="loss"] { --tone: var(--v-loss); }
+.v-card[data-tone="gold"] { --tone: var(--v-gold); }
+.v-card[data-tone="info"] { --tone: var(--v-info); }
+.v-card[data-tone="violet"] { --tone: var(--v-violet); }
+.v-card[data-tone="accent"] { --tone: var(--v-accent-hi); }
+
+.v-card-band {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 30px;
+  padding: 5px 8px 5px 30px;
+  border-bottom: var(--v-outline);
+  border-radius: calc(var(--v-radius-md) - var(--v-outline-w)) calc(var(--v-radius-md) - var(--v-outline-w)) 0 0;
+  background: var(--tone);
+  color: var(--v-ink);
+  font-size: var(--v-text-xs);
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  line-height: 1.15;
+  text-transform: uppercase;
+}
+.v-card-orb {
+  position: absolute;
+  top: -9px;
+  left: -9px;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border: var(--v-outline);
+  border-radius: 50%;
+  background: var(--v-paper);
+  box-shadow: 2px 2px 0 var(--v-ink);
+  color: var(--v-on-paper);
+}
+.v-card-orb svg {
+  width: 18px;
+  height: 18px;
+}
+.v-card-art {
+  display: grid;
+  flex: 1;
+  place-items: center;
+  margin: 8px 8px 0;
+  border: var(--v-outline);
+  border-radius: var(--v-radius-sm);
+  background: color-mix(in srgb, var(--tone) 26%, var(--v-paper-2));
+}
+.v-card-value {
+  font-family: var(--v-font-display);
+  font-size: 3.125rem;
+  font-weight: var(--v-display-weight);
+  line-height: 1;
+  white-space: nowrap;
+}
+.v-card-value small {
+  margin-left: 2px;
+  font-size: 0.42em;
+}
+.v-card-value.is-long {
+  font-size: 2.375rem;
+}
+.v-card-text {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 50px;
+  margin: 0;
+  padding: 6px 9px 8px;
+  color: var(--v-on-paper-2);
+  font-size: var(--v-text-xs);
+  font-weight: 600;
+  line-height: 1.3;
+}
+.v-card-text strong {
+  color: var(--v-on-paper);
+  font-weight: 800;
+}
+
+/* Tablets: the fan tightens. */
+@media (max-width: 1040px) {
+  .v-card {
+    width: 124px;
+    height: 180px;
+    margin-inline: -4px;
+  }
+  .v-card-value {
+    font-size: 2.625rem;
+  }
+  .v-card-value.is-long {
+    font-size: 2rem;
+  }
+}
+
+/* Phones and small tablets: the hand becomes a swipeable row — no rotation,
+   snap to card. 880px, not 720: six fanned cards need about 890px, so between
+   the two (a phone on its side, a small tablet) the outer cards were cut off
+   by the edge of the page. */
+@media (max-width: 880px) {
+  .v-hand {
+    justify-content: flex-start;
+    gap: 12px;
+    margin-inline: -16px;
+    padding: 18px 16px 22px;
+    overflow-x: auto;
+    perspective: none;
+    scroll-padding-inline: 16px;
+    scroll-snap-type: x mandatory;
+    scrollbar-width: none;
+  }
+  .v-hand::-webkit-scrollbar {
+    display: none;
+  }
+  .v-card,
+  .v-card:hover,
+  .v-card:focus-visible {
+    --rot: 0deg;
+    --lift: 0px;
+    width: 138px;
+    height: 190px;
+    margin-inline: 0;
+    scroll-snap-align: start;
+  }
+}

@@ -1,0 +1,368 @@
+/* =========================================================================
+ * Phone fixes for the shared markup — loaded by BOTH layouts.
+ *
+ * The classic layout loads this after styles.css; the new layout pulls it
+ * into the `legacy` cascade layer right behind styles.css, so the tabs that
+ * have not been redrawn yet get the same fixes (see index.html).
+ *
+ * Rules of the file:
+ *   - Everything sits inside a max-width media query, 880px at most (the
+ *     width where the app switches to its phone shell). Nothing here can
+ *     change a desktop window; scripts/verify-classic-unchanged.mjs proves it.
+ *   - It fixes things that are broken or unusable on a phone. It does not
+ *     restyle. New design belongs in styles/src/.
+ *   - Each block says what was wrong, measured by scripts/audit-mobile.mjs.
+ * ========================================================================= */
+
+/* ── Page shell ─────────────────────────────────────────────────────────── */
+@media (max-width: 880px) {
+  /* The tab strip is `position: sticky`, but `overflow-x: hidden` on html and
+     body turned <body> into a scroll container that never scrolls, so the
+     strip had nothing to stick to and scrolled away — on a long tab the only
+     way to change tab was to scroll all the way back up. `clip` cuts sideways
+     overflow the same way without creating a scroll container. Browsers
+     without `clip` keep the `hidden` from styles.css and behave as before. */
+  html,
+  body {
+    overflow-x: clip;
+  }
+
+  /* iOS Safari zooms the whole page in when a field under 16px takes focus,
+     and does not zoom back out. Every text field in the app was 12–15.5px.
+     !important because this is a floor that must hold whatever a component
+     (or a stylesheet injected later) says. */
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="color"]):not([type="button"]):not([type="submit"]):not([type="reset"]):not([type="image"]),
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+
+  /* With sticky working, the whole classic header would pin: the tab strip
+     plus the account row, 124px — a fifth of a small phone. The account row
+     moves above the strip and the header is pinned one row higher, so that
+     row scrolls away and only the tabs stay on screen. Classic only: the new
+     layout builds its own top and bottom bars out of these same elements. */
+  html:not([data-ui="next"]) .sidebar {
+    --phone-account-row: 56px;
+    top: calc(-1 * var(--phone-account-row));
+  }
+  html:not([data-ui="next"]) .mobile-account-row {
+    order: -1;
+    flex-wrap: nowrap;
+    height: var(--phone-account-row);
+    padding-block: 0;
+    border-top: 0;
+    border-bottom: 1px solid var(--border);
+  }
+}
+
+/* A phone on its side has about 340px of height: nothing stays pinned. */
+@media (max-width: 880px) and (max-height: 480px) {
+  html:not([data-ui="next"]) .sidebar {
+    position: static;
+  }
+}
+
+/* ── Card grids with a minimum wider than a small phone ─────────────────── */
+@media (max-width: 480px) {
+  /* `minmax(320px, 1fr)` and friends: on a 320–350px screen the single
+     column was wider than the page and the cards ran off the right edge.
+     At this width these grids are one column anyway. */
+  .relic-grid,
+  .guest-rooms-grid,
+  .coop-lobbies-list,
+  .coop-recs-list,
+  .coop-invites-list {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* ── Footer ─────────────────────────────────────────────────────────────── */
+@media (max-width: 880px) {
+  /* The five links stayed on one line: the last two ran off the right edge
+     and the rest were squeezed into one-word columns. */
+  .footer-inner {
+    padding: 0 16px;
+    gap: 14px;
+  }
+  .footer-links {
+    flex-wrap: wrap;
+    gap: 0 20px;
+  }
+  .footer-links a {
+    padding: 9px 0;
+  }
+}
+
+/* ── News ───────────────────────────────────────────────────────────────── */
+@media (max-width: 880px) {
+  /* A `1fr` grid track cannot be narrower than its content, and the post
+     list (a row of cards) reported the width of every card added together,
+     so the track — and the article in it — came out about 1,050px wide on a
+     375px screen. The article was cut off at the right edge. */
+  .news-master-detail {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .news-list {
+    min-width: 0;
+  }
+  /* The card width was set on the button, but the flex item is the <li>
+     around it, so every card collapsed to the width of its longest word. */
+  .news-list-ol > li {
+    flex: 0 0 min(240px, 72vw);
+    scroll-snap-align: start;
+  }
+  .news-list-item {
+    height: 100%;
+  }
+  .news-detail,
+  .news-post {
+    min-width: 0;
+  }
+  .news-post {
+    overflow-wrap: break-word;
+  }
+  .news-post code {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+}
+
+/* ── Recent Runs ────────────────────────────────────────────────────────── */
+@media (max-width: 720px) {
+  /* Filters. Each group stayed on one line, so the Regent and Necrobinder
+     chips sat past the right edge where nothing could reach them. Chips now
+     wrap; the group captions are kept for screen readers but not drawn, which
+     buys back the row they would cost. */
+  .run-filters {
+    gap: 10px 8px;
+  }
+  .run-filter-group {
+    flex: 1 1 100%;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .run-filter-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .run-filter-group .chart-chip {
+    min-height: 36px;
+    padding-inline: 12px;
+    font-size: 12px;
+    white-space: nowrap;
+  }
+  .run-filter-search {
+    flex: 1 1 160px;
+    min-height: 44px;
+  }
+  .run-filter-compare {
+    min-height: 44px;
+  }
+
+  /* Rows. The row was one unwrappable line: every fixed-size piece took its
+     width and the name/date column was left with zero, so the date stacked
+     one word per line (rows were 231px tall, the tab 30 screens long) and
+     the Share button was cut off. Two lines instead:
+
+       [icon]  Ironclad  A9  Floor 47              DEFEAT
+       [icon]  Nov 13, 2026 at 3:05 AM    42:23   [link] [share]
+
+     `display: contents` lifts the name line and the date out of their
+     wrapper so they can be placed on the grid separately. */
+  .run-row-body {
+    display: grid;
+    grid-template-columns: 36px minmax(0, 1fr) auto auto auto;
+    grid-template-areas:
+      "icon top  top      outcome outcome"
+      "icon date duration link    share";
+    align-items: center;
+    gap: 6px;
+    padding: 10px;
+  }
+  .run-icon {
+    grid-area: icon;
+    margin-right: 2px;
+  }
+  .run-meta {
+    display: contents;
+  }
+  .run-meta-top {
+    grid-area: top;
+    min-width: 0;
+    gap: 4px 6px;
+  }
+  .run-date {
+    grid-area: date;
+    min-width: 0;
+    /* On the narrowest phones the date takes two lines; split them evenly
+       rather than leaving "AM" on a line of its own. */
+    text-wrap: balance;
+  }
+  .run-spacer {
+    display: none;
+  }
+  .run-duration {
+    grid-area: duration;
+  }
+  /* "DURATION" was 8px. The time is unambiguous beside a dated row; the
+     caption stays for screen readers. */
+  .run-duration span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .run-outcome {
+    grid-area: outcome;
+    justify-self: end;
+    font-size: 11px;
+  }
+  .run-row .pill {
+    font-size: 11px;
+  }
+  .run-link-btn,
+  .run-share-btn {
+    width: 36px;
+    min-width: 36px;
+    height: 36px;
+    min-height: 36px;
+    margin-left: 0;
+    padding: 0;
+    justify-content: center;
+  }
+  .run-link-btn {
+    grid-area: link;
+  }
+  .run-share-btn {
+    grid-area: share;
+  }
+  /* Drawn at 36px so the date keeps its line; 44px to the finger. */
+  .run-link-btn,
+  .run-share-btn {
+    position: relative;
+  }
+  .run-link-btn::after,
+  .run-share-btn::after {
+    content: "";
+    position: absolute;
+    inset: -4px;
+  }
+  /* Picking runs to compare: the whole row is the control, so its two buttons
+     step aside. That also gives back the width the checkbox takes, which on
+     the narrowest phones squeezed the date onto three lines. */
+  body.compare-mode .run-link-btn,
+  body.compare-mode .run-share-btn {
+    display: none;
+  }
+  body.compare-mode .run-row-body {
+    grid-template-areas:
+      "icon top  top  outcome outcome"
+      "icon date date date    duration";
+  }
+  body.compare-mode .run-duration {
+    justify-self: end;
+  }
+  /* Icon-only on a phone; the button keeps its aria-label. */
+  .run-share-btn span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+
+/* ── Compare bar ────────────────────────────────────────────────────────── */
+@media (max-width: 480px) {
+  /* "2 runs selected", Cancel and Compare did not fit a 320px screen on one
+     unwrappable line: the Compare button ran off the right edge. */
+  .compare-bar {
+    width: calc(100% - 24px);
+  }
+  .compare-bar-inner {
+    justify-content: space-between;
+    gap: 8px;
+    padding: 10px 10px 10px 14px;
+  }
+  .compare-bar-count {
+    min-width: 0;
+    white-space: normal;
+    line-height: 1.25;
+  }
+  .compare-bar-actions {
+    flex: none;
+  }
+  .compare-bar .btn-primary,
+  .compare-bar .btn-ghost {
+    padding-inline: 12px;
+    white-space: nowrap;
+  }
+}
+
+/* ── Run details dialog ─────────────────────────────────────────────────── */
+@media (max-width: 720px) {
+  /* The dialog is sized to fill a phone screen, but the backdrop keeps 12px
+     of padding and anchors it to the bottom, which pushed the dialog's top
+     12px above the screen. */
+  #run-detail-modal {
+    padding: 0;
+  }
+}
+
+/* ── Beta ───────────────────────────────────────────────────────────────── */
+@media (max-width: 720px) {
+  /* Same `1fr` trap as News: a card's two buttons would not wrap, so the
+     card — and everything in it — was wider than a 320px screen in Safari. */
+  .beta-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .beta-launch {
+    flex-wrap: wrap;
+  }
+  /* Its longest label ("Browser doesn't support floating windows") is one
+     unbreakable line, wider than the card on a 320px screen. */
+  .beta-launch-btn {
+    max-width: 100%;
+    white-space: normal;
+    text-align: center;
+  }
+}
+
+/* ── Small targets and the smallest text ────────────────────────────────── */
+@media (max-width: 880px) {
+  /* 9px. */
+  .nav-badge,
+  .asc-bar-label {
+    font-size: 10px;
+  }
+  /* 26px square, in the corner of the sample-data notice. */
+  .demo-banner-dismiss {
+    width: 36px;
+    height: 36px;
+  }
+  /* Text-only controls 15–19px tall. */
+  .coop-link-btn,
+  .btn-link-danger {
+    display: inline-flex;
+    align-items: center;
+    min-height: 36px;
+  }
+  .guest-coop-explainer > summary {
+    padding-block: 9px;
+  }
+  .settings-about-list dd > a {
+    display: inline-block;
+    padding-block: 10px;
+  }
+}

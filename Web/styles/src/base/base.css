@@ -1,0 +1,139 @@
+/* ==========================================================================
+   Base: document-level defaults for the new UI.
+   ========================================================================== */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+/* `hidden` is how script.js shows and hides everything. The legacy sheet
+   enforces it with !important; this is the backstop for when that sheet is
+   deleted, and it keeps reverted surfaces honest today. */
+[hidden] {
+  display: none;
+}
+
+/* `overflow-x: hidden` on <body> turns it into a scroll container that never
+   scrolls, which silently disables `position: sticky` for the whole app (the
+   old sidebar scrolled away for exactly this reason). `clip` gives the same
+   horizontal safety net without creating a scroll container. */
+html,
+body {
+  overflow-x: clip;
+}
+
+html {
+  color-scheme: dark;
+  scroll-padding-top: var(--v-space-5);
+}
+
+body {
+  background: var(--v-bg);
+  color: var(--v-text);
+  font-family: var(--v-font-text);
+  font-size: var(--v-text-md);
+  line-height: 1.5;
+  transition: background-color var(--v-dur-3) var(--v-ease-out);
+}
+
+/* Ambient backdrop: two soft corner glows and paper grain. Fixed and behind
+   everything, so it costs one composited layer and never repaints. */
+.bg-glow {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(52rem 34rem at 96% -6%, color-mix(in srgb, var(--v-glow-a) 78%, transparent) 0%, transparent 68%),
+    radial-gradient(44rem 30rem at -4% 104%, color-mix(in srgb, var(--v-glow-b) 70%, transparent) 0%, transparent 70%);
+}
+.bg-glow::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  opacity: var(--v-texture);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 .7 0'/%3E%3C/filter%3E%3Crect width='220' height='220' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+::selection {
+  background: var(--v-title);
+  color: var(--v-ink);
+}
+
+:focus-visible {
+  outline: 3px solid var(--v-title);
+  outline-offset: 2px;
+}
+
+/* Display lettering: the tilted, hard-shadowed title voice. */
+.v-display {
+  font-family: var(--v-font-display);
+  font-weight: var(--v-display-weight);
+  line-height: 1;
+  letter-spacing: 0.01em;
+}
+
+/* Screen-reader-only content (chart data tables, live regions). */
+.v-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Entrance choreography. The resting state is the final state; keyframes
+   only define `from`. A data refresh re-renders without `data-enter`, so
+   nothing replays — only a real tab entry animates. */
+@keyframes v-rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+}
+/* Every entrance delay subtracts --enter-elapsed: when a panel is rendered
+   again mid-entrance (see lib/ui/motion.js) the new DOM picks the animation
+   up where the old DOM left it instead of starting over. */
+[data-enter] [data-reveal] {
+  animation: v-rise var(--v-dur-3) var(--v-ease-out) both;
+  animation-delay: calc(var(--r, 0) * 55ms - var(--enter-elapsed, 0ms));
+}
+
+/* Theme switch: a circular reveal from the clicked swatch. */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+::view-transition-new(root) {
+  animation: v-theme-reveal 360ms var(--v-ease-out) both;
+}
+/* The reveal is a picture laid over the page, and it swallows clicks while
+   it plays. The page under it is already in the new theme, so let clicks
+   through: a tap during the reveal still lands. */
+::view-transition {
+  pointer-events: none;
+}
+@keyframes v-theme-reveal {
+  from {
+    clip-path: circle(0 at var(--v-reveal-x, 50%) var(--v-reveal-y, 50%));
+  }
+  to {
+    clip-path: circle(150vmax at var(--v-reveal-x, 50%) var(--v-reveal-y, 50%));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-enter] [data-reveal],
+  ::view-transition-new(root) {
+    animation: none;
+  }
+}
+.prefer-reduced-motion [data-enter] [data-reveal] {
+  animation: none;
+}

@@ -1,0 +1,151 @@
+/* ==========================================================================
+   Design tokens — the only place raw values live.
+
+   Declared on `:root, [data-theme]` rather than `:root` alone so that ANY
+   element carrying a data-theme attribute is a complete, self-contained theme
+   scope. That is what lets each swatch in the theme picker render a true
+   live miniature of itself, and it is why derived tokens (outline, shadow)
+   are declared here too: a custom property that references another is
+   resolved where it is declared, so it must be re-declared in every scope.
+
+   Components read these and nothing else. Theme files only override.
+   ========================================================================== */
+:root,
+[data-theme] {
+  /* ---- Colour: Inked Codex (default) ---------------------------------- */
+  --v-ink: #0a0616;
+  --v-bg: #15102b;
+  --v-bg-deep: #0f0a22;
+  --v-surface-1: #231b4a;
+  --v-surface-2: #2e2460;
+  --v-well: #0a0616;
+  --v-line: #3b3080;
+  --v-text: #fff1cf;
+  --v-text-2: #b7abe0;
+  --v-text-3: #8d81bd;
+  --v-title: #ffd24a;
+  --v-accent: #ff7a2f;
+  --v-accent-hi: #ff9a5c;
+  --v-on-accent: #0a0616;
+  --v-gold: #ffd24a;
+  --v-win: #57e389;
+  --v-loss: #ff6470;
+  --v-info: #3fd9c4;
+  --v-violet: #b583ff;
+  --v-paper: #fff1cf;
+  --v-paper-2: #f1dcae;
+  --v-on-paper: #0a0616;
+  --v-on-paper-2: #4d3d6e;
+  --v-glow-a: #1d5a63;
+  --v-glow-b: #4a2140;
+
+  /* Characters — the single source for every surface, chart and canvas. */
+  --v-char-ironclad: #f2553f;
+  --v-char-silent: #3fd97f;
+  --v-char-defect: #4fc6ff;
+  --v-char-regent: #ffc53a;
+  --v-char-necrobinder: #b583ff;
+  --v-char-fool: #f27ec0;
+  --v-char: var(--v-text-2);
+
+  /* ---- Shape ----------------------------------------------------------- */
+  --v-outline-w: 2px;
+  --v-outline-color: var(--v-ink);
+  --v-outline: var(--v-outline-w) solid var(--v-outline-color);
+  --v-shadow-sm: 3px 3px 0 var(--v-ink);
+  --v-shadow: 4px 4px 0 var(--v-ink);
+  --v-shadow-lg: 6px 6px 0 var(--v-ink);
+  --v-shadow-pressed: 1px 1px 0 var(--v-ink);
+  --v-press: 2px;
+  --v-radius-sm: 8px;
+  --v-radius-md: 12px;
+  --v-radius-lg: 16px;
+  --v-radius-pill: 999px;
+
+  /* ---- Type ------------------------------------------------------------ */
+  /* display = lettering (page titles, the wordmark, big numerals);
+     heading = everything titled below that; text = the rest. */
+  --v-font-display: "Grenze Gotisch", "Figtree", Georgia, serif;
+  --v-font-heading: "Grenze", "Grenze Gotisch", Georgia, serif;
+  --v-font-text: "Figtree", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --v-display-weight: 900;
+  --v-title-tilt: -2deg;
+  --v-title-shadow: 3px 3px 0 var(--v-ink);
+  /* 12px on the 15px root the legacy sheet sets (styles.css html rule): the
+     smallest size anything may be drawn at, on phones especially. */
+  --v-text-xs: 0.8rem;
+  --v-text-sm: 0.8125rem;
+  --v-text-md: 0.9375rem;
+  --v-text-lg: 1.125rem;
+  --v-text-xl: 1.5rem;
+  --v-text-2xl: 2.125rem;
+  --v-text-3xl: clamp(2.25rem, 1.6rem + 2.2vw, 3.25rem);
+
+  /* ---- Texture --------------------------------------------------------- */
+  --v-texture: 0.07;
+
+  /* ---- Stage (the diorama) --------------------------------------------- */
+  --v-stage-sky-1: #1a1340;
+  --v-stage-sky-2: #25507a;
+  --v-stage-sky-3: #2ad4c0;
+  --v-stage-moon: #ffe7a0;
+  --v-stage-far: #1f1856;
+  --v-stage-spire: #2c2266;
+  --v-stage-mid: #18113c;
+  --v-stage-near: #0d0920;
+  --v-stage-lit: #ffd24a;
+  --v-stage-unlit: #4a3f8a;
+  --v-stage-flame: #ff7a2f;
+  --v-stage-wood: #7a6240;
+
+  /* Stage figures are inked in CSS (see components/stage.css): an outline of
+     the theme's outline width on all four sides, then the UI's hard shadow.
+     The outline colour is solid on purpose — stacked drop-shadows would
+     double up a translucent one unevenly. */
+  --v-actor-outline: var(--v-ink);
+  --v-actor-shadow: drop-shadow(3px 3px 0 var(--v-ink));
+  --v-actor-ink:
+    drop-shadow(var(--v-outline-w) 0 0 var(--v-actor-outline))
+    drop-shadow(calc(var(--v-outline-w) * -1) 0 0 var(--v-actor-outline))
+    drop-shadow(0 var(--v-outline-w) 0 var(--v-actor-outline))
+    drop-shadow(0 calc(var(--v-outline-w) * -1) 0 var(--v-actor-outline))
+    var(--v-actor-shadow);
+}
+
+/* Theme-invariant tokens. */
+:root {
+  --v-space-1: 4px;
+  --v-space-2: 8px;
+  --v-space-3: 12px;
+  --v-space-4: 16px;
+  --v-space-5: 24px;
+  --v-space-6: 32px;
+  --v-space-7: 48px;
+  --v-space-8: 72px;
+  /* Height of the phone tab bar, before the home-indicator inset. */
+  --v-tabbar-h: 66px;
+
+  --v-dur-1: 120ms;
+  --v-dur-2: 200ms;
+  --v-dur-3: 420ms;
+  --v-dur-4: 1100ms;
+  --v-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --v-ease-inout: cubic-bezier(0.65, 0, 0.35, 1);
+  --v-ease-spring: cubic-bezier(0.2, 1.4, 0.4, 1);
+
+  --v-rail-w: 216px;
+  --v-content-max: 1200px;
+  --v-stage-h: 256px;
+  --v-ledge-h: 34px;
+}
+
+/* Per-character accent hook: any element with data-char gets --v-char.
+   A character this sheet does not know yet (a new patch's hero) gets the
+   same neutral colour tokens.js uses, instead of no colour at all. */
+[data-char] { --v-char: var(--v-text-2); }
+[data-char="ironclad"] { --v-char: var(--v-char-ironclad); }
+[data-char="silent"] { --v-char: var(--v-char-silent); }
+[data-char="defect"] { --v-char: var(--v-char-defect); }
+[data-char="regent"] { --v-char: var(--v-char-regent); }
+[data-char="necrobinder"] { --v-char: var(--v-char-necrobinder); }
+[data-char="fool"] { --v-char: var(--v-char-fool); }

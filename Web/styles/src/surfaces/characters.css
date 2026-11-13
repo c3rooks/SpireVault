@@ -1,0 +1,1105 @@
+/* ==========================================================================
+   Characters. Five banners in one row, then the codex page of the one you
+   pick. Every metric appears once per view:
+     banner → win rate, meter, wins / losses / runs, difficulty
+     codex  → the same record in full + the hand-written guide
+              (playstyle, archetypes, core mechanics, climbing tips)
+   Colours come from --v-char (set by [data-char] in tokens.css), so every
+   theme re-inks the banners with no re-render.
+   Markup: lib/ui/views-characters.js.
+   ========================================================================== */
+/* The tab body is a size container: the banner row picks its column count
+   from its own width, not the viewport (the rail comes and goes). */
+.v-chx {
+  display: flex;
+  flex-direction: column;
+  container: v-chx / inline-size;
+}
+.v-chx-title {
+  margin-top: 0;
+}
+.v-chx-none {
+  margin: 0;
+  color: var(--v-text-2);
+}
+
+/* ---- Banner row --------------------------------------------------------------- */
+/* One column per character (--cols, from the view). A character with no
+   colour token of its own (a new hero before tokens.css learns it) gets the
+   neutral [data-char] fallback from tokens.css, and picks up its own colour
+   the moment a --v-char-<key> rule lands there. */
+.v-cb-row {
+  display: grid;
+  grid-template-columns: repeat(var(--cols, 5), minmax(0, 1fr));
+  gap: var(--v-space-4);
+  margin: 0;
+  padding: 8px 0 0;
+  list-style: none;
+}
+/* Each cell is a size container so the nameplate can scale with the banner
+   (cqi) and "Necrobinder" never truncates at tablet widths. */
+.v-cb-cell {
+  display: flex;
+  min-width: 0;
+  container-type: inline-size;
+}
+.v-cb {
+  position: relative;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: stretch;
+  min-width: 0;
+  padding: 0 0 10px;
+  border: var(--v-outline);
+  border-radius: var(--v-radius-lg);
+  background: var(--v-surface-1);
+  box-shadow: var(--v-shadow);
+  color: var(--v-text);
+  font-family: var(--v-font-text);
+  text-align: center;
+  cursor: pointer;
+  transition:
+    transform var(--v-dur-2) var(--v-ease-spring),
+    box-shadow var(--v-dur-2) ease,
+    border-color var(--v-dur-2) ease;
+}
+.v-cb:hover {
+  box-shadow: var(--v-shadow-lg);
+  transform: translateY(-6px);
+}
+.v-cb:active {
+  box-shadow: var(--v-shadow-pressed);
+  transform: translate(var(--v-press), calc(var(--v-press) - 4px));
+}
+.v-cb:focus-visible {
+  outline: 3px solid var(--v-title);
+  outline-offset: 3px;
+}
+/* The picked banner stays raised and points down at its codex page. */
+.v-cb.is-active {
+  border-color: var(--v-title);
+  box-shadow: var(--v-shadow-lg);
+  transform: translateY(-8px);
+}
+.v-cb.is-active::after {
+  content: "";
+  position: absolute;
+  bottom: -11px;
+  left: 50%;
+  width: 18px;
+  height: 18px;
+  border-right: var(--v-outline-w) solid var(--v-title);
+  border-bottom: var(--v-outline-w) solid var(--v-title);
+  background: var(--v-surface-1);
+  transform: translateX(-50%) rotate(45deg);
+}
+
+/* Portrait plate: the character's colour, a floor glow and the inked figure
+   standing on the plate's lower edge. */
+.v-cb-plate {
+  position: relative;
+  display: grid;
+  place-items: end center;
+  height: 184px;
+  overflow: hidden;
+  border-bottom: var(--v-outline);
+  border-radius: calc(var(--v-radius-lg) - var(--v-outline-w)) calc(var(--v-radius-lg) - var(--v-outline-w)) 0 0;
+  background:
+    radial-gradient(62% 38% at 50% 100%, color-mix(in srgb, var(--v-char) 70%, var(--v-text)) 0%, transparent 100%),
+    repeating-linear-gradient(135deg, transparent 0 11px, color-mix(in srgb, var(--v-ink) 12%, transparent) 11px 22px),
+    color-mix(in srgb, var(--v-char) 58%, var(--v-ink));
+}
+.v-cb-plate::after {
+  content: "";
+  position: absolute;
+  bottom: 22px;
+  left: 50%;
+  width: 62%;
+  height: 12px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--v-ink) 55%, transparent);
+  transform: translateX(-50%);
+}
+.v-cb-plate img {
+  position: relative;
+  z-index: 1;
+  width: auto;
+  height: 162px;
+  max-width: 96%;
+  margin-bottom: -8px;
+  object-fit: contain;
+  object-position: 50% 100%;
+  filter: drop-shadow(2px 2px 0 var(--v-ink));
+  transition: transform var(--v-dur-2) var(--v-ease-spring);
+}
+/* Stage art is cropped tight to the figure, so it stands on the floor glow
+   and is inked like the header. */
+.v-cb-plate img.is-inked {
+  height: 138px;
+  max-width: 86%;
+  margin-bottom: 26px;
+  filter: var(--v-actor-ink);
+}
+.v-cb:hover .v-cb-plate img {
+  transform: translateY(-4px) scale(1.05);
+}
+.v-cb-glyph {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  margin-bottom: 40px;
+  border: var(--v-outline);
+  border-radius: 50%;
+  background: var(--v-paper);
+  color: var(--v-on-paper);
+}
+.v-cb-glyph svg {
+  width: 34px;
+  height: 34px;
+}
+.v-cb-diff {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 2;
+  display: flex;
+  padding: 4px 7px;
+  border: var(--v-outline);
+  border-radius: var(--v-radius-pill);
+  background: color-mix(in srgb, var(--v-ink) 72%, transparent);
+  --pip-on: var(--v-title);
+  --pip-off: color-mix(in srgb, var(--v-text) 22%, transparent);
+}
+.v-cb-tag {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 2;
+  padding: 2px 8px;
+  border: var(--v-outline);
+  border-radius: var(--v-radius-pill);
+  background: var(--v-paper);
+  color: var(--v-on-paper);
+  font-size: 0.8125rem;
+  font-weight: 800;
+}
+
+/* Nameplate: a parchment label pinned over the plate's lower edge. */
+.v-cb-name {
+  position: relative;
+  z-index: 2;
+  align-self: center;
+  max-width: calc(100% - 16px);
+  margin: -19px 0 0;
+  padding: 3px 14px 5px;
+  padding-inline: clamp(6px, 6cqi, 14px);
+  overflow: hidden;
+  border: var(--v-outline);
+  border-radius: var(--v-radius-sm);
+  background: var(--v-paper);
+  box-shadow: var(--v-shadow-sm);
+  color: var(--v-on-paper);
+  font-family: var(--v-font-display);
+  font-size: 1.25rem;
+  font-size: clamp(1rem, 12.5cqi, 1.5rem);
+  font-weight: var(--v-display-weight);
+  line-height: 1.05;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transform: rotate(var(--v-title-tilt));
+}
+.v-cb-role {
+  margin: 8px 10px 0;
+  color: var(--v-text-2);
+  font-size: 0.8125rem;
+  font-weight: 700;
+  line-height: 1.3;
+}
+/* Narrow banners drop the role line; the codex page carries it. */
+@container (max-width: 150px) {
+  .v-cb-role {
+    display: none;
+  }
+}
+.v-cb-stats {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  margin: auto 12px 0;
+  padding-top: 10px;
+}
+.v-cb-wr {
+  font-family: var(--v-font-display);
+  font-size: 2.5rem;
+  font-weight: var(--v-display-weight);
+  line-height: 0.95;
+  color: color-mix(in srgb, var(--v-char) 78%, var(--v-text));
+  font-variant-numeric: tabular-nums;
+}
+.v-cb-wr small {
+  font-size: 0.5em;
+}
+.v-cb-rec {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px 8px;
+  color: var(--v-text-2);
+  font-size: 0.8125rem;
+  font-weight: 700;
+}
+.v-cb-rec b {
+  font-weight: 800;
+}
+.v-cb-rec .is-win {
+  color: var(--v-win);
+}
+.v-cb-rec .is-loss {
+  color: var(--v-loss);
+}
+.v-cb-cta {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  margin: 10px 12px 0;
+  padding-top: 8px;
+  border-top: 2px dashed var(--v-line);
+  color: var(--v-text-2);
+  font-size: 0.8125rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  transition: color var(--v-dur-1) ease;
+}
+.v-cb-cta svg {
+  width: 14px;
+  height: 14px;
+  transform: rotate(-90deg);
+  transition: transform var(--v-dur-2) var(--v-ease-spring);
+}
+.v-cb:hover .v-cb-cta,
+.v-cb.is-active .v-cb-cta {
+  color: var(--v-title);
+}
+.v-cb:hover .v-cb-cta svg {
+  transform: rotate(-90deg) translateY(3px);
+}
+.v-cb.is-active .v-cb-cta svg {
+  transform: rotate(0deg);
+}
+
+/* Never played: the plate fades to ink and the figure loses its colour. */
+.v-cb.is-unplayed .v-cb-plate {
+  background:
+    repeating-linear-gradient(135deg, transparent 0 11px, color-mix(in srgb, var(--v-ink) 14%, transparent) 11px 22px),
+    color-mix(in srgb, var(--v-char) 22%, var(--v-bg-deep));
+}
+.v-cb.is-unplayed .v-cb-plate img {
+  opacity: 0.75;
+  filter: grayscale(0.85) var(--v-actor-ink);
+}
+.v-cb.is-unplayed .v-cb-wr {
+  color: var(--v-text-3);
+}
+
+/* ---- Shared meters and pips ------------------------------------------------------ */
+.v-cb-meter,
+.v-cx-meter {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 10px;
+  overflow: hidden;
+  border: var(--v-outline);
+  border-radius: var(--v-radius-pill);
+  background: var(--v-well);
+}
+.v-cb-meter i,
+.v-cx-meter i {
+  display: block;
+  height: 100%;
+  background: var(--v-char);
+  transform-origin: 0 50%;
+}
+/* A tick at 50%: the line between a winning and a losing record. */
+.v-cb-meter::after,
+.v-cx-meter::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  border-left: 2px solid color-mix(in srgb, var(--v-text) 55%, transparent);
+}
+[data-enter] .v-cb-meter i {
+  animation: v-cb-fill 900ms var(--v-ease-out) both;
+  animation-delay: calc(260ms + var(--r, 0) * 55ms - var(--enter-elapsed, 0ms));
+}
+@keyframes v-cb-fill {
+  from {
+    transform: scaleX(0);
+  }
+}
+
+.v-pips {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.v-pips i {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  background: var(--pip-off, var(--v-well));
+  transform: rotate(45deg);
+}
+.v-pips i.is-on {
+  background: var(--pip-on, var(--v-char));
+}
+.v-pips--lg {
+  gap: 7px;
+}
+.v-pips--lg i {
+  width: 13px;
+  height: 13px;
+  border: var(--v-outline);
+}
+
+/* Narrow rows: past five banners the row splits evenly (6 → 3 × 2) rather
+   than squeezing six portraits into tablet width. */
+@container v-chx (max-width: 860px) {
+  .v-cb-row {
+    grid-template-columns: repeat(var(--cols-narrow, var(--cols, 5)), minmax(0, 1fr));
+  }
+}
+
+/* ---- Codex slot ------------------------------------------------------------------- */
+/* Empty until a banner is picked; the hint lives in CSS so the shared
+   handler can clear the slot with innerHTML = "" as it always has. */
+.v-cx-slot:empty {
+  display: grid;
+  place-items: center;
+  min-height: 112px;
+  margin-top: var(--v-space-5);
+  padding: var(--v-space-4);
+  border: 2px dashed var(--v-line);
+  border-radius: var(--v-radius-lg);
+}
+.v-cx-slot:empty::before {
+  content: "Pick a banner to open its codex page: playstyle, archetypes, core mechanics and climbing tips.";
+  max-width: 46ch;
+  color: var(--v-text-2);
+  font-size: var(--v-text-sm);
+  font-weight: 700;
+  line-height: 1.45;
+  text-align: center;
+}
+
+/* ---- Codex page ------------------------------------------------------------------- */
+.v-cx {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(240px, 296px) minmax(0, 1fr);
+  gap: var(--v-space-5) var(--v-space-6);
+  margin-top: var(--v-space-5);
+  padding: calc(var(--v-space-5) + 8px) var(--v-space-5) var(--v-space-5);
+  border: var(--v-outline);
+  border-radius: var(--v-radius-lg);
+  background:
+    radial-gradient(520px 260px at 0% 0%, color-mix(in srgb, var(--v-char) 16%, transparent), transparent 70%),
+    var(--v-surface-1);
+  box-shadow: var(--v-shadow);
+  animation: v-cx-open 320ms var(--v-ease-out) both;
+}
+/* The character's colour runs along the top edge like a bookmark ribbon. */
+.v-cx::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: 10px;
+  border-bottom: var(--v-outline);
+  border-radius: calc(var(--v-radius-lg) - var(--v-outline-w)) calc(var(--v-radius-lg) - var(--v-outline-w)) 0 0;
+  background: var(--v-char);
+}
+@keyframes v-cx-open {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+.v-cx-side {
+  position: sticky;
+  top: var(--v-space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--v-space-5);
+  align-self: start;
+  min-width: 0;
+}
+
+/* The character as a big playing card: cost orb (difficulty), coloured name
+   band, art window, rules text (role). */
+.v-cx-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  margin: 6px 0 0 6px;
+  border: var(--v-outline);
+  border-radius: var(--v-radius-md);
+  background: var(--v-paper);
+  box-shadow: var(--v-shadow);
+  color: var(--v-on-paper);
+  transform: rotate(-1.5deg);
+}
+.v-cx-orb {
+  position: absolute;
+  top: -12px;
+  left: -12px;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: var(--v-outline);
+  border-radius: 50%;
+  background: var(--v-paper);
+  box-shadow: 2px 2px 0 var(--v-ink);
+  color: var(--v-on-paper);
+  font-family: var(--v-font-display);
+  font-size: 1.5rem;
+  font-weight: var(--v-display-weight);
+  line-height: 1;
+}
+.v-cx-band {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 6px 12px 6px 40px;
+  border-bottom: var(--v-outline);
+  border-radius: calc(var(--v-radius-md) - var(--v-outline-w)) calc(var(--v-radius-md) - var(--v-outline-w)) 0 0;
+  background: var(--v-char);
+  color: var(--v-ink);
+}
+.v-cx-name {
+  overflow: hidden;
+  font-family: var(--v-font-display);
+  font-size: 1.875rem;
+  font-weight: var(--v-display-weight);
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.v-cx-art {
+  position: relative;
+  display: grid;
+  place-items: end center;
+  height: 214px;
+  margin: 10px 10px 0;
+  overflow: hidden;
+  border: var(--v-outline);
+  border-radius: var(--v-radius-sm);
+  background:
+    radial-gradient(60% 36% at 50% 100%, color-mix(in srgb, var(--v-char) 70%, var(--v-text)) 0%, transparent 100%),
+    repeating-linear-gradient(135deg, transparent 0 11px, color-mix(in srgb, var(--v-ink) 12%, transparent) 11px 22px),
+    color-mix(in srgb, var(--v-char) 58%, var(--v-ink));
+}
+.v-cx-art::after {
+  content: "";
+  position: absolute;
+  bottom: 18px;
+  left: 50%;
+  width: 56%;
+  height: 12px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--v-ink) 55%, transparent);
+  transform: translateX(-50%);
+}
+.v-cx-art img {
+  position: relative;
+  z-index: 1;
+  width: auto;
+  height: 196px;
+  max-width: 96%;
+  margin-bottom: -8px;
+  object-fit: contain;
+  object-position: 50% 100%;
+  filter: drop-shadow(2px 2px 0 var(--v-ink));
+}
+.v-cx-art img.is-inked {
+  height: 172px;
+  max-width: 86%;
+  margin-bottom: 22px;
+  filter: var(--v-actor-ink);
+}
+.v-cx-art .v-cb-glyph {
+  margin-bottom: 44px;
+}
+.v-cx-text {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 10px 14px 14px;
+  text-align: center;
+}
+.v-cx-role {
+  color: var(--v-on-paper);
+  font-size: var(--v-text-sm);
+  font-weight: 800;
+  line-height: 1.3;
+}
+.v-cx-diff {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--v-on-paper-2);
+  font-size: 0.8125rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  --pip-off: var(--v-paper-2);
+}
+.v-cx-diff .v-pips i {
+  border: 1px solid var(--v-on-paper-2);
+}
+
+/* Record: a dark well under the card. */
+.v-cx-record {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px 16px;
+  border: var(--v-outline);
+  border-radius: var(--v-radius-md);
+  background: var(--v-bg-deep);
+}
+.v-cx-record-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--v-space-3);
+}
+.v-cx-wr {
+  font-family: var(--v-font-display);
+  font-size: 2.75rem;
+  font-weight: var(--v-display-weight);
+  line-height: 0.9;
+  color: color-mix(in srgb, var(--v-char) 78%, var(--v-text));
+  font-variant-numeric: tabular-nums;
+}
+.v-cx-wr small {
+  font-size: 0.5em;
+}
+.v-cx-meter {
+  height: 14px;
+}
+.v-cx-nums {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--v-space-2);
+  margin: 2px 0 0;
+}
+.v-cx-nums div {
+  display: flex;
+  flex-direction: column-reverse;
+}
+.v-cx-nums dt {
+  color: var(--v-text-2);
+  font-size: 0.8125rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.v-cx-nums dd {
+  margin: 0;
+  font-family: var(--v-font-display);
+  font-size: var(--v-text-xl);
+  font-weight: var(--v-display-weight);
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.v-cx-nums .is-win {
+  color: var(--v-win);
+}
+.v-cx-nums .is-loss {
+  color: var(--v-loss);
+}
+.v-cx-record-none {
+  margin: 0;
+  color: var(--v-text-2);
+  font-size: var(--v-text-sm);
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+/* ---- Codex main column --------------------------------------------------------------- */
+/* No hand-written entry: card left, note + record right, centred. */
+.v-cx.is-bare {
+  align-items: center;
+}
+.v-cx.is-bare .v-cx-main {
+  gap: var(--v-space-4);
+}
+.v-cx.is-bare .v-cx-record {
+  max-width: 420px;
+}
+.v-cx-main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v-space-3);
+  min-width: 0;
+}
+.v-cx-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--v-space-3);
+}
+.v-cx-tagline {
+  max-width: 44ch;
+  margin: 0 0 var(--v-space-2);
+  font-family: var(--v-font-heading);
+  font-size: var(--v-text-xl);
+  font-weight: 800;
+  line-height: 1.2;
+  color: var(--v-title);
+  text-shadow: 2px 2px 0 var(--v-ink);
+}
+.v-cx-accs {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v-space-3);
+}
+.v-cx-acc {
+  border: var(--v-outline);
+  border-radius: var(--v-radius-md);
+  background: var(--v-surface-2);
+  box-shadow: var(--v-shadow-sm);
+}
+.v-cx-acc > summary {
+  display: grid;
+  grid-template-columns: 38px auto minmax(0, 1fr) 20px;
+  align-items: center;
+  gap: var(--v-space-3);
+  min-height: 58px;
+  padding: 9px 14px 9px 10px;
+  border-radius: calc(var(--v-radius-md) - var(--v-outline-w));
+  cursor: pointer;
+  list-style: none;
+  transition: background-color var(--v-dur-1) ease;
+}
+.v-cx-acc > summary::-webkit-details-marker {
+  display: none;
+}
+.v-cx-acc > summary:hover {
+  background: color-mix(in srgb, var(--v-char) 12%, var(--v-surface-2));
+}
+.v-cx-acc > summary:focus-visible {
+  outline: 3px solid var(--v-title);
+  outline-offset: 2px;
+}
+.v-cx-acc[open] > summary {
+  border-bottom: 2px dashed var(--v-line);
+  border-radius: calc(var(--v-radius-md) - var(--v-outline-w)) calc(var(--v-radius-md) - var(--v-outline-w)) 0 0;
+}
+.v-cx-acc-orb {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border: var(--v-outline);
+  border-radius: 50%;
+  background: var(--v-paper);
+  box-shadow: 2px 2px 0 var(--v-ink);
+  color: var(--v-on-paper);
+  transition: background-color var(--v-dur-2) ease;
+}
+.v-cx-acc[open] .v-cx-acc-orb {
+  background: var(--v-char);
+  color: var(--v-ink);
+}
+.v-cx-acc-orb svg {
+  width: 19px;
+  height: 19px;
+}
+.v-cx-acc-title {
+  font-family: var(--v-font-heading);
+  font-size: var(--v-text-xl);
+  font-weight: 800;
+  line-height: 1;
+  color: var(--v-text);
+}
+.v-cx-acc-hint {
+  overflow: hidden;
+  color: var(--v-text-2);
+  font-size: var(--v-text-sm);
+  font-weight: 600;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.v-cx-acc-chev {
+  display: grid;
+  place-items: center;
+  color: var(--v-text-2);
+  transition: transform var(--v-dur-2) var(--v-ease-spring);
+}
+.v-cx-acc-chev svg {
+  width: 18px;
+  height: 18px;
+}
+.v-cx-acc[open] .v-cx-acc-chev {
+  color: var(--v-title);
+  transform: rotate(180deg);
+}
+.v-cx-acc-body {
+  padding: var(--v-space-4) var(--v-space-4) var(--v-space-4);
+}
+.v-cx-acc[open] .v-cx-acc-body {
+  animation: v-cx-acc-open 240ms var(--v-ease-out) both;
+}
+@keyframes v-cx-acc-open {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+
+/* Playstyle */
+.v-cx-summary {
+  max-width: 72ch;
+  margin: 0;
+  color: var(--v-text);
+  font-size: var(--v-text-md);
+  line-height: 1.55;
+}
+.v-cx-gauges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--v-space-3) var(--v-space-6);
+  margin-top: var(--v-space-4);
+}
+.v-cx-gauge {
+  display: flex;
+  align-items: center;
+  gap: var(--v-space-3);
+}
+.v-cx-gauge-label {
+  min-width: 92px;
+  color: var(--v-text-2);
+  font-size: 0.8125rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.v-cx-gauge-val {
+  color: var(--v-text);
+  font-size: var(--v-text-sm);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Archetypes */
+.v-cx-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--v-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.v-cx-chips .v-chip {
+  padding: 5px 14px;
+  font-size: var(--v-text-sm);
+}
+.v-cx-chips .v-chip::before {
+  content: "";
+  width: 9px;
+  height: 9px;
+  border: 1.5px solid var(--v-ink);
+  border-radius: 50%;
+  background: var(--v-char);
+}
+
+/* Core mechanics: small inked cards, two up. */
+.v-cx-mechs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--v-space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.v-cx-mech {
+  padding: 12px 14px 13px;
+  border: var(--v-outline);
+  border-top: 5px solid var(--v-char);
+  border-radius: var(--v-radius-sm);
+  background: var(--v-bg-deep);
+}
+.v-cx-mech strong {
+  display: block;
+  margin-bottom: 4px;
+  color: color-mix(in srgb, var(--v-char) 70%, var(--v-text));
+  font-size: var(--v-text-md);
+  font-weight: 800;
+}
+.v-cx-mech p {
+  margin: 0;
+  color: var(--v-text-2);
+  font-size: var(--v-text-sm);
+  line-height: 1.5;
+}
+
+/* Climbing tips: numbered orbs. */
+.v-cx-tips {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v-space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: v-tip;
+}
+.v-cx-tips li {
+  position: relative;
+  min-height: 28px;
+  padding: 3px 0 0 42px;
+  color: var(--v-text);
+  font-size: var(--v-text-md);
+  line-height: 1.5;
+  counter-increment: v-tip;
+}
+.v-cx-tips li::before {
+  content: counter(v-tip);
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: var(--v-outline);
+  border-radius: 50%;
+  background: var(--v-char);
+  color: var(--v-ink);
+  font-size: var(--v-text-sm);
+  font-weight: 800;
+}
+
+/* ---- Reduced motion ----------------------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  .v-cx,
+  .v-cx-acc[open] .v-cx-acc-body,
+  [data-enter] .v-cb-meter i {
+    animation: none;
+  }
+  .v-cb,
+  .v-cb-plate img,
+  .v-cb-cta svg,
+  .v-cx-acc-chev {
+    transition: none;
+  }
+  .v-cb:hover,
+  .v-cb:hover .v-cb-plate img {
+    transform: none;
+  }
+}
+.prefer-reduced-motion .v-cx,
+.prefer-reduced-motion .v-cx-acc[open] .v-cx-acc-body,
+.prefer-reduced-motion [data-enter] .v-cb-meter i {
+  animation: none;
+}
+.prefer-reduced-motion .v-cb,
+.prefer-reduced-motion .v-cb-plate img,
+.prefer-reduced-motion .v-cb-cta svg,
+.prefer-reduced-motion .v-cx-acc-chev {
+  transition: none;
+}
+.prefer-reduced-motion .v-cb:hover,
+.prefer-reduced-motion .v-cb:hover .v-cb-plate img {
+  transform: none;
+}
+
+/* ---- Responsive ----------------------------------------------------------------------- */
+/* Narrow desktop and tablets: five still fit across, so the banners slim. */
+@media (max-width: 1180px) {
+  .v-cb-row {
+    gap: var(--v-space-3);
+  }
+  .v-cb-plate {
+    height: 156px;
+  }
+  .v-cb-plate img {
+    height: 136px;
+  }
+  .v-cb-plate img.is-inked {
+    height: 112px;
+    margin-bottom: 24px;
+  }
+  .v-cb-wr {
+    font-size: 2.125rem;
+  }
+  .v-cx {
+    grid-template-columns: minmax(220px, 250px) minmax(0, 1fr);
+    gap: var(--v-space-5);
+  }
+  .v-cx-mechs {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .v-cx-acc-hint {
+    display: none;
+  }
+  .v-cx-acc > summary {
+    grid-template-columns: 38px minmax(0, 1fr) 20px;
+  }
+}
+
+@media (max-width: 880px) {
+  .v-chx .v-eyebrow,
+  .v-cx .v-eyebrow {
+    font-size: 0.8125rem;
+  }
+  /* One column, read top to bottom: who (card), how you do (record), then
+     the guide. The two column wrappers dissolve so their parts can be
+     ordered directly. */
+  .v-cx {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--v-space-4);
+    padding: calc(var(--v-space-4) + 10px) var(--v-space-4) var(--v-space-4);
+  }
+  .v-cx-side,
+  .v-cx-main {
+    display: contents;
+  }
+  .v-cx-head { order: 1; }
+  .v-cx-card { order: 2; }
+  .v-cx-record { order: 3; }
+  .v-cx-tagline { order: 4; }
+  .v-cx-accs { order: 5; }
+  .v-cx-tagline {
+    margin: var(--v-space-2) 0 0;
+  }
+  .v-cx-close {
+    width: 44px;
+    height: 44px;
+  }
+
+  /* The card turns sideways: art window left, name band and role right. */
+  .v-cx-card {
+    display: grid;
+    grid-template-columns: 124px minmax(0, 1fr);
+    grid-template-rows: auto 1fr;
+    margin: 4px 0 0;
+    transform: none;
+  }
+  .v-cx-band {
+    grid-column: 2;
+    justify-content: flex-start;
+    padding: 6px 14px;
+    border-radius: 0 calc(var(--v-radius-md) - var(--v-outline-w)) 0 0;
+  }
+  .v-cx-name {
+    font-size: 1.75rem;
+  }
+  .v-cx-art {
+    grid-row: 1 / span 2;
+    grid-column: 1;
+    height: auto;
+    min-height: 152px;
+    margin: 0;
+    border-width: 0 var(--v-outline-w) 0 0;
+    border-radius: calc(var(--v-radius-md) - var(--v-outline-w)) 0 0 calc(var(--v-radius-md) - var(--v-outline-w));
+  }
+  .v-cx-art img {
+    height: 136px;
+  }
+  .v-cx-art img.is-inked {
+    height: 108px;
+    margin-bottom: 18px;
+  }
+  .v-cx-art .v-cb-glyph {
+    margin-bottom: 36px;
+  }
+  .v-cx-text {
+    grid-column: 2;
+    align-items: flex-start;
+    justify-content: center;
+    text-align: left;
+  }
+  .v-cx-orb {
+    top: -10px;
+    left: -8px;
+    width: 38px;
+    height: 38px;
+    font-size: 1.25rem;
+  }
+}
+
+/* Phones: the banners become a swipeable row that snaps to each banner, with
+   the next one peeking in so the row reads as scrollable. The codex card
+   turns sideways so the guide starts above the fold. */
+@media (max-width: 720px) {
+  .v-cb-row {
+    display: flex;
+    gap: var(--v-space-3);
+    margin-inline: -16px;
+    padding: 12px 16px 18px;
+    overflow-x: auto;
+    scroll-padding-inline: 16px;
+    scroll-snap-type: x mandatory;
+    scrollbar-width: none;
+  }
+  .v-cb-row::-webkit-scrollbar {
+    display: none;
+  }
+  .v-cb-cell {
+    flex: 0 0 156px;
+    scroll-snap-align: start;
+  }
+  .v-cb:hover,
+  .v-cb.is-active {
+    transform: none;
+  }
+  .v-cb.is-active::after {
+    display: none;
+  }
+  .v-cx-card {
+    grid-template-columns: 112px minmax(0, 1fr);
+  }
+  .v-cx-name {
+    font-size: 1.625rem;
+  }
+  .v-cx-slot:empty {
+    min-height: 88px;
+  }
+  .v-cx-tagline {
+    font-size: var(--v-text-lg);
+  }
+  .v-cx-acc > summary {
+    gap: var(--v-space-2) var(--v-space-3);
+    padding-right: 12px;
+  }
+  .v-cx-acc-title {
+    font-size: var(--v-text-lg);
+  }
+  .v-cx-acc-body {
+    padding: var(--v-space-3);
+  }
+  .v-cx-gauges {
+    flex-direction: column;
+  }
+  .v-cx-tips li {
+    font-size: var(--v-text-sm);
+  }
+}

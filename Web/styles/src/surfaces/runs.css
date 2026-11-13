@@ -1,0 +1,2029 @@
+/* ==========================================================================
+   Recent Runs — the run ledger, run detail, compare, share chrome.
+     ledger   filter bar → section title → run rows (sigil, ascension, floor
+              with climb meter, time, Victory/Defeat stamp) → Show more
+     detail   a parchment page: hero + stamp, stats, the act path as map
+              nodes with the "fell here" marker, relics shelf, deck grid,
+              card picks, sticky actions
+     compare  the same page language, two or three columns
+   Markup from lib/ui/views-runs.js; the share modal and the hover preview
+   are legacy markup, restyled here.
+   ========================================================================== */
+
+/* ---- Stamps: inked rubber stamps, double rule, slightly askew ---------------- */
+.v-stamp {
+  --stamp: var(--v-loss);
+  --tilt: -6deg;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 9px 1px;
+  border: 5px double var(--stamp);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--stamp) 9%, transparent);
+  color: var(--stamp);
+  font-family: var(--v-font-heading);
+  font-size: 0.875rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  line-height: 1.25;
+  text-transform: uppercase;
+  white-space: nowrap;
+  transform: rotate(var(--tilt));
+  /* A little missing ink, like a real stamp. */
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='60'%3E%3Cfilter id='s'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.55' numOctaves='2' seed='4'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 -7 0 0 0 5.1'/%3E%3C/filter%3E%3Crect width='120' height='60' filter='url(%23s)'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='60'%3E%3Cfilter id='s'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.55' numOctaves='2' seed='4'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 -7 0 0 0 5.1'/%3E%3C/filter%3E%3Crect width='120' height='60' filter='url(%23s)'/%3E%3C/svg%3E");
+}
+.v-stamp[data-result="win"] {
+  --stamp: var(--v-win);
+  --tilt: -4deg;
+}
+.v-stamp[data-result="abandon"] {
+  --stamp: var(--v-text-2);
+  --tilt: -3deg;
+  border-style: dashed;
+  border-width: 2px;
+  padding: 4px 11px 3px;
+}
+/* On parchment the stamp ink is darkened toward the page's text colour so it
+   keeps its contrast on light paper (and lightened on Classic Vault's dark
+   paper, whose text colour is light). */
+.v-rd .v-stamp,
+.v-cmp .v-stamp,
+.run-preview .run-preview-result {
+  --stamp: color-mix(in srgb, var(--v-loss) 52%, var(--v-on-paper));
+}
+.v-rd .v-stamp[data-result="win"],
+.v-cmp .v-stamp[data-result="win"],
+.run-preview .run-preview-result.is-win {
+  --stamp: color-mix(in srgb, var(--v-win) 42%, var(--v-on-paper));
+}
+.v-rd .v-stamp[data-result="abandon"],
+.v-cmp .v-stamp[data-result="abandon"],
+.run-preview .run-preview-result.is-abandon {
+  --stamp: var(--v-on-paper-2);
+}
+
+/* ---- Character plate (sigil, detail hero, compare head) ---------------------- */
+.v-run-sigil,
+.v-rd-plate,
+.v-cmp-plate {
+  position: relative;
+  display: grid;
+  flex: none;
+  place-items: end center;
+  overflow: hidden;
+  border: var(--v-outline);
+  background:
+    radial-gradient(60% 55% at 50% 100%, color-mix(in srgb, var(--v-char) 85%, var(--v-paper)) 0%, transparent 100%),
+    color-mix(in srgb, var(--v-char) 58%, var(--v-ink));
+  color: var(--v-ink);
+}
+.v-run-sigil img,
+.v-rd-plate img,
+.v-cmp-plate img {
+  width: auto;
+  max-width: none;
+  object-fit: contain;
+}
+.v-run-sigil img.is-inked,
+.v-rd-plate img.is-inked,
+.v-cmp-plate img.is-inked {
+  filter: var(--v-actor-ink);
+}
+.v-run-sigil svg,
+.v-rd-plate svg,
+.v-cmp-plate svg {
+  align-self: center;
+  width: 55%;
+  height: 55%;
+}
+
+/* ==========================================================================
+   The ledger
+   ========================================================================== */
+.v-runs {
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---- Filter bar --------------------------------------------------------------- */
+.v-runs-filters {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v-space-3);
+  padding: var(--v-space-4) var(--v-space-4) var(--v-space-3);
+}
+.v-runs-filters-top {
+  display: flex;
+  align-items: center;
+  gap: var(--v-space-3);
+}
+.v-runs-search {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  height: 44px;
+  padding: 0 14px;
+  border: var(--v-outline);
+  border-radius: var(--v-radius-pill);
+  background: var(--v-well);
+  color: var(--v-text-2);
+  cursor: text;
+  transition: box-shadow var(--v-dur-1) ease;
+}
+.v-runs-search:focus-within {
+  box-shadow: 0 0 0 3px var(--v-title);
+}
+.v-runs-search svg {
+  flex: none;
+  width: 18px;
+  height: 18px;
+}
+.v-runs-search input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--v-text);
+  font: 600 var(--v-text-md) / 1 var(--v-font-text);
+  outline: none;
+}
+.v-runs-search input::placeholder {
+  color: var(--v-text-3);
+  opacity: 1;
+}
+.v-runs-compare {
+  height: 44px;
+  padding-inline: 16px;
+}
+.v-runs-compare svg {
+  width: 16px;
+  height: 16px;
+}
+.v-runs-compare[aria-pressed="true"] {
+  background: var(--v-title);
+  color: var(--v-ink);
+}
+
+.v-runs-groups {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--v-space-3) var(--v-space-5);
+}
+.v-runs-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.v-runs-group-label {
+  color: var(--v-text-2);
+  font-size: var(--v-text-xs);
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+/* A segmented track: one chip of each group is always the pressed one. */
+.v-runs-chips {
+  display: flex;
+  gap: 3px;
+  padding: 3px;
+  border: var(--v-outline);
+  border-radius: var(--v-radius-pill);
+  background: var(--v-well);
+}
+.v-runs-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: var(--v-radius-pill);
+  background: transparent;
+  color: var(--v-text-2);
+  font: 700 var(--v-text-sm) / 1 var(--v-font-text);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color var(--v-dur-1) ease, color var(--v-dur-1) ease, transform var(--v-dur-1) ease;
+}
+.v-runs-chip:hover {
+  background: var(--v-surface-2);
+  color: var(--v-text);
+}
+.v-runs-chip[aria-pressed="true"] {
+  background: var(--v-title);
+  box-shadow: inset 0 0 0 var(--v-outline-w) var(--v-ink);
+  color: var(--v-ink);
+}
+.v-runs-chip[data-char][aria-pressed="true"] {
+  background: var(--v-char);
+}
+.v-runs-dot {
+  width: 9px;
+  height: 9px;
+  border: 1.5px solid var(--v-ink);
+  border-radius: 50%;
+  background: var(--v-char);
+}
+.v-runs-summary {
+  margin: 0;
+  padding-top: var(--v-space-2);
+  border-top: 2px dashed var(--v-line);
+  color: var(--v-text-2);
+  font-size: var(--v-text-sm);
+  font-weight: 600;
+}
+.v-runs-summary b {
+  color: var(--v-text);
+  font-weight: 800;
+}
+.v-runs-clear {
+  margin-left: 6px;
+  padding: 2px 4px;
+  border: 0;
+  background: none;
+  color: var(--v-title);
+  font: 800 var(--v-text-sm) / 1.2 var(--v-font-text);
+  text-decoration: underline 2px;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+/* Legacy status pill (auto-refresh paused / error), re-housed as a notice. */
+.v-runs .auto-refresh-pill:not([hidden]) {
+  margin: var(--v-space-4) 0 0;
+  border: var(--v-outline);
+  border-radius: var(--v-radius-md);
+  background: var(--v-surface-1);
+  box-shadow: var(--v-shadow-sm);
+  color: var(--v-text);
+}
+.v-runs-title {
+  margin-bottom: var(--v-space-4);
+}
+
+/* ---- Run rows ------------------------------------------------------------------- */
+.v-runs-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  container: v-runs / inline-size;
+}
+/* "Slain by …" only where the row has room for all of it; the hover preview
+   and the run page always say it. */
+@container v-runs (max-width: 1040px) {
+  .v-run-killer {
+    display: none;
+  }
+}
+/* Ledger dividers between days and weeks. */
+.v-runs-day {
+  display: flex;
+  align-items: center;
+  gap: var(--v-space-3);
+  margin: var(--v-space-4) 0 0;
+  color: var(--v-title);
+  font-family: var(--v-font-heading);
+  font-size: var(--v-text-lg);
+  font-weight: 800;
+  line-height: 1.1;
+}
+.v-runs-day:first-child {
+  margin-top: 0;
+}
+.v-runs-day::after {
+  content: "";
+  flex: 1;
+  border-top: 2px dotted color-mix(in srgb, var(--v-title) 35%, transparent);
+}
+.v-run {
+  position: relative;
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr) 112px 72px 128px auto;
+  align-items: center;
+  gap: var(--v-space-4);
+  min-height: 74px;
+  padding: 10px 12px 10px 24px;
+  overflow: hidden;
+  border: var(--v-outline);
+  border-radius: var(--v-radius-md);
+  background: var(--v-surface-1);
+  box-shadow: var(--v-shadow-sm);
+  color: var(--v-text);
+  cursor: pointer;
+  transition: transform var(--v-dur-1) ease, box-shadow var(--v-dur-1) ease, background-color var(--v-dur-1) ease;
+}
+/* The character's colour as a bookmark band down the left edge. */
+.v-run::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 10px;
+  border-right: var(--v-outline);
+  background: var(--v-char);
+}
+.v-run:hover {
+  background: var(--v-surface-2);
+  box-shadow: var(--v-shadow-pressed);
+  transform: translate(var(--v-press), var(--v-press));
+}
+.v-runs.is-comparing .v-run {
+  grid-template-columns: 28px 52px minmax(0, 1fr) 112px 72px 128px;
+}
+.v-runs.is-comparing .v-run-actions {
+  display: none;
+}
+.v-run.is-compare-selected {
+  background: color-mix(in srgb, var(--v-title) 14%, var(--v-surface-1));
+  box-shadow: var(--v-shadow-sm), inset 0 0 0 2px var(--v-title);
+}
+.v-run-check {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: var(--v-outline);
+  border-radius: var(--v-radius-sm);
+  background: var(--v-well);
+  color: transparent;
+}
+.v-run-check svg {
+  width: 18px;
+  height: 18px;
+}
+.v-run.is-compare-selected .v-run-check {
+  background: var(--v-title);
+  color: var(--v-ink);
+}
+
+.v-run-sigil {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+}
+.v-run-sigil img {
+  height: 64px;
+  margin-bottom: -10px;
+}
+.v-run-sigil img.is-inked {
+  height: 86px;
+  margin-bottom: -38px;
+  filter: drop-shadow(1.5px 1.5px 0 var(--v-ink));
+}
+.v-run-id {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.v-run-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: var(--v-text-lg);
+  font-weight: 800;
+  line-height: 1.2;
+}
+.v-run-asc {
+  flex: none;
+  padding: 2px 8px;
+  border: var(--v-outline);
+  border-radius: var(--v-radius-pill);
+  background: var(--v-bg-deep);
+  color: var(--v-title);
+  font-size: 0.8125rem;
+  font-weight: 800;
+  line-height: 1.2;
+}
+.v-run-killer b {
+  color: var(--v-text);
+  font-weight: 700;
+}
+.v-run-date {
+  overflow: hidden;
+  min-width: 0;
+  color: var(--v-text-2);
+  font-size: var(--v-text-sm);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.v-run-stats {
+  display: contents;
+}
+.v-run-floor,
+.v-run-time {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: baseline;
+  column-gap: 6px;
+  min-width: 0;
+}
+.v-run-num {
+  font-family: var(--v-font-display);
+  font-size: 1.875rem;
+  font-weight: var(--v-display-weight);
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.v-run-time .v-run-num {
+  font-family: var(--v-font-text);
+  font-size: var(--v-text-lg);
+  font-weight: 800;
+}
+.v-run-cap {
+  color: var(--v-text-2);
+  font-size: var(--v-text-xs);
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.v-run-time {
+  grid-template-columns: 1fr;
+}
+/* How far up the spire this run got, against your deepest run. */
+.v-run-meter {
+  grid-column: 1 / -1;
+  height: 6px;
+  margin-top: 5px;
+  overflow: hidden;
+  border: 1.5px solid var(--v-ink);
+  border-radius: var(--v-radius-pill);
+  background: var(--v-well);
+}
+.v-run-meter i {
+  display: block;
+  height: 100%;
+  background: var(--v-char);
+  transform: scaleX(var(--p, 0));
+  transform-origin: 0 50%;
+}
+[data-enter] .v-run-meter i {
+  animation: v-fill 800ms var(--v-ease-out) both;
+  animation-delay: calc(200ms - var(--enter-elapsed, 0ms));
+}
+.v-run-stamp {
+  justify-self: center;
+}
+.v-run-actions {
+  display: flex;
+  gap: 8px;
+}
+.v-run-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 40px;
+  height: 40px;
+  padding: 0 10px;
+  border: var(--v-outline);
+  border-radius: var(--v-radius-sm);
+  background: var(--v-bg-deep);
+  box-shadow: var(--v-shadow-pressed);
+  color: var(--v-text);
+  font: 800 var(--v-text-sm) / 1 var(--v-font-text);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: transform var(--v-dur-1) ease, background-color var(--v-dur-1) ease, color var(--v-dur-1) ease;
+}
+.v-run-btn:hover {
+  background: var(--v-title);
+  color: var(--v-ink);
+}
+.v-run-btn:active {
+  box-shadow: none;
+  transform: translate(1px, 1px);
+}
+.v-run-btn svg {
+  width: 16px;
+  height: 16px;
+}
+/* Link glyphs are drawn by CSS: the shared copy-link handler swaps the
+   button's text for "Copied!" and back, which would drop an inline SVG. */
+.v-run-btn--link::before,
+.v-rd-copy::before {
+  content: "";
+  flex: none;
+  width: 16px;
+  height: 16px;
+  background: currentColor;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 1 0-7.07-7.07l-1.72 1.71'/%3E%3Cpath d='M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 1 0 7.07 7.07l1.71-1.71'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 1 0-7.07-7.07l-1.72 1.71'/%3E%3Cpath d='M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 1 0 7.07 7.07l1.71-1.71'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+.v-run-btn--link {
+  padding: 0;
+  font-size: var(--v-text-xs);
+}
+.v-run-btn--link.is-flashed {
+  padding: 0 8px;
+  background: var(--v-win);
+  color: var(--v-ink);
+}
+.v-run-btn--link.is-flashed::before {
+  display: none;
+}
+
+/* ---- Show more / empty ----------------------------------------------------------- */
+.v-runs-more {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: var(--v-space-3);
+  margin: var(--v-space-5) 0 0;
+  color: var(--v-text-2);
+  font-size: var(--v-text-sm);
+  font-weight: 600;
+}
+.v-runs-more p {
+  margin: 0 var(--v-space-2) 0 0;
+}
+.v-runs-more b {
+  color: var(--v-text);
+  font-weight: 800;
+}
+.v-runs-more .v-btn {
+  min-height: 42px;
+  padding-inline: 18px;
+}
+.v-runs-more.is-done {
+  justify-content: center;
+}
+.v-runs-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--v-space-3);
+  padding: var(--v-space-7) var(--v-space-4);
+  border: 2px dashed var(--v-line);
+  border-radius: var(--v-radius-lg);
+  color: var(--v-text-2);
+  text-align: center;
+}
+.v-runs-empty p {
+  margin: 0;
+  font-weight: 600;
+}
+.v-runs-empty .v-stamp {
+  font-size: var(--v-text-lg);
+}
+
+/* ---- Compare bar (legacy markup, fixed to the bottom edge) ----------------------- */
+.compare-bar-inner {
+  animation: v-runs-bar-in var(--v-dur-2) var(--v-ease-out);
+  gap: var(--v-space-3);
+  padding: 10px 10px 10px 18px;
+  border: var(--v-outline);
+  border-radius: var(--v-radius-md);
+  background: var(--v-paper);
+  box-shadow: var(--v-shadow-lg);
+  color: var(--v-on-paper);
+}
+.compare-bar-count {
+  color: var(--v-on-paper);
+  font-size: var(--v-text-md);
+  font-weight: 800;
+}
+.compare-bar-hint {
+  color: var(--v-on-paper-2);
+  font-size: var(--v-text-sm);
+}
+.compare-bar .btn-ghost {
+  background: var(--v-paper-2);
+  color: var(--v-on-paper);
+}
+/* The legacy entrance slid the bar sideways by half its width; it rises. */
+@keyframes v-runs-bar-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+}
+/* A fourth pick shakes the bar (the cap is three). */
+.compare-bar.is-shake .compare-bar-inner {
+  animation: v-runs-bar-shake 320ms var(--v-ease-inout);
+}
+@keyframes v-runs-bar-shake {
+  20%, 60% { transform: translateX(-5px); }
+  40%, 80% { transform: translateX(5px); }
+}
+/* The bar would sit on top of the compare page it opens. */
+body:has(#run-compare-modal:not([hidden])) .compare-bar {
+  visibility: hidden;
+}
+
+/* ---- Hover preview (legacy markup, appended to <body>) --------------------------- */
+.run-preview {
+  width: 300px;
+  padding: 0;
+  overflow: hidden;
+  border: var(--v-outline);
+  border-radius: var(--v-radius-md);
+  background: var(--v-paper);
+  box-shadow: var(--v-shadow-lg);
+  color: var(--v-on-paper);
+  font-family: var(--v-font-text);
+}
+.run-preview-head {
+  margin: 0;
+  padding: 10px 14px;
+  border-bottom: var(--v-outline);
+  background: var(--v-char);
+  color: var(--v-ink);
+}
+.run-preview-head::before {
+  display: none;
+}
+.run-preview-name strong {
+  font-family: var(--v-font-display);
+  font-size: var(--v-text-xl);
+  font-weight: var(--v-display-weight);
+  line-height: 1;
+}
+.run-preview-asc {
+  border: var(--v-outline);
+  border-radius: var(--v-radius-pill);
+  background: var(--v-paper);
+  color: var(--v-on-paper);
+  font-size: 0.75rem;
+}
+.run-preview .run-preview-result {
+  padding: 1px 7px 0;
+  border: 4px double var(--stamp);
+  border-radius: 6px;
+  background: var(--v-paper);
+  color: var(--stamp);
+  font-family: var(--v-font-heading);
+  font-size: 0.8125rem;
+  letter-spacing: 0.14em;
+  transform: rotate(-5deg);
+}
+.run-preview-stats {
+  margin: 0;
+  padding: 10px 14px 4px;
+}
+.run-preview-stats dt {
+  color: var(--v-on-paper-2);
+}
+.run-preview-stats dd {
+  color: var(--v-on-paper);
+  font-family: var(--v-font-display);
+  font-weight: var(--v-display-weight);
+}
+.run-preview-relics {
+  padding: 4px 14px 0;
+}
+.run-preview-relic {
+  border: var(--v-outline);
+  border-radius: 50%;
+  background: var(--v-paper-2);
+}
+.run-preview-more {
+  color: var(--v-on-paper-2);
+}
+.run-preview-killed {
+  margin: 8px 14px 0;
+  color: var(--v-on-paper-2);
+}
+.run-preview-killed strong {
+  color: var(--v-on-paper);
+}
+.run-preview-hint {
+  margin: 8px 0 0;
+  padding: 7px 14px;
+  border-top: 2px dashed color-mix(in srgb, var(--v-on-paper) 22%, transparent);
+  color: var(--v-on-paper-2);
+  font-size: 0.75rem;
+}
+
+/* ==========================================================================
+   Modal chrome: run detail, compare, share
+   ========================================================================== */
+#run-detail-modal,
+#run-compare-modal,
+#share-modal {
+  background: color-mix(in srgb, var(--v-ink) 74%, transparent);
+  -webkit-backdrop-filter: blur(3px);
+  backdrop-filter: blur(3px);
+}
+#run-detail-modal .modal,
+#run-compare-modal .modal,
+#share-modal .modal {
+  border: var(--v-outline);
+  border-radius: var(--v-radius-lg);
+  background: var(--v-paper);
+  box-shadow: var(--v-shadow-lg);
+  color: var(--v-on-paper);
+}
+#run-detail-modal .modal-head,
+#run-compare-modal .modal-head,
+#share-modal .modal-head {
+  position: relative;
+  z-index: 3;
+  padding: 10px 12px 10px 20px;
+  border-bottom: var(--v-outline);
+  background: var(--v-title);
+  color: var(--v-ink);
+}
+#run-detail-modal .modal-head h2,
+#run-compare-modal .modal-head h2,
+#share-modal .modal-head h2 {
+  color: var(--v-ink);
+  font-family: var(--v-font-display);
+  font-size: var(--v-text-xl);
+  font-weight: var(--v-display-weight);
+  line-height: 1.1;
+}
+#run-detail-modal .modal-close,
+#run-compare-modal .modal-close,
+#share-modal .modal-close {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  padding: 0 0 3px;
+  border: var(--v-outline);
+  border-radius: var(--v-radius-sm);
+  background: var(--v-paper);
+  box-shadow: var(--v-shadow-sm);
+  color: var(--v-on-paper);
+  font-size: 1.625rem;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  transition: transform var(--v-dur-1) ease, box-shadow var(--v-dur-1) ease;
+}
+#run-detail-modal .modal-close:hover,
+#run-compare-modal .modal-close:hover,
+#share-modal .modal-close:hover {
+  background: var(--v-paper);
+  box-shadow: var(--v-shadow-pressed);
+  transform: translate(var(--v-press), var(--v-press));
+}
+/* Run detail: the band takes the run's character colour. */
+#run-detail-modal:has(.v-rd) .modal-head {
+  background: var(--v-char);
+}
+#run-detail-modal:has(.v-rd[data-char="ironclad"]) { --v-char: var(--v-char-ironclad); }
+#run-detail-modal:has(.v-rd[data-char="silent"]) { --v-char: var(--v-char-silent); }
+#run-detail-modal:has(.v-rd[data-char="defect"]) { --v-char: var(--v-char-defect); }
+#run-detail-modal:has(.v-rd[data-char="regent"]) { --v-char: var(--v-char-regent); }
+#run-detail-modal:has(.v-rd[data-char="necrobinder"]) { --v-char: var(--v-char-necrobinder); }
+#run-detail-modal:has(.v-rd[data-char=""]) .modal-head { background: var(--v-title); }
+#run-detail-modal .modal-run-detail {
+  width: min(940px, calc(100vw - 48px));
+  max-width: none;
+  max-height: calc(100dvh - 48px);
+}
+#run-compare-modal .modal-run-compare {
+  width: min(1180px, calc(100vw - 48px));
+  max-width: none;
+  max-height: calc(100dvh - 48px);
+  background: var(--v-paper-2);
+}
+#run-compare-modal .modal-body {
+  padding: var(--v-space-5);
+}
+
+/* ==========================================================================
+   Run detail page
+   ========================================================================== */
+.v-rd {
+  --rd-pad: clamp(16px, 3vw, 28px);
+  display: flex;
+  flex-direction: column;
+  color: var(--v-on-paper);
+}
+.v-rd-hero {
+  display: grid;
+  grid-template-columns: 112px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--v-space-5);
+  padding: var(--v-space-5) var(--rd-pad);
+}
+.v-rd-plate {
+  width: 112px;
+  height: 112px;
+  border-radius: var(--v-radius-md);
+  box-shadow: var(--v-shadow-sm);
+}
+.v-rd-plate img {
+  height: 128px;
+  margin-bottom: -12px;
+}
+.v-rd-plate img.is-inked {
+  height: 96px;
+  max-width: 92%;
+  margin-bottom: 6px;
+}
+.v-rd-id {
+  min-width: 0;
+}
+.v-rd-date {
+  margin: 0;
+  color: var(--v-on-paper-2);
+  font-size: var(--v-text-sm);
+  font-weight: 700;
+}
+.v-rd-name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  margin: 2px 0 4px;
+  color: var(--v-on-paper);
+  font-family: var(--v-font-display);
+  font-size: var(--v-text-3xl);
+  font-weight: var(--v-display-weight);
+  line-height: 1;
+}
+.v-rd-asc {
+  padding: 3px 10px;
+  border: var(--v-outline);
+  border-radius: var(--v-radius-pill);
+  background: var(--v-on-paper);
+  color: var(--v-paper);
+  font-family: var(--v-font-text);
+  font-size: var(--v-text-md);
+  font-weight: 800;
+  line-height: 1.2;
+}
+.v-rd-fate {
+  margin: 0;
+  color: var(--v-on-paper);
+  font-size: var(--v-text-lg);
+  font-weight: 700;
+}
+.v-rd-meta {
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
+  color: var(--v-on-paper-2);
+  font-size: var(--v-text-sm);
+  font-weight: 600;
+}
+.v-rd-meta b {
+  color: var(--v-on-paper);
+}
+.v-rd-stamp {
+  margin-right: 6px;
+  padding: 4px 16px 3px;
+  border-width: 7px;
+  font-size: var(--v-text-2xl);
+  letter-spacing: 0.12em;
+}
+
+/* Five plaques in one row. */
+.v-rd-stats {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: var(--v-space-2);
+  margin: 0;
+  padding: 0 var(--rd-pad) var(--v-space-5);
+}
+.v-rd-stats div,
+.v-cmp-stats div {
+  display: flex;
+  flex-direction: column-reverse;
+  align-items: center;
+  min-width: 0;
+  padding: 8px 6px;
+  border: var(--v-outline);
+  border-radius: var(--v-radius-sm);
+  background: var(--v-paper-2);
+  text-align: center;
+}
+.v-rd-stats dt,
+.v-cmp-stats dt {
+  color: var(--v-on-paper-2);
+  font-size: var(--v-text-xs);
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.v-rd-stats dd,
+.v-cmp-stats dd {
+  margin: 0;
+  overflow: hidden;
+  max-width: 100%;
+  color: var(--v-on-paper);
+  font-family: var(--v-font-display);
+  font-size: var(--v-text-2xl);
+  font-weight: var(--v-display-weight);
+  line-height: 1.05;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.v-rd-sec {
+  padding: var(--v-space-5) var(--rd-pad);
+  border-top: 2px dashed color-mix(in srgb, var(--v-on-paper) 24%, transparent);
+}
+.v-rd-sec-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--v-space-3);
+  margin-bottom: var(--v-space-3);
+}
+.v-rd-sec-head h4 {
+  margin: 0;
+  color: var(--v-on-paper);
+  font-family: var(--v-font-heading);
+  font-size: var(--v-text-xl);
+  font-weight: 800;
+  line-height: 1.1;
+}
+.v-rd-count {
+  padding: 2px 10px;
+  border: var(--v-outline);
+  border-radius: var(--v-radius-pill);
+  color: var(--v-on-paper);
+  font-size: 0.75rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+.v-rd-note {
+  max-width: 64ch;
+  margin: -4px 0 var(--v-space-4);
+  color: var(--v-on-paper-2);
+  font-size: var(--v-text-sm);
+}
+.v-rd-note code {
+  font-weight: 700;
+}
+
+/* ---- The act path: map nodes on a dashed trail ------------------------------------ */
+.v-act + .v-act {
+  margin-top: var(--v-space-4);
+}
+.v-act-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  margin-bottom: var(--v-space-3);
+}
+.v-act-num {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: var(--v-outline);
+  border-radius: 50%;
+  background: var(--v-on-paper);
+  color: var(--v-paper);
+  font-family: var(--v-font-heading);
+  font-size: var(--v-text-md);
+  font-weight: 800;
+  line-height: 1;
+}
+.v-act-head h5 {
+  margin: 0;
+  color: var(--v-on-paper);
+  font-size: var(--v-text-md);
+  font-weight: 800;
+}
+.v-act-head h5 span {
+  color: var(--v-on-paper-2);
+  font-family: var(--v-font-heading);
+  font-size: var(--v-text-lg);
+}
+.v-act-sum {
+  margin-left: auto;
+  color: var(--v-on-paper-2);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+/* Nodes wrap into rows. Each node draws the dashed road from the one before
+   it; the trail clips its left edge so a node starting a new row has no
+   stub of road hanging off it. */
+.v-act-trail {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 10px 14px;
+  margin: 0;
+  padding: 12px 14px 12px 0;
+  list-style: none;
+  clip-path: inset(-60px -60px -60px 0);
+}
+.v-node {
+  --orb: 44px;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  width: var(--orb);
+}
+.v-node + .v-node::before {
+  content: "";
+  position: absolute;
+  top: calc(var(--orb) / 2 - 1px);
+  right: 100%;
+  width: 14px;
+  border-top: 2.5px dashed color-mix(in srgb, var(--v-on-paper) 55%, transparent);
+}
+.v-node.is-boss + .v-node::before,
+.v-node + .v-node.is-boss::before {
+  top: 21px;
+}
+.v-node-orb {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: var(--orb);
+  height: var(--orb);
+  border: var(--v-outline);
+  border-radius: 50%;
+  background: var(--v-paper-2);
+  box-shadow: 2px 2px 0 var(--v-ink);
+}
+.v-node-orb .path-node-icon {
+  width: 74%;
+  height: 74%;
+  filter: none;
+}
+.v-node--elite .v-node-orb {
+  background: color-mix(in srgb, var(--v-loss) 26%, var(--v-paper-2));
+}
+.v-node--rest .v-node-orb {
+  background: color-mix(in srgb, var(--v-accent) 26%, var(--v-paper-2));
+}
+.v-node--shop .v-node-orb,
+.v-node--chest .v-node-orb {
+  background: color-mix(in srgb, var(--v-gold) 24%, var(--v-paper-2));
+}
+.v-node.is-boss {
+  --orb: 56px;
+  margin-top: -6px;
+}
+.v-node.is-boss .v-node-orb {
+  background: color-mix(in srgb, var(--v-violet) 28%, var(--v-paper-2));
+  box-shadow: 3px 3px 0 var(--v-ink);
+}
+.v-node-floor {
+  color: var(--v-on-paper-2);
+  font-size: 0.75rem;
+  font-weight: 800;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+/* Where the run ended. */
+.v-node.path-node--death,
+.v-node.path-node--win {
+  width: var(--orb);
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+}
+.v-node.path-node--death::after,
+.v-node.path-node--win::after {
+  content: none;
+}
+.v-node.path-node--death .v-node-orb {
+  background: color-mix(in srgb, var(--v-loss) 40%, var(--v-paper-2));
+  box-shadow: 0 0 0 3px var(--v-paper), 0 0 0 6px color-mix(in srgb, var(--v-loss) 60%, var(--v-on-paper));
+}
+.v-node.path-node--death.is-abandon .v-node-orb {
+  background: var(--v-paper-2);
+  box-shadow: 0 0 0 3px var(--v-paper), 0 0 0 5px var(--v-on-paper-2);
+}
+.v-node.path-node--win .v-node-orb {
+  background: color-mix(in srgb, var(--v-gold) 45%, var(--v-paper-2));
+  box-shadow: 0 0 0 3px var(--v-paper), 0 0 0 6px color-mix(in srgb, var(--v-gold) 70%, var(--v-on-paper));
+}
+.v-node.path-node--death .v-node-floor,
+.v-node.path-node--win .v-node-floor {
+  margin-top: 5px;
+  color: var(--v-on-paper);
+}
+.v-node-badge {
+  position: absolute;
+  top: -8px;
+  right: -10px;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border: var(--v-outline);
+  border-radius: 50%;
+  background: var(--v-loss);
+  color: var(--v-ink);
+}
+.path-node--win .v-node-badge {
+  background: var(--v-gold);
+}
+.is-abandon .v-node-badge {
+  background: var(--v-paper);
+  color: var(--v-on-paper);
+}
+.v-node-badge svg {
+  width: 15px;
+  height: 15px;
+}
+.v-act-mark {
+  display: flex;
+  align-items: center;
+  align-self: flex-start;
+  min-height: var(--orb, 44px);
+  margin: 8px 0 0 4px;
+}
+.v-act-mark .v-stamp {
+  font-size: var(--v-text-md);
+}
+
+.v-rd-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin: var(--v-space-4) 0 0;
+  padding: 10px 12px;
+  border: 2px dashed color-mix(in srgb, var(--v-on-paper) 24%, transparent);
+  border-radius: var(--v-radius-sm);
+  list-style: none;
+  color: var(--v-on-paper-2);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+.v-rd-legend li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.v-rd-legend .path-node-icon {
+  width: 22px;
+  height: 22px;
+  filter: none;
+}
+/* The map icons also live in the legacy sheet; repeated here so the new UI
+   keeps them when that sheet is deleted. */
+.v-rd .path-node-icon {
+  display: block;
+  flex: none;
+  background: center / contain no-repeat;
+}
+.v-rd .path-node-icon[data-node-type="event"],
+.v-rd .path-node-icon[data-node-type="unknown"] { background-image: url("/assets/sts2/map-icons/event.webp?v=3"); }
+.v-rd .path-node-icon[data-node-type="shop"] { background-image: url("/assets/sts2/map-icons/shop.webp?v=3"); }
+.v-rd .path-node-icon[data-node-type="chest"] { background-image: url("/assets/sts2/map-icons/chest.webp?v=3"); }
+.v-rd .path-node-icon[data-node-type="rest"] { background-image: url("/assets/sts2/map-icons/rest.webp?v=4"); }
+.v-rd .path-node-icon[data-node-type="combat"] { background-image: url("/assets/sts2/map-icons/combat.webp?v=3"); }
+.v-rd .path-node-icon[data-node-type="elite"] { background-image: url("/assets/sts2/map-icons/elite.webp?v=3"); }
+.v-rd .path-node-icon[data-node-type="boss"] { background-image: url("/assets/sts2/map-icons/boss.webp?v=3"); }
+
+/* ---- Relics shelf, deck, picks ------------------------------------------------------ */
+.v-rd-relics {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
+  gap: var(--v-space-3) var(--v-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.v-rd-relic {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  text-align: center;
+}
+.v-rd-relic-orb,
+.v-cmp-relic {
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  border: var(--v-outline);
+  border-radius: 50%;
+  background: var(--v-paper-2);
+  box-shadow: 2px 2px 0 var(--v-ink);
+}
+.v-rd-relic-orb img,
+.v-cmp-relic img {
+  width: 74%;
+  height: 74%;
+  object-fit: contain;
+}
+.v-rd-relic-name {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--v-on-paper);
+  font-size: 0.75rem;
+  font-weight: 700;
+  line-height: 1.25;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.v-rd-fallback,
+.v-rd-card-fallback {
+  display: grid;
+  place-items: center;
+  color: var(--v-on-paper);
+  font-weight: 800;
+  text-transform: uppercase;
+}
+.v-rd-deck {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+  gap: var(--v-space-4) var(--v-space-3);
+  margin: 0;
+  padding: 0 6px 6px 0;
+  list-style: none;
+}
+.v-rd-card {
+  position: relative;
+  min-width: 0;
+}
+.v-rd-card-art {
+  position: relative;
+  display: block;
+  aspect-ratio: 205 / 256;
+  transition: transform var(--v-dur-2) var(--v-ease-spring);
+}
+.v-rd-card-art img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  filter: drop-shadow(2px 2px 0 var(--v-ink));
+}
+/* A stack of copies reads as a little pile. */
+.v-rd-card.is-stack .v-rd-card-art::before,
+.v-rd-card.is-stack .v-rd-card-art::after {
+  content: "";
+  position: absolute;
+  inset: 4% 6% 2% 6%;
+  z-index: -1;
+  border: var(--v-outline);
+  border-radius: 10px;
+  background: var(--v-paper-2);
+  transform: rotate(4deg) translate(4px, 1px);
+}
+.v-rd-card.is-stack .v-rd-card-art::after {
+  transform: rotate(-3deg) translate(-3px, 2px);
+}
+.v-rd-card-art {
+  isolation: isolate;
+}
+.v-rd-card:hover .v-rd-card-art {
+  transform: translateY(-4px) rotate(-1.5deg);
+}
+.v-rd-card-fallback {
+  width: 100%;
+  height: 100%;
+  border: var(--v-outline);
+  border-radius: 10px;
+  background: var(--v-paper-2);
+  font-size: var(--v-text-lg);
+}
+.v-rd-card-count {
+  position: absolute;
+  top: -8px;
+  right: -6px;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  min-width: 32px;
+  height: 28px;
+  padding: 0 6px;
+  border: var(--v-outline);
+  border-radius: var(--v-radius-pill);
+  background: var(--v-on-paper);
+  box-shadow: 2px 2px 0 var(--v-ink);
+  color: var(--v-paper);
+  font-size: var(--v-text-sm);
+  font-weight: 800;
+  line-height: 1;
+}
+.v-rd-picks {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px var(--v-space-5);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.v-rd-pick {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+  padding: 5px 0;
+  border-bottom: 1.5px dotted color-mix(in srgb, var(--v-on-paper) 25%, transparent);
+  font-size: var(--v-text-sm);
+}
+.v-rd-pick-floor {
+  flex: none;
+  min-width: 38px;
+  padding: 1px 0;
+  border: var(--v-outline);
+  border-radius: var(--v-radius-pill);
+  background: var(--v-paper-2);
+  color: var(--v-on-paper);
+  font-size: 0.75rem;
+  font-weight: 800;
+  text-align: center;
+}
+.v-rd-pick-body {
+  min-width: 0;
+  color: var(--v-on-paper);
+}
+.v-rd-pick-body b {
+  font-weight: 800;
+}
+.v-rd-pick-body em {
+  color: var(--v-on-paper-2);
+  font-style: italic;
+  font-weight: 700;
+}
+.v-rd-pick-skip {
+  margin-left: 4px;
+  color: var(--v-on-paper-2);
+}
+
+/* Actions stay in reach at the bottom of the scrolling page. */
+.v-rd-actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--v-space-2);
+  padding: var(--v-space-3) var(--rd-pad);
+  border-top: var(--v-outline);
+  background: var(--v-paper);
+}
+.v-rd-actions .v-btn {
+  min-height: 42px;
+}
+.v-rd-actions .v-btn:not(.v-btn--primary),
+.compare-bar .btn-ghost {
+  background: var(--v-paper-2);
+  color: var(--v-on-paper);
+}
+.v-rd-actions .v-btn:last-child {
+  margin-left: auto;
+}
+.v-rd-actions .v-btn svg {
+  width: 16px;
+  height: 16px;
+}
+.v-rd-copy.is-flashed {
+  background: var(--v-win);
+  color: var(--v-ink);
+}
+
+/* ==========================================================================
+   Compare page
+   ========================================================================== */
+.v-cmp {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v-space-5);
+  color: var(--v-on-paper);
+}
+.v-cmp-grid {
+  display: grid;
+  grid-template-columns: repeat(var(--cols, 2), minmax(0, 1fr));
+  gap: var(--v-space-4);
+}
+.v-cmp-col {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+  border: var(--v-outline);
+  border-radius: var(--v-radius-md);
+  background: var(--v-paper);
+  box-shadow: var(--v-shadow);
+}
+.v-cmp-head {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  align-items: center;
+  gap: 4px 12px;
+  padding: 12px 14px;
+  border-bottom: var(--v-outline);
+  background: color-mix(in srgb, var(--v-char) 30%, var(--v-paper));
+}
+.v-cmp-plate {
+  grid-row: span 2;
+  width: 64px;
+  height: 64px;
+  border-radius: var(--v-radius-sm);
+}
+.v-cmp-plate img {
+  height: 72px;
+  margin-bottom: -8px;
+}
+.v-cmp-plate img.is-inked {
+  height: 54px;
+  max-width: 90%;
+  margin-bottom: 4px;
+}
+.v-cmp-id {
+  min-width: 0;
+}
+.v-cmp-id .v-rd-name {
+  margin: 0;
+  font-size: var(--v-text-2xl);
+}
+.v-cmp-id .v-rd-asc {
+  font-size: var(--v-text-sm);
+}
+.v-cmp-stamp {
+  justify-self: start;
+  margin-left: 2px;
+}
+.v-cmp-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  margin: 0;
+  padding: 12px 14px;
+}
+.v-cmp-stats dd {
+  font-size: var(--v-text-xl);
+}
+.v-cmp-sec {
+  padding: 10px 14px 12px;
+  border-top: 2px dashed color-mix(in srgb, var(--v-on-paper) 24%, transparent);
+}
+.v-cmp-sec h4,
+.v-cmp-shared-block h4 {
+  margin: 0 0 8px;
+  color: var(--v-on-paper);
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.v-cmp-sec h4 small {
+  margin-left: 4px;
+  color: var(--v-on-paper-2);
+  font-size: inherit;
+  letter-spacing: 0.04em;
+  text-transform: none;
+}
+.v-cmp-relics,
+.v-cmp-cards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.v-cmp-relic {
+  width: 46px;
+  height: 46px;
+}
+.v-cmp-relic.is-shared {
+  background: color-mix(in srgb, var(--v-gold) 40%, var(--v-paper-2));
+  box-shadow: 0 0 0 3px var(--v-paper), 0 0 0 5px color-mix(in srgb, var(--v-gold) 70%, var(--v-on-paper));
+}
+.v-cmp-card {
+  width: 58px;
+  aspect-ratio: 205 / 256;
+}
+.v-cmp-card img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  filter: drop-shadow(1.5px 1.5px 0 var(--v-ink));
+}
+.v-cmp-card .v-rd-card-fallback {
+  font-size: var(--v-text-sm);
+}
+.v-cmp-empty,
+.v-cmp-none {
+  margin: 0;
+  color: var(--v-on-paper-2);
+  font-size: var(--v-text-sm);
+  font-weight: 600;
+}
+.v-cmp-fate {
+  margin: auto 0 0;
+  padding: 10px 14px;
+  border-top: var(--v-outline);
+  background: var(--v-paper-2);
+  color: var(--v-on-paper);
+  font-size: var(--v-text-sm);
+  font-weight: 700;
+}
+.v-cmp-shared {
+  padding: 14px 16px;
+  border: var(--v-outline);
+  border-radius: var(--v-radius-md);
+  background: color-mix(in srgb, var(--v-gold) 16%, var(--v-paper));
+  box-shadow: var(--v-shadow-sm);
+}
+.v-cmp-shared header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 12px;
+  margin-bottom: 10px;
+}
+.v-cmp-shared h3 {
+  margin: 0;
+  color: var(--v-on-paper);
+  font-family: var(--v-font-heading);
+  font-size: var(--v-text-xl);
+  font-weight: 800;
+}
+.v-cmp-shared header p {
+  margin: 0;
+  color: var(--v-on-paper-2);
+  font-size: var(--v-text-sm);
+}
+.v-cmp-shared-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--v-space-4) var(--v-space-6);
+}
+.v-cmp-none {
+  padding: 12px 16px;
+  border: 2px dashed color-mix(in srgb, var(--v-on-paper) 28%, transparent);
+  border-radius: var(--v-radius-md);
+}
+.v-cmp-foot {
+  margin: 0;
+  color: var(--v-on-paper-2);
+  font-size: 0.75rem;
+  text-align: center;
+}
+.v-cmp-foot kbd {
+  padding: 1px 6px;
+  border: 1.5px solid currentColor;
+  border-radius: 4px;
+  font: 800 0.6875rem / 1.4 var(--v-font-text);
+}
+
+/* ==========================================================================
+   Share modal chrome (the canvas card itself is fixed, see drawShareCard)
+   ========================================================================== */
+#share-modal .modal-share {
+  width: min(760px, calc(100vw - 48px));
+  max-width: none;
+}
+#share-modal .modal-body {
+  padding: var(--v-space-5);
+}
+#share-modal .share-preview-wrap {
+  flex: none;
+  border: var(--v-outline);
+  border-radius: var(--v-radius-md);
+  background: var(--v-ink);
+  box-shadow: var(--v-shadow);
+}
+#share-modal .share-actions {
+  gap: var(--v-space-2);
+  padding: var(--v-space-3) 0 var(--v-space-1);
+  background: var(--v-paper);
+}
+#share-modal .share-actions button {
+  min-height: 42px;
+  font-size: var(--v-text-sm);
+}
+#share-modal .btn-ghost {
+  background: var(--v-paper-2);
+  color: var(--v-on-paper);
+}
+#share-modal .share-hint {
+  color: var(--v-on-paper-2);
+  font-size: var(--v-text-sm);
+  font-weight: 600;
+}
+#share-modal .share-hint.is-success {
+  color: color-mix(in srgb, var(--v-win) 42%, var(--v-on-paper));
+}
+#share-modal .share-hint.is-error {
+  color: color-mix(in srgb, var(--v-loss) 52%, var(--v-on-paper));
+}
+#share-modal .share-community {
+  margin-top: var(--v-space-3);
+  padding-top: var(--v-space-4);
+  border-top: 2px dashed color-mix(in srgb, var(--v-on-paper) 24%, transparent);
+}
+#share-modal .share-community-head h3 {
+  color: var(--v-on-paper);
+  font-family: var(--v-font-heading);
+  font-size: var(--v-text-xl);
+  font-weight: 800;
+}
+#share-modal .share-community-head .muted,
+#share-modal .share-community-label,
+#share-modal .share-community-label .muted,
+#share-modal .share-community-status {
+  color: var(--v-on-paper-2);
+}
+#share-modal .share-community-caption {
+  border: var(--v-outline);
+  border-radius: var(--v-radius-sm);
+  background: var(--v-paper-2);
+  color: var(--v-on-paper);
+  font-size: var(--v-text-md);
+}
+#share-modal .share-community-caption::placeholder {
+  color: var(--v-on-paper-2);
+  opacity: 0.8;
+}
+#share-modal .share-community-caption:focus {
+  border-color: var(--v-ink);
+  background: var(--v-paper-2);
+  box-shadow: 0 0 0 3px var(--v-title);
+}
+#share-modal .share-community-view {
+  color: var(--v-on-paper);
+  font-weight: 800;
+  text-decoration: underline 2px;
+  text-underline-offset: 3px;
+}
+
+/* ==========================================================================
+   Responsive
+   ========================================================================== */
+@media (max-width: 1180px) {
+  .v-run-at {
+    display: none;
+  }
+  .v-run-btn--share span {
+    display: none;
+  }
+  .v-run-btn--share {
+    padding: 0;
+  }
+}
+@media (max-width: 1040px) {
+  .v-run {
+    grid-template-columns: 52px minmax(0, 1fr) 96px 64px 116px auto;
+    gap: var(--v-space-3);
+  }
+  .v-runs.is-comparing .v-run {
+    grid-template-columns: 28px 52px minmax(0, 1fr) 96px 64px 116px;
+  }
+  .v-cmp-stats dd {
+    font-size: var(--v-text-lg);
+  }
+}
+
+/* Phones and small tablets. */
+@media (max-width: 880px) {
+  .v-runs-filters {
+    padding: var(--v-space-3);
+  }
+  .v-runs-search input {
+    font-size: 16px;
+  }
+  /* nowrap: in a wrapping column the groups would size to their content
+     and run past the panel instead of scrolling. */
+  .v-runs-groups {
+    flex-flow: column nowrap;
+    gap: var(--v-space-2);
+  }
+  .v-runs-title {
+    flex-wrap: wrap;
+    gap: 2px var(--v-space-3);
+  }
+  .v-runs-title p {
+    flex-basis: 100%;
+  }
+  .v-runs-title::after {
+    display: none;
+  }
+  .v-runs-group {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+  }
+  .v-runs-group-label {
+    font-size: 0.75rem;
+  }
+  /* Each group is one swipeable line of full-size chips. */
+  .v-runs-chips {
+    gap: 6px;
+    margin: -5px -12px;
+    padding: 5px 12px 6px;
+    overflow-x: auto;
+    border: 0;
+    border-radius: 0;
+    background: none;
+    scrollbar-width: none;
+    scroll-padding-inline: 12px;
+  }
+  .v-runs-chips::-webkit-scrollbar {
+    display: none;
+  }
+  .v-runs-chip {
+    flex: none;
+    min-height: 44px;
+    padding: 0 16px;
+    border: var(--v-outline);
+    background: var(--v-well);
+    font-size: var(--v-text-sm);
+  }
+  .v-runs-compare {
+    padding-inline: 14px;
+  }
+  .v-runs-clear {
+    min-height: 44px;
+  }
+
+  .v-run-cap {
+    font-size: 0.75rem;
+    letter-spacing: 0.05em;
+  }
+  .v-run-btn {
+    width: 44px;
+    height: 44px;
+    padding: 0;
+  }
+  .v-run-btn--link.is-flashed {
+    width: auto;
+  }
+  .v-run:hover {
+    transform: none;
+  }
+
+  /* Modals become sheets from the bottom edge. */
+  #run-detail-modal .modal-run-detail,
+  #run-compare-modal .modal-run-compare,
+  #share-modal .modal-share {
+    width: 100%;
+    max-height: calc(100dvh - 16px);
+    border-radius: var(--v-radius-lg) var(--v-radius-lg) 0 0;
+  }
+  #run-detail-modal .modal-head h2,
+  #run-compare-modal .modal-head h2,
+  #share-modal .modal-head h2 {
+    font-size: var(--v-text-lg);
+  }
+  #run-detail-modal .modal-close,
+  #run-compare-modal .modal-close,
+  #share-modal .modal-close {
+    width: 44px;
+    height: 44px;
+  }
+  #run-compare-modal .modal-body,
+  #share-modal .modal-body {
+    padding: var(--v-space-4);
+  }
+  .v-rd-hero {
+    grid-template-columns: 84px minmax(0, 1fr);
+    gap: var(--v-space-3) var(--v-space-4);
+    padding-block: var(--v-space-4);
+  }
+  .v-rd-plate {
+    width: 84px;
+    height: 84px;
+  }
+  .v-rd-plate img.is-inked {
+    height: 72px;
+  }
+  .v-rd-name {
+    font-size: var(--v-text-2xl);
+  }
+  .v-rd-fate {
+    font-size: var(--v-text-md);
+  }
+  .v-rd-stamp {
+    grid-column: 1 / -1;
+    justify-self: start;
+    margin: 0 0 0 4px;
+    font-size: var(--v-text-xl);
+  }
+  /* 3 + 2, no orphan. */
+  .v-rd-stats {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+  .v-rd-stats div {
+    grid-column: span 2;
+  }
+  .v-rd-stats div:nth-child(n + 4) {
+    grid-column: span 3;
+  }
+  .v-rd-stats dt,
+  .v-cmp-stats dt {
+    font-size: 0.75rem;
+  }
+  .v-rd-stats dd {
+    font-size: var(--v-text-xl);
+  }
+  .v-act-sum {
+    flex-basis: 100%;
+    margin-left: 44px;
+  }
+  .v-act-trail {
+    gap: 10px 10px;
+  }
+  .v-node {
+    --orb: 40px;
+  }
+  .v-node + .v-node::before {
+    width: 10px;
+  }
+  .v-node.is-boss {
+    --orb: 50px;
+  }
+  .v-node.is-boss + .v-node::before,
+  .v-node + .v-node.is-boss::before {
+    top: 19px;
+  }
+  .v-rd-relics {
+    grid-template-columns: repeat(auto-fill, minmax(76px, 1fr));
+  }
+  .v-rd-deck {
+    grid-template-columns: repeat(auto-fill, minmax(76px, 1fr));
+    gap: var(--v-space-3) var(--v-space-2);
+  }
+  .v-rd-picks {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .v-rd-actions .v-btn {
+    min-height: 44px;
+  }
+  .v-runs-more p {
+    flex-basis: 100%;
+    margin: 0;
+    text-align: center;
+  }
+  .v-runs-more .v-btn {
+    flex: 1 1 0;
+    min-height: 44px;
+  }
+  .v-cmp-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .v-cmp-relic {
+    width: 44px;
+    height: 44px;
+  }
+  .compare-bar-count {
+    font-size: var(--v-text-sm);
+  }
+  .compare-bar .btn-primary,
+  .compare-bar .btn-ghost {
+    min-height: 46px;
+  }
+  #share-modal .share-actions button {
+    flex: 1 1 auto;
+    min-height: 44px;
+  }
+}
+/* Nothing under 12px on a phone (the phone shell's root size is 15px, so
+   0.8125rem rather than 0.75rem). */
+@media (max-width: 880px) {
+  .v-runs-group-label,
+  .v-run-cap,
+  .v-run-btn--link,
+  .run-preview-asc,
+  .run-preview-hint,
+  .v-rd-stats dt,
+  .v-cmp-stats dt,
+  .v-rd-count,
+  .v-act-sum,
+  .v-node-floor,
+  .v-rd-legend,
+  .v-rd-relic-name,
+  .v-rd-pick-floor,
+  .v-cmp-sec h4,
+  .v-cmp-shared-block h4,
+  .v-cmp-foot,
+  .v-cmp-foot kbd,
+  .compare-bar-hint,
+  #share-modal .share-community-label {
+    font-size: 0.8125rem;
+  }
+}
+/* Phones: each run becomes two lines —
+     [sigil] name  A9                 STAMP
+             date  floor ▬▬  time    [link][share] */
+@media (max-width: 640px) {
+  .v-run,
+  .v-runs.is-comparing .v-run {
+    grid-template-columns: 48px minmax(0, 1fr) auto;
+    grid-template-areas:
+      "sigil id    stamp"
+      "sigil stats actions";
+    gap: 8px 10px;
+    padding: 12px 12px 12px 22px;
+  }
+  .v-runs.is-comparing .v-run {
+    grid-template-areas:
+      "sigil id    stamp"
+      "sigil stats check";
+  }
+  .v-run-check { grid-area: check; justify-self: end; }
+  .v-run-sigil { grid-area: sigil; align-self: center; width: 48px; height: 48px; }
+  .v-run-id { grid-area: id; }
+  .v-run-stats {
+    display: flex;
+    grid-area: stats;
+    align-items: center;
+    gap: var(--v-space-4);
+    min-width: 0;
+  }
+  .v-run-stamp { grid-area: stamp; justify-self: end; }
+  .v-run-actions { grid-area: actions; justify-self: end; }
+  .v-run-at {
+    display: none;
+  }
+  .v-run-num {
+    font-size: var(--v-text-xl);
+  }
+  .v-run-time .v-run-num {
+    font-size: var(--v-text-md);
+  }
+  .v-run-stats {
+    flex-wrap: wrap;
+    gap: 2px 12px;
+  }
+  .v-run-floor {
+    grid-template-columns: auto auto auto;
+    align-items: center;
+  }
+  .v-run-meter {
+    grid-column: 3;
+    width: 64px;
+    margin-top: 0;
+  }
+  /* m:ss beside a dated row needs no caption; screen readers keep it. */
+  .v-run-time .v-run-cap {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .v-run-time {
+    grid-template-columns: auto auto;
+    align-items: baseline;
+  }
+  .v-run-killer {
+    display: none;
+  }
+}
+@media (max-width: 420px) {
+  .v-run-name {
+    font-size: var(--v-text-md);
+  }
+  .v-run-meter {
+    display: none;
+  }
+  .v-rd-actions .v-btn:last-child {
+    margin-left: 0;
+  }
+  .v-rd-actions .v-btn {
+    flex: 1 1 auto;
+  }
+}
+
+/* ---- Motion: none of it survives a request for less ---------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  .v-run,
+  .v-run-btn,
+  .v-rd-card-art,
+  .v-runs-chip {
+    transition: none;
+  }
+  .v-run:hover,
+  .v-rd-card:hover .v-rd-card-art {
+    transform: none;
+  }
+  [data-enter] .v-run-meter i,
+  .compare-bar-inner,
+  .compare-bar.is-shake .compare-bar-inner {
+    animation: none;
+  }
+}
+.prefer-reduced-motion .v-run,
+.prefer-reduced-motion .v-run-btn,
+.prefer-reduced-motion .v-rd-card-art,
+.prefer-reduced-motion .v-runs-chip {
+  transition: none;
+}
+.prefer-reduced-motion .v-run:hover,
+.prefer-reduced-motion .v-rd-card:hover .v-rd-card-art {
+  transform: none;
+}
+.prefer-reduced-motion [data-enter] .v-run-meter i,
+.prefer-reduced-motion .compare-bar-inner,
+.prefer-reduced-motion .compare-bar.is-shake .compare-bar-inner {
+  animation: none;
+}

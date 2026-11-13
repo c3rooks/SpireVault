@@ -1,0 +1,231 @@
+/* ==========================================================================
+   Controls and shared primitives: buttons, panels, chips, section labels,
+   the tooltip. Buttons keep their legacy class names so every surface —
+   migrated or not — gets the new feel at once.
+   ========================================================================== */
+
+/* ---- Buttons: they sit on a hard shadow and press into it ----------------- */
+.btn-primary,
+.btn-ghost,
+.v-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 8px 14px;
+  border: var(--v-outline);
+  border-radius: var(--v-radius-sm);
+  background: var(--v-surface-1);
+  background-image: none;
+  box-shadow: var(--v-shadow-sm);
+  color: var(--v-text);
+  font-family: var(--v-font-text);
+  font-size: var(--v-text-sm);
+  font-weight: 800;
+  line-height: 1.2;
+  text-decoration: none;
+  text-shadow: none;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    transform var(--v-dur-1) ease,
+    box-shadow var(--v-dur-1) ease,
+    background-color var(--v-dur-1) ease;
+}
+.btn-primary,
+.v-btn--primary {
+  background: var(--v-accent);
+  color: var(--v-on-accent);
+}
+.v-btn--paper {
+  background: var(--v-paper);
+  color: var(--v-on-paper);
+}
+.btn-primary:hover,
+.btn-ghost:hover,
+.v-btn:hover {
+  transform: translate(var(--v-press), var(--v-press));
+  box-shadow: var(--v-shadow-pressed);
+  filter: none;
+}
+.btn-primary:hover,
+.v-btn--primary:hover {
+  background: var(--v-accent-hi);
+}
+.btn-ghost:hover {
+  background: var(--v-surface-2);
+  color: var(--v-text);
+}
+.btn-primary:active,
+.btn-ghost:active,
+.v-btn:active {
+  transform: translate(calc(var(--v-press) + 1px), calc(var(--v-press) + 1px));
+  box-shadow: none;
+}
+.btn-primary:disabled,
+.btn-ghost:disabled,
+.v-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+}
+.btn-primary svg,
+.btn-ghost svg,
+.v-btn svg {
+  flex: none;
+}
+
+/* Square icon-only button (theme picker trigger, close buttons). */
+.v-icon-btn {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: var(--v-outline);
+  border-radius: var(--v-radius-sm);
+  background: var(--v-surface-1);
+  box-shadow: var(--v-shadow-sm);
+  color: var(--v-text);
+  cursor: pointer;
+  transition: transform var(--v-dur-1) ease, box-shadow var(--v-dur-1) ease;
+}
+.v-icon-btn:hover {
+  transform: translate(var(--v-press), var(--v-press));
+  box-shadow: var(--v-shadow-pressed);
+  color: var(--v-title);
+}
+.v-icon-btn svg {
+  width: 18px;
+  height: 18px;
+}
+
+/* ---- Panel ------------------------------------------------------------------ */
+.v-panel {
+  position: relative;
+  padding: var(--v-space-4);
+  border: var(--v-outline);
+  border-radius: var(--v-radius-lg);
+  background: var(--v-surface-1);
+  box-shadow: var(--v-shadow);
+}
+
+/* ---- Section label ---------------------------------------------------------- */
+.v-eyebrow {
+  margin: 0;
+  color: var(--v-text-2);
+  font-size: var(--v-text-xs);
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.v-section-title {
+  display: flex;
+  align-items: baseline;
+  gap: var(--v-space-3);
+  margin: var(--v-space-6) 0 var(--v-space-3);
+}
+.v-section-title h3 {
+  margin: 0;
+  font-family: var(--v-font-heading);
+  font-size: var(--v-text-xl);
+  font-weight: 800;
+  line-height: 1;
+  color: var(--v-title);
+  text-shadow: 2px 2px 0 var(--v-ink);
+}
+.v-section-title p {
+  margin: 0;
+  color: var(--v-text-2);
+  font-size: var(--v-text-sm);
+}
+.v-section-title::after {
+  content: "";
+  flex: 1;
+  align-self: center;
+  height: 0;
+  border-top: 2px dashed var(--v-line);
+}
+
+/* ---- Chips ------------------------------------------------------------------- */
+.v-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border: var(--v-outline);
+  border-radius: var(--v-radius-pill);
+  background: var(--v-bg-deep);
+  color: var(--v-text);
+  font-size: var(--v-text-xs);
+  font-weight: 700;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+button.v-chip,
+a.v-chip {
+  font-family: var(--v-font-text);
+  text-decoration: none;
+  cursor: pointer;
+  transition: transform var(--v-dur-1) ease, background-color var(--v-dur-1) ease;
+}
+button.v-chip:hover,
+a.v-chip:hover {
+  background: var(--v-surface-2);
+  transform: translateY(-1px);
+}
+/* Emphasised value inside a chip. Text face on purpose: the display face's
+   blackletter capital A makes "A9" hard to read at this size. */
+.v-chip b {
+  font-size: 0.875rem;
+  font-weight: 800;
+  line-height: 1;
+  color: var(--v-title);
+}
+
+/* ---- Floating tooltip (charts) ----------------------------------------------- */
+.v-tip {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 200;
+  max-width: 240px;
+  padding: 6px 10px;
+  border: var(--v-outline);
+  border-radius: var(--v-radius-sm);
+  background: var(--v-paper);
+  box-shadow: var(--v-shadow-sm);
+  color: var(--v-on-paper);
+  font-size: var(--v-text-xs);
+  font-weight: 700;
+  line-height: 1.35;
+  pointer-events: none;
+  will-change: transform;
+}
+.v-tip b {
+  font-family: var(--v-font-display);
+  font-size: 1.125rem;
+  font-weight: var(--v-display-weight);
+  line-height: 1;
+}
+
+/* ---- Legacy strips that stay on Overview (retention instrumentation) --------- */
+.since-visit-strip,
+.weekly-digest-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  margin: 0 0 var(--v-space-3);
+  padding: 8px 14px;
+  border: var(--v-outline);
+  border-radius: var(--v-radius-md);
+  background: var(--v-surface-1);
+  box-shadow: var(--v-shadow-sm);
+  color: var(--v-text);
+  font-size: var(--v-text-sm);
+}
+.since-visit-strip--new {
+  background: color-mix(in srgb, var(--v-win) 22%, var(--v-surface-1));
+}

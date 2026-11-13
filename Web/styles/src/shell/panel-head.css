@@ -1,0 +1,203 @@
+/* ==========================================================================
+   Panel head: one consistent header on every tab — toolbar row, then the
+   title block. Tabs with a Stage (see components/stage.css) add
+   `.v-has-stage`, which turns the same DOM into the diorama.
+   ========================================================================== */
+.panel-head {
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  flex-direction: column;
+  gap: var(--v-space-3);
+  padding: var(--v-space-4) clamp(16px, 3vw, 36px) 0;
+}
+.panel-head:not(.v-has-stage) {
+  max-width: var(--v-content-max);
+  margin-inline: auto;
+}
+
+/* ---- Toolbar ---------------------------------------------------------------- */
+.panel-head-toprow {
+  position: relative;
+  z-index: 4;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--v-space-2) var(--v-space-3);
+  min-height: 36px;
+}
+/* Save-data actions live on Overview only (and in Settings). This carries
+   over a deliberate decision recorded in the legacy sheet: the other tabs'
+   headers stay focused on what the tab is for. */
+.tab-panel:not([data-tab="overview"]) > .panel-head > .panel-head-toprow {
+  display: none;
+}
+.app-toolbar-left,
+.app-toolbar-right {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--v-space-2);
+  min-width: 0;
+}
+.app-toolbar-right {
+  margin-left: auto;
+}
+.linked-pill,
+.sync-pill,
+.app-toolbar-empty {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  max-width: 100%;
+  padding: 5px 11px;
+  border: var(--v-outline);
+  border-radius: var(--v-radius-pill);
+  background: color-mix(in srgb, var(--v-bg-deep) 82%, transparent);
+  color: var(--v-text);
+  font-size: var(--v-text-xs);
+  font-weight: 700;
+  line-height: 1.3;
+}
+.app-toolbar-empty-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--v-gold);
+}
+.app-toolbar-empty-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.app-toolbar-export {
+  position: relative;
+}
+.app-toolbar-export-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 264px;
+  padding: 6px;
+  border: var(--v-outline);
+  border-radius: var(--v-radius-md);
+  background: var(--v-surface-1);
+  box-shadow: var(--v-shadow);
+}
+.app-toolbar-menu-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: var(--v-radius-sm);
+  background: none;
+  color: var(--v-text);
+  font-family: var(--v-font-text);
+  text-align: left;
+  cursor: pointer;
+}
+.app-toolbar-menu-row:hover {
+  background: var(--v-surface-2);
+}
+.app-toolbar-menu-row strong {
+  font-size: var(--v-text-sm);
+  font-weight: 800;
+}
+.app-toolbar-menu-row span {
+  color: var(--v-text-2);
+  font-size: var(--v-text-xs);
+}
+
+/* ---- Title block ------------------------------------------------------------ */
+.panel-head-stage {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  gap: var(--v-space-4);
+}
+.panel-head-title-wrap {
+  position: relative;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.panel-head-title-wrap h2,
+.panel-head-coop-row h2 {
+  margin: 0;
+  font-family: var(--v-font-display);
+  font-size: var(--v-text-3xl);
+  font-weight: var(--v-display-weight);
+  line-height: 0.95;
+  letter-spacing: 0.01em;
+  color: var(--v-title);
+  text-shadow: var(--v-title-shadow);
+  transform: rotate(var(--v-title-tilt));
+  transform-origin: left bottom;
+}
+.panel-sub {
+  margin: 0;
+  max-width: 54ch;
+  color: var(--v-text);
+  font-size: var(--v-text-sm);
+  font-weight: 600;
+  line-height: 1.4;
+}
+.panel-pulse {
+  margin: 0;
+  color: var(--v-gold);
+  font-size: var(--v-text-xs);
+  font-weight: 700;
+}
+
+.v-has-stage .panel-head-title-wrap {
+  max-width: min(34ch, 34%);
+}
+.v-has-stage .panel-sub,
+.v-has-stage .panel-pulse {
+  text-shadow: 1px 1px 0 var(--v-ink);
+}
+
+/* Icon-only toolbar buttons once the row gets tight: saves ~140px and keeps
+   the toolbar on one line, so it never drops into the stage. The label stays
+   in the accessibility tree. */
+@media (max-width: 1020px) {
+  .panel-head-toprow .btn-icon-text span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+@media (max-width: 880px) {
+  .panel-head {
+    padding-top: var(--v-space-3);
+  }
+  /* Icon-only on phones, so the whole button is the target: 44px. */
+  .panel-head-toprow .btn-icon-text {
+    justify-content: center;
+    min-width: 44px;
+    min-height: 44px;
+  }
+  .v-has-stage .panel-head-title-wrap {
+    max-width: 52%;
+  }
+  .app-toolbar-empty-text {
+    max-width: 36vw;
+  }
+}
+@media (max-width: 380px) {
+  .app-toolbar-empty-text {
+    max-width: 22vw;
+  }
+}
