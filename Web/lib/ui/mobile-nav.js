@@ -67,6 +67,19 @@ function labelFor(tab) {
   return (rowFor(tab)?.querySelector(".nav-label")?.textContent || tab).trim();
 }
 
+/**
+ * "Co-op, Highlights and Beta": the tabs that need a Steam account, by the
+ * sidebar's own labels (index.html marks their rows `data-steam-lock`).
+ * @returns {string}
+ */
+function steamOnlyTabNames() {
+  // U+2011 keeps "Co-op" from breaking at its hyphen in the narrow sheet.
+  const names = [...document.querySelectorAll(".sidebar-nav .nav-row[data-steam-lock]")].map((row) =>
+    labelFor(/** @type {HTMLElement} */ (row).dataset.tab || "").replace(/-/g, "\u2011")
+  );
+  return names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}` : names.join("");
+}
+
 /** @param {HTMLDialogElement} sheet @returns {boolean} */
 function isModal(sheet) {
   try {
@@ -107,12 +120,18 @@ function writeSeen(seen) {
   }
 }
 
+/** What a locked tab's mark is called aloud (the sidebar row says the same). */
+const LOCK_LABEL = "Locked. Sign in with Steam to open.";
+
 /**
- * The visible badge on a sidebar row, as data.
+ * The visible badge on a sidebar row, as data. A Steam-only tab that is
+ * closed to a signed-out visitor (script.js marks its row `is-locked`)
+ * shows a lock instead of whatever badge it would carry.
  * @param {string} tab
- * @returns {{ text: string, label: string, kind: "dot"|"new"|"count" } | null}
+ * @returns {{ text: string, label: string, kind: "dot"|"new"|"count"|"lock" } | null}
  */
 function badgeFor(tab) {
+  if (rowFor(tab)?.classList.contains("is-locked")) return { text: "", label: LOCK_LABEL, kind: "lock" };
   const badge = rowFor(tab)?.querySelector(".nav-badge");
   if (!(badge instanceof HTMLElement) || badge.hidden) return null;
   const kind = badge.classList.contains("nav-badge--dot") ? "dot" : badge.classList.contains("nav-badge--new") ? "new" : "count";
@@ -208,7 +227,7 @@ function accountHtml() {
       <button class="v-btn v-btn--primary v-mnav-signin" type="button" data-action="signin-cta" data-analytics-cta="mnav-signin">
         ${ICONS.steam}<span>Sign in with Steam</span>
       </button>
-      <p class="v-mnav-note">Optional — only needed for the co-op feed.</p>`;
+      <p class="v-mnav-note">Optional. Unlocks ${esc(steamOnlyTabNames())}.</p>`;
   }
   if (account.state === "member") {
     const avatar = account.avatar ? `<img class="v-mnav-avatar" src="${esc(account.avatar)}" alt="" width="36" height="36" />` : "";
@@ -247,10 +266,13 @@ function syncBadges(sheet) {
     const badge = badgeFor(el.dataset.mnavBadge || "");
     setHidden(el, !badge);
     if (!badge) return;
+    // A dot and a lock are drawn, not written: they need a spoken name.
+    const isGlyph = badge.kind === "dot" || badge.kind === "lock";
+    const text = isGlyph ? "" : badge.text;
     el.dataset.kind = badge.kind;
-    if (el.textContent !== badge.text) el.textContent = badge.kind === "dot" ? "" : badge.text;
-    setAttr(el, "aria-label", badge.kind === "dot" ? badge.label || "New" : null);
-    setAttr(el, "role", badge.kind === "dot" ? "img" : null);
+    if (el.textContent !== text) el.textContent = text;
+    setAttr(el, "aria-label", isGlyph ? badge.label || "New" : null);
+    setAttr(el, "role", isGlyph ? "img" : null);
   });
 }
 
@@ -261,7 +283,11 @@ function syncBadges(sheet) {
  * @returns {boolean} true when the dot on More should show
  */
 function reconcileSeen(markSeen) {
-  const showing = SHEET_TABS.filter((tab) => badgeFor(tab));
+  // A lock is a state, not news: it never lights the dot on More.
+  const showing = SHEET_TABS.filter((tab) => {
+    const badge = badgeFor(tab);
+    return !!badge && badge.kind !== "lock";
+  });
   if (!DOT_CLEARS_WHEN_SEEN) return showing.length > 0;
   const previous = readSeen();
   const kept = previous.filter((tab) => showing.includes(tab));

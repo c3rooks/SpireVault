@@ -7,13 +7,15 @@
  * drives it with Playwright and exits non-zero on the first failed check.
  *
  *   node scripts/verify-ui-next.mjs
+ *   node scripts/verify-ui-next.mjs --only parity,switch   # a subset of groups
  *
  * Covers: default variant, opt-in and URL tidy-up, the DOM contract other
  * code depends on, the data-driven stage, sticky rail, instant theme
  * switching and persistence, deep links, reduced motion, desktop-host mode
  * and the host bridge, the load-failure fallback, analytics tagging,
  * horizontal overflow across breakpoints, the header duel's staging, the
- * one-word brand, and the opt-in beta switch (Settings, Beta tab, news post).
+ * one-word brand, the opt-in beta switch (Settings, Beta tab, news post), and
+ * parity: the new Overview shows every number the classic one does.
  */
 
 import { chromium } from "playwright";
@@ -27,6 +29,18 @@ const PORT = 8798;
 const BASE = `http://127.0.0.1:${PORT}`;
 const BOOT_TIMEOUT_MS = 20000;
 const WIDTHS = [320, 375, 768, 1024, 1440, 1920];
+const PHONE_VIEWPORT = { width: 375, height: 812 };
+/** Tabs that need a Steam account (STEAM_LOCKED_TABS in Web/script.js). */
+const STEAM_LOCKED_TABS = ["coop", "highlights", "beta"];
+/** A signed-in visitor, as script.js stores one (`open(..., { signedIn: true })`). */
+const TEST_SESSION = Object.freeze({
+  steamID: "76561198000000001",
+  personaName: "TestClimber",
+  sessionToken: "test-token",
+  signedInAt: "2026-11-01T00:00:00.000Z",
+});
+/** Community endpoints a signed-out visitor has no screen for. */
+const STEAM_ONLY_API = /^\/api\/(highlights|coop|presence)(\/|$)/;
 const TAB_IDS = ["overview", "characters", "ascensions", "relics", "cards", "runs", "coop", "highlights", "news", "overlay", "beta", "settings"];
 const NAV_TAB_COUNT = 10;
 const THEME_COUNT = 8;
@@ -34,6 +48,9 @@ const CLIMBER_IDS = ["ironclad", "silent", "defect", "regent", "necrobinder"];
 const BETA_NEWS_ID = "013";
 /** The brand is one word. These spellings must not reach a visitor. */
 const OLD_BRAND = /Spire Vault|The Vault/;
+/** The demo data's classic Overview shows well over this many numbers; far
+ *  fewer means the page did not render and the parity check would pass empty. */
+const MIN_OVERVIEW_NUMBERS = 40;
 /** Lets the speech balloon's pop-in finish before it is measured. */
 const BUBBLE_SETTLE_MS = 600;
 
@@ -83,11 +100,17 @@ function startServer() {
  * Opens a fresh, storage-isolated page and waits for the app to finish boot.
  * @param {import("playwright").Browser} browser
  * @param {string} path
- * @param {import("playwright").BrowserContextOptions & { abort?: string }} [options]
+ * @param {import("playwright").BrowserContextOptions & { abort?: string, signedIn?: boolean }} [options]
+ *   signedIn: start with a stored Steam session (the Steam-only tabs open)
  */
 async function open(browser, path, options = {}) {
-  const { abort, ...contextOptions } = options;
+  const { abort, signedIn, ...contextOptions } = options;
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, ...contextOptions });
+  if (signedIn) {
+    await context.addInitScript((value) => {
+      try { window.localStorage.setItem("vault.web.session", value); } catch { /* storage blocked */ }
+    }, JSON.stringify(TEST_SESSION));
+  }
   const page = await context.newPage();
   /** @type {string[]} */
   const requests = [];
@@ -109,7 +132,12 @@ async function open(browser, path, options = {}) {
   if (abort) await page.route(abort, (route) => route.abort());
   await page.goto(`${BASE}${path}`, { waitUntil: "domcontentloaded" });
   await page.waitForFunction(() => window.SpireVault && !window.SpireVault.__isStub, null, { timeout: BOOT_TIMEOUT_MS });
-  await page.waitForSelector("#overview-body .v-ov, #overview-body .kpi-strip", { timeout: BOOT_TIMEOUT_MS });
+  // Signed out, Overview shows the sample data. A signed-in account with no
+  // runs yet gets the "restore your runs" screen instead.
+  const overviewReady = signedIn
+    ? "#overview-body .v-ov, #overview-body .kpi-strip, #overview-body .empty-state, #overview-body .v-empty"
+    : "#overview-body .v-ov, #overview-body .kpi-strip";
+  await page.waitForSelector(overviewReady, { timeout: BOOT_TIMEOUT_MS });
   return { context, page, requests, errors };
 }
 
@@ -446,7 +474,8 @@ function duelGeometry(page) {
       tail: box(head.querySelector(".v-bubble-tail")),
       bossSpeaks: !!head.querySelector(".v-duel--boss-speaks"),
       toolbarBottom: toolbar ? toolbar.getBoundingClientRect().bottom : 0,
-      float: parseFloat(getComputedStyle(head).getPropertyValue("--duel-float")),
+      // Where the boss's feet are down his box (1 = its bottom edge).
+      bossFootY: parseFloat(head.querySelector(".v-actor--boss").dataset.footY || "1"),
       gapToken: parseFloat(getComputedStyle(head).getPropertyValue("--duel-gap")),
       artCount: images.length,
       artLoaded: images.every((img) => img.complete && img.naturalWidth > 0),
@@ -457,8 +486,9 @@ function duelGeometry(page) {
 
 /**
  * Staging rules that hold at every width: the two figures are inked, the
- * climber stands left of the boss, both share one ground line (the boss
- * hovers `--duel-float` above it) inside the header, and the line of speech
+ * climber stands left of the boss, both stand with their feet on one ground
+ * line inside the header (the boss's staff tip hangs below his boots, so his
+ * box reaches lower than his feet), and the line of speech
  * sits above whoever is speaking, tail over them, covering neither figure and
  * never sliding under the toolbar.
  * @param {Awaited<ReturnType<typeof duelGeometry>>} g
@@ -469,7 +499,9 @@ function assertDuelStaging(g, label) {
   assert.ok(g.artLoaded, `${label}: actor art failed to load`);
   assert.ok(g.artInked, `${label}: actors must use the inked stage art`);
   assert.ok(g.climber.right < g.boss.left, `${label}: the climber stands left of the boss`);
-  assert.ok(Math.abs(g.climber.bottom - (g.boss.bottom + g.float)) <= 1, `${label}: both figures share one ground line`);
+  const bossFeet = g.boss.top + (g.boss.bottom - g.boss.top) * g.bossFootY;
+  assert.ok(Math.abs(g.climber.bottom - bossFeet) <= 1, `${label}: both figures' feet share one ground line (climber ${g.climber.bottom}, boss ${bossFeet})`);
+  assert.ok(g.boss.bottom <= g.head.bottom - 4, `${label}: the boss's staff tip stays inside the header`);
   const groundInset = g.head.bottom - g.climber.bottom;
   assert.ok(groundInset > 6 && groundInset < 40, `${label}: feet rest on the ledge (inset ${groundInset}px)`);
   assert.ok(g.bubble.top >= g.toolbarBottom - 1, `${label}: the balloon sits below the toolbar`);
@@ -670,9 +702,75 @@ async function runBetaSwitch(browser) {
     await context.close();
   });
 
+  await check("classic sidebar: the button beside the logo turns the new look on in one click", async () => {
+    const { context, page: p, errors } = await open(browser, "/");
+    const button = ".sidebar-brand .skin-switch--brand";
+    await p.waitForSelector(button, { state: "visible" });
+    const fit = await p.evaluate((selector) => {
+      const box = (query) => document.querySelector(query).getBoundingClientRect();
+      const chip = document.querySelector(".skin-switch--strip");
+      return {
+        clearOfWordmark: box(selector).left >= box(".sidebar-wordmark").right,
+        insideRail: box(selector).right <= box(".sidebar").right,
+        named: (document.querySelector(selector).getAttribute("aria-label") || "").includes("new look"),
+        stripChipShown: !!chip && getComputedStyle(chip).display !== "none",
+      };
+    }, button);
+    assert.deepEqual(fit, { clearOfWordmark: true, insideRail: true, named: true, stripChipShown: false });
+    await switchLayout(p, button, "next");
+    assert.equal(await p.evaluate(() => localStorage.getItem("vault.web.ui")), "next");
+    assert.ok(await p.$('.tab-panel[data-tab="overview"]:not([hidden])'), "switching lands on Overview");
+    // The new look keeps its own control in the same spot; the classic ones stay out of it.
+    await p.waitForSelector(".sidebar-brand .v-theme-btn", { state: "visible" });
+    assert.equal(await p.locator(".skin-switch:visible").count(), 0);
+    assert.deepEqual(errors, []);
+    await context.close();
+  });
+
+  await check("classic on a phone: the tab strip ends with the same switch", async () => {
+    const { context, page: p, errors } = await open(browser, "/", { viewport: PHONE_VIEWPORT });
+    const chip = ".sidebar-nav .skin-switch--strip";
+    await p.waitForSelector(chip, { state: "attached" });
+    const state = await p.evaluate((selector) => {
+      const el = document.querySelector(selector);
+      const brand = document.querySelector(".skin-switch--brand");
+      return {
+        shown: getComputedStyle(el).display !== "none",
+        last: el.parentElement.lastElementChild === el,
+        tall: el.getBoundingClientRect().height >= 36,
+        brandButtonShown: !!brand && brand.getClientRects().length > 0,
+        pageScrollsSideways: document.documentElement.scrollWidth > window.innerWidth,
+      };
+    }, chip);
+    assert.deepEqual(state, { shown: true, last: true, tall: true, brandButtonShown: false, pageScrollsSideways: false });
+    await switchLayout(p, chip, "next");
+    assert.equal(await p.locator(".skin-switch:visible").count(), 0);
+    assert.deepEqual(errors, []);
+    await context.close();
+  });
+
+  await check("the classic switch is not offered where the new look cannot run", async () => {
+    const overlay = await open(browser, "/?overlay=1");
+    assert.equal(await overlay.page.locator(".skin-switch").count(), 2, "both switches are in the markup");
+    assert.equal(await overlay.page.locator(".skin-switch:visible").count(), 0, "overlay window");
+    await overlay.context.close();
+
+    // A browser without cascade layers: the boot script keeps it on classic.
+    const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+    const p = await context.newPage();
+    await context.route((url) => url.hostname !== "127.0.0.1" && url.hostname !== "localhost", (route) => route.abort());
+    await p.addInitScript(() => { delete window.CSSLayerBlockRule; });
+    await p.goto(`${BASE}/`, { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => window.SpireVault && !window.SpireVault.__isStub, null, { timeout: BOOT_TIMEOUT_MS });
+    assert.equal(await p.evaluate(() => typeof window.CSSLayerBlockRule), "undefined", "the test removed cascade layers");
+    assert.equal(await p.locator(".skin-switch:visible").count(), 0, "old browser");
+    await context.close();
+  });
+
   for (const [label, path, target] of [["classic", "/", "next"], ["new look", "/?ui=next", "classic"]]) {
     await check(`the Beta tab carries the switch and keeps it through re-renders (${label})`, async () => {
-      const { context, page: p } = await open(browser, path);
+      // Beta is a Steam-only tab: signed out it shows the sign-in screen.
+      const { context, page: p } = await open(browser, path, { signedIn: true });
       await p.evaluate(() => window.SpireVault.switchTab("beta"));
       const card = `#beta-body [data-ui-beta-card] [data-action="ui-set"][data-ui="${target}"]`;
       await p.waitForSelector(card);
@@ -683,6 +781,100 @@ async function runBetaSwitch(browser) {
       await context.close();
     });
   }
+}
+
+/**
+ * Every number a tab body shows as text, skipping drawings (chart axis ticks
+ * differ by design), the screen-reader data tables and the sample-data notice.
+ * @param {import("playwright").Page} page
+ * @returns {Promise<string[]>}
+ */
+function overviewNumbers(page) {
+  return page.evaluate(() => {
+    const body = document.getElementById("overview-body");
+    const walker = document.createTreeWalker(body, NodeFilter.SHOW_TEXT);
+    const parts = [];
+    while (walker.nextNode()) {
+      const parent = walker.currentNode.parentElement;
+      if (parent && parent.closest("svg, .demo-banner, .v-sr")) continue;
+      parts.push(walker.currentNode.nodeValue || "");
+    }
+    return parts.join(" ").match(/\d+(?:[.:]\d+)?/g) || [];
+  });
+}
+
+/**
+ * The two looks are skins of one app: a person who switches must find the
+ * same numbers, in the same order, on the other side.
+ */
+async function runParity(browser) {
+  const classic = await open(browser, "/");
+  const next = await open(browser, "/?ui=next");
+  // The new look counts its headline numbers up from zero; read them once
+  // every counter has landed on its value.
+  await next.page.waitForFunction(
+    () => [...document.querySelectorAll("#overview-body [data-count]")]
+      .every((el) => Number.parseFloat(el.textContent || "") === Number.parseFloat(el.dataset.count || "")),
+    null,
+    { timeout: BOOT_TIMEOUT_MS }
+  );
+
+  await check("every number on the classic Overview is on the new Overview", async () => {
+    const want = await overviewNumbers(classic.page);
+    const have = new Set(await overviewNumbers(next.page));
+    assert.ok(
+      want.length >= MIN_OVERVIEW_NUMBERS,
+      `the classic Overview on demo data should show at least ${MIN_OVERVIEW_NUMBERS} numbers, found ${want.length}`
+    );
+    const missing = [...new Set(want)].filter((value) => !have.has(value));
+    assert.deepEqual(missing, [], "numbers the classic Overview shows and the new one does not");
+  });
+
+  await check("the six at-a-glance stats read the same in both looks", async () => {
+    const strip = (text) => text.replace(/[▲▼●]/g, "").replace(/\s+/g, "");
+    const classicCards = await classic.page.$$eval(".kpi-strip .kpi-card", (cards) =>
+      cards.map((card) => ({
+        value: card.querySelector(".kpi-card-value").textContent,
+        glyph: (card.querySelector(".kpi-trend") || { textContent: "" }).textContent.trim(),
+        hasSpark: !!card.querySelector(".kpi-card-spark path"),
+      }))
+    );
+    const nextCards = await next.page.$$eval(".v-hand .v-card", (cards) =>
+      cards.map((card) => {
+        const arrow = card.querySelector(".v-card-trend");
+        return {
+          value: card.querySelector(".v-card-value").textContent,
+          glyph: !arrow ? "" : arrow.classList.contains("is-up") ? "▲" : "▼",
+          hasSpark: !!card.querySelector(".v-card-spark polyline"),
+        };
+      })
+    );
+    assert.equal(classicCards.length, 6);
+    assert.deepEqual(nextCards.map((card) => strip(card.value)), classicCards.map((card) => strip(card.value)));
+    // Classic marks "level with lifetime" with a dot; the new card says it in words.
+    assert.deepEqual(nextCards.map((card) => card.glyph), classicCards.map((card) => card.glyph.replace("●", "")));
+    assert.deepEqual(nextCards.map((card) => card.hasSpark), classicCards.map((card) => card.hasSpark));
+  });
+
+  await check("the new Overview keeps the classic section order", async () => {
+    // Stats first, then win rate, then trends, then relics, as in classic.
+    // (Relics only render when the data has some; the demo data does.)
+    const sections = ["v-hand", "v-ov-top", "v-ov-charts", "v-relics"];
+    const order = await next.page.$$eval(
+      "#overview-body .v-ov > *",
+      (els, names) => els.map((el) => names.find((name) => el.classList.contains(name))).filter(Boolean),
+      sections
+    );
+    assert.deepEqual(order, sections.filter((name) => order.includes(name)));
+    assert.deepEqual(order.slice(0, 3), sections.slice(0, 3));
+    const titles = await next.page.$$eval("#overview-body .v-section-title h3", (els) => els.map((el) => el.textContent));
+    assert.deepEqual(titles.slice(0, 2), ["Your hand", "Trends"]);
+    assert.ok(await next.page.locator(".v-wr .v-eyebrow", { hasText: "Run history" }).count(), "Run history label");
+  });
+
+  assert.deepEqual([...classic.errors, ...next.errors], []);
+  await classic.context.close();
+  await next.context.close();
 }
 
 async function runNewsPost(browser) {
@@ -734,16 +926,183 @@ async function runNewsPost(browser) {
   });
 }
 
+/** Check groups in run order. `--only parity,switch` runs a subset. */
+/**
+ * What the sidebar and one tab's panel show, for the lock checks.
+ * @param {import("playwright").Page} page
+ * @param {string} tab  switched to before reading
+ */
+async function lockState(page, tab) {
+  await page.evaluate((id) => window.SpireVault.switchTab(id), tab);
+  await page.waitForSelector(`.tab-panel[data-tab="${tab}"]:not([hidden])`);
+  return page.evaluate((id) => {
+    const shown = (el) => !!el && el.getClientRects().length > 0 && getComputedStyle(el).visibility !== "hidden";
+    const panel = document.querySelector(`.tab-panel[data-tab="${id}"]`);
+    const gate = panel.querySelector(":scope > .tab-lock");
+    const cta = gate ? gate.querySelector('[data-action="signin-cta"]') : null;
+    return {
+      steam: document.documentElement.dataset.steam,
+      lockedRows: [...document.querySelectorAll(".sidebar-nav .nav-row[data-tab]")]
+        .filter((row) => shown(row.querySelector(".nav-lock")))
+        .map((row) => row.dataset.tab),
+      badgesOnLockedRows: [...document.querySelectorAll(".sidebar-nav .nav-row[data-steam-lock] .nav-badge")].filter(shown).length,
+      markedRows: [...document.querySelectorAll(".nav-row[data-steam-lock]")].map((row) => row.dataset.tab),
+      markedPanels: [...document.querySelectorAll(".tab-panel[data-steam-lock]")].map((el) => el.dataset.tab),
+      gateShown: shown(gate),
+      gateHeading: gate && shown(gate) ? gate.querySelector("h2").textContent.trim() : "",
+      ctaHeight: cta && shown(cta) ? Math.round(cta.getBoundingClientRect().height) : 0,
+      otherChildrenShown: [...panel.children].filter((el) => el !== gate && shown(el)).length,
+      pageScrollsSideways: document.documentElement.scrollWidth > window.innerWidth,
+    };
+  }, tab);
+}
+
+/**
+ * Co-op, Highlights and Beta need a Steam account. Signed out, each shows a
+ * lock in the sidebar and a sign-in screen in place of its content, in both
+ * looks and at every size; nothing is fetched for them. Signed in, nothing
+ * is locked.
+ */
+async function runLock(browser) {
+  for (const [look, path] of [["classic", "/"], ["new look", "/?ui=next"]]) {
+    await check(`signed out: Co-op, Highlights and Beta are locked, the rest is open (${look})`, async () => {
+      const { context, page: p, errors, requests } = await open(browser, path);
+      for (const tab of STEAM_LOCKED_TABS) {
+        const state = await lockState(p, tab);
+        assert.equal(state.steam, "out", `${tab}: <html data-steam>`);
+        assert.deepEqual(state.lockedRows, STEAM_LOCKED_TABS, `${tab}: rows showing a lock`);
+        assert.deepEqual(state.markedRows, STEAM_LOCKED_TABS, "index.html rows marked data-steam-lock");
+        assert.deepEqual(state.markedPanels, STEAM_LOCKED_TABS, "index.html panels marked data-steam-lock");
+        assert.equal(state.badgesOnLockedRows, 0, `${tab}: a locked row shows no badge`);
+        assert.equal(state.gateShown, true, `${tab}: the sign-in screen shows`);
+        assert.match(state.gateHeading, /^Sign in to /, `${tab}: the sign-in screen says what to do`);
+        assert.ok(state.ctaHeight >= 44, `${tab}: the sign-in button is a full fingertip (${state.ctaHeight}px)`);
+        assert.equal(state.otherChildrenShown, 0, `${tab}: nothing of the tab itself shows`);
+        assert.equal(state.pageScrollsSideways, false, `${tab}: no sideways scroll`);
+      }
+      for (const tab of ["overview", "runs", "news", "settings"]) {
+        const state = await lockState(p, tab);
+        assert.equal(state.gateShown, false, `${tab} is not locked`);
+        assert.ok(state.otherChildrenShown > 0, `${tab} shows its content`);
+      }
+      await p.waitForTimeout(800);
+      assert.deepEqual(requests.filter((pathname) => STEAM_ONLY_API.test(pathname)), [], "nothing is fetched for the locked tabs");
+      assert.deepEqual(errors, []);
+      await context.close();
+    });
+
+    await check(`signed in: nothing is locked (${look})`, async () => {
+      const { context, page: p } = await open(browser, path, { signedIn: true });
+      for (const tab of STEAM_LOCKED_TABS) {
+        const state = await lockState(p, tab);
+        assert.equal(state.steam, "in", `${tab}: <html data-steam>`);
+        assert.deepEqual(state.lockedRows, [], `${tab}: no row shows a lock`);
+        assert.equal(state.gateShown, false, `${tab}: no sign-in screen`);
+        assert.ok(state.otherChildrenShown > 0, `${tab}: the tab's own content shows`);
+      }
+      await p.waitForSelector("#beta-body .beta-grid, #beta-body .v-beta", { state: "visible" });
+      await context.close();
+    });
+  }
+
+  await check("the lock is decided before the app script runs, so it never flashes", async () => {
+    for (const [signedIn, want] of [[false, "out"], [true, "in"]]) {
+      const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+      if (signedIn) {
+        await context.addInitScript((value) => window.localStorage.setItem("vault.web.session", value), JSON.stringify(TEST_SESSION));
+      }
+      const p = await context.newPage();
+      await context.route((url) => url.hostname !== "127.0.0.1" && url.hostname !== "localhost", (route) => route.abort());
+      // Without script.js, only the boot script in index.html has run.
+      await p.route("**/script.js*", (route) => route.abort());
+      await p.goto(`${BASE}/`, { waitUntil: "domcontentloaded" });
+      assert.equal(await p.evaluate(() => document.documentElement.dataset.steam), want, signedIn ? "signed in" : "signed out");
+      await context.close();
+    }
+  });
+
+  await check("the sign-in screen's button starts Steam sign-in", async () => {
+    const { context, page: p } = await open(browser, "/?ui=next");
+    await lockState(p, "beta");
+    const started = p.waitForRequest((request) => new URL(request.url()).pathname === "/api/auth/steam/start");
+    await p.click('.tab-panel[data-tab="beta"] > .tab-lock [data-action="signin-cta"]');
+    await started;
+    await context.close();
+  });
+
+  await check("classic on a phone: locked chips in the tab strip, sign-in screen fits", async () => {
+    const { context, page: p, errors } = await open(browser, "/", { viewport: PHONE_VIEWPORT });
+    for (const tab of STEAM_LOCKED_TABS) {
+      const state = await lockState(p, tab);
+      assert.deepEqual(state.lockedRows, STEAM_LOCKED_TABS, `${tab}: chips showing a lock`);
+      assert.equal(state.gateShown, true, `${tab}: the sign-in screen shows`);
+      assert.ok(state.ctaHeight >= 44, `${tab}: sign-in button height ${state.ctaHeight}px`);
+      assert.equal(state.otherChildrenShown, 0, `${tab}: nothing of the tab itself shows`);
+      assert.equal(state.pageScrollsSideways, false, `${tab}: no sideways scroll`);
+    }
+    assert.deepEqual(errors, []);
+    await context.close();
+  });
+
+  await check("new look on a phone: the bar and the More sheet show the locks, sign-in screen fits", async () => {
+    const { context, page: p, errors } = await open(browser, "/?ui=next", { viewport: PHONE_VIEWPORT });
+    const coop = await lockState(p, "coop");
+    assert.ok(coop.lockedRows.includes("coop"), "the Co-op slot in the bottom bar shows a lock");
+    assert.equal(coop.gateShown, true);
+    assert.ok(coop.ctaHeight >= 44, `sign-in button height ${coop.ctaHeight}px`);
+    assert.equal(coop.pageScrollsSideways, false);
+    await p.click(".v-mnav-more");
+    await p.waitForSelector("#v-mnav-sheet[open], dialog.v-mnav-sheet[open]", { state: "visible" });
+    const tiles = await p.evaluate(() =>
+      Object.fromEntries(
+        [...document.querySelectorAll("[data-mnav-badge]")].map((badge) => [
+          badge.dataset.mnavBadge,
+          badge.hidden ? "none" : badge.dataset.kind,
+        ])
+      )
+    );
+    assert.equal(tiles.highlights, "lock", "Highlights tile");
+    assert.equal(tiles.beta, "lock", "Beta tile");
+    assert.notEqual(tiles.news, "lock", "News tile stays open");
+    await p.click('[data-mnav-tab="beta"]');
+    const beta = await lockState(p, "beta");
+    assert.equal(beta.gateShown, true, "tapping a locked tile opens its sign-in screen");
+    assert.equal(beta.otherChildrenShown, 0);
+    assert.equal(beta.pageScrollsSideways, false);
+    assert.deepEqual(errors, []);
+    await context.close();
+  });
+}
+
+const GROUPS = Object.freeze({
+  core: run,
+  duel: runDuel,
+  brand: runBrand,
+  switch: runBetaSwitch,
+  lock: runLock,
+  parity: runParity,
+  news: runNewsPost,
+});
+
+/** @returns {string[]} the group names to run */
+function selectedGroups() {
+  const index = process.argv.indexOf("--only");
+  if (index === -1) return Object.keys(GROUPS);
+  const wanted = (process.argv[index + 1] || "").split(",").map((name) => name.trim()).filter(Boolean);
+  const unknown = wanted.filter((name) => !(name in GROUPS));
+  if (wanted.length === 0 || unknown.length > 0) {
+    throw new Error(`--only takes a comma-separated list of: ${Object.keys(GROUPS).join(", ")}`);
+  }
+  return wanted;
+}
+
 async function main() {
+  const groups = selectedGroups();
   const server = await startServer();
   const browser = await chromium.launch();
   let failed = false;
   try {
-    await run(browser);
-    await runDuel(browser);
-    await runBrand(browser);
-    await runBetaSwitch(browser);
-    await runNewsPost(browser);
+    for (const name of groups) await GROUPS[name](browser);
   } catch {
     failed = true;
   } finally {

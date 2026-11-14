@@ -87,6 +87,8 @@
   display: grid;
   flex: 1;
   place-items: center;
+  align-content: center;
+  gap: 4px;
   margin: 8px 8px 0;
   border: var(--v-outline);
   border-radius: var(--v-radius-sm);
@@ -105,6 +107,43 @@
 }
 .v-card-value.is-long {
   font-size: 2.375rem;
+}
+/* Up/down arrow beside the value: recent form against the lifetime rate.
+   Direction is carried by the shape; the colour only repeats it. */
+.v-card-trend {
+  display: inline-block;
+  width: 0.34em;
+  height: 0.3em;
+  margin-right: 0.08em;
+  vertical-align: 0.2em;
+  background: currentColor;
+}
+.v-card-trend.is-up {
+  clip-path: polygon(50% 0, 100% 100%, 0 100%);
+  color: color-mix(in srgb, var(--v-win) 52%, var(--v-on-paper));
+}
+.v-card-trend.is-down {
+  clip-path: polygon(0 0, 100% 0, 50% 100%);
+  color: color-mix(in srgb, var(--v-loss) 62%, var(--v-on-paper));
+}
+/* Trajectory under the value, inked like the rest of the card. */
+.v-card-spark {
+  display: block;
+  width: 64px;
+  height: 18px;
+  overflow: visible;
+}
+.v-card-spark polyline {
+  fill: none;
+  stroke: var(--v-on-paper);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.v-card-spark circle {
+  fill: var(--tone);
+  stroke: var(--v-on-paper);
+  stroke-width: 1.5;
 }
 .v-card-text {
   display: flex;

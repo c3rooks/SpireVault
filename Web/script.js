@@ -1601,6 +1601,46 @@ function bossImageSrcset(slug) {
 // every other site in the file still treats it as the single source of
 // truth for "is there a logged-in user right now."
 let session = readSession();
+
+/** Tabs that need a Steam account. A signed-out visitor sees a sign-in
+ *  screen in their place (.tab-lock in index.html, whose data-steam-lock
+ *  attributes must name the same tabs; verify-ui-next checks that). */
+const STEAM_LOCKED_TABS = Object.freeze(["coop", "highlights", "beta"]);
+
+/**
+ * @param {string} tab
+ * @returns {boolean} true when this tab is closed to the current visitor
+ */
+function isTabLocked(tab) {
+  return !session?.steamID && STEAM_LOCKED_TABS.includes(tab);
+}
+
+/** "Co-op, Highlights and Beta", from the sidebar's own labels. */
+function steamLockedTabNames() {
+  const names = STEAM_LOCKED_TABS.map((tab) => {
+    const $label = document.querySelector(`.nav-row[data-tab="${tab}"] .nav-label`);
+    // U+2011, a hyphen that does not break: "Co-" / "op" across two lines
+    // is what the narrow sign-in card did with the plain one.
+    return ($label?.textContent || tab).trim().replace(/-/g, "\u2011");
+  });
+  return names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}` : names.join("");
+}
+
+/**
+ * Mirrors the sign-in state onto <html data-steam> ("in" | "out"), which is
+ * what CSS locks the Steam-only tabs from, and onto their sidebar rows (the
+ * class is what the new look's phone nav watches). The boot script in
+ * index.html sets a first guess from storage before the first paint; this is
+ * the truth. Call it whenever `session` is assigned.
+ */
+function syncSteamLock() {
+  const isSignedOut = !session?.steamID;
+  document.documentElement.setAttribute("data-steam", isSignedOut ? "out" : "in");
+  document.querySelectorAll(".nav-row[data-steam-lock]").forEach(($row) => {
+    $row.classList.toggle("is-locked", isSignedOut);
+  });
+}
+syncSteamLock();
 // Set during `/api/_session` rehydration. When localStorage still has a
 // blob but the HttpOnly cookie is dead (common on Safari after ITP), API
 // calls 401 or hang — surface a re-auth banner instead of a blank shell.
@@ -1868,6 +1908,19 @@ function syncUiSwitchButtons() {
   });
 }
 
+/**
+ * The always-visible switches in the classic chrome (beside the logo, and the
+ * last chip of the phone tab strip) ship `hidden` in index.html. Show them
+ * only where one click would really land in the new look: not in the new
+ * look itself, not in a browser too old for it, not in the overlay window.
+ */
+function revealChromeUiSwitches() {
+  if (IS_UI_NEXT || !canRunNextUI() || isOverlayWindow()) return;
+  document.querySelectorAll("[data-ui-chrome-switch]").forEach(($btn) => {
+    $btn.hidden = false;
+  });
+}
+
 document.addEventListener("click", (event) => {
   const $target = event.target instanceof Element ? event.target : null;
   if (!$target) return;
@@ -1884,6 +1937,7 @@ document.addEventListener("click", (event) => {
   }
 });
 syncUiSwitchButtons();
+revealChromeUiSwitches();
 
 // =========================================================================
 // Native host bridge — early stub
@@ -2160,9 +2214,11 @@ async function rehydrateSessionFromCookie() {
         try {
           localStorage.setItem(STORAGE_SESSION, JSON.stringify(session));
         } catch { /* private mode */ }
+        syncSteamLock();
       }
     } else if (r.status === 401) {
       session = null;
+      syncSteamLock();
       sessionCookieVerified = false;
       sessionCookieMissing = false;
       try { localStorage.removeItem(STORAGE_SESSION); } catch {}
@@ -2600,6 +2656,7 @@ async function boot() {
       }
       if (!sessionCookieVerified) {
         session = null;
+        syncSteamLock();
         try { localStorage.removeItem(STORAGE_SESSION); } catch {}
         setStatus("offline", "Sign in to continue");
         try { wireGuestCoop(); } catch {}
@@ -2680,7 +2737,7 @@ async function boot() {
           <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3 5l8-1.1V11H3V5zm0 7h8v7.1L3 18V12zm9 7.2V12h9v8L12 19.2zM12 11V3.9L21 3v8h-9z"/></svg>
           <span>Sign in with Steam</span>
         </button>
-        <p class="me-pill-guest-note">Optional — only needed for the co-op feed.</p>
+        <p class="me-pill-guest-note">Optional. Unlocks ${esc(steamLockedTabNames())}.</p>
         <button class="me-pill-guest-settings" type="button" data-action="open-settings-guest" title="Open Settings">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09a1.65 1.65 0 00-1-1.51 1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 110-4h.09a1.65 1.65 0 001.51-1 1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
           <span>Settings</span>
@@ -3430,6 +3487,10 @@ async function boot() {
 // signed up · Y looking for co-op" line so the value is concrete: "if
 // you sign in too, those are the people you'd be matchmaking with."
 function wireGuestCoop() {
+  // Co-op is closed to signed-out visitors (STEAM_LOCKED_TABS): the panel
+  // shows its sign-in screen, so there is no guest front door to build and
+  // nothing to fetch for it. Take "coop" out of that list and this runs again.
+  if (isTabLocked("coop")) return;
   const $body = document.querySelector('.tab-panel[data-tab="coop"] .panel-body');
   if (!$body) return;
   // The Roblox front door: signed-out visitors see the LIVE rooms first
@@ -3609,6 +3670,7 @@ function renderGuestRoomCard(room) {
 }
 
 async function refreshGuestRoster() {
+  if (isTabLocked("coop")) return; // nothing on screen to refresh
   // Piggyback the public room grid on the same poll cadence — every
   // guest-roster refresh call site (boot, interval, visibilitychange,
   // pageshow) keeps the room cards fresh too.
@@ -4234,6 +4296,8 @@ function renderActiveTab() {
   renderLinkedPill();
   renderSyncPill();
   renderToolbarEmptyPill();
+  // A Steam-only tab shows its sign-in screen (CSS); render nothing under it.
+  if (isTabLocked(activeTab)) return;
   if (TABS_WITH_DATA.includes(activeTab)) {
     renderStatsTab(activeTab);
   } else if (activeTab === "coop") {
@@ -5095,6 +5159,8 @@ const HIGHLIGHTS_POLL_MS = 30_000;
 /** Fetch the global feed. Auth is optional — guests see the same posts,
  *  just without the "you reacted" indicator. */
 async function pullHighlights() {
+  // Signed-out visitors cannot open Highlights: no feed, no badge, no fetch.
+  if (isTabLocked("highlights")) return;
   try {
     const token = session?.sessionToken ?? null;
     const r = await HighlightsAPI.fetchFeed(API_BASE, token);
@@ -11911,7 +11977,20 @@ function nextRecentFormCard(runs) {
         ? `${record} &middot; <strong>&minus;${Math.abs(trend)}</strong> vs. lifetime`
         : `${record} &middot; on par with lifetime`;
   const tone = pct >= lifetimePct + 1 ? "win" : (pct + 5 < lifetimePct ? "loss" : "accent");
-  return { title: "Recent form", tone, icon: "bolt", value: String(pct), unit: "%", textHtml };
+  // The same series the classic card's sparkline draws: win rate so far
+  // across these runs, oldest → newest.
+  const oldestFirst = last.slice().reverse();
+  const spark = oldestFirst.map((_, i) => oldestFirst.slice(0, i + 1).filter((r) => r.won).length / (i + 1));
+  return {
+    title: "Recent form",
+    tone,
+    icon: "bolt",
+    value: String(pct),
+    unit: "%",
+    textHtml,
+    trend: trend > 0 ? "up" : trend < 0 ? "down" : "flat",
+    spark,
+  };
 }
 
 function nextStreakCards(runs) {
@@ -12375,7 +12454,7 @@ function renderSettingsTab() {
           <p class="settings-card-sub">
             ${isAuthed
               ? "Signed in with Steam. Your runs sync across devices."
-              : "Signed out. Sign in with Steam to enable cross-device sync, the co-op feed, and community highlights."}
+              : "Signed out. Sign in with Steam to enable cross-device sync, the co-op feed, community highlights and beta features."}
           </p>
         </header>
 

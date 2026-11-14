@@ -559,6 +559,9 @@
   .footer-links a {
     display: inline-flex;
     align-items: center;
+    justify-content: center;
+    /* "GitHub" alone is a 42px word. */
+    min-width: 44px;
     min-height: 44px;
   }
 }

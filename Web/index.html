@@ -83,6 +83,15 @@
     if (isOverlay || !capable) ui = "classic";
     root.setAttribute("data-ui", ui);
     window.__VAULT_UI__ = ui;
+    // Co-op, Highlights and Beta need a Steam account. Tag <html> from the
+    // stored session before first paint so their locks never flash on or
+    // off; script.js (syncSteamLock) confirms it once the session is checked.
+    var signedIn = false;
+    try {
+      var storedSession = JSON.parse(read("vault.web.session") || "null");
+      signedIn = !!(storedSession && storedSession.steamID && storedSession.sessionToken);
+    } catch (e) { /* unreadable entry: treat as signed out */ }
+    root.setAttribute("data-steam", signedIn ? "in" : "out");
     // The new look pads itself for notches and the home indicator with
     // env(safe-area-inset-*), which only reports real values under
     // viewport-fit=cover. Classic keeps the default viewport untouched.
@@ -364,6 +373,15 @@
           <span class="sidebar-wordmark">SpireVault</span>
           <span class="sidebar-sub">web · for STS2</span>
         </div>
+        <!-- One click into the new look, in the spot where the new look keeps
+             its own palette button. Classic only: it ships hidden and
+             script.js (revealChromeUiSwitches) shows it where the new look
+             can run. Its phone twin is the last chip in the tab strip below. -->
+        <button class="skin-switch skin-switch--brand" type="button" hidden
+                data-action="ui-set" data-ui="next" data-source="sidebar" data-ui-chrome-switch
+                data-tip="Try the new look" aria-label="Try the new look (beta)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a9 9 0 1 0 0 18c1.2 0 2-.9 2-2 0-.5-.2-1-.5-1.4-.3-.4-.5-.8-.5-1.3 0-1.1.9-2 2-2h2.3A3.7 3.7 0 0 0 21 10.6C21 6.4 17 3 12 3z"/><circle cx="7.5" cy="11.5" r="1"/><circle cx="10" cy="7.5" r="1"/><circle cx="15" cy="7.5" r="1"/></svg>
+        </button>
       </div>
 
       <div class="sidebar-divider"></div>
@@ -404,12 +422,16 @@
 
         <div class="nav-group">
           <span class="nav-group-label">COMMUNITY</span>
-          <button class="nav-row" data-tab="coop">
+          <!-- data-steam-lock: these three tabs need a Steam account. While
+               <html data-steam="out"> the row shows .nav-lock in place of its
+               badges and the panel shows its .tab-lock sign-in screen. -->
+          <button class="nav-row" data-tab="coop" data-steam-lock>
             <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M9 11a3 3 0 100-6 3 3 0 000 6zm6 0a3 3 0 100-6 3 3 0 000 6zm-9 8a5 5 0 0110 0zm9-1a5 5 0 015-5v6h-5z"/></svg></span>
             <span class="nav-label">Co-op</span>
             <span class="nav-badge" id="nav-coop-count" hidden></span>
+            <span class="nav-lock"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M17 9V7a5 5 0 00-10 0v2H5v12h14V9h-2zm-8-2a3 3 0 016 0v2H9V7zm3 10.5a2 2 0 110-4 2 2 0 010 4z"/></svg><span class="nav-lock-text">Locked. Sign in with Steam to open.</span></span>
           </button>
-          <button class="nav-row" data-tab="highlights">
+          <button class="nav-row" data-tab="highlights" data-steam-lock>
             <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.39 6.95H22l-5.93 4.31L18.46 22 12 17.27 5.54 22l2.39-8.74L2 8.95h7.61z"/></svg></span>
             <span class="nav-label">Highlights</span>
             <!-- Red unseen-dot. Shown by refreshHighlightsBadge() when at
@@ -417,16 +439,18 @@
                  than the user's stored last-seen timestamp. Cleared by
                  markHighlightsSeen() the moment they open the tab. -->
             <span class="nav-badge nav-badge--dot" id="nav-highlights-count" aria-label="New community highlights" hidden></span>
+            <span class="nav-lock"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M17 9V7a5 5 0 00-10 0v2H5v12h14V9h-2zm-8-2a3 3 0 016 0v2H9V7zm3 10.5a2 2 0 110-4 2 2 0 010 4z"/></svg><span class="nav-lock-text">Locked. Sign in with Steam to open.</span></span>
           </button>
           <button class="nav-row" data-tab="news">
             <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M4 4h12a2 2 0 012 2v12a3 3 0 003 3H6a2 2 0 01-2-2V4zm2 2v13h12.17A1 1 0 0118 18V6H6zm2 3h8v2H8V9zm0 4h8v2H8v-2zm0 4h5v2H8v-2z"/></svg></span>
             <span class="nav-label">News</span>
             <span class="nav-badge nav-badge--new" id="nav-news-count" hidden>NEW</span>
           </button>
-          <button class="nav-row" data-tab="beta" id="nav-beta-btn">
+          <button class="nav-row" data-tab="beta" id="nav-beta-btn" data-steam-lock>
             <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M9 2v6.586L3.293 14.293A1 1 0 004 16h16a1 1 0 00.707-1.707L15 8.586V2H9zm2 2h2v5.414l4.293 4.293L17 14H7l-.293.293L11 9.414V4z"/></svg></span>
             <span class="nav-label">Beta</span>
             <span class="nav-badge nav-badge--new">NEW</span>
+            <span class="nav-lock"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M17 9V7a5 5 0 00-10 0v2H5v12h14V9h-2zm-8-2a3 3 0 016 0v2H9V7zm3 10.5a2 2 0 110-4 2 2 0 010 4z"/></svg><span class="nav-lock-text">Locked. Sign in with Steam to open.</span></span>
           </button>
           <!-- Old "Overlay" sidebar row was removed in v0.9. The Run
                Coach overlay now lives inside the Beta tab so it sits
@@ -443,6 +467,14 @@
              This collapses two persistent footer surfaces (the pill
              and the Settings tab) into one place where everything
              "about you" lives. -->
+
+        <!-- Phone twin of the switch beside the logo (that row is hidden on a
+             phone). Not a tab: no data-tab, and CSS hides it above 880px. -->
+        <button class="skin-switch skin-switch--strip" type="button" hidden
+                data-action="ui-set" data-ui="next" data-source="tab-strip" data-ui-chrome-switch>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a9 9 0 1 0 0 18c1.2 0 2-.9 2-2 0-.5-.2-1-.5-1.4-.3-.4-.5-.8-.5-1.3 0-1.1.9-2 2-2h2.3A3.7 3.7 0 0 0 21 10.6C21 6.4 17 3 12 3z"/><circle cx="7.5" cy="11.5" r="1"/><circle cx="10" cy="7.5" r="1"/><circle cx="15" cy="7.5" r="1"/></svg>
+          <span>Try the new look</span>
+        </button>
       </nav>
 
       <div class="sidebar-spacer"></div>
@@ -847,7 +879,22 @@
       </article>
 
       <!-- =================== Co-op =================== -->
-      <article class="tab-panel" data-tab="coop" aria-labelledby="tab-coop-title" hidden>
+      <article class="tab-panel" data-tab="coop" data-steam-lock aria-labelledby="tab-coop-title" hidden>
+        <!-- Shown instead of everything else in this panel while signed out
+             (CSS, html[data-steam="out"]). Same markup in all three locked
+             tabs; styled for classic in styles.css and for the new look in
+             styles/src/components/tab-lock.css. -->
+        <section class="tab-lock" data-tab-lock="coop" aria-labelledby="tab-lock-coop-title">
+          <span class="tab-lock-badge" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M17 9V7a5 5 0 00-10 0v2H5v12h14V9h-2zm-8-2a3 3 0 016 0v2H9V7zm3 10.5a2 2 0 110-4 2 2 0 010 4z"/></svg></span>
+          <p class="tab-lock-eyebrow">Co-op &middot; signed-in players</p>
+          <h2 class="tab-lock-title" id="tab-lock-coop-title">Sign in to play co-op</h2>
+          <p class="tab-lock-text">Find a partner, join a live room or schedule a run with other players.</p>
+          <button class="btn-primary tab-lock-cta" type="button" data-action="signin-cta" data-analytics-cta="tab-lock-coop">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3 5l8-1.1V11H3V5zm0 7h8v7.1L3 18V12zm9 7.2V12h9v8L12 19.2zM12 11V3.9L21 3v8h-9z"/></svg>
+            <span>Sign in with Steam</span>
+          </button>
+          <p class="tab-lock-note">Free. Steam confirms who you are and never shares your password. Your stats, runs and News stay open without signing in.</p>
+        </section>
         <div class="panel-head">
           <div class="panel-head-toprow app-toolbar" role="toolbar" aria-label="Save data actions">
             <div class="app-toolbar-left">
@@ -1191,7 +1238,22 @@
            feed (#highlights-feed) re-rendered on poll. Sharing happens
            from the run-share modal, not from this tab — keeps the
            sharing flow attached to the run a user is admiring. -->
-      <article class="tab-panel" data-tab="highlights" aria-labelledby="tab-highlights-title" hidden>
+      <article class="tab-panel" data-tab="highlights" data-steam-lock aria-labelledby="tab-highlights-title" hidden>
+        <!-- Shown instead of everything else in this panel while signed out
+             (CSS, html[data-steam="out"]). Same markup in all three locked
+             tabs; styled for classic in styles.css and for the new look in
+             styles/src/components/tab-lock.css. -->
+        <section class="tab-lock" data-tab-lock="highlights" aria-labelledby="tab-lock-highlights-title">
+          <span class="tab-lock-badge" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M17 9V7a5 5 0 00-10 0v2H5v12h14V9h-2zm-8-2a3 3 0 016 0v2H9V7zm3 10.5a2 2 0 110-4 2 2 0 010 4z"/></svg></span>
+          <p class="tab-lock-eyebrow">Highlights &middot; signed-in players</p>
+          <h2 class="tab-lock-title" id="tab-lock-highlights-title">Sign in to see community highlights</h2>
+          <p class="tab-lock-text">Runs other players chose to share. React, leave a comment, or post one of your own.</p>
+          <button class="btn-primary tab-lock-cta" type="button" data-action="signin-cta" data-analytics-cta="tab-lock-highlights">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3 5l8-1.1V11H3V5zm0 7h8v7.1L3 18V12zm9 7.2V12h9v8L12 19.2zM12 11V3.9L21 3v8h-9z"/></svg>
+            <span>Sign in with Steam</span>
+          </button>
+          <p class="tab-lock-note">Free. Steam confirms who you are and never shares your password. Your stats, runs and News stay open without signing in.</p>
+        </section>
         <div class="panel-head">
           <div class="panel-head-coop-row">
             <div>
@@ -1379,7 +1441,7 @@
                   <button class="btn-primary" type="button" data-action="ui-set" data-ui="next" data-source="news" data-active-label="The new look is on">Turn on the new look</button>
                 </p>
                 <p>
-                  Other ways in: <strong>Settings &rarr; New look &rarr; Try the new look</strong>, the card at the top of the <strong>Beta</strong> tab, or open <code>app.spirevault.app/?ui=next</code>. The choice is saved per device, so your laptop can run the new look while your phone stays classic.
+                  Other ways in: the palette button next to the logo (on a phone, the last chip in the tab strip), <strong>Settings &rarr; New look &rarr; Try the new look</strong>, the card at the top of the <strong>Beta</strong> tab (once you&rsquo;re signed in), or open <code>app.spirevault.app/?ui=next</code>. The choice is saved per device, so your laptop can run the new look while your phone stays classic.
                 </p>
 
                 <h4 class="news-post-section">What&rsquo;s different</h4>
@@ -1409,7 +1471,7 @@
                   <button class="btn-ghost" type="button" data-action="ui-set" data-ui="classic" data-source="news" data-active-label="You&rsquo;re on the classic look">Go back to the classic look</button>
                 </p>
                 <p>
-                  Or: the palette button &rarr; <strong>Back to the classic look</strong>, the same link under <strong>Settings &rarr; Appearance</strong>, the card on the <strong>Beta</strong> tab, or open <code>app.spirevault.app/?ui=classic</code>. One reload and you&rsquo;re back on the tab you left.
+                  Or: the palette button &rarr; <strong>Back to the classic look</strong>, the same link under <strong>Settings &rarr; Appearance</strong>, the card on the <strong>Beta</strong> tab (signed in), or open <code>app.spirevault.app/?ui=classic</code>. One reload and you&rsquo;re back on the tab you left.
                 </p>
 
                 <h4 class="news-post-section">What isn&rsquo;t done yet</h4>
@@ -2368,7 +2430,22 @@
            the markup minimal — renderBetaTab() in script.js owns
            the entire body so live state (browser support, API key
            presence, Coach status) stays in sync. -->
-      <article class="tab-panel beta-panel" data-tab="beta" aria-labelledby="tab-beta-title" hidden>
+      <article class="tab-panel beta-panel" data-tab="beta" data-steam-lock aria-labelledby="tab-beta-title" hidden>
+        <!-- Shown instead of everything else in this panel while signed out
+             (CSS, html[data-steam="out"]). Same markup in all three locked
+             tabs; styled for classic in styles.css and for the new look in
+             styles/src/components/tab-lock.css. -->
+        <section class="tab-lock" data-tab-lock="beta" aria-labelledby="tab-lock-beta-title">
+          <span class="tab-lock-badge" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M17 9V7a5 5 0 00-10 0v2H5v12h14V9h-2zm-8-2a3 3 0 016 0v2H9V7zm3 10.5a2 2 0 110-4 2 2 0 010 4z"/></svg></span>
+          <p class="tab-lock-eyebrow">Beta &middot; signed-in players</p>
+          <h2 class="tab-lock-title" id="tab-lock-beta-title">Sign in to try beta features</h2>
+          <p class="tab-lock-text">Run Coach and the Co-op Lobby beta are for signed-in players.</p>
+          <button class="btn-primary tab-lock-cta" type="button" data-action="signin-cta" data-analytics-cta="tab-lock-beta">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3 5l8-1.1V11H3V5zm0 7h8v7.1L3 18V12zm9 7.2V12h9v8L12 19.2zM12 11V3.9L21 3v8h-9z"/></svg>
+            <span>Sign in with Steam</span>
+          </button>
+          <p class="tab-lock-note">Free. Steam confirms who you are and never shares your password. Your stats, runs and News stay open without signing in.</p>
+        </section>
         <div class="panel-head">
           <div class="panel-head-coop-row">
             <div>

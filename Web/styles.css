@@ -947,6 +947,190 @@ main.main-public,
   opacity: 0.6;
 }
 
+/* ─── Switch to the new look ─────────────────────────────────────
+ * One click, beside the logo: the same spot where the new look keeps
+ * its palette button, so "change the look" lives in one place in both.
+ * The brand row is also the only part of the rail the sign-in dock
+ * never covers on a short window.
+ *
+ * Positioned against .sidebar (sticky, so it is the containing block)
+ * rather than joining the brand row's flex line: nothing that was
+ * already in the row moves by a pixel. Ships `hidden`; script.js shows
+ * it only where the new look can run. The phone twin (--strip) is
+ * styled in "Mobile shell" at the end of this file. */
+.skin-switch {
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(212, 175, 55, 0.32);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text-2);
+  transition:
+    background 180ms cubic-bezier(0.16, 1, 0.3, 1),
+    border-color 180ms cubic-bezier(0.16, 1, 0.3, 1),
+    color 180ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.skin-switch svg { width: 16px; height: 16px; flex: none; }
+.skin-switch:hover {
+  background: rgba(255, 122, 26, 0.12);
+  border-color: rgba(212, 175, 55, 0.65);
+  color: var(--accent-hi);
+}
+.skin-switch:active { transform: translateY(1px); }
+.skin-switch--brand {
+  position: absolute;
+  top: 30px;   /* centred on the 44px emblem, which starts 22px down */
+  right: 18px; /* the divider's right end */
+  display: inline-flex;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: 8px;
+}
+/* Drawn at 28px to sit beside the wordmark; 44px to a finger (a tablet in
+   landscape gets this rail too). */
+.skin-switch--brand::before {
+  content: "";
+  position: absolute;
+  inset: -8px;
+}
+/* What the icon does, said the moment the pointer lands on it. */
+.skin-switch--brand::after {
+  content: attr(data-tip);
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  padding: 5px 9px;
+  border: 1px solid rgba(212, 175, 55, 0.4);
+  border-radius: 6px;
+  background: #161022;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 140ms ease;
+}
+.skin-switch--brand:hover::after,
+.skin-switch--brand:focus-visible::after {
+  opacity: 1;
+}
+.skin-switch--strip { display: none; }
+
+/* ─── Steam-only tabs ─────────────────────────────────────────────
+ * Co-op, Highlights and Beta need a Steam account. <html data-steam> is
+ * "out" for a signed-out visitor: set before first paint by the boot
+ * script in index.html, confirmed by syncSteamLock() in script.js. While
+ * it is, each of those sidebar rows shows a lock in place of its badges,
+ * and its panel shows the .tab-lock sign-in screen and nothing else.
+ *
+ * The first block is the mechanism and applies to both looks (the new
+ * look loads this sheet as its legacy layer). The classic look of the
+ * pieces follows, scoped to classic; the new look draws its own in
+ * styles/src/components/tab-lock.css. */
+.nav-lock,
+.tab-lock { display: none; }
+html[data-steam="out"] .nav-row[data-steam-lock] .nav-lock { display: inline-flex; }
+html[data-steam="out"] .nav-row[data-steam-lock] .nav-badge { display: none !important; }
+html[data-steam="out"] .tab-panel[data-steam-lock] > :not(.tab-lock) { display: none !important; }
+html[data-steam="out"] .tab-panel[data-steam-lock] > .tab-lock { display: flex; }
+/* Read out with the row's name ("Co-op, Locked. Sign in with Steam to
+   open."); not drawn. Hidden with the lock when signed in. */
+.nav-lock-text {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+html:not([data-ui="next"]) .nav-lock {
+  position: relative;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  color: var(--text-3);
+}
+html:not([data-ui="next"]) .nav-lock svg { width: 14px; height: 14px; }
+
+html:not([data-ui="next"]) .tab-lock {
+  flex-direction: column;
+  align-items: center;
+  width: min(560px, calc(100% - 32px));
+  margin: clamp(28px, 9vh, 96px) auto 48px;
+  padding: 36px 32px 30px;
+  border: 1px solid rgba(212, 175, 55, 0.35);
+  border-radius: var(--radius);
+  background:
+    radial-gradient(420px 220px at 50% 0%, rgba(255, 122, 26, 0.1), transparent 70%),
+    linear-gradient(160deg, rgba(40, 32, 18, 0.55), rgba(18, 16, 24, 0.92));
+  text-align: center;
+}
+html:not([data-ui="next"]) .tab-lock-badge {
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  border: 1px solid rgba(212, 175, 55, 0.55);
+  border-radius: 50%;
+  background: rgba(212, 175, 55, 0.1);
+  box-shadow: 0 2px 14px rgba(255, 107, 26, 0.18);
+  color: var(--gold);
+}
+html:not([data-ui="next"]) .tab-lock-badge svg { width: 26px; height: 26px; }
+html:not([data-ui="next"]) .tab-lock-eyebrow {
+  margin: 18px 0 8px;
+  color: var(--text-3);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+html:not([data-ui="next"]) .tab-lock-title {
+  margin: 0 0 10px;
+  color: var(--text);
+  font-family: 'Playfair Display', serif;
+  font-size: 26px;
+  font-weight: 900;
+  letter-spacing: -0.01em;
+  line-height: 1.15;
+}
+html:not([data-ui="next"]) .tab-lock-text {
+  max-width: 44ch;
+  margin: 0 0 22px;
+  color: var(--text-2);
+  font-size: 14px;
+  line-height: 1.55;
+}
+html:not([data-ui="next"]) .tab-lock-cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 24px;
+}
+html:not([data-ui="next"]) .tab-lock-note {
+  max-width: 46ch;
+  margin: 16px 0 0;
+  color: var(--text-3);
+  font-size: 12px;
+  line-height: 1.5;
+}
+@media (max-width: 880px) {
+  html:not([data-ui="next"]) .tab-lock {
+    margin-top: 24px;
+    padding: 28px 20px 24px;
+  }
+  html:not([data-ui="next"]) .tab-lock-title { font-size: 22px; }
+}
+
 .sidebar-nav { padding: 14px; }
 .nav-group { margin-bottom: 22px; }
 .nav-group:last-child { margin-bottom: 0; }
@@ -5870,6 +6054,26 @@ select#me-note option { background: var(--bg-deep); color: var(--text); }
   .nav-icon { width: 16px; height: 16px; }
   .nav-icon svg { width: 16px; height: 16px; }
   .nav-label { flex: 0 0 auto; }
+
+  /* The switch to the new look, as the last chip in the strip (the logo row
+     that carries it on desktop is hidden here). Same size as a tab chip;
+     gilded and dashed so it does not read as an eleventh tab. */
+  .skin-switch--strip {
+    display: inline-flex;
+    flex: 0 0 auto;
+    gap: 8px;
+    min-height: 38px;
+    padding: 9px 14px;
+    border-style: dashed;
+    border-color: rgba(212, 175, 55, 0.55);
+    border-radius: 999px;
+    background: rgba(212, 175, 55, 0.08);
+    color: #f4d77a;
+    font-size: 12.5px;
+    font-weight: 700;
+    white-space: nowrap;
+    scroll-snap-align: center;
+  }
 
   /* Mobile-only account row — persona avatar, name, connection status,
      sign out. Lives just under the tab strip. */

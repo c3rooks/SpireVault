@@ -32,7 +32,6 @@
   /* 0.67 (the boss's share of the stage height) x 399/620 (its art). */
   --duel-boss-w: calc(var(--v-stage-h) * 0.4312 * var(--duel-scale));
   --duel-gap: 44px;
-  --duel-float: 6px;
   /* Right offset of the climber's right edge. */
   --duel-climber-right: calc(var(--duel-boss-right) + var(--duel-boss-w) + var(--duel-gap));
   /* The climber's drawn width. --climber-h / --climber-aspect are copied up
@@ -285,6 +284,12 @@
   pointer-events: none;
 }
 .v-duel {
+  /* How far the boss's art reaches below the shared ground line. His feet
+     stand on it, level with the climber's; whatever hangs lower in the art
+     (the Architect's staff tip) is planted just in front, on the ledge.
+     --boss-foot comes from the staging in lib/ui/stage.js (1 = the art's
+     bottom edge is the feet). */
+  --boss-sink: calc(var(--v-stage-h) * var(--boss-h, 0.67) * var(--duel-scale) * (1 - var(--boss-foot, 1)));
   position: absolute;
   inset: 0;
   transform: translate3d(calc(var(--px) * -30px), 0, 0);
@@ -301,8 +306,8 @@
   right: var(--duel-boss-right);
   /* So his name shows on hover; nothing clickable sits behind him. */
   pointer-events: auto;
-  /* He hovers: the art is a floating pose, and so is the fight. */
-  bottom: calc(var(--stage-ground) + var(--duel-float));
+  /* Feet on the same ground line as the climber: one line, both figures. */
+  bottom: calc(var(--stage-ground) - var(--boss-sink));
   width: calc(var(--v-stage-h) * var(--boss-h) * var(--boss-aspect) * var(--duel-scale));
   height: calc(var(--v-stage-h) * var(--boss-h) * var(--duel-scale));
 }
@@ -342,24 +347,15 @@
 .v-actor--climber:focus-visible .v-actor-art {
   translate: 0 -3px;
 }
+/* The boss breathes too, from his feet, a beat slower. He does not bob: a
+   figure that rises and falls reads as standing higher than the other. */
 .v-actor--boss .v-actor-art {
-  animation: v-hover 5.2s ease-in-out infinite;
+  transform-origin: 50% calc(var(--boss-foot, 1) * 100%);
+  animation: v-breathe 5.2s ease-in-out infinite;
 }
 @keyframes v-breathe {
   50% {
     transform: scaleY(1.02);
-  }
-}
-/* The boss bobs around his resting height, not above it: rising a full 6px
-   took the staff tip into the toolbar on wide screens. Same 6px of travel,
-   and he still never touches the ground (his lift is 4–6px). */
-@keyframes v-hover {
-  0%,
-  100% {
-    transform: translateY(3px);
-  }
-  50% {
-    transform: translateY(-3px);
   }
 }
 /* Ground shadow: a flat ink ellipse under the feet, like the game's. */
@@ -372,15 +368,9 @@
   background: var(--v-ink);
   opacity: 0.55;
 }
+/* Under his feet, on the ground line (the art's bottom edge is lower). */
 .v-actor--boss .v-actor-shadow {
-  bottom: calc(-6px - var(--duel-float));
-  animation: v-hover-shadow 5.2s ease-in-out infinite;
-}
-@keyframes v-hover-shadow {
-  50% {
-    transform: scaleX(0.86);
-    opacity: 0.4;
-  }
+  bottom: calc(var(--boss-sink) - 6px);
 }
 /* Seat: a drum of fallen column for the seated poses to rest on. */
 .v-actor-seat {
@@ -424,7 +414,7 @@
 .v-duel-gap {
   position: absolute;
   right: var(--stage-gutter);
-  bottom: calc(var(--stage-ground) + var(--duel-float) + var(--v-stage-h) * var(--boss-h) * var(--duel-scale) + 12px);
+  bottom: calc(var(--stage-ground) - var(--boss-sink) + var(--v-stage-h) * var(--boss-h) * var(--duel-scale) + 12px);
   display: flex;
   align-items: flex-end;
   justify-content: flex-end;
@@ -601,7 +591,6 @@
     --duel-scale: 0.72;
     --duel-boss-right: var(--stage-gutter);
     --duel-gap: 32px;
-    --duel-float: 4px;
     --spire-clear: 32px;
     --spire-top: 57px;
     --bubble-max: min(60%, 320px);

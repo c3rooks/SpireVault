@@ -1100,12 +1100,13 @@
   .v-empty .v-empty-alt-row .v-empty-copy {
     min-height: 44px;
   }
-  /* Inline text actions keep their look but get a 44px tall hit area. */
+  /* Inline text actions keep their look but get a 44px tall hit area. 14px,
+     not 13: on Android the line is 17.7px tall, which left it at 43.7px. */
   .v-empty .v-empty-link,
   .v-empty .v-empty-also .v-btn {
     display: inline-block;
-    margin: -13px 0;
-    padding: 13px 0;
+    margin: -14px 0;
+    padding: 14px 0;
   }
   .demo-banner .demo-banner-dismiss {
     top: 8px;

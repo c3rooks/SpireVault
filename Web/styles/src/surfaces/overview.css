@@ -1,10 +1,11 @@
 /* ==========================================================================
-   Overview. Every metric appears exactly once:
+   Overview. Every metric the classic Overview shows appears here, in the
+   same order, so switching looks never loses a number:
      stage  → highest ascension (spire), last ten runs (torches)
+     hand   → recent form (arrow + sparkline), streak, longest streak, best
+              floor, fastest victory, runs this week
      top    → win rate, totals, best character, average ascension, last 20
               · per-character banners
-     hand   → recent form, streak, longest streak, best floor, fastest
-              victory, runs this week
      charts → win-rate trend, where climbs end
      relics → top six by win rate
    Markup from lib/ui/views.js.
@@ -145,6 +146,14 @@
   display: flex;
   flex-wrap: wrap;
   gap: var(--v-space-2);
+}
+/* These two chips are buttons (they open Ascensions): a full fingertip on a
+   touch screen, where they were 27px. */
+@media (max-width: 880px) {
+  .v-wr-chips button.v-chip {
+    min-height: 44px;
+    padding-inline: 14px;
+  }
 }
 
 /* Last 20 climbs as a map path: a dashed trail of win/loss nodes. */
@@ -330,8 +339,11 @@
 }
 
 /* ---- Hand heading --------------------------------------------------------------- */
+/* The hand leads the page, as the stat strip does in the classic layout, so
+   its heading sits tight under the header (or under a notice strip). */
 .v-hand-title {
   justify-content: center;
+  margin-top: 0;
   margin-bottom: 0;
 }
 .v-hand-title::before,

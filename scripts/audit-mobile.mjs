@@ -14,6 +14,9 @@
  *   node scripts/audit-mobile.mjs --strips mini          # also write screen-by-screen filmstrips
  *   node scripts/audit-mobile.mjs --ui classic --base-url https://app.spirevault.app
  *   node scripts/audit-mobile.mjs --strict               # exit 1 if anything is broken
+ *   node scripts/audit-mobile.mjs --signed-in --tabs coop,highlights,beta
+ *                                                        # as a signed-in visitor: Co-op, Highlights and
+ *                                                        # Beta show their content instead of the lock
  *
  * Against a remote --base-url only GET requests to that origin are let
  * through: no analytics, no beacons, nothing is written.
@@ -105,6 +108,15 @@ const options = Object.freeze({
   outDir: arg("out", join(REPO_ROOT, "docs", "screenshots", "mobile-audit")),
   label: arg("label", ""),
   strict: process.argv.includes("--strict"),
+  signedIn: process.argv.includes("--signed-in"),
+});
+
+/** A stored Steam session, as Web/script.js keeps one (for --signed-in). */
+const TEST_SESSION = Object.freeze({
+  steamID: "76561198000000001",
+  personaName: "TestClimber",
+  sessionToken: "test-token",
+  signedInAt: "2026-11-01T00:00:00.000Z",
 });
 
 /** Starts the static dev server and resolves once it is listening. */
@@ -128,9 +140,16 @@ function startServer() {
 }
 
 /** Runs in the page before any app code: a fixed companion and a seeded Math.random. */
-function installFixture({ companion, seed }) {
+function installFixture({ companion, seed, session }) {
   try {
     window.localStorage.setItem("vault.web.companion.v2", companion);
+    if (session) {
+      window.localStorage.setItem("vault.web.session", JSON.stringify(session));
+      // Co-op greets a new account with a one-time dialog that covers the
+      // page (lib/party-finder-scene.js). Mark it seen: the audit measures
+      // the tabs, not that dialog.
+      window.localStorage.setItem("spirevault.coop.welcome.v1", "1");
+    }
   } catch {
     /* storage unavailable: the companion is rolled randomly */
   }
@@ -151,7 +170,11 @@ function installFixture({ companion, seed }) {
  */
 async function openPhone(browser, phone, baseUrl) {
   const context = await browser.newContext({ ...devices[phone.device] });
-  await context.addInitScript(installFixture, { companion: FIXTURE_COMPANION, seed: FIXTURE_SEED });
+  await context.addInitScript(installFixture, {
+    companion: FIXTURE_COMPANION,
+    seed: FIXTURE_SEED,
+    session: options.signedIn ? TEST_SESSION : null,
+  });
   const origin = new URL(baseUrl).origin;
   // Read-only and hermetic: same-origin GETs only.
   await context.route(

@@ -1,0 +1,176 @@
+/* ==========================================================================
+   Steam-only tabs — the new look of the lock.
+
+   Co-op, Highlights and Beta need a Steam account. The mechanism (which
+   pieces show while <html data-steam="out">) lives in styles.css, which this
+   look loads as its legacy layer, so both looks lock the same way. One
+   exception: this look's reset layer reverts the legacy sheet for everything
+   inside the rail, so the rail's show/hide rules are restated below.
+   Otherwise this file only draws the pieces:
+     .nav-lock   the mark on a sidebar row, in place of its badges; on a
+                 phone it sits on the icon's shoulder in the bottom bar
+     .v-mnav-badge[data-kind="lock"]   the same mark on a More-sheet tile
+     .tab-lock   the sign-in screen a locked tab shows instead of its content
+   Markup: index.html. State: syncSteamLock() in script.js.
+   ========================================================================== */
+.nav-lock {
+  display: none;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: var(--v-outline);
+  border-radius: 50%;
+  background: var(--v-surface-2);
+  color: var(--v-text-2);
+}
+/* Signed out: the mark shows on the Steam-only rows (their badges are hidden
+   by the legacy sheet's !important rule, which the reset cannot revert). */
+html[data-steam="out"] .nav-row[data-steam-lock] .nav-lock {
+  display: inline-flex;
+}
+.nav-lock svg {
+  width: 12px;
+  height: 12px;
+}
+.nav-row.is-active .nav-lock {
+  background: var(--v-paper);
+  color: var(--v-on-paper);
+}
+/* Spoken with the row's name, never drawn. Restated here because the rail's
+   own rule for a row's spans outranks the legacy sheet's. */
+.nav-row .nav-lock-text {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* ---- The sign-in screen: a card dealt face up, lock orb on its top edge --------- */
+.tab-lock {
+  position: relative;
+  flex-direction: column;
+  align-items: center;
+  width: min(540px, calc(100% - 2 * var(--v-gutter)));
+  margin: clamp(56px, 13vh, 128px) auto var(--v-space-7);
+  padding: var(--v-space-7) var(--v-space-6) var(--v-space-6);
+  border: var(--v-outline);
+  border-radius: var(--v-radius-lg);
+  background: var(--v-paper);
+  box-shadow: var(--v-shadow-lg, var(--v-shadow));
+  color: var(--v-on-paper);
+  text-align: center;
+}
+.tab-lock-badge {
+  position: absolute;
+  top: -32px;
+  left: calc(50% - 32px);
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  border: var(--v-outline);
+  border-radius: 50%;
+  background: var(--v-gold);
+  box-shadow: var(--v-shadow-sm);
+  color: var(--v-ink);
+}
+.tab-lock-badge svg {
+  width: 30px;
+  height: 30px;
+}
+.tab-lock-eyebrow {
+  margin: 0 0 var(--v-space-2);
+  color: var(--v-on-paper-2);
+  font-size: var(--v-text-xs);
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.tab-lock-title {
+  margin: 0 0 var(--v-space-3);
+  color: var(--v-on-paper);
+  font-family: var(--v-font-display);
+  font-size: var(--v-text-2xl);
+  font-weight: var(--v-display-weight);
+  line-height: 1;
+  letter-spacing: 0.01em;
+  text-wrap: balance;
+}
+.tab-lock-text {
+  max-width: 40ch;
+  margin: 0 0 var(--v-space-5);
+  color: var(--v-on-paper-2);
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: 1.5;
+}
+.tab-lock-cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--v-space-2);
+  min-height: 48px;
+  padding-inline: var(--v-space-5);
+  font-size: 1rem;
+}
+.tab-lock-note {
+  max-width: 44ch;
+  margin: var(--v-space-4) 0 0;
+  color: var(--v-on-paper-2);
+  font-size: var(--v-text-sm);
+  font-weight: 500;
+  line-height: 1.45;
+}
+
+/* ---- Phones ------------------------------------------------------------------- */
+@media (max-width: 880px) {
+  /* On the rail-turned-bar the mark rides the icon's shoulder, where a
+     badge would (shell/mobile-nav.css). */
+  .nav-lock {
+    position: absolute;
+    top: 2px;
+    right: 6px;
+    width: 18px;
+    height: 18px;
+  }
+  .nav-lock svg {
+    width: 10px;
+    height: 10px;
+  }
+  .sidebar-nav[data-v-mnav] .nav-lock {
+    right: auto;
+    left: calc(50% + 6px);
+    box-shadow: 1px 1px 0 var(--v-ink);
+  }
+  /* The mirror on a More-sheet tile. */
+  .v-mnav-badge[data-kind="lock"] {
+    width: 24px;
+    min-width: 0;
+    height: 24px;
+    padding: 0;
+    background: var(--v-surface-2);
+  }
+  .v-mnav-badge[data-kind="lock"]::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: var(--v-text);
+    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M17 9V7a5 5 0 00-10 0v2H5v12h14V9h-2zm-8-2a3 3 0 016 0v2H9V7zm3 10.5a2 2 0 110-4 2 2 0 010 4z'/%3E%3C/svg%3E") center / 13px no-repeat;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M17 9V7a5 5 0 00-10 0v2H5v12h14V9h-2zm-8-2a3 3 0 016 0v2H9V7zm3 10.5a2 2 0 110-4 2 2 0 010 4z'/%3E%3C/svg%3E") center / 13px no-repeat;
+  }
+
+  .tab-lock {
+    width: calc(100% - 2 * var(--v-gutter));
+    margin-top: 56px;
+    padding: var(--v-space-7) var(--v-space-4) var(--v-space-5);
+  }
+  .tab-lock-title {
+    font-size: var(--v-text-xl);
+  }
+}

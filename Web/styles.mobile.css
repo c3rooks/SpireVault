@@ -46,6 +46,13 @@
     --phone-account-row: 56px;
     top: calc(-1 * var(--phone-account-row));
   }
+  /* A short page (a locked tab's sign-in screen) is shorter than the shell's
+     minimum height, and the grid spread the spare height between its two
+     rows: an 88px empty band between the tab strip and the content. The
+     spare height goes below the content instead. */
+  html:not([data-ui="next"]) .app-shell {
+    align-content: start;
+  }
   html:not([data-ui="next"]) .mobile-account-row {
     order: -1;
     flex-wrap: nowrap;
@@ -89,8 +96,14 @@
     flex-wrap: wrap;
     gap: 0 20px;
   }
+  /* 44px tall and at least 44px wide ("GitHub" is a 42px word). */
   .footer-links a {
-    padding: 9px 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 44px;
+    min-height: 44px;
+    padding: 0;
   }
 }
 
@@ -341,28 +354,141 @@
 
 /* ── Small targets and the smallest text ────────────────────────────────── */
 @media (max-width: 880px) {
-  /* 9px. */
-  .nav-badge,
-  .asc-bar-label {
-    font-size: 10px;
-  }
   /* 26px square, in the corner of the sample-data notice. */
   .demo-banner-dismiss {
-    width: 36px;
-    height: 36px;
+    width: 44px;
+    height: 44px;
   }
   /* Text-only controls 15–19px tall. */
   .coop-link-btn,
   .btn-link-danger {
     display: inline-flex;
     align-items: center;
-    min-height: 36px;
+    min-height: 44px;
   }
   .guest-coop-explainer > summary {
     padding-block: 9px;
   }
+
+  /* Classic only from here to the end of the block (the new look draws its
+     own chrome and captions). Measured on seven phone profiles on
+     2026-11-13: everything below was under a fingertip (44px) or under
+     11px, the two floors scripts/audit-mobile.mjs checks.
+
+     Tab chips were 39px, the account row's button 33px, chart and filter
+     chips 36px. */
+  html:not([data-ui="next"]) .nav-row,
+  html:not([data-ui="next"]) .skin-switch--strip,
+  html:not([data-ui="next"]) .mobile-account-row .mobile-signin-cta,
+  html:not([data-ui="next"]) .mobile-account-row .status-signout,
+  html:not([data-ui="next"]) .chart-chip,
+  html:not([data-ui="next"]) .run-filter-group .chart-chip,
+  html:not([data-ui="next"]) .run-filter-compare,
+  html:not([data-ui="next"]) .run-filter-search,
+  html:not([data-ui="next"]) .demo-strip-actions .btn-primary,
+  html:not([data-ui="next"]) .demo-strip-actions .btn-ghost,
+  html:not([data-ui="next"]) .empty-state .btn-sm,
+  html:not([data-ui="next"]) .coop-refresh,
+  html:not([data-ui="next"]) .h-filter-chip,
+  html:not([data-ui="next"]) .h-sort-select,
+  html:not([data-ui="next"]) .beta-seg button,
+  html:not([data-ui="next"]) .beta-panel .btn-ghost.sm {
+    min-height: 44px;
+  }
+  /* A taller box needs its label re-centred: these were inline blocks with
+     the text sitting at the top. */
+  html:not([data-ui="next"]) .chart-chip,
+  html:not([data-ui="next"]) .h-filter-chip,
+  html:not([data-ui="next"]) .run-filter-compare,
+  html:not([data-ui="next"]) .coop-refresh,
+  html:not([data-ui="next"]) .beta-seg button,
+  html:not([data-ui="next"]) .beta-panel .btn-ghost.sm,
+  html:not([data-ui="next"]) .empty-state .btn-sm {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  /* "A0" and "All" are short words, and the eye button is an icon: wide
+     enough for a thumb too. */
+  html:not([data-ui="next"]) .chart-chip,
+  html:not([data-ui="next"]) .h-filter-chip,
+  html:not([data-ui="next"]) .beta-panel .btn-ghost.sm {
+    min-width: 44px;
+    justify-content: center;
+  }
+  /* The gear on the co-op stage: 36px. */
+  html:not([data-ui="next"]) .pf-stage-gear {
+    width: 44px;
+    height: 44px;
+  }
+  /* "Report an issue" and its kin: 34px. */
+  html:not([data-ui="next"]) .action-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 44px;
+  }
+  /* The toolbar's three icon buttons were 36px wide. */
+  html:not([data-ui="next"]) .app-toolbar-right .btn-icon-text {
+    min-width: 44px;
+    min-height: 44px;
+    justify-content: center;
+  }
+  /* Disclosure rows: 19–42px. Taller box, label kept in its middle. */
+  html:not([data-ui="next"]) .asc-detail-row > summary,
+  html:not([data-ui="next"]) .demo-banner-hints summary,
+  html:not([data-ui="next"]) .demo-strip-help > summary,
+  html:not([data-ui="next"]) .empty-state-hints > summary,
+  html:not([data-ui="next"]) .alt-paths-summary,
+  html:not([data-ui="next"]) .beta-panel summary {
+    min-height: 44px;
+    box-sizing: border-box;
+    align-content: center;
+  }
+  /* Captions and badges that were 8–10.5px. */
+  html:not([data-ui="next"]) .nav-badge,
+  html:not([data-ui="next"]) .asc-bar-label,
+  html:not([data-ui="next"]) .char-card-pct-label,
+  html:not([data-ui="next"]) .demo-banner .demo-strip-eyebrow,
+  html:not([data-ui="next"]) .asc-mod-badge,
+  html:not([data-ui="next"]) .beta-hero-kicker,
+  html:not([data-ui="next"]) .coop-beta-badge,
+  html:not([data-ui="next"]) .coop-showtime-eyebrow,
+  html:not([data-ui="next"]) .h-filter-dot,
+  html:not([data-ui="next"]) .pf-coop-log-eyebrow,
+  html:not([data-ui="next"]) .pf-coop-log-dot,
+  html:not([data-ui="next"]) .pf-coop-log-stat-lbl,
+  html:not([data-ui="next"]) .pf-coop-log-xp-label,
+  html:not([data-ui="next"]) .pf-stage-presence-eye,
+  html:not([data-ui="next"]) .pf-stage-presence-cta-arrow,
+  html:not([data-ui="next"]) .pf-activity-ticker-eye,
+  html:not([data-ui="next"]) .pf-activity-ticker-eye span,
+  html:not([data-ui="next"]) .hero-side-label,
+  html:not([data-ui="next"]) .num-label,
+  html:not([data-ui="next"]) .ring-label,
+  html:not([data-ui="next"]) .news-list-eyebrow,
+  html:not([data-ui="next"]) .news-list-tag,
+  html:not([data-ui="next"]) .news-post-tag,
+  html:not([data-ui="next"]) .pill,
+  html:not([data-ui="next"]) .run-outcome,
+  html:not([data-ui="next"]) .run-filter-label,
+  html:not([data-ui="next"]) .run-duration span,
+  html:not([data-ui="next"]) .relic-card-pct span,
+  html:not([data-ui="next"]) .settings-stat-label {
+    font-size: 11px;
+  }
+  /* The two 8px captions were tracked very wide; at 11px that no longer fits. */
+  html:not([data-ui="next"]) .run-duration span,
+  html:not([data-ui="next"]) .relic-card-pct span {
+    letter-spacing: 0.08em;
+  }
   .settings-about-list dd > a {
     display: inline-block;
-    padding-block: 10px;
+    padding-block: 12px;
+  }
+  /* The corner × on the private-browsing notice: 26px. Both looks. */
+  .private-mode-close {
+    width: 44px;
+    height: 44px;
   }
 }

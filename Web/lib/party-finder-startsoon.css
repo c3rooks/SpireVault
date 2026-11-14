@@ -329,3 +329,11 @@
   .pf-start-go-cta-text { font-size: 12px; flex-basis: 100%; }
   .pf-start-go-cta-btn { width: 100%; justify-content: center; }
 }
+
+/* Phones: a full fingertip. "Retry now" was 30px tall (scripts/audit-mobile.mjs). */
+@media (max-width: 880px) {
+  .pf-net-banner-retry {
+    min-height: 44px;
+    font-size: 12px;
+  }
+}

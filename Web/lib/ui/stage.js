@@ -171,6 +171,12 @@ export function stageBackdropHtml(model) {
  *   seat    for seated poses: the stone the climber rests on, as fractions of
  *           the figure's own box (the art is cropped tight, so y = 1 is the
  *           ground). Drawn behind the figure.
+ *   footY   where the feet are down the figure's box, 0 (top) to 1 (bottom
+ *           edge, the default). Only for art whose lowest point is not a
+ *           foot: the Architect's staff tip hangs below his boots, so placing
+ *           the art's bottom edge on the ground left him standing higher than
+ *           the climber. The feet go on the shared ground line; whatever
+ *           hangs lower is planted just in front of it.
  */
 const ACTOR_STAGING = Object.freeze({
   ironclad: Object.freeze({ height: 0.52, headX: 0.57, seat: Object.freeze({ left: -0.04, top: 0.5, width: 0.6, height: 0.44 }) }),
@@ -179,7 +185,7 @@ const ACTOR_STAGING = Object.freeze({
   regent: Object.freeze({ height: 0.58, headX: 0.7 }),
   necrobinder: Object.freeze({ height: 0.55, headX: 0.37, seat: Object.freeze({ left: -0.02, top: 0.56, width: 0.66, height: 0.36 }) }),
   fool: Object.freeze({ height: 0.5, headX: 0.55 }),
-  architect: Object.freeze({ height: 0.67, headX: 0.66 }),
+  architect: Object.freeze({ height: 0.67, headX: 0.66, footY: 0.922 }),
 });
 const FALLBACK_STAGING = Object.freeze({
   climber: Object.freeze({ height: 0.52, headX: 0.5 }),
@@ -251,7 +257,14 @@ function actorParts(actor, kind) {
     image = `<img class="v-actor-art v-actor-art--raw" src="${esc(actor.fallbackSrc)}"${srcset} alt="" draggable="false" decoding="async">`;
   }
   const headX = typeof staging.headX === "number" ? staging.headX : 0.5;
-  return { height: staging.height, aspect: aspect.toFixed(4), headX: headX.toFixed(2), html: `${shadow}${seat}${image}` };
+  const footY = typeof staging.footY === "number" ? staging.footY : 1;
+  return {
+    height: staging.height,
+    aspect: aspect.toFixed(4),
+    headX: headX.toFixed(2),
+    footY: footY.toFixed(3),
+    html: `${shadow}${seat}${image}`,
+  };
 }
 
 /**
@@ -277,14 +290,14 @@ export function duelHtml(model) {
   const boss = actorParts(model.boss, "boss");
   const speaker = model.quote.who === "climber" ? "climber" : "boss";
   const speakerLabel = speaker === "climber" ? model.climber.label : model.boss.label;
-  const sizing = `--climber-h:${climber.height};--climber-aspect:${climber.aspect};--boss-h:${boss.height};--boss-aspect:${boss.aspect}`;
+  const sizing = `--climber-h:${climber.height};--climber-aspect:${climber.aspect};--boss-h:${boss.height};--boss-aspect:${boss.aspect};--boss-foot:${boss.footY}`;
   return `
     <div class="v-duel v-duel--${speaker}-speaks" style="${sizing}"${model.longestLine ? ` data-longest-line="${esc(model.longestLine)}"` : ""}${model.climberPool && model.climberPool.length ? ` data-climber-pool="${esc(model.climberPool.join(" "))}"` : ""}>
       <button class="v-actor v-actor--climber" type="button" data-action="companion-toggle" data-head-x="${climber.headX}"
               aria-label="${esc(model.climber.ariaLabel)}" title="${esc(model.climber.hint)}">
         ${climber.html}
       </button>
-      <div class="v-actor v-actor--boss" data-head-x="${boss.headX}" role="img" aria-label="${esc(model.boss.label)}" title="${esc(model.boss.label)}">
+      <div class="v-actor v-actor--boss" data-head-x="${boss.headX}" data-foot-y="${boss.footY}" role="img" aria-label="${esc(model.boss.label)}" title="${esc(model.boss.label)}">
         ${boss.html}
       </div>
       <div class="v-duel-gap">
@@ -298,7 +311,7 @@ export function duelHtml(model) {
 }
 
 /** Sizing properties duelHtml() writes on `.v-duel` that the scenery needs. */
-const DUEL_GEOMETRY_PROPS = Object.freeze(["--climber-h", "--climber-aspect", "--boss-h", "--boss-aspect"]);
+const DUEL_GEOMETRY_PROPS = Object.freeze(["--climber-h", "--climber-aspect", "--boss-h", "--boss-aspect", "--boss-foot"]);
 
 /**
  * Copies each duel's figure sizing onto its stage header, so the scenery

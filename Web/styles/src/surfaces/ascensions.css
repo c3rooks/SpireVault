@@ -667,7 +667,9 @@
   .v-asc-st-btn {
     grid-template-columns: 44px minmax(0, 1fr) auto;
     gap: var(--v-space-2);
-    min-height: 44px;
+    /* 46, not 44: the tower's taper scales each storey a hair under its
+       laid-out height, and the top ones measured 43.6px. */
+    min-height: 46px;
     padding: 5px 10px 5px 5px;
   }
   .v-asc-st:not(.is-lit) .v-asc-st-btn {

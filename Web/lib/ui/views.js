@@ -26,6 +26,8 @@ import { trendChartHtml, floorChartHtml } from "./charts.js?v=1";
  * @property {string} value      trusted, pre-escaped
  * @property {string} [unit]
  * @property {string} textHtml   trusted, pre-escaped rules text
+ * @property {"up"|"down"|"flat"} [trend]    arrow drawn beside the value
+ * @property {ReadonlyArray<number>} [spark] 0..1 series, oldest → newest, drawn under the value
  */
 
 /**
@@ -60,6 +62,16 @@ const FAN_LIFT_PX = 3.4;
 const PATH_VIEW_W = 400;
 const PATH_VIEW_H = 44;
 const LONG_VALUE_LENGTH = 4;
+const SPARK_W = 64;
+const SPARK_H = 18;
+const SPARK_PAD = 3;
+const SPARK_DOT_R = 2.6;
+/** Reveal order (× 55ms). The hand leads the page (cards 0..5); the two
+ *  panels under it rise alongside the later cards rather than after them. */
+const REVEAL_WIN_RATE = 3;
+const REVEAL_CHARACTERS = 4;
+const REVEAL_TREND = 8;
+const REVEAL_FLOORS = 9;
 
 const ICONS = Object.freeze({
   bolt: '<path d="M13 2 4 14h7l-1 8 9-12h-7z" fill="currentColor"/>',
@@ -94,7 +106,7 @@ function winRatePanel(model) {
        </button>`
     : "";
   return `
-    <section class="v-panel v-wr" data-reveal style="--r:0" aria-label="Win rate and run totals">
+    <section class="v-panel v-wr" data-reveal style="--r:${REVEAL_WIN_RATE}" aria-label="Win rate and run totals">
       <div class="v-wr-main">
         <div class="v-ring">
           <svg viewBox="0 0 160 160" aria-hidden="true">
@@ -109,6 +121,7 @@ function winRatePanel(model) {
           </div>
         </div>
         <div class="v-wr-side">
+          <p class="v-eyebrow">Run history</p>
           <dl class="v-nums">
             <div><dt>Runs</dt><dd data-count="${totals.total}">${totals.total}</dd></div>
             <div><dt>Wins</dt><dd class="is-win" data-count="${totals.wins}">${totals.wins}</dd></div>
@@ -192,12 +205,34 @@ function characterBanner(row) {
 function charactersPanel(model) {
   if (model.characters.length === 0) return "";
   return `
-    <section class="v-panel v-chars" data-reveal style="--r:1" aria-label="Win rate by character">
+    <section class="v-panel v-chars" data-reveal style="--r:${REVEAL_CHARACTERS}" aria-label="Win rate by character">
       <p class="v-eyebrow">By character</p>
       <div class="v-chars-grid" style="--cols:${model.characters.length}">
         ${model.characters.map(characterBanner).join("")}
       </div>
     </section>`;
+}
+
+/**
+ * A small trajectory line for a card's art window. Decorative: the card's
+ * rules text states the same trend in words.
+ * @param {ReadonlyArray<number>|undefined} values  0..1, oldest → newest
+ * @returns {string}
+ */
+function sparkline(values) {
+  if (!values || values.length < 2) return "";
+  const step = (SPARK_W - SPARK_PAD * 2) / (values.length - 1);
+  const points = values.map((value, index) => ({
+    x: SPARK_PAD + index * step,
+    y: SPARK_PAD + (1 - clamp(value, 0, 1)) * (SPARK_H - SPARK_PAD * 2),
+  }));
+  const line = points.map((point) => `${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(" ");
+  const end = points[points.length - 1];
+  return `
+        <svg class="v-card-spark" viewBox="0 0 ${SPARK_W} ${SPARK_H}" aria-hidden="true">
+          <polyline points="${line}"/>
+          <circle cx="${end.x.toFixed(1)}" cy="${end.y.toFixed(1)}" r="${SPARK_DOT_R}"/>
+        </svg>`;
 }
 
 /**
@@ -209,15 +244,17 @@ function handCard(card, index, count) {
   const offset = index - (count - 1) / 2;
   const rot = offset * FAN_DEGREES_PER_CARD;
   const lift = offset * offset * FAN_LIFT_PX;
+  const hasArrow = card.trend === "up" || card.trend === "down";
+  const arrow = hasArrow ? `<i class="v-card-trend is-${card.trend}" aria-hidden="true"></i>` : "";
   const plain = `${card.value}${card.unit || ""}`.replace(/<[^>]+>/g, "");
-  const long = plain.length > LONG_VALUE_LENGTH;
+  const long = plain.length + (hasArrow ? 1 : 0) > LONG_VALUE_LENGTH;
   return `
     <article class="v-card" role="listitem" tabindex="0" data-tilt data-tone="${esc(card.tone)}"
-             data-reveal style="--r:${2 + index};--rot:${rot.toFixed(2)}deg;--lift:${lift.toFixed(1)}px">
+             data-reveal style="--r:${index};--rot:${rot.toFixed(2)}deg;--lift:${lift.toFixed(1)}px">
       <span class="v-card-orb">${icon(card.icon)}</span>
       <header class="v-card-band">${esc(card.title)}</header>
       <div class="v-card-art">
-        <span class="v-card-value${long ? " is-long" : ""}">${card.value}${card.unit ? `<small>${esc(card.unit)}</small>` : ""}</span>
+        <span class="v-card-value${long ? " is-long" : ""}">${arrow}${card.value}${card.unit ? `<small>${esc(card.unit)}</small>` : ""}</span>${sparkline(card.spark)}
       </div>
       <p class="v-card-text"><span>${card.textHtml}</span></p>
     </article>`;
@@ -257,7 +294,9 @@ function relics(model) {
 }
 
 /**
- * The Overview body.
+ * The Overview body. Sections follow the classic layout's order (at-a-glance
+ * stats, win rate, trends, relics) so a person who switches between the two
+ * looks finds each number in the same place.
  * @param {OverviewModel} model
  * @returns {string}
  */
@@ -265,14 +304,15 @@ export function overviewHtml(model) {
   return `
     <div class="v-ov">
       ${model.noticesHtml}
+      ${hand(model)}
       <div class="v-ov-top">
         ${winRatePanel(model)}
         ${charactersPanel(model)}
       </div>
-      ${hand(model)}
+      <div class="v-section-title"><h3>Trends</h3><p>win rate over time, and where climbs end</p></div>
       <div class="v-ov-charts">
-        ${trendChartHtml(model.trend, 8)}
-        ${floorChartHtml(model.floors, 9)}
+        ${trendChartHtml(model.trend, REVEAL_TREND)}
+        ${floorChartHtml(model.floors, REVEAL_FLOORS)}
       </div>
       ${relics(model)}
     </div>`;
