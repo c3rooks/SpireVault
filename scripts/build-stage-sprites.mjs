@@ -114,7 +114,8 @@ const ACTORS = Object.freeze([
   // The Fool (STS2 public beta v0.113.0). Source: the game's own rest-site
   // art for him (images/rooms/rest_sites/rest_site_fool_placeholder.png in
   // the v0.113.0 pack), the same crouched campfire pose the others use.
-  { id: "fool", kind: "climber", source: "characters/fool-v2.webp", options: { mirror: true } },
+  // Unlike the others it is painted facing right, toward the boss: no mirror.
+  { id: "fool", kind: "climber", source: "characters/fool-v2.webp", options: { mirror: false } },
   {
     id: "architect",
     kind: "boss",

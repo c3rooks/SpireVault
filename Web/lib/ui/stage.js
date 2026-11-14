@@ -178,7 +178,7 @@ const ACTOR_STAGING = Object.freeze({
   defect: Object.freeze({ height: 0.48, headX: 0.43 }),
   regent: Object.freeze({ height: 0.58, headX: 0.7 }),
   necrobinder: Object.freeze({ height: 0.55, headX: 0.37, seat: Object.freeze({ left: -0.02, top: 0.56, width: 0.66, height: 0.36 }) }),
-  fool: Object.freeze({ height: 0.5, headX: 0.48 }),
+  fool: Object.freeze({ height: 0.5, headX: 0.55 }),
   architect: Object.freeze({ height: 0.67, headX: 0.66 }),
 });
 const FALLBACK_STAGING = Object.freeze({

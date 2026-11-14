@@ -955,9 +955,10 @@ const COMPANIONS = [
   // The Fool, the STS2 public-beta character (v0.113.0). The blurb is Mega
   // Crit's own patch-note line. His art is the game's own rest-site art
   // (characters/fool-v2.webp; the new look inks it as stage/fool-ink-v1),
-  // painted facing left like the others. `beta` keeps him out of the Random
-  // roll and out of the picker until the user has a Fool run (see hasRunsAs).
-  { id: "fool",       label: "The Fool",   blurb: "A silly musician who wields a bow!", color: "#f27ec0", facesLeft: true, beta: true },
+  // painted facing right — already toward the Architect, so no flip.
+  // `beta` keeps him out of the Random roll and out of the picker until the
+  // user has a Fool run (see hasRunsAs).
+  { id: "fool",       label: "The Fool",   blurb: "A silly musician who wields a bow!", color: "#f27ec0", beta: true },
 ];
 
 // Last quote speaker, used to avoid streaks where one side talks

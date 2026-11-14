@@ -4,8 +4,8 @@
  * Shared by the scripts that pull game data straight from the installed game
  * (build-card-faces.mjs, build-relic-icons.mjs, sync-sts2-labels.mjs). It reads
  * the pack's file directory, the English localization and the image resources.
- * It never touches the game's compiled code: card costs, types and numbers live
- * there, so nothing built from this module can know them.
+ * Card costs, types and numbers are not in the pack but in the game's compiled
+ * code; extract-card-data.mjs reads those (into card-data.json).
  *
  * Format notes (Godot 4.5, pack format v3, unencrypted directory):
  *   header   "GDPC", u32 format, u32 x3 version, u32 flags, u64 file base, u64 dir offset
