@@ -40,7 +40,7 @@ const MAX_DUEL_GAP_PX = 60;
 const SPEAKERS = ["climber", "boss"];
 
 const STAGE_TABS = ["overview", "characters", "ascensions", "relics", "cards"];
-const CLIMBERS = ["ironclad", "silent", "defect", "regent", "necrobinder"];
+const CLIMBERS = ["ironclad", "silent", "defect", "regent", "necrobinder", "fool"];
 const WIDTHS = [320, 360, 375, 390, 414, 480, 600, 700, 768, 820, 880, 900, 1024, 1100, 1180, 1280, 1366, 1440, 1680, 1920];
 
 /** @param {string} name @param {string} fallback */

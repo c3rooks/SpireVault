@@ -522,22 +522,25 @@ async function runDuel(browser) {
     });
   }
 
-  await check("re-rolling the line on desktop never changes the header's height", async () => {
-    const { context, page: p } = await open(browser, "/?ui=next", { viewport: { width: 1440, height: 900 } });
-    const bubble = '.tab-panel[data-tab="overview"] .v-bubble';
-    const height = () => p.evaluate(() => document.querySelector('.tab-panel[data-tab="overview"] > .panel-head').getBoundingClientRect().height);
-    await p.waitForTimeout(BUBBLE_SETTLE_MS);
-    const first = await height();
-    const speakers = new Set();
-    for (let i = 0; i < 12; i += 1) {
-      await p.click(bubble);
-      await p.waitForTimeout(120);
-      speakers.add(await p.evaluate(() => (document.querySelector(".v-duel--boss-speaks") ? "boss" : "climber")));
-      assert.ok(Math.abs((await height()) - first) < 1, `re-roll ${i + 1}: header went from ${first}px to ${await height()}px`);
-    }
-    assert.equal(speakers.size, 2, "both the climber and the boss spoke during the re-rolls");
-    await context.close();
-  });
+  for (const width of [1440, 1024, 375]) {
+    await check(`re-rolling the line never changes the header's height (${width}px)`, async () => {
+      const { context, page: p } = await open(browser, "/?ui=next", { viewport: { width, height: 900 } });
+      const bubble = '.tab-panel[data-tab="overview"] .v-bubble';
+      const height = () => p.evaluate(() => document.querySelector('.tab-panel[data-tab="overview"] > .panel-head').getBoundingClientRect().height);
+      await p.waitForTimeout(BUBBLE_SETTLE_MS);
+      const first = await height();
+      const speakers = new Set();
+      for (let i = 0; i < 12; i += 1) {
+        await p.click(bubble);
+        await p.waitForTimeout(120);
+        speakers.add(await p.evaluate(() => (document.querySelector(".v-duel--boss-speaks") ? "boss" : "climber")));
+        const now = await height();
+        assert.ok(Math.abs(now - first) < 1, `re-roll ${i + 1}: header went from ${first}px to ${now}px`);
+      }
+      assert.equal(speakers.size, 2, "both the climber and the boss spoke during the re-rolls");
+      await context.close();
+    });
+  }
 
   await check("re-rolling the line from the keyboard keeps focus on the balloon", async () => {
     const { context, page: p } = await open(browser, "/?ui=next");

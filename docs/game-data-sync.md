@@ -40,7 +40,7 @@ from the notes' own "from X → Y" clauses, so it doubles as verified main-branc
 
 | Subject | Beta v0.113.0 | Main v0.111.0 |
 | --- | --- | --- |
-| **New character: The Fool** | "A silly musician who wields a bow." Card pool, starter relic and save-file token not published | — |
+| **New character: The Fool** | "A silly musician who wields a bow." Save token `CHARACTER.FOOL`; starts 77 HP, 99 gold, **Song Bow** (Aim each combat); starting deck 4 Strike, 3 Defend, Foolish Shot, Epic Retrieval, Recall (from real v0.113.0 runs). 90 cards: names and portraits come from the local v0.113.0 game pack (`scripts/sync-sts2-labels.mjs`, `scripts/build-card-faces.mjs`); rules text, costs and types live in compiled code, so the generated card faces leave them out | — |
 | **New mode: Blitz** | Condensed deckbuilding mode, no map, Gold doesn't matter; own 5-level Ascension shared across characters; unlocked by finishing an Ascension run | — |
 | **New mode: Dread** | Unlocked at A10 on every character (incl. The Fool); all Ascension modifiers on; bosses stronger and buff their Act's enemies; curses pile up | — |
 | General · rest sites | Can appear one floor earlier in every act | — |

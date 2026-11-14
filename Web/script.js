@@ -21,7 +21,7 @@ import * as CoopLobbies from "/lib/coop-lobbies.js?v=35";
 import { isCoopSandboxEnabled, openCoopSandboxPanel } from "/lib/coop-sandbox.js?v=14";
 import * as PartyRoom from "/lib/party-room.js?v=7";
 import * as AscInfo from "/lib/ascension-info.js?v=3";
-import * as CharInfo from "/lib/character-info.js?v=1";
+import * as CharInfo from "/lib/character-info.js?v=2";
 import * as RelicInfo from "/lib/relic-info.js?v=4";
 import * as OverlayEngine from "/lib/overlay-engine.js?v=1";
 
@@ -737,6 +737,11 @@ const STORAGE_OVERLAY_STATE = "vault.web.overlay.v1";
 const STORAGE_DIR_FP        = "vault.web.history.dir-fp.v2";
 /** Display name of the linked save folder ("SlayTheSpire2", "history", …) — survives reloads so the "Linked" pill paints instantly. */
 const STORAGE_LINKED_NAME   = "vault.web.history.linked-name";
+// "1" when the linked folder/file came with a handle the browser lets us
+// re-read (showDirectoryPicker / showOpenFilePicker). A folder chosen
+// through the plain folder <input> (Safari, Firefox, and Chrome's fallback)
+// leaves only its name: it can be imported again, not refreshed.
+const STORAGE_LINKED_LIVE   = "vault.web.history.linked-live";
 /** Epoch-ms of the last successful disk read (any source: folder picker,
  *  drag-drop, single-file picker, auto-refresh tick). Used by the
  *  Safari/Firefox "Refresh from disk?" nudge to decide if it's been
@@ -948,10 +953,11 @@ const COMPANIONS = [
   { id: "regent",     label: "Regent",     blurb: "Crown and consequence.",  color: "#d4af37", facesLeft: true },
   { id: "necrobinder",label: "Necrobinder",blurb: "Bone, blood, and will.",  color: "#9b83ff", facesLeft: true },
   // The Fool, the STS2 public-beta character (v0.113.0). The blurb is Mega
-  // Crit's own patch-note line. No sprite exists yet, so both layouts fall
-  // back to the letter glyph; `beta` keeps it out of the Random roll and
-  // out of the picker until the user has a Fool run (see hasRunsAs).
-  { id: "fool",       label: "The Fool",   blurb: "A silly musician who wields a bow!", color: "#f27ec0", beta: true },
+  // Crit's own patch-note line. His art is the game's own rest-site art
+  // (characters/fool-v2.webp; the new look inks it as stage/fool-ink-v1),
+  // painted facing left like the others. `beta` keeps him out of the Random
+  // roll and out of the picker until the user has a Fool run (see hasRunsAs).
+  { id: "fool",       label: "The Fool",   blurb: "A silly musician who wields a bow!", color: "#f27ec0", facesLeft: true, beta: true },
 ];
 
 // Last quote speaker, used to avoid streaks where one side talks
@@ -1268,7 +1274,11 @@ async function loadAssetManifest() {
     // Dagger, Mighty Weapon/Shield, and the seven new event relics
     // (Wuppy, Obsidian Vice, Thumbscrew, Tormentous Collar, Mighty
     // Wings, Bath Towel, Bath Robes). Labels-only, no art.
-    const MANIFEST_VERSION = 5;
+    // v6 (2026-11-13): The Fool's cards and every other v0.113.0 card and
+    // relic, names and art, pulled from the game itself
+    // (scripts/sync-sts2-labels.mjs, build-card-faces.mjs, build-relic-icons.mjs),
+    // plus The Fool's character art.
+    const MANIFEST_VERSION = 6;
     const [manRes, labRes] = await Promise.all([
       fetch(`${ASSET_BASE}/manifest.json?v=${MANIFEST_VERSION}`, { cache: "force-cache" }),
       fetch(`${ASSET_BASE}/labels.json?v=${MANIFEST_VERSION}`,   { cache: "force-cache" }).catch(() => null),
@@ -1325,6 +1335,14 @@ function cardLabel(id) {
   const isPlus = parts[parts.length - 1] === "plus";
   const baseParts = isPlus ? parts.slice(0, -1) : parts;
   const plusSuffix = isPlus ? "_plus" : "";
+  // `.run` files name each character's basics `<card>_<class>` (STRIKE_FOOL)
+  // while labels use `<class>_<card>` (fool_strike): the swap cardImageSrc
+  // already does. Without it every Strike read "Strike Fool".
+  const lastPart = baseParts[baseParts.length - 1];
+  if (baseParts.length >= 2 && CLASS_PREFIXES.has(lastPart)) {
+    const swapped = lastPart + "_" + baseParts.slice(0, -1).join("") + plusSuffix;
+    if (assetLabels.cards[swapped]) return assetLabels.cards[swapped];
+  }
   // Form (2) → form (1): keep class prefix, concatenate the rest.
   if (baseParts.length >= 3) {
     const collapsed = baseParts[0] + "_" + baseParts.slice(1).join("") + plusSuffix;
@@ -1332,8 +1350,10 @@ function cardLabel(id) {
   }
   // Form (3) → form (1): concatenate everything, then look for any class
   // prefix that owns this name. Catches `perfected_strike`, `body_slam`,
-  // `pommel_strike`, `shrug_it_off`, etc.
-  if (baseParts.length >= 2) {
+  // `pommel_strike`, `shrug_it_off`, etc. — and one-word ids too
+  // (`begone` → regent_begone "BEGONE!", `abundance` → "Neow's
+  // Abundance"), the same scan cardImageSrc does for the art.
+  if (baseParts.length >= 1) {
     const concatenated = baseParts.join("") + plusSuffix;
     if (assetLabels.cards[concatenated]) return assetLabels.cards[concatenated];
     for (const k in assetLabels.cards) {
@@ -3095,6 +3115,9 @@ async function boot() {
   } catch (e) {
     console.warn("loadDirectoryHandle/loadHandle failed at boot", e);
   }
+  if (hasLinkedSaves) {
+    try { localStorage.setItem(STORAGE_LINKED_LIVE, "1"); } catch { /* private mode */ }
+  }
 
   // Decide what to render at first paint based on the four-way matrix
   // of (signed-in?) × (IDB has data?) × (folder linked?) × (cloud may
@@ -3958,7 +3981,7 @@ function getCompanionSetting() {
  *  rather than re-rolling on every observer. */
 function rollClimberFor(setting) {
   if (setting.isRandom) {
-    const real = COMPANIONS.filter((c) => !c.isRandom && !c.beta);
+    const real = randomClimberPool();
     return real[Math.floor(Math.random() * real.length)];
   }
   return setting;
@@ -3997,6 +4020,21 @@ function rollQuote(climber, boss) {
   const line = pool[Math.floor(Math.random() * pool.length)];
   lastQuoteSpeaker = "boss";
   return { who: "boss", text: line.text };
+}
+
+/** The longest line either side can say with any of these climbers facing
+ *  this boss. The new look's header reserves room for it, so a re-roll
+ *  never changes its height. */
+function longestQuoteFor(climbers, boss) {
+  const ids = new Set(climbers.map((c) => c.id));
+  const said = (q) => !q.only || ids.has(q.only);
+  const pool = [...CLIMBER_LINES.filter(said), ...(boss.lines || []).filter(said)];
+  return pool.reduce((longest, q) => (q.text.length > longest.length ? q.text : longest), "");
+}
+
+/** The climbers "Random" rolls from: the real characters, minus beta ones. */
+function randomClimberPool() {
+  return COMPANIONS.filter((c) => !c.isRandom && !c.beta);
 }
 
 function setCompanion(id) {
@@ -4056,6 +4094,8 @@ function renderCompanion() {
     climber: { id: climber.id, label: climber.label, fallbackSrc: climberSrc, ariaLabel: climberAria, hint: climberHint },
     boss: { id: boss.id, label: boss.label, fallbackSrc: bossSrc, fallbackSrcset: bossSrcset },
     quote,
+    longestLine: longestQuoteFor(setting.isRandom ? randomClimberPool() : [climber], boss),
+    climberPool: setting.isRandom ? randomClimberPool().map((c) => c.id) : undefined,
   }) : `
     <div class="scene scene-${speakerIsClimber ? "climber-speaks" : "boss-speaks"}"
          style="--scene-color:${climber.color};--scene-bubble-color:${bubbleColor};--scene-boss-color:${bossColor}">
@@ -6420,7 +6460,7 @@ function prettifyCharacterName(c) {
 }
 
 // ---- STS2 beta content (v0.113.0) -----------------------------------------
-// The Fool is a beta-branch character with no art yet; Blitz and Dread are
+// The Fool is a beta-branch character (art: the game's rest-site art); Blitz and Dread are
 // beta game modes whose `ascension` is not a standard-ladder level (Blitz
 // has its own 5-level ladder, Dread forces every modifier on). Main-branch
 // histories contain none of these, so each helper below is a no-op for
@@ -7878,11 +7918,19 @@ function persistDirectoryFingerprint(fp) {
 /** Persist the linked folder's display name so the "Linked" status pill
  *  in the panel-head can render synchronously without waiting for an
  *  IndexedDB round-trip. Called whenever a directory is picked / cleared. */
-function rememberLinkedFolderName(name) {
+function rememberLinkedFolderName(name, { live = false } = {}) {
   try {
     if (name) localStorage.setItem(STORAGE_LINKED_NAME, name);
     else localStorage.removeItem(STORAGE_LINKED_NAME);
+    if (name && live) localStorage.setItem(STORAGE_LINKED_LIVE, "1");
+    else localStorage.removeItem(STORAGE_LINKED_LIVE);
   } catch { /* private mode */ }
+}
+/** True when the linked saves can be re-read without asking the user to
+ *  pick them again (see STORAGE_LINKED_LIVE). */
+function isLinkedFolderLive() {
+  try { return localStorage.getItem(STORAGE_LINKED_LIVE) === "1"; }
+  catch { return false; }
 }
 function getLinkedFolderName() {
   try { return localStorage.getItem(STORAGE_LINKED_NAME) || ""; }
@@ -8135,7 +8183,7 @@ async function scanForHistoryViaDirectoryPicker() {
     console.warn("requestPermission on directory failed", e);
   }
   try {
-    rememberLinkedFolderName(dirHandle.name || "STS2 saves");
+    rememberLinkedFolderName(dirHandle.name || "STS2 saves", { live: true });
   } catch { /* private mode */ }
 
   // Walk the directory recursively, collect every `.run` (or .json) file.
@@ -8263,7 +8311,7 @@ async function scanForHistoryViaFilePicker() {
     } catch (e) { console.warn("requestPermission on file failed", e); }
     try { localStorage.removeItem(STORAGE_DIR_FP); } catch { /* private mode */ }
     lastDirectoryFingerprint = "";
-    rememberLinkedFolderName(pickedHandles[0].name || "history.json");
+    rememberLinkedFolderName(pickedHandles[0].name || "history.json", { live: true });
   }
 
   const files = [];
@@ -8479,6 +8527,13 @@ async function reloadSavedHistoryInteractive() {
     hasFile = await HistoryStore.loadHandle();
   } catch { /* ignore */ }
   if (!hasDir && !hasFile) {
+    if (getLinkedFolderName()) {
+      // Imported through the folder <input>: the browser kept no way back
+      // in, so a refresh means choosing the folder again.
+      toast("Choose your history folder again to pick up new runs.");
+      triggerFolderPicker();
+      return;
+    }
     toast("Nothing linked yet. Use Find my STS2 saves or Import first.");
     return;
   }
@@ -12249,9 +12304,11 @@ function renderSettingsTab() {
         <header class="settings-card-head">
           <h3>Save data</h3>
           <p class="settings-card-sub">
-            ${isLinked
+            ${isLinked && isLinkedFolderLive()
               ? `Linked to <strong>${esc(linkedName)}</strong>. Auto-refreshing every 60s.`
-              : "Link your STS2 save folder to see your runs."}
+              : isLinked
+                ? `Imported from <strong>${esc(linkedName)}</strong>. To pick up new runs, press Refresh and choose the folder again.`
+                : "Link your STS2 save folder to see your runs."}
           </p>
         </header>
 
@@ -12455,6 +12512,8 @@ async function clearLocalCacheConfirmed() {
   try { localStorage.removeItem("vault.web.linkedFolderName"); } catch {}
   parsedRuns = [];
   currentRun = null;
+  // Nothing is showing now — not real runs, not the sample set.
+  isDemoMode = false;
   lastDirectoryFingerprint = "";
   lastIngestedMTime = 0;
   toast("Local cache cleared.");
@@ -13494,7 +13553,7 @@ function renderCharacterDetail(charKey, bucket) {
           <p class="char-detail-tagline">${esc(info.tagline)}</p>
           <div class="char-detail-meta">
             <span class="char-detail-role">${esc(info.role)}</span>
-            <span class="char-detail-difficulty" title="Difficulty">${stars(info.difficulty)}</span>
+            ${info.difficulty > 0 ? `<span class="char-detail-difficulty" title="Difficulty">${stars(info.difficulty)}</span>` : ""}
           </div>
         </div>
         <button class="char-detail-close" type="button" data-action="char-collapse" aria-label="Close detail panel">&times;</button>
@@ -13505,10 +13564,10 @@ function renderCharacterDetail(charKey, bucket) {
       <div class="char-detail-section">
         <h4 class="char-detail-section-title">Playstyle</h4>
         <p class="char-detail-summary">${esc(info.summary)}</p>
-        <div class="char-detail-meters">
+        ${info.playstyle.aggression > 0 || info.playstyle.complexity > 0 ? `<div class="char-detail-meters">
           ${meterRow("Aggression", info.playstyle.aggression)}
           ${meterRow("Complexity", info.playstyle.complexity)}
-        </div>
+        </div>` : ""}
       </div>
 
       <div class="char-detail-section">

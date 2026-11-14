@@ -22,5 +22,6 @@ export const STAGE_ACTOR_ART = Object.freeze({
   defect: Object.freeze({ kind: "climber", src: "/assets/stage/defect-ink-v1.webp", width: 394, height: 420, groundLeft: 0, groundRight: 0.351 }),
   regent: Object.freeze({ kind: "climber", src: "/assets/stage/regent-ink-v2.webp", width: 214, height: 420, groundLeft: 0.042, groundRight: 1 }),
   necrobinder: Object.freeze({ kind: "climber", src: "/assets/stage/necrobinder-ink-v1.webp", width: 242, height: 420, groundLeft: 0.502, groundRight: 1 }),
+  fool: Object.freeze({ kind: "climber", src: "/assets/stage/fool-ink-v1.webp", width: 359, height: 420, groundLeft: 0.201, groundRight: 0.887 }),
   architect: Object.freeze({ kind: "boss", src: "/assets/stage/architect-ink-v1.webp", width: 399, height: 620, groundLeft: 0.431, groundRight: 0.953 }),
 });

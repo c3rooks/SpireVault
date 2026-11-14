@@ -18,6 +18,7 @@
  *
  *   node scripts/verify-ui-next-matrix.mjs --base-url http://127.0.0.1:8788
  *   node scripts/verify-ui-next-matrix.mjs --tabs runs,coop --widths 375,1440 --themes inked,vault
+ *   node scripts/verify-ui-next-matrix.mjs --tabs overview --scene storm   # pin the header scenery
  */
 
 import { chromium, webkit } from "playwright";
@@ -55,6 +56,8 @@ const options = {
   widths: list(arg("widths", WIDTHS.join(","))).map(Number),
   themes: list(arg("themes", THEMES.join(","))),
   engine: arg("engine", "chromium"),
+  // The header scenery is random per page load; pin one to check it.
+  scene: arg("scene", ""),
   out: arg("out", join(REPO_ROOT, "docs", "screenshots", "ui-next", "matrix")),
 };
 
@@ -123,9 +126,12 @@ async function main() {
   let checks = 0;
   for (const width of options.widths) {
     const context = await browser.newContext({ viewport: { width, height: width < 600 ? 812 : 900 }, reducedMotion: "reduce" });
-    await context.addInitScript(() => {
-      try { window.localStorage.setItem("vault.web.companion.v2", "ironclad"); } catch { /* none */ }
-    });
+    await context.addInitScript((scene) => {
+      try {
+        window.localStorage.setItem("vault.web.companion.v2", "ironclad");
+        if (scene) window.localStorage.setItem("vault.web.stage-scene", scene);
+      } catch { /* none */ }
+    }, options.scene);
     const page = await context.newPage();
     const consoleErrors = [];
     page.on("console", (msg) => {
@@ -190,7 +196,7 @@ async function main() {
   }
   await browser.close();
   failures.forEach((f) => console.log(`FAIL ${f}`));
-  console.log(`${checks - failures.length}/${checks} tab x width x theme combinations clean (${options.engine}); screenshots in ${options.out}`);
+  console.log(`${checks - failures.length}/${checks} tab x width x theme combinations clean (${options.engine}${options.scene ? `, scene ${options.scene}` : ""}); screenshots in ${options.out}`);
   process.exit(failures.length ? 1 : 0);
 }
 

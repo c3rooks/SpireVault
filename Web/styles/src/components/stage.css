@@ -25,7 +25,9 @@
      player a short step to its left, one shared ground line — squared up,
      the way an encounter is staged in the game. The speech balloon goes
      above them, never between. */
-  --duel-scale: 1;
+  /* A shade under full size, so the balloon fits between the toolbar and
+     the boss's head with little added height. */
+  --duel-scale: 0.88;
   --duel-boss-right: calc(var(--stage-gutter) + 26px);
   /* 0.67 (the boss's share of the stage height) x 399/620 (its art). */
   --duel-boss-w: calc(var(--v-stage-h) * 0.4312 * var(--duel-scale));
@@ -74,11 +76,12 @@
   inset: 0;
   z-index: 0;
   overflow: hidden;
+  /* --scene-*: the scenery's tints (components/stage-scenes.css). */
   background: linear-gradient(
     180deg,
-    var(--v-stage-sky-1) 0%,
-    var(--v-stage-sky-2) 70%,
-    var(--v-stage-sky-3) 100%
+    var(--scene-sky-1, var(--v-stage-sky-1)) 0%,
+    var(--scene-sky-2, var(--v-stage-sky-2)) 70%,
+    var(--scene-sky-3, var(--v-stage-sky-3)) 100%
   );
 }
 .v-stage-layer {
@@ -123,7 +126,7 @@
   height: 86px;
   border: var(--v-outline);
   border-radius: 50%;
-  background: var(--v-stage-moon);
+  background: var(--scene-glow, var(--v-stage-moon));
 }
 .v-stage-hills {
   position: absolute;
@@ -131,10 +134,10 @@
   left: -3%;
   width: 106%;
   height: 50%;
-  fill: var(--v-stage-far);
+  fill: var(--scene-far, var(--v-stage-far));
 }
 .v-stage-hills .v-hills-back {
-  fill: color-mix(in srgb, var(--v-stage-far) 55%, var(--v-stage-sky-2));
+  fill: color-mix(in srgb, var(--scene-far, var(--v-stage-far)) 55%, var(--scene-sky-2, var(--v-stage-sky-2)));
 }
 /* The spire rises in the distance behind the climber's back — the tower
    they are climbing — with open ground between it and the figure. */
@@ -187,25 +190,7 @@
   }
 }
 
-/* ---- Mid layer: ruins -------------------------------------------------------- */
-.v-stage-arch,
-.v-stage-pillar {
-  position: absolute;
-  bottom: calc(var(--v-ledge-h) - 6px);
-  fill: var(--v-stage-mid);
-  stroke: var(--v-outline-color);
-  stroke-width: 2.5;
-  stroke-linejoin: round;
-}
-/* A ruined gate behind the boss; a broken column out in the open. */
-.v-stage-arch {
-  right: calc(var(--stage-gutter) - 22px);
-  height: 46%;
-}
-.v-stage-pillar {
-  left: 37%;
-  height: 30%;
-}
+/* ---- Mid layer: the scenery's set pieces live in components/stage-scenes.css. */
 
 /* ---- Near layer: ledge, torches, captions ------------------------------------- */
 .v-stage-ledge {
@@ -456,7 +441,7 @@
 .v-bubble {
   position: relative;
   max-width: 100%;
-  padding: 8px 12px;
+  padding: 6px 12px;
   border: var(--v-outline);
   border-radius: 16px;
   background: var(--v-paper);
@@ -506,6 +491,14 @@
     opacity: 0;
     transform: scale(0.7);
   }
+}
+
+/* The picker (and Overview's export menu) drop out of the header into the
+   tab body. The header is its own stacking context, so lift it above the
+   body's layers (cards sit at z-index 5–6) or they cover the menus — but
+   keep it under the rail (20) and the phone bars (30+). */
+.panel-head.v-has-stage {
+  z-index: 10;
 }
 
 /* Companion picker: drops below the stage, under the climber. */
@@ -571,13 +564,10 @@
 /* ---- Narrow desktops and tablets: same staging, tighter ------------------------ */
 @media (max-width: 1180px) {
   .panel-head.v-has-stage {
-    --duel-scale: 0.92;
+    --duel-scale: 0.84;
     --duel-boss-right: calc(var(--stage-gutter) + 14px);
     --duel-gap: 40px;
     --spire-clear: 40px;
-  }
-  .v-stage-pillar {
-    display: none;
   }
   .v-stage-moon {
     width: 62px;
@@ -590,7 +580,7 @@
 }
 @media (max-width: 1020px) {
   .panel-head.v-has-stage {
-    --duel-scale: 0.86;
+    --duel-scale: 0.8;
     --duel-boss-right: calc(var(--stage-gutter) + 6px);
     --duel-gap: 36px;
     --spire-clear: 32px;
@@ -620,8 +610,6 @@
   .v-has-stage .panel-head-stage {
     padding-bottom: calc(var(--v-ledge-h) + 44px);
   }
-  .v-stage-arch,
-  .v-stage-pillar,
   .v-stage-cap {
     display: none;
   }

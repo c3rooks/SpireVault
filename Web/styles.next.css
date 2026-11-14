@@ -2167,7 +2167,7 @@
   .panel-head.v-has-stage {
     --stage-gutter: calc(max(0px, (100% - var(--v-content-max)) / 2) + clamp(16px, 3vw, 36px));
     --stage-ground: calc(var(--v-ledge-h) - 9px);
-    --duel-scale: 1;
+    --duel-scale: 0.88;
     --duel-boss-right: calc(var(--stage-gutter) + 26px);
     --duel-boss-w: calc(var(--v-stage-h) * 0.4312 * var(--duel-scale));
     --duel-gap: 44px;
@@ -2202,9 +2202,9 @@
     overflow: hidden;
     background: linear-gradient(
       180deg,
-      var(--v-stage-sky-1) 0%,
-      var(--v-stage-sky-2) 70%,
-      var(--v-stage-sky-3) 100%
+      var(--scene-sky-1, var(--v-stage-sky-1)) 0%,
+      var(--scene-sky-2, var(--v-stage-sky-2)) 70%,
+      var(--scene-sky-3, var(--v-stage-sky-3)) 100%
     );
   }
   .v-stage-layer {
@@ -2244,7 +2244,7 @@
     height: 86px;
     border: var(--v-outline);
     border-radius: 50%;
-    background: var(--v-stage-moon);
+    background: var(--scene-glow, var(--v-stage-moon));
   }
   .v-stage-hills {
     position: absolute;
@@ -2252,10 +2252,10 @@
     left: -3%;
     width: 106%;
     height: 50%;
-    fill: var(--v-stage-far);
+    fill: var(--scene-far, var(--v-stage-far));
   }
   .v-stage-hills .v-hills-back {
-    fill: color-mix(in srgb, var(--v-stage-far) 55%, var(--v-stage-sky-2));
+    fill: color-mix(in srgb, var(--scene-far, var(--v-stage-far)) 55%, var(--scene-sky-2, var(--v-stage-sky-2)));
   }
   .v-spire {
     position: absolute;
@@ -2303,23 +2303,6 @@
     50% {
       opacity: 0.45;
     }
-  }
-  .v-stage-arch,
-  .v-stage-pillar {
-    position: absolute;
-    bottom: calc(var(--v-ledge-h) - 6px);
-    fill: var(--v-stage-mid);
-    stroke: var(--v-outline-color);
-    stroke-width: 2.5;
-    stroke-linejoin: round;
-  }
-  .v-stage-arch {
-    right: calc(var(--stage-gutter) - 22px);
-    height: 46%;
-  }
-  .v-stage-pillar {
-    left: 37%;
-    height: 30%;
   }
   .v-stage-ledge {
     position: absolute;
@@ -2550,7 +2533,7 @@
   .v-bubble {
     position: relative;
     max-width: 100%;
-    padding: 8px 12px;
+    padding: 6px 12px;
     border: var(--v-outline);
     border-radius: 16px;
     background: var(--v-paper);
@@ -2598,6 +2581,9 @@
       opacity: 0;
       transform: scale(0.7);
     }
+  }
+  .panel-head.v-has-stage {
+    z-index: 10;
   }
   .v-has-stage .companion-picker {
     position: absolute;
@@ -2657,13 +2643,10 @@
   }
   @media (max-width: 1180px) {
     .panel-head.v-has-stage {
-      --duel-scale: 0.92;
+      --duel-scale: 0.84;
       --duel-boss-right: calc(var(--stage-gutter) + 14px);
       --duel-gap: 40px;
       --spire-clear: 40px;
-    }
-    .v-stage-pillar {
-      display: none;
     }
     .v-stage-moon {
       width: 62px;
@@ -2676,7 +2659,7 @@
   }
   @media (max-width: 1020px) {
     .panel-head.v-has-stage {
-      --duel-scale: 0.86;
+      --duel-scale: 0.8;
       --duel-boss-right: calc(var(--stage-gutter) + 6px);
       --duel-gap: 36px;
       --spire-clear: 32px;
@@ -2704,8 +2687,6 @@
     .v-has-stage .panel-head-stage {
       padding-bottom: calc(var(--v-ledge-h) + 44px);
     }
-    .v-stage-arch,
-    .v-stage-pillar,
     .v-stage-cap {
       display: none;
     }
@@ -2777,6 +2758,246 @@
   .prefer-reduced-motion .v-actor-art,
   .prefer-reduced-motion .v-actor-shadow,
   .prefer-reduced-motion .v-bubble {
+    animation: none;
+  }
+}
+/* components/stage-scenes.css */
+@layer v-components {
+  .v-stage-bg {
+    --scene-sky-1: var(--v-stage-sky-1);
+    --scene-sky-2: var(--v-stage-sky-2);
+    --scene-sky-3: var(--v-stage-sky-3);
+    --scene-far: var(--v-stage-far);
+    --scene-mid: var(--v-stage-mid);
+    --scene-glow: var(--v-stage-moon);
+    --scene-accent: var(--v-stage-lit);
+    --scene-stars: 0.85;
+  }
+  .v-stage-bg[data-scene="grove"],
+  .v-stage-bg[data-scene="docks"],
+  .v-stage-bg[data-scene="hive"],
+  .v-stage-bg[data-scene="glory"],
+  .v-stage-bg[data-scene="storm"] {
+    --scene-sky-1: color-mix(in oklab, var(--v-stage-sky-1) 58%, var(--tint-deep));
+    --scene-sky-2: color-mix(in oklab, var(--v-stage-sky-2) 50%, var(--tint-mid));
+    --scene-sky-3: color-mix(in oklab, var(--v-stage-sky-3) 45%, var(--tint-light));
+    --scene-far: color-mix(in oklab, var(--v-stage-far) 66%, var(--tint-deep));
+    --scene-mid: color-mix(in oklab, var(--v-stage-mid) 72%, var(--tint-deep));
+  }
+  .v-stage-bg[data-scene="grove"] {
+    --tint-deep: #0f2e1d;
+    --tint-mid: #2f7a52;
+    --tint-light: #a6e28c;
+    --scene-glow: color-mix(in oklab, var(--v-stage-moon) 70%, #d9f7b0);
+    --scene-accent: #d8f56a;
+    --scene-stars: 0.35;
+  }
+  .v-stage-bg[data-scene="docks"] {
+    --tint-deep: #0b1c36;
+    --tint-mid: #1f5f86;
+    --tint-light: #84d6e8;
+    --scene-accent: #ffc35c;
+    --scene-stars: 0.55;
+  }
+  .v-stage-bg[data-scene="hive"] {
+    --tint-deep: #2a1430;
+    --tint-mid: #8a4a6a;
+    --tint-light: #ffb45c;
+    --scene-glow: color-mix(in oklab, var(--v-stage-moon) 45%, #ffb45c);
+    --scene-accent: #ffcf5c;
+    --scene-stars: 0.25;
+  }
+  .v-stage-bg[data-scene="glory"] {
+    --tint-deep: #3a1d2e;
+    --tint-mid: #c06e58;
+    --tint-light: #ffd98a;
+    --scene-glow: color-mix(in oklab, var(--v-stage-moon) 40%, #fff0b8);
+    --scene-accent: var(--v-stage-lit);
+    --scene-stars: 0.15;
+  }
+  .v-stage-bg[data-scene="storm"] {
+    --tint-deep: #10101f;
+    --tint-mid: #3a3d6a;
+    --tint-light: #9aa4d6;
+    --scene-glow: color-mix(in oklab, var(--v-stage-moon) 55%, #c9d2ff);
+    --scene-accent: #8ee8ff;
+    --scene-stars: 0.2;
+  }
+  .v-stage-bg .v-stage-stars {
+    opacity: var(--scene-stars);
+  }
+  .v-stage-bg[data-scene="glory"] .v-stage-moon,
+  .v-stage-bg[data-scene="hive"] .v-stage-moon {
+    box-shadow: 0 0 0 10px color-mix(in srgb, var(--scene-glow) 22%, transparent),
+      0 0 0 22px color-mix(in srgb, var(--scene-glow) 10%, transparent);
+  }
+  .v-scene-back,
+  .v-scene-prop {
+    position: absolute;
+    bottom: calc(var(--v-ledge-h) - 6px);
+    overflow: visible;
+    fill: var(--scene-mid);
+    stroke: var(--v-outline-color);
+    stroke-width: 2.5;
+    stroke-linejoin: round;
+    stroke-linecap: round;
+  }
+  .v-scene-back {
+    right: calc(var(--stage-gutter) - 22px);
+    height: 46%;
+  }
+  .v-scene-prop {
+    left: max(37%, calc(var(--stage-gutter) + 400px));
+    height: 22%;
+  }
+  .v-scene-line {
+    fill: none;
+  }
+  .v-scene-shade {
+    fill: color-mix(in oklab, var(--scene-mid) 55%, var(--scene-sky-2));
+  }
+  .v-scene-cells {
+    fill: color-mix(in oklab, var(--scene-accent) 55%, var(--scene-mid));
+  }
+  .v-scene-flag {
+    fill: color-mix(in oklab, var(--scene-accent) 75%, var(--scene-mid));
+  }
+  .v-scene-lamp,
+  .v-scene-rune {
+    fill: var(--scene-accent);
+    filter: drop-shadow(0 0 6px var(--scene-accent));
+  }
+  [data-scene="grove"] .v-scene-back {
+    right: calc(var(--stage-gutter) - 40px);
+    height: 74%;
+  }
+  [data-scene="grove"] .v-scene-prop {
+    height: 12%;
+  }
+  [data-scene="docks"] .v-scene-back {
+    right: calc(var(--stage-gutter) - 34px);
+    height: 64%;
+  }
+  [data-scene="docks"] .v-scene-prop {
+    height: 16%;
+  }
+  [data-scene="hive"] .v-scene-back {
+    right: calc(var(--stage-gutter) - 30px);
+    height: 70%;
+  }
+  [data-scene="hive"] .v-scene-prop {
+    height: 15%;
+  }
+  [data-scene="glory"] .v-scene-back {
+    height: 66%;
+  }
+  [data-scene="glory"] .v-scene-prop {
+    height: 24%;
+  }
+  [data-scene="storm"] .v-scene-back {
+    right: calc(var(--stage-gutter) - 8px);
+    height: 64%;
+  }
+  [data-scene="storm"] .v-scene-prop {
+    height: 26%;
+  }
+  .v-scene-weather {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+  }
+  [data-scene="grove"] .v-scene-weather {
+    background-image:
+      radial-gradient(2.5px 2.5px at 22% 58%, var(--scene-accent) 99%, transparent),
+      radial-gradient(2px 2px at 41% 72%, var(--scene-accent) 99%, transparent),
+      radial-gradient(2.5px 2.5px at 63% 48%, var(--scene-accent) 99%, transparent),
+      radial-gradient(2px 2px at 78% 66%, var(--scene-accent) 99%, transparent),
+      radial-gradient(2px 2px at 89% 40%, var(--scene-accent) 99%, transparent),
+      radial-gradient(2.5px 2.5px at 53% 30%, var(--scene-accent) 99%, transparent);
+    animation: v-scene-pulse 4.6s ease-in-out infinite;
+  }
+  [data-scene="docks"] .v-scene-weather,
+  [data-scene="storm"] .v-scene-weather {
+    overflow: hidden;
+  }
+  [data-scene="docks"] .v-scene-weather::before,
+  [data-scene="storm"] .v-scene-weather::before {
+    content: "";
+    position: absolute;
+    inset: -40px 0 0;
+    background-image: repeating-linear-gradient(
+      105deg,
+      transparent 0 22px,
+      color-mix(in srgb, var(--tint-light) 40%, transparent) 22px 23px,
+      transparent 23px 47px
+    );
+    opacity: 0.4;
+    animation: v-scene-rain 0.9s linear infinite;
+  }
+  [data-scene="storm"] .v-scene-weather::before {
+    opacity: 0.6;
+    animation-duration: 0.6s;
+  }
+  [data-scene="hive"] .v-scene-weather {
+    background-image:
+      radial-gradient(3px 3px at 18% 70%, var(--scene-accent) 99%, transparent),
+      radial-gradient(2px 2px at 34% 54%, var(--scene-accent) 99%, transparent),
+      radial-gradient(3px 3px at 57% 76%, var(--scene-accent) 99%, transparent),
+      radial-gradient(2px 2px at 71% 44%, var(--scene-accent) 99%, transparent),
+      radial-gradient(2.5px 2.5px at 86% 62%, var(--scene-accent) 99%, transparent);
+    opacity: 0.7;
+    animation: v-scene-rise 7s ease-in-out infinite;
+  }
+  [data-scene="glory"] .v-scene-weather {
+    background: linear-gradient(
+      100deg,
+      transparent 30%,
+      color-mix(in srgb, var(--scene-glow) 16%, transparent) 38%,
+      transparent 44%,
+      transparent 52%,
+      color-mix(in srgb, var(--scene-glow) 12%, transparent) 58%,
+      transparent 64%
+    );
+    animation: v-scene-pulse 8s ease-in-out infinite;
+  }
+  @keyframes v-scene-pulse {
+    50% {
+      opacity: 0.45;
+    }
+  }
+  @keyframes v-scene-rain {
+    to {
+      transform: translateY(40px);
+    }
+  }
+  @keyframes v-scene-rise {
+    50% {
+      transform: translateY(-8px);
+      opacity: 0.4;
+    }
+  }
+  @media (max-width: 1180px) {
+    .v-scene-prop {
+      display: none;
+    }
+  }
+  @media (max-width: 880px) {
+    .v-scene-back {
+      height: 38%;
+    }
+    [data-scene="grove"] .v-scene-back,
+    [data-scene="hive"] .v-scene-back {
+      height: 56%;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .v-scene-weather,
+    .v-scene-weather::before {
+      animation: none;
+    }
+  }
+  .prefer-reduced-motion .v-scene-weather,
+  .prefer-reduced-motion .v-scene-weather::before {
     animation: none;
   }
 }

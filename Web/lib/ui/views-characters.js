@@ -220,18 +220,22 @@ function accordions(info) {
     .map((mech) => `<li class="v-cx-mech"><strong>${esc(mech.title)}</strong><p>${esc(mech.detail)}</p></li>`)
     .join("");
   const tips = info.tips.map((tip) => `<li>${esc(tip)}</li>`).join("");
+  // 0 means not rated yet (a new character): say nothing rather than 0/5.
+  const rated = info.playstyle.aggression > 0 || info.playstyle.complexity > 0;
   return [
     accordion({
       title: "Playstyle",
-      hint: `Aggression ${info.playstyle.aggression}/${METER_MAX} · Complexity ${info.playstyle.complexity}/${METER_MAX}`,
+      hint: rated
+        ? `Aggression ${info.playstyle.aggression}/${METER_MAX} · Complexity ${info.playstyle.complexity}/${METER_MAX}`
+        : "Not rated yet",
       icon: "swords",
       open: true,
       bodyHtml: `
         <p class="v-cx-summary">${esc(info.summary)}</p>
-        <div class="v-cx-gauges">
+        ${rated ? `<div class="v-cx-gauges">
           ${playstyleMeter("Aggression", info.playstyle.aggression)}
           ${playstyleMeter("Complexity", info.playstyle.complexity)}
-        </div>`,
+        </div>` : ""}`,
     }),
     accordion({
       title: "Archetypes",

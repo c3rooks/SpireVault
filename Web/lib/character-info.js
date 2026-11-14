@@ -139,6 +139,31 @@ export const CHARACTER_INFO = {
     ],
     playstyle: { aggression: 2, complexity: 5 },
   },
+  // The Fool (STS2 public beta v0.113.0). Facts only, from the game's own
+  // text (v0.113.0 localization: characters, powers, cards) and from real
+  // Fool runs (starting HP, gold, relic and deck). No ratings or strategy
+  // yet: difficulty and playstyle are 0 = unknown, and the views hide them.
+  fool: {
+    name: "The Fool",
+    tagline: "A beloved musician who fled the Capital into the Spire, bow in hand.",
+    role: "Bow · Music · Public beta",
+    difficulty: 0,
+    summary:
+      "New in the STS2 public beta (v0.113.0). In the game's words, a beloved musician who enlivened the Capital until he was forced to flee into the Spire — \"a silly musician who wields a bow.\" He starts with 77 HP, 99 gold and Song Bow, and his cards mix Arrows with three families of musical calls. Beta numbers can change from patch to patch.",
+    mechanics: [
+      { title: "Arrows", detail: "Shot cards (Foolish Shot, Quick Shot, Rain Shot…) fire an Arrow. An enemy hit by an Arrow is Impaled; the Arrow is Dislodged after you hit that enemy 3 times." },
+      { title: "Aim", detail: "Makes your next Arrow deal more damage. Song Bow, his starting relic, gives Aim at the start of every combat." },
+      { title: "Wah, Cho and Ki", detail: "Three families of musical cards (Wah Blast, Cho Ready, Ki Hop…). Ki Verse plays your next Wah, Cho or Ki card an additional time." },
+      { title: "Tarot", detail: "Mythic Form adds a random Tarot card to your hand at the start of each turn (an upgraded one once Mythic Form is upgraded)." },
+    ],
+    archetypes: ["Arrows", "Wah · Cho · Ki", "Tarot"],
+    tips: [
+      "Starting deck: 4 Strike, 3 Defend, Foolish Shot, Epic Retrieval and Recall.",
+      "Public beta only: main-branch saves have no Fool runs, so he appears here once you have played him.",
+      "No strategy notes yet: the beta is new and his cards are still changing.",
+    ],
+    playstyle: { aggression: 0, complexity: 0 },
+  },
 };
 
 /** Returns the canonical character info entry, or null if we don't

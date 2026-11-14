@@ -11,6 +11,7 @@
 
 import { esc } from "./html.js?v=1";
 import { STAGE_ACTOR_ART } from "./stage-actors.js?v=1";
+import { pickScene, sceneFarHtml, sceneMidHtml } from "./stage-scenes.js?v=1";
 
 const DEFAULT_ASCENSION_CAP = 10;
 /** Hard ceiling on windows drawn. A corrupt save must not be able to ask
@@ -128,6 +129,7 @@ function torchesHtml(recent) {
  * @property {number} hiLevel   highest ascension reached, -1 when none
  * @property {number} [cap]     top ascension level (defaults to 10)
  * @property {ReadonlyArray<{ won: boolean, label?: string }>} [recent]  last runs, oldest → newest
+ * @property {string} [scene]   scenery id (stage-scenes.js); defaults to this page load's random pick
  */
 
 /**
@@ -140,23 +142,14 @@ export function stageBackdropHtml(model) {
     ? Math.min(MAX_ASCENSION_CAP, Math.max(-1, Math.floor(model.hiLevel)))
     : -1;
   const cap = Math.min(MAX_ASCENSION_CAP, Math.max(DEFAULT_ASCENSION_CAP, Math.floor(model.cap || 0), hiLevel));
+  const scene = model.scene || pickScene();
   return `
     <div class="v-stage-layer v-stage-far">
-      <span class="v-stage-stars" aria-hidden="true"></span>
-      <span class="v-stage-moon" aria-hidden="true"></span>
-      <svg class="v-stage-hills" viewBox="0 0 1200 120" preserveAspectRatio="none" aria-hidden="true">
-        <path class="v-hills-back" d="M0 120 V52 L90 20 L170 58 L260 8 L350 62 L450 26 L540 70 L640 18 L730 64 L830 30 L920 72 L1010 12 L1100 56 L1200 34 V120 Z"/>
-        <path d="M0 120 V84 L60 58 L130 90 L210 50 L300 96 L380 66 L470 104 L560 74 L650 106 L760 60 L850 98 L940 54 L1030 92 L1110 66 L1200 88 V120 Z"/>
-      </svg>
+      ${sceneFarHtml(scene)}
       ${spireHtml(hiLevel, cap)}
     </div>
     <div class="v-stage-layer v-stage-mid" aria-hidden="true">
-      <svg class="v-stage-arch" viewBox="0 0 90 110">
-        <path d="M8 110 V46 Q45 -8 82 46 V110 H67 V54 Q45 22 23 54 V110 Z"/>
-      </svg>
-      <svg class="v-stage-pillar" viewBox="0 0 34 100">
-        <path d="M8 100 V16 H4 V6 H30 V16 H26 V100 Z"/>
-      </svg>
+      ${sceneMidHtml(scene)}
     </div>
     <div class="v-stage-layer v-stage-near">
       <svg class="v-stage-ledge" viewBox="0 0 1200 44" preserveAspectRatio="none" aria-hidden="true">
@@ -185,6 +178,7 @@ const ACTOR_STAGING = Object.freeze({
   defect: Object.freeze({ height: 0.48, headX: 0.43 }),
   regent: Object.freeze({ height: 0.58, headX: 0.7 }),
   necrobinder: Object.freeze({ height: 0.55, headX: 0.37, seat: Object.freeze({ left: -0.02, top: 0.56, width: 0.66, height: 0.36 }) }),
+  fool: Object.freeze({ height: 0.5, headX: 0.48 }),
   architect: Object.freeze({ height: 0.67, headX: 0.66 }),
 });
 const FALLBACK_STAGING = Object.freeze({
@@ -208,6 +202,21 @@ export function actorArt(id) {
 /** @param {number} value */
 function percent(value) {
   return `${(value * 100).toFixed(1)}%`;
+}
+
+/** The figure-size properties duelHtml() writes for the climber. */
+const DUEL_SIZE_PROPS = Object.freeze(["--climber-h", "--climber-aspect"]);
+
+/**
+ * The two numbers CSS sizes a climber from, for any climber id.
+ * @param {string} id
+ * @returns {{ height: string, aspect: string }}
+ */
+function climberSizing(id) {
+  const art = actorArt(id);
+  const staging = Object.prototype.hasOwnProperty.call(ACTOR_STAGING, id) ? ACTOR_STAGING[id] : FALLBACK_STAGING.climber;
+  const aspect = art ? art.width / art.height : FALLBACK_ASPECT;
+  return { height: String(staging.height), aspect: aspect.toFixed(4) };
 }
 
 /**
@@ -250,6 +259,10 @@ function actorParts(actor, kind) {
  * @property {DuelActor & { ariaLabel: string, hint: string }} climber
  * @property {DuelActor} boss
  * @property {{ who: "climber" | "boss", text: string }} quote
+ * @property {string} [longestLine]  the longest line this pairing can say;
+ *   the header reserves room for it so a re-roll never changes its height
+ * @property {ReadonlyArray<string>} [climberPool]  when the climber is rolled
+ *   at random, every id the roll can pick (the header reserves for all)
  */
 
 /**
@@ -266,7 +279,7 @@ export function duelHtml(model) {
   const speakerLabel = speaker === "climber" ? model.climber.label : model.boss.label;
   const sizing = `--climber-h:${climber.height};--climber-aspect:${climber.aspect};--boss-h:${boss.height};--boss-aspect:${boss.aspect}`;
   return `
-    <div class="v-duel v-duel--${speaker}-speaks" style="${sizing}">
+    <div class="v-duel v-duel--${speaker}-speaks" style="${sizing}"${model.longestLine ? ` data-longest-line="${esc(model.longestLine)}"` : ""}${model.climberPool && model.climberPool.length ? ` data-climber-pool="${esc(model.climberPool.join(" "))}"` : ""}>
       <button class="v-actor v-actor--climber" type="button" data-action="companion-toggle" data-head-x="${climber.headX}"
               aria-label="${esc(model.climber.ariaLabel)}" title="${esc(model.climber.hint)}">
         ${climber.html}
@@ -375,7 +388,7 @@ function fitSpire(head) {
 }
 
 /** Air between the speaker's head and the tip of the balloon's tail. */
-const TAIL_AIR_PX = 12;
+const TAIL_AIR_PX = 10;
 /** Air kept above the other figure's head when the balloon spans it too. */
 const HEAD_AIR_PX = 8;
 /** Where the tail sits from the balloon's near end, when there is room. */
@@ -455,27 +468,6 @@ function ceilingOf(head) {
 }
 
 /**
- * On wider screens, the headroom a one-line balloon over the boss needs, so
- * the header is the same height whoever speaks and whatever the line:
- * tapping for a new line must not make the page below jump. (Phones size to
- * the line: there the height is the page, and lines wrap anyway.)
- * @param {HTMLElement} head
- * @param {HTMLElement} bubble
- * @param {DOMRect} boss
- * @param {number} ceiling
- */
-function steadyRoom(head, bubble, boss, ceiling) {
-  if (window.matchMedia(PHONE_LAYOUT).matches) return 0;
-  const style = getComputedStyle(bubble);
-  const px = (value) => parseFloat(value) || 0;
-  const oneLine = Math.max(
-    px(style.minHeight),
-    px(style.lineHeight) + px(style.paddingTop) + px(style.paddingBottom) + px(style.borderTopWidth) + px(style.borderBottomWidth)
-  );
-  return Math.max(0, ceiling - (boss.top - TAIL_AIR_PX - oneLine));
-}
-
-/**
  * Places the speech balloon above the speaker's head, its tail pointing down
  * at them, on every screen size.
  *
@@ -483,11 +475,15 @@ function steadyRoom(head, bubble, boss, ceiling) {
  * other figure) or high enough to clear both heads, whichever needs less
  * room; it never covers the title, the torches, the spire or a figure. The
  * toolbar is the ceiling: when the line does not fit under it the header
- * grows just enough, and since the figures stand on the ground (anchored to
- * the header's bottom) they and the balloon move down together.
+ * grows, and since the figures stand on the ground (anchored to the header's
+ * bottom) they and the balloon move down together.
  *
- * Writes --bubble-left / --bubble-w / --bubble-bottom / --tail-x and, when it
- * must, --stage-extra; components/stage.css lays the balloon out from them.
+ * The growth is sized for the LONGEST line this pairing can say (the duel
+ * carries it as data-longest-line), whoever says it, so the header is one
+ * height at a given width: tapping for a new line never makes the page jump.
+ *
+ * Writes --bubble-left / --bubble-w / --bubble-bottom / --tail-x and
+ * --stage-extra; components/stage.css lays the balloon out from them.
  * @param {HTMLElement} head
  * @returns {{ left: number, right: number, top: number, bottom: number } | null}
  *   where the balloon now is, for the final tower check
@@ -495,18 +491,13 @@ function steadyRoom(head, bubble, boss, ceiling) {
 function fitBalloon(head) {
   const duel = head.querySelector(".v-duel");
   const bubble = head.querySelector(".v-bubble");
+  const textEl = head.querySelector(".v-bubble-text");
   const slotEl = head.querySelector(".v-duel-gap");
   const climberEl = head.querySelector(".v-actor--climber");
   const bossEl = head.querySelector(".v-actor--boss");
-  if (!duel || !(bubble instanceof HTMLElement) || !slotEl) return null;
+  if (!(duel instanceof HTMLElement) || !(bubble instanceof HTMLElement) || !slotEl || !textEl) return null;
   if (!(climberEl instanceof HTMLElement) || !(bossEl instanceof HTMLElement)) return null;
-  const climber = drawnRect(climberEl);
-  const boss = drawnRect(bossEl);
-  if (!climber || !boss) return null;
-  const bossSpeaks = duel.classList.contains("v-duel--boss-speaks");
-  const speaker = bossSpeaks ? boss : climber;
-  const other = bossSpeaks ? climber : boss;
-  const anchor = headX(bossSpeaks ? bossEl : climberEl, speaker);
+  if (!drawnRect(climberEl) || !drawnRect(bossEl)) return null;
 
   const headBox = head.getBoundingClientRect();
   const pad = getComputedStyle(head);
@@ -527,51 +518,103 @@ function fitBalloon(head) {
     head.style.setProperty("--bubble-left", `${(left - headBox.left).toFixed(1)}px`);
     head.style.setProperty("--bubble-w", `${Math.ceil(width)}px`);
   };
+
   /**
-   * One placement: the balloon's bottom edge at `bottom`, kept out of
-   * everything that reaches up past it.
-   * @param {number} bottom
-   * @param {DOMRect[]} blockers
+   * The best placement of the text now in the balloon, said by one side.
+   * @param {boolean} bossSpeaks
+   * @param {number} reserved  growth already committed (free to use)
    */
-  const tryAt = (bottom, blockers) => {
-    // Anything reaching up to within half the air of the balloon's bottom
-    // edge is in its way too: sitting on a spire tip is still touching.
-    const span = openSpan(anchor, blockers.filter((r) => r.top - AIR_PX / 2 < bottom), minLeft, maxRight);
-    if (!span || span.right - span.left < BUBBLE_MIN_W_PX) return null;
-    const room = Math.min(cap, span.right - span.left);
-    lay(span.left, room);
-    // Layout width, not the drawn box: the balloon scales in from 70% when a
-    // line appears. +1 because offsetWidth rounds, and a pixel short re-wraps.
-    const width = Math.min(room, bubble.offsetWidth + 1);
-    const height = bubble.offsetHeight;
-    const wanted = bossSpeaks ? anchor + TAIL_INSET_PX - width : anchor - TAIL_INSET_PX;
-    const left = Math.min(Math.max(wanted, span.left), span.right - width);
-    const tail = Math.min(Math.max(anchor - left, TAIL_EDGE_PX), width - TAIL_EDGE_PX);
-    return { bottom, left, width, height, tail, extra: Math.max(0, ceiling - (bottom - height)) };
-  };
-  const reserved = steadyRoom(head, bubble, boss, ceiling);
-  const place = () => {
+  const placeFor = (bossSpeaks, reserved) => {
+    const climber = drawnRect(climberEl);
+    const boss = drawnRect(bossEl);
+    if (!climber || !boss) return null;
+    const speaker = bossSpeaks ? boss : climber;
+    const other = bossSpeaks ? climber : boss;
+    const anchor = headX(bossSpeaks ? bossEl : climberEl, speaker);
+    /** @param {number} bottom @param {DOMRect[]} blockers */
+    const tryAt = (bottom, blockers) => {
+      // Anything reaching up to within half the air of the balloon's bottom
+      // edge is in its way too: sitting on a spire tip is still touching.
+      const span = openSpan(anchor, blockers.filter((r) => r.top - AIR_PX / 2 < bottom), minLeft, maxRight);
+      if (!span || span.right - span.left < BUBBLE_MIN_W_PX) return null;
+      const room = Math.min(cap, span.right - span.left);
+      lay(span.left, room);
+      // Layout width, not the drawn box: the balloon scales in from 70% when
+      // a line appears. +1 because offsetWidth rounds, and a pixel short
+      // re-wraps.
+      const width = Math.min(room, bubble.offsetWidth + 1);
+      const height = bubble.offsetHeight;
+      const wanted = bossSpeaks ? anchor + TAIL_INSET_PX - width : anchor - TAIL_INSET_PX;
+      const left = Math.min(Math.max(wanted, span.left), span.right - width);
+      const tail = Math.min(Math.max(anchor - left, TAIL_EDGE_PX), width - TAIL_EDGE_PX);
+      return { bottom, left, width, height, tail, extra: Math.max(0, ceiling - (bottom - height)) };
+    };
     const blockers = scenery();
     const near = tryAt(speaker.top - TAIL_AIR_PX, [...blockers, other]);
     const over = tryAt(Math.min(speaker.top - TAIL_AIR_PX, other.top - HEAD_AIR_PX), blockers);
-    const options = [near, over].filter(Boolean);
-    // Least header growth wins (growth inside the room already reserved is
-    // free); then fewer wrapped lines; then the one nearer the speaker.
+    // Least growth beyond what is reserved; then fewer wrapped lines; then
+    // the one nearer the speaker.
     const growth = (o) => Math.max(o.extra, reserved);
+    const options = [near, over].filter(Boolean);
     options.sort((a, b) => growth(a) - growth(b) || a.height - b.height || b.bottom - a.bottom);
     return options[0] || null;
   };
+  /**
+   * Growth the longest line needs, whichever side says it — and, when the
+   * climber is rolled at random (data-climber-pool), whichever climber is
+   * standing there: each is sized in place for a moment and measured, so a
+   * re-roll that brings a wider or shorter figure cannot change the height.
+   */
+  const steadyExtra = () => {
+    const longest = duel.dataset.longestLine;
+    if (!longest) return 0;
+    const pool = (duel.dataset.climberPool || "").split(" ").filter(Boolean);
+    const saved = DUEL_SIZE_PROPS.map((prop) => [prop, duel.style.getPropertyValue(prop), head.style.getPropertyValue(prop)]);
+    const actual = textEl.textContent;
+    textEl.textContent = longest;
+    let worst = 0;
+    for (const id of pool.length ? pool : [null]) {
+      if (id) {
+        const size = climberSizing(id);
+        [["--climber-h", size.height], ["--climber-aspect", size.aspect]].forEach(([prop, value]) => {
+          duel.style.setProperty(prop, value);
+          head.style.setProperty(prop, value);
+        });
+      }
+      for (const bossSpeaks of [false, true]) {
+        const option = placeFor(bossSpeaks, 0);
+        worst = Math.max(worst, option ? option.extra : 0);
+      }
+    }
+    textEl.textContent = actual;
+    saved.forEach(([prop, onDuel, onHead]) => {
+      if (onDuel) duel.style.setProperty(prop, onDuel);
+      else duel.style.removeProperty(prop);
+      if (onHead) head.style.setProperty(prop, onHead);
+      else head.style.removeProperty(prop);
+    });
+    return worst;
+  };
 
-  let best = place();
-  if ((!best || best.extra > 0) && drawnRect(head.querySelector(".v-spire"))) {
+  const bossSpeaks = duel.classList.contains("v-duel--boss-speaks");
+  let reserved = steadyExtra();
+  let best = placeFor(bossSpeaks, reserved);
+  if ((!best || best.extra > reserved) && drawnRect(head.querySelector(".v-spire"))) {
     // The spire shows the player's ascension progress, so it gives way only
     // when the line fits nowhere else, or when keeping it would make the
     // header markedly taller (a phone, where the height is the page).
+    const grownWith = best ? Math.max(best.extra, reserved) : Infinity;
     head.classList.add("v-stage--no-spire");
-    const without = place();
+    const reservedWithout = steadyExtra();
+    const without = placeFor(bossSpeaks, reservedWithout);
+    const grownWithout = without ? Math.max(without.extra, reservedWithout) : Infinity;
     const worth = window.matchMedia(PHONE_LAYOUT).matches ? SPIRE_WORTH_PX : Infinity;
-    if (without && (!best || best.extra - without.extra >= worth)) best = without;
-    else head.classList.remove("v-stage--no-spire");
+    if (without && (!best || grownWith - grownWithout >= worth)) {
+      best = without;
+      reserved = reservedWithout;
+    } else {
+      head.classList.remove("v-stage--no-spire");
+    }
   }
   if (!best) {
     // Nothing fits anywhere (a header narrower than any phone): fall back to
@@ -680,6 +723,7 @@ export function renderStage(model) {
     if (painted.get(backdrop) === html) return;
     backdrop.innerHTML = html;
     painted.set(backdrop, html);
+    if (backdrop instanceof HTMLElement) backdrop.dataset.scene = model.scene || pickScene();
   });
   fitStages();
 }

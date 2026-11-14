@@ -61,6 +61,7 @@ const MANIFEST = [
   ["v-shell", "shell/mobile-nav.css"],
   ["v-components", "components/controls.css"],
   ["v-components", "components/stage.css"],
+  ["v-components", "components/stage-scenes.css"],
   ["v-components", "components/cards.css"],
   ["v-components", "components/charts.css"],
   ["v-components", "components/theme-picker.css"],
