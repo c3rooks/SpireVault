@@ -15,14 +15,23 @@
   window.__pfDailyRuntime = true;
 
   var REFRESH_MS = 5 * 60 * 1000;
+  // After a failed or empty answer, wait this long before asking again. The
+  // tile re-pumps on every DOM change while it is not on the page, so without
+  // this an unreachable API was fetched again on every change (each theme
+  // switch, for one).
+  var RETRY_MS = 60 * 1000;
   var challengeCache = null;
   var fetchedAtMs = 0;
   var inflight = null;
   var localTagKey = "pf.daily.activeDate.v1";
 
   function fetchChallenge() {
-    if (challengeCache && Date.now() - fetchedAtMs < REFRESH_MS) {
+    var age = Date.now() - fetchedAtMs;
+    if (challengeCache && age < REFRESH_MS) {
       return Promise.resolve(challengeCache);
+    }
+    if (!challengeCache && fetchedAtMs && age < RETRY_MS) {
+      return Promise.resolve(null);
     }
     if (inflight) return inflight;
     inflight = fetch("/coop/daily-challenge", {
@@ -36,7 +45,11 @@
         inflight = null;
         return challengeCache;
       })
-      .catch(function () { inflight = null; return null; });
+      .catch(function () {
+        fetchedAtMs = Date.now();
+        inflight = null;
+        return null;
+      });
     return inflight;
   }
 

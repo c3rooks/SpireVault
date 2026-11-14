@@ -3932,7 +3932,12 @@ function switchTab(tab) {
   // separate re-render path. The discovery banner is painted from
   // the same hook so a user who hasn't visited Co-op yet sees it
   // the first time they land here after this deploy.
-  if (tab === "coop") {
+  //
+  // Not while Co-op is locked (signed out): the panel shows its sign-in
+  // screen, and booting the lobby runtimes under it made the daily-challenge
+  // tile find the hidden lobby markup and fetch /coop/daily-challenge again
+  // on every DOM change (each theme switch, for one).
+  if (tab === "coop" && !isTabLocked("coop")) {
     if (session) ensureCoopLobbiesMounted();
     try { CoopLobbies.setCoopTabActive?.(); } catch {}
     try { renderCoopBetaHeaderControls(); } catch {}

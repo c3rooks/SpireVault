@@ -39,8 +39,9 @@ const TEST_SESSION = Object.freeze({
   sessionToken: "test-token",
   signedInAt: "2026-11-01T00:00:00.000Z",
 });
-/** Community endpoints a signed-out visitor has no screen for. */
-const STEAM_ONLY_API = /^\/api\/(highlights|coop|presence)(\/|$)/;
+/** Community endpoints a signed-out visitor has no screen for. The lobby
+ *  runtimes call some of them without the /api prefix (/coop/daily-challenge). */
+const STEAM_ONLY_API = /^\/(api\/)?(highlights|coop|presence)(\/|$)/;
 const TAB_IDS = ["overview", "characters", "ascensions", "relics", "cards", "runs", "coop", "highlights", "news", "overlay", "beta", "settings"];
 const NAV_TAB_COUNT = 10;
 const THEME_COUNT = 8;
@@ -402,7 +403,9 @@ async function run(browser) {
 
   // ---- Legacy CSS layering ---------------------------------------------------
   await check("runtime co-op stylesheets join the legacy layer, once each", async () => {
-    const { context, page: p } = await open(browser, "/?ui=next");
+    // Signed in: a signed-out visitor gets Co-op's sign-in screen and the
+    // lobby scripts (which inject these stylesheets) are never loaded.
+    const { context, page: p } = await open(browser, "/?ui=next", { signedIn: true });
     for (let visit = 0; visit < 2; visit += 1) {
       await p.evaluate(() => window.SpireVault.switchTab("coop"));
       await p.waitForTimeout(1500);
@@ -985,6 +988,12 @@ async function runLock(browser) {
         assert.equal(state.gateShown, false, `${tab} is not locked`);
         assert.ok(state.otherChildrenShown > 0, `${tab} shows its content`);
       }
+      // A theme switch rewrites attributes across the page; the co-op lobby
+      // scripts used to answer every such change with another fetch.
+      await lockState(p, "coop");
+      await p.evaluate(() => {
+        if (typeof window.SpireVault.setTheme === "function") window.SpireVault.setTheme("vault");
+      });
       await p.waitForTimeout(800);
       assert.deepEqual(requests.filter((pathname) => STEAM_ONLY_API.test(pathname)), [], "nothing is fetched for the locked tabs");
       assert.deepEqual(errors, []);

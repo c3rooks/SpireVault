@@ -14,10 +14,15 @@
  *   - moves the layout (no element in the tab panel may shift position)
  *   - leaves the page unchanged (the tab must actually recolour)
  *
+ * The sweep runs signed out, so Co-op, Highlights and Beta are checked as
+ * the sign-in screens they show there. `--signed-in` runs it as a signed-in
+ * visitor instead, which is how those three tabs' own content gets covered.
+ *
  * Writes one viewport screenshot per tab x width (Inked) to --out.
  *
  *   node scripts/verify-ui-next-matrix.mjs --base-url http://127.0.0.1:8788
  *   node scripts/verify-ui-next-matrix.mjs --tabs runs,coop --widths 375,1440 --themes inked,vault
+ *   node scripts/verify-ui-next-matrix.mjs --signed-in --tabs coop,highlights,beta
  *   node scripts/verify-ui-next-matrix.mjs --tabs overview --scene storm   # pin the header scenery
  */
 
@@ -59,7 +64,16 @@ const options = {
   // The header scenery is random per page load; pin one to check it.
   scene: arg("scene", ""),
   out: arg("out", join(REPO_ROOT, "docs", "screenshots", "ui-next", "matrix")),
+  signedIn: process.argv.includes("--signed-in"),
 };
+
+/** A stored Steam session, as Web/script.js keeps one (for --signed-in). */
+const TEST_SESSION = Object.freeze({
+  steamID: "76561198000000001",
+  personaName: "TestClimber",
+  sessionToken: "test-token",
+  signedInAt: "2026-11-01T00:00:00.000Z",
+});
 
 /** Runs in the page: layout problems on the visible tab. @param {string} tab */
 function inspect(tab) {
@@ -72,7 +86,11 @@ function inspect(tab) {
   if (!panel || panel.hidden || getComputedStyle(panel).display === "none") {
     return { problems: [...problems, "tab panel not shown"], positions: [] };
   }
-  const body = panel.querySelector(`#${tab}-body`) || panel;
+  // A Steam-only tab that is closed to a signed-out visitor shows its sign-in
+  // screen (.tab-lock) in place of its body, which is then left unrendered.
+  const lock = panel.querySelector(":scope > .tab-lock");
+  const isLocked = !!lock && getComputedStyle(lock).display !== "none";
+  const body = isLocked ? lock : panel.querySelector(`#${tab}-body`) || panel;
   if (body.textContent.trim().length < 2 && !body.querySelector("img, svg, canvas")) {
     problems.push("tab body is empty");
   }
@@ -126,12 +144,17 @@ async function main() {
   let checks = 0;
   for (const width of options.widths) {
     const context = await browser.newContext({ viewport: { width, height: width < 600 ? 812 : 900 }, reducedMotion: "reduce" });
-    await context.addInitScript((scene) => {
+    await context.addInitScript(({ scene, session }) => {
       try {
         window.localStorage.setItem("vault.web.companion.v2", "ironclad");
         if (scene) window.localStorage.setItem("vault.web.stage-scene", scene);
+        if (session) {
+          window.localStorage.setItem("vault.web.session", JSON.stringify(session));
+          // Co-op's one-time welcome dialog covers the page; mark it seen.
+          window.localStorage.setItem("spirevault.coop.welcome.v1", "1");
+        }
       } catch { /* none */ }
-    }, options.scene);
+    }, { scene: options.scene, session: options.signedIn ? TEST_SESSION : null });
     const page = await context.newPage();
     const consoleErrors = [];
     page.on("console", (msg) => {

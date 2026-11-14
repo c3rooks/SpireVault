@@ -612,7 +612,7 @@ function ensurePartyFinderGlobalsScript() {
         if (!document.getElementById("pf-daily-rt-script")) {
           const s6 = document.createElement("script");
           s6.id = "pf-daily-rt-script";
-          s6.src = "/lib/party-finder-daily-rt.js?v=2";
+          s6.src = "/lib/party-finder-daily-rt.js?v=3";
           s6.async = false;
           document.head.appendChild(s6);
         }
