@@ -1,0 +1,639 @@
+/* ==========================================================================
+   The first screen: the game's fight screen, with your stats as the hand.
+
+   A real combat room runs edge to edge (its picture set by the room tokens in
+   tokens.css via [data-room]). On the right the climber faces the Architect
+   on one ground line with a speech balloon overhead; under them a hand of
+   stat cards. On the left, over the room's veil, the headline and buttons.
+
+   Geometry: every room picture is 32:15. The hero has a known height, so the
+   picture's rendered height under `cover` is known too, and the ground line
+   (--ground) can be placed on the room's own floor.
+   ========================================================================== */
+.hero {
+  /* Tall enough for the copy, short enough that nav + hero fit a laptop. */
+  --hero-h: clamp(max(660px, 41.25rem), 46.875vw, max(860px, 53.75rem));
+  /* Rendered height of a 32:15 picture covering the hero. */
+  --img-h: max(var(--hero-h), 46.875vw);
+  /* The figures' feet: this far up the room picture. Set per room. */
+  --ground: min(calc(var(--img-h) * var(--room-floor, 0.3)), calc(var(--hero-h) - var(--fig) * 1.29 - 90px));
+  /* Height of a climber whose staging height is 0.52 (the app's scale). */
+  --fig: clamp(196px, calc(var(--hero-h) * 0.37), 300px);
+  --duel-gap: clamp(20px, 2.6vw, 44px);
+  /* Six cards fit the stage column at any width: capped by the column's own
+     width (cqw: .hero-stage is the container). */
+  --card-w: min(clamp(100px, calc(var(--hero-h) * 0.172), 142px), 16.2cqw);
+  --card-ratio: 1.38;
+  --card-h: calc(var(--card-w) * var(--card-ratio));
+  --hand-bottom: clamp(18px, calc(var(--hero-h) * 0.04), 34px);
+
+  position: relative;
+  height: var(--hero-h);
+  overflow: hidden;
+  isolation: isolate;
+  border-bottom: 8px solid var(--v-ink);
+  background: var(--room-deep, var(--v-bg-deep));
+}
+
+/* The link-preview picture (og-v2.jpg) is this hero at 1200x630 with nothing
+   that dates: no nav, no live count, no version numbers. */
+.og .nav,
+.og .hero-presence,
+.og .hero-meta {
+  display: none;
+}
+.og .hero {
+  --hero-h: 630px;
+  border-bottom: 0;
+}
+
+/* ---- The room ---------------------------------------------------------------- */
+.hero-scene {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.scene-plane {
+  position: absolute;
+  inset: 0;
+  background-repeat: no-repeat;
+  background-position: right bottom;
+  background-size: cover;
+}
+.scene-plane--base {
+  background-image: var(--room-base);
+}
+/* The distance drifts behind the near wall, slowly, there and back. It is a
+   little wider than the hero so its ends never show. It starts mid-way, so
+   the first thing it does is move. */
+.scene-plane--mid {
+  inset: 0 -28px;
+  background-image: var(--room-mid);
+  animation: scene-sway 26s ease-in-out -13s infinite alternate;
+}
+.scene-plane--front {
+  background-image: var(--room-front);
+}
+@keyframes scene-sway {
+  from {
+    transform: translate3d(-22px, 0, 0);
+  }
+  to {
+    transform: translate3d(22px, 0, 0);
+  }
+}
+
+/* Mist: soft banks of the room's haze, twice the hero's width with the same
+   banks in each half, sliding by half its width so the loop has no seam. */
+.scene-mist {
+  --bank: color-mix(in srgb, var(--room-haze, var(--v-text-2)) 26%, transparent);
+  position: absolute;
+  left: 0;
+  width: 200%;
+  background-image:
+    radial-gradient(ellipse 24% 58% at 16% 74%, var(--bank), transparent 72%),
+    radial-gradient(ellipse 30% 46% at 52% 90%, var(--bank), transparent 72%),
+    radial-gradient(ellipse 20% 62% at 83% 70%, var(--bank), transparent 72%);
+  background-size: 50% 100%;
+  background-repeat: repeat-x;
+  animation: scene-mist 90s linear infinite;
+}
+.scene-mist--far {
+  bottom: calc(var(--ground) - 4%);
+  height: 46%;
+  opacity: 0.7;
+}
+.scene-mist--near {
+  --bank: color-mix(in srgb, var(--room-haze, var(--v-text-2)) 18%, transparent);
+  bottom: 0;
+  height: calc(var(--ground) + 6%);
+  animation-duration: 64s;
+  animation-direction: reverse;
+}
+@keyframes scene-mist {
+  to {
+    transform: translate3d(-50%, 0, 0);
+  }
+}
+
+/* The air: the room's lights adrift. Places and paces are fixed here (no
+   inline styles: the page's content-security-policy forbids them). */
+.scene-motes {
+  position: absolute;
+  inset: 0;
+}
+.scene-motes i {
+  --s: 5px;
+  position: absolute;
+  width: var(--s);
+  height: var(--s);
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    var(--room-accent, var(--v-gold)) 0 28%,
+    color-mix(in srgb, var(--room-accent, var(--v-gold)) 34%, transparent) 46%,
+    transparent 70%
+  );
+  opacity: 0;
+  animation: mote-rise 11s linear infinite;
+}
+.scene-motes i:nth-child(1) { left: 44%; bottom: 34%; animation-duration: 12s; animation-delay: -2s; }
+.scene-motes i:nth-child(2) { left: 52%; bottom: 52%; --s: 4px; animation-duration: 15s; animation-delay: -9s; }
+.scene-motes i:nth-child(3) { left: 58%; bottom: 40%; --s: 6px; animation-duration: 10s; animation-delay: -5s; }
+.scene-motes i:nth-child(4) { left: 63%; bottom: 66%; --s: 4px; animation-duration: 14s; animation-delay: -1s; }
+.scene-motes i:nth-child(5) { left: 69%; bottom: 46%; animation-duration: 11s; animation-delay: -7s; }
+.scene-motes i:nth-child(6) { left: 74%; bottom: 72%; --s: 4px; animation-duration: 16s; animation-delay: -12s; }
+.scene-motes i:nth-child(7) { left: 79%; bottom: 38%; --s: 6px; animation-duration: 9s; animation-delay: -3s; }
+.scene-motes i:nth-child(8) { left: 84%; bottom: 58%; animation-duration: 13s; animation-delay: -10s; }
+.scene-motes i:nth-child(9) { left: 89%; bottom: 44%; --s: 4px; animation-duration: 12s; animation-delay: -6s; }
+.scene-motes i:nth-child(10) { left: 93%; bottom: 68%; animation-duration: 15s; animation-delay: -4s; }
+.scene-motes i:nth-child(11) { left: 96%; bottom: 36%; --s: 4px; animation-duration: 10s; animation-delay: -8s; }
+.scene-motes i:nth-child(12) { left: 48%; bottom: 70%; --s: 4px; animation-duration: 17s; animation-delay: -14s; }
+.scene-motes i:nth-child(13) { left: 66%; bottom: 30%; animation-duration: 12s; animation-delay: -11s; }
+.scene-motes i:nth-child(14) { left: 86%; bottom: 78%; --s: 4px; animation-duration: 14s; animation-delay: -2s; }
+@keyframes mote-rise {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 0, 0);
+  }
+  14% {
+    opacity: 0.9;
+  }
+  50% {
+    transform: translate3d(9px, -30px, 0);
+  }
+  86% {
+    opacity: 0.7;
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(-5px, -62px, 0);
+  }
+}
+
+/* The veil keeps the headline readable: heaviest behind the copy, clear over
+   the duel, and a thin wash over the whole room so it sits a step back. */
+.scene-veil {
+  position: absolute;
+  inset: 0;
+  /* Solid first, for browsers without color-mix(); the layered veil after. */
+  background: linear-gradient(90deg, var(--room-deep, var(--v-bg-deep)) 0%, var(--room-deep, var(--v-bg-deep)) 28%, transparent 60%);
+  background:
+    linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--room-deep, var(--v-bg-deep)) 94%, transparent) 0%,
+      color-mix(in srgb, var(--room-deep, var(--v-bg-deep)) 86%, transparent) 30%,
+      color-mix(in srgb, var(--room-deep, var(--v-bg-deep)) 40%, transparent) 48%,
+      transparent 64%
+    ),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--room-deep, var(--v-bg-deep)) 46%, transparent) 0%,
+      transparent 26%
+    ),
+    color-mix(in srgb, var(--room-deep, var(--v-bg-deep)) var(--room-wash, 8%), transparent);
+}
+
+/* ---- Layout ------------------------------------------------------------------ */
+.hero-inner {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1fr);
+  /* One row, exactly the hero's height: the copy can never push the stage
+     (and with it the ground line and the hand) out of the picture. */
+  grid-template-rows: minmax(0, 1fr);
+  column-gap: clamp(16px, 2.4vw, 48px);
+  height: 100%;
+}
+
+/* ---- Copy -------------------------------------------------------------------- */
+.hero-copy {
+  display: grid;
+  align-content: center;
+  justify-items: start;
+  gap: clamp(10px, 1.2vw, 20px);
+  padding-block: clamp(14px, 1.6vw, 32px);
+}
+.hero-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.hero-title {
+  font-family: var(--v-font-display);
+  /* Never larger than the hero can hold four lines of. */
+  font-size: min(var(--t-hero), calc(var(--hero-h) * 0.118));
+  font-weight: var(--v-display-weight);
+  line-height: 0.94;
+  text-shadow: 4px 4px 0 var(--v-ink);
+  transform: rotate(var(--v-title-tilt));
+  transform-origin: 0 60%;
+}
+.hero-title span {
+  display: block;
+}
+.hero-title .is-gold {
+  color: var(--v-title);
+}
+.hero-title .is-paper {
+  color: var(--v-text);
+}
+.hero-lede {
+  max-width: 35rem;
+  color: var(--v-text);
+  font-size: clamp(1rem, 0.85rem + 0.42vw, 1.25rem);
+  font-weight: 500;
+  line-height: 1.5;
+  text-shadow: 0 1px 0 var(--v-ink);
+}
+.hero-cta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+.hero-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 14px;
+  color: var(--v-text-2);
+  font-size: var(--t-sm);
+  font-weight: 600;
+}
+.hero-meta a {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  color: var(--v-text);
+  font-weight: 700;
+  text-decoration-line: underline;
+  text-decoration-style: dashed;
+  text-decoration-thickness: 1.5px;
+  text-underline-offset: 5px;
+}
+.hero-meta a:hover {
+  color: var(--v-title);
+}
+.hero-meta .version {
+  color: var(--v-title);
+  font-weight: 800;
+}
+.hero-presence {
+  gap: 8px;
+  font-weight: 700;
+  white-space: normal;
+}
+
+/* ---- The stage: duel and hand ------------------------------------------------ */
+.hero-stage {
+  position: relative;
+  min-width: 0;
+  container: hero-stage / inline-size;
+}
+
+/* The ground line. Both figures stand on it: one line, both figures. */
+.duel {
+  position: absolute;
+  right: 0;
+  bottom: var(--ground);
+  left: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: var(--duel-gap);
+}
+.actor {
+  position: relative;
+  flex: none;
+}
+.actor--climber {
+  width: calc(var(--fig) * var(--climber-h, 0.52) / 0.52 * var(--climber-aspect, 0.6214));
+  height: calc(var(--fig) * var(--climber-h, 0.52) / 0.52);
+}
+.actor--boss {
+  --boss-size: calc(var(--fig) * 0.67 / 0.52);
+  width: calc(var(--boss-size) * 0.6435);
+  height: var(--boss-size);
+  /* His art's lowest point is the staff tip, not his boots (boots at 92.2%
+     of the box): sink the box so the boots stand on the shared line. */
+  margin-bottom: calc(var(--boss-size) * -0.078);
+}
+.actor-art {
+  position: relative;
+  z-index: 1;
+  display: block;
+  width: 100%;
+  height: 100%;
+  background-repeat: no-repeat;
+  background-position: 50% 100%;
+  background-size: 100% 100%;
+  filter: var(--v-actor-ink);
+}
+/* Only the inner picture breathes; the inked filter stays still, which keeps
+   the animation cheap in Safari. */
+.actor--climber .actor-art {
+  background-image: var(--climber-art, url("/assets/hero/ironclad-ink-v1.webp"));
+  transform-origin: 50% 100%;
+  animation: breathe 3.8s ease-in-out infinite;
+}
+.actor--boss .actor-art {
+  background-image: url("/assets/hero/architect-ink-v1.webp");
+  transform-origin: 50% 92.2%;
+  animation: breathe 5.2s ease-in-out infinite;
+}
+@keyframes breathe {
+  50% {
+    transform: scaleY(1.02);
+  }
+}
+/* Ground shadow: a flat ink ellipse under the feet, like the game's. */
+.actor-shadow {
+  position: absolute;
+  right: -8%;
+  bottom: -6px;
+  left: -8%;
+  z-index: 0;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--v-ink);
+  opacity: 0.55;
+}
+.actor--boss .actor-shadow {
+  bottom: calc(var(--boss-size) * 0.078 - 6px);
+}
+/* Seat: a drum of fallen column for the seated poses (same as the app). The
+   box is given per climber as fractions of the figure. */
+.actor-seat {
+  position: absolute;
+  top: calc(var(--seat-top, 0.5) * 100%);
+  left: calc(var(--seat-left, 0) * 100%);
+  z-index: 0;
+  display: var(--seat-display, none);
+  width: calc(var(--seat-w, 0.6) * 100%);
+  height: calc(var(--seat-h, 0.44) * 100%);
+  border: var(--v-outline);
+  border-radius: 50% / 24%;
+  background: var(--v-seat);
+  box-shadow: var(--v-shadow-sm);
+}
+.actor-seat::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 46%;
+  border-bottom: var(--v-outline);
+  border-radius: 50%;
+  background: var(--v-surface-2);
+  background: color-mix(in srgb, var(--v-seat) 70%, var(--v-text));
+}
+
+/* The balloon stands over the climber's head, tail pointing down at them,
+   reaching left so it stays clear of the Architect's staff. */
+.duel .balloon {
+  --tail: 72%;
+  position: absolute;
+  bottom: calc(100% + 16px);
+  left: calc(var(--climber-head, 0.57) * 100%);
+  z-index: 2;
+  transform: translateX(-72%);
+  animation: balloon-pop 420ms var(--ease-spring) 500ms both;
+}
+/* The pop uses `scale`, not `transform`, so it works wherever the balloon is
+   placed (the small-screen layout places it without a transform). */
+@keyframes balloon-pop {
+  from {
+    opacity: 0;
+    scale: 0.7;
+  }
+}
+
+/* ---- Climbers ---------------------------------------------------------------- */
+/* boot.js rolls one per page load and writes it on <html>. Sizes follow the
+   app's staging table (lib/ui/stage.js): height, the picture's own width to
+   height, where the head is across the box, and the seat for seated poses. */
+[data-climber="ironclad"] {
+  --climber-art: url("/assets/hero/ironclad-ink-v1.webp");
+  --climber-h: 0.52;
+  --climber-aspect: 0.6214;
+  --climber-head: 0.57;
+  --seat-display: block;
+  --seat-left: -0.04;
+  --seat-top: 0.5;
+  --seat-w: 0.6;
+  --seat-h: 0.44;
+}
+[data-climber="silent"] {
+  --climber-art: url("/assets/hero/silent-ink-v1.webp");
+  --climber-h: 0.54;
+  --climber-aspect: 0.5214;
+  --climber-head: 0.47;
+  --seat-display: block;
+  --seat-left: 0.02;
+  --seat-top: 0.52;
+  --seat-w: 0.62;
+  --seat-h: 0.4;
+}
+[data-climber="defect"] {
+  --climber-art: url("/assets/hero/defect-ink-v1.webp");
+  --climber-h: 0.48;
+  --climber-aspect: 0.9381;
+  --climber-head: 0.43;
+  --seat-display: none;
+}
+[data-climber="regent"] {
+  --climber-art: url("/assets/hero/regent-ink-v2.webp");
+  --climber-h: 0.58;
+  --climber-aspect: 0.5095;
+  --climber-head: 0.7;
+  --seat-display: none;
+}
+[data-climber="necrobinder"] {
+  --climber-art: url("/assets/hero/necrobinder-ink-v1.webp");
+  --climber-h: 0.55;
+  --climber-aspect: 0.5762;
+  --climber-head: 0.37;
+  --seat-display: block;
+  --seat-left: -0.02;
+  --seat-top: 0.56;
+  --seat-w: 0.66;
+  --seat-h: 0.36;
+}
+[data-climber="fool"] {
+  --climber-art: url("/assets/hero/fool-ink-v1.webp");
+  --climber-h: 0.5;
+  --climber-aspect: 0.8548;
+  --climber-head: 0.55;
+  --seat-display: none;
+}
+
+/* ---- The hand ---------------------------------------------------------------- */
+.hand {
+  position: absolute;
+  right: 0;
+  bottom: var(--hand-bottom);
+  left: 0;
+  z-index: 3;
+  display: flex;
+  justify-content: center;
+}
+.stat-card {
+  --tone: var(--v-accent-hi);
+  --rot: 0deg;
+  --lift: 0px;
+  position: relative;
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  width: var(--card-w);
+  height: var(--card-h);
+  margin-inline: calc(var(--card-w) * -0.02);
+  border: var(--v-outline);
+  border-radius: var(--v-radius-md);
+  background: var(--v-paper);
+  box-shadow: var(--v-shadow);
+  color: var(--v-on-paper);
+  text-align: center;
+  transform: translate3d(0, var(--lift), 0) rotate(var(--rot));
+  transform-origin: 50% 100%;
+  animation: deal 560ms var(--ease-spring) both;
+}
+/* Dealt left to right, fanned like a hand: outer cards lean and hang lower. */
+.stat-card:nth-child(1) { --rot: -10deg; --lift: 9px; animation-delay: 350ms; }
+.stat-card:nth-child(2) { --rot: -6deg; --lift: 3px; animation-delay: 420ms; }
+.stat-card:nth-child(3) { --rot: -2deg; --lift: 0px; animation-delay: 490ms; }
+.stat-card:nth-child(4) { --rot: 2deg; --lift: 0px; animation-delay: 560ms; }
+.stat-card:nth-child(5) { --rot: 6deg; --lift: 3px; animation-delay: 630ms; }
+.stat-card:nth-child(6) { --rot: 10deg; --lift: 9px; animation-delay: 700ms; }
+@keyframes deal {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 90px, 0) rotate(0deg);
+  }
+}
+.stat-card[data-tone="win"] { --tone: var(--v-win); }
+.stat-card[data-tone="loss"] { --tone: var(--v-loss); }
+.stat-card[data-tone="gold"] { --tone: var(--v-gold); }
+.stat-card[data-tone="info"] { --tone: var(--v-info); }
+.stat-card[data-tone="violet"] { --tone: var(--v-violet); }
+.stat-card[data-tone="accent"] { --tone: var(--v-accent-hi); }
+
+.stat-band {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 22%;
+  padding: 3px 6px 3px 26px;
+  border-bottom: var(--v-outline);
+  border-radius: calc(var(--v-radius-md) - var(--v-outline-w)) calc(var(--v-radius-md) - var(--v-outline-w)) 0 0;
+  background: var(--tone);
+  color: var(--v-ink);
+  font-size: var(--t-xs);
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  line-height: 1.1;
+  text-transform: uppercase;
+}
+.stat-orb {
+  position: absolute;
+  top: -9px;
+  left: -9px;
+  display: grid;
+  place-items: center;
+  width: calc(var(--card-w) * 0.26);
+  height: calc(var(--card-w) * 0.26);
+  border: var(--v-outline);
+  border-radius: 50%;
+  background: var(--v-paper);
+  box-shadow: 2px 2px 0 var(--v-ink);
+  color: var(--v-on-paper);
+}
+.stat-orb svg {
+  width: 56%;
+  height: 56%;
+}
+.stat-art {
+  display: grid;
+  flex: 1;
+  place-items: center;
+  align-content: center;
+  margin: 6% 6% 0;
+  border: var(--v-outline);
+  border-radius: var(--v-radius-sm);
+  background: var(--v-paper-2);
+  background: color-mix(in srgb, var(--tone) 26%, var(--v-paper-2));
+}
+.stat-value {
+  font-family: var(--v-font-display);
+  font-size: calc(var(--card-w) * 0.36);
+  font-weight: var(--v-display-weight);
+  line-height: 1;
+  white-space: nowrap;
+}
+/* Down arrow beside recent form, as in the app: form against the lifetime rate. */
+.stat-trend {
+  display: inline-block;
+  width: 0.34em;
+  height: 0.3em;
+  margin-right: 0.08em;
+  vertical-align: 0.2em;
+  background: color-mix(in srgb, var(--v-loss) 62%, var(--v-on-paper));
+  clip-path: polygon(0 0, 100% 0, 50% 100%);
+}
+.stat-value small {
+  margin-left: 2px;
+  font-size: 0.42em;
+}
+.stat-value.is-long {
+  font-size: calc(var(--card-w) * 0.28);
+}
+.stat-text {
+  display: grid;
+  place-items: center;
+  min-height: 27%;
+  padding: 3px 7px 5px;
+  color: var(--v-on-paper-2);
+  font-size: var(--t-xs);
+  font-weight: 600;
+  line-height: 1.22;
+}
+.stat-text strong {
+  color: var(--v-on-paper);
+  font-weight: 800;
+}
+
+/* What the hand is, said right beside it. */
+.hand-tag {
+  position: absolute;
+  bottom: calc(var(--hand-bottom) + var(--card-h) + 4px);
+  left: max(2%, calc(50% - var(--card-w) * 3.1));
+  z-index: 4;
+}
+/* The hand is given a tab stop by script.js when it scrolls sideways; its
+   ring is drawn inside, where the hero does not clip it. */
+.hand:focus-visible {
+  outline-offset: -3px;
+}
+
+/* A narrow stage column (small laptops, two-column layout only): the cards
+   keep their title and number and drop the small print, rather than
+   squeezing three lines into each. */
+@media (min-width: 1100px) {
+  @container hero-stage (max-width: 639px) {
+    .stat-card {
+      height: calc(var(--card-w) * 1.08);
+    }
+    .stat-text {
+      display: none;
+    }
+    .stat-art {
+      margin-bottom: 6%;
+    }
+    .hand-tag {
+      bottom: calc(var(--hand-bottom) + var(--card-w) * 1.08 + 4px);
+    }
+  }
+}

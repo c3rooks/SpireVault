@@ -1,0 +1,437 @@
+/* ==========================================================================
+   Sections 5 to 8, in page order: privacy, downloads, questions, the closing
+   band and the footer. (Sections 2 to 4 are in sections.css.)
+   ========================================================================== */
+
+/* ---- 5. Your data: an open codex ---------------------------------------------- */
+.codex {
+  --focus: var(--v-on-paper);
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  border: var(--v-outline);
+  border-radius: var(--v-radius-lg);
+  background: var(--v-paper);
+  box-shadow: 8px 8px 0 var(--v-ink);
+  color: var(--v-on-paper);
+}
+/* The spine: the gutter between the two pages. */
+.codex::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 34px;
+  margin-left: -17px;
+  background: linear-gradient(90deg, transparent, var(--v-paper-3) 46%, var(--v-on-paper-2) 50%, var(--v-paper-3) 54%, transparent);
+  pointer-events: none;
+}
+.codex-page {
+  padding: clamp(20px, 3vw, 48px);
+}
+.codex-page h3 {
+  margin-bottom: var(--s-4);
+  padding-bottom: var(--s-3);
+  border-bottom: 3px solid var(--v-on-paper);
+  font-family: var(--v-font-heading);
+  font-size: clamp(1.5rem, 1.1rem + 1vw, 2.125rem);
+  font-weight: 800;
+  line-height: 1.05;
+}
+.codex-page ul {
+  display: grid;
+}
+.codex-page li {
+  position: relative;
+  padding: 11px 0 11px 34px;
+  border-bottom: 2px dashed var(--v-paper-3);
+  font-size: var(--t-lg);
+  line-height: 1.4;
+}
+.codex-page li:last-child {
+  border-bottom: 0;
+}
+/* An inked tick. */
+.codex-page li::before {
+  content: "";
+  position: absolute;
+  top: 17px;
+  left: 4px;
+  width: 16px;
+  height: 9px;
+  border-bottom: 4px solid var(--v-on-paper);
+  border-left: 4px solid var(--v-on-paper);
+  transform: rotate(-45deg);
+}
+/* Where both pages can share rows, their headings end on one line even when
+   one of them wraps, so the two rules and the two lists line up. */
+@supports (grid-template-rows: subgrid) {
+  @media (min-width: 900px) {
+    .codex {
+      grid-template-rows: auto 1fr;
+    }
+    .codex-page {
+      display: grid;
+      grid-template-rows: subgrid;
+      grid-row: span 2;
+    }
+    .codex-page h3 {
+      align-self: end;
+    }
+    .codex-page ul {
+      align-self: start;
+    }
+  }
+}
+.trust-note {
+  max-width: 62rem;
+  margin-top: var(--s-5);
+  color: var(--v-text-2);
+  font-size: var(--t-md);
+}
+.trust-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-top: var(--s-6);
+}
+
+/* ---- 6. Get it: three ways in, unequal on purpose ----------------------------- */
+.ways {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: clamp(16px, 2vw, 28px);
+}
+.way {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px 24px;
+  padding: var(--s-5) var(--s-6);
+  border: var(--v-outline);
+  border-radius: var(--v-radius-lg);
+  background: var(--v-paper-2);
+  box-shadow: var(--v-shadow-lg);
+}
+.way--web {
+  --focus: var(--v-title);
+  grid-column: 1 / -1;
+  padding-block: var(--s-6);
+  /* The stripe is 12px wider than the other rows' border: take it back from
+     the padding so all three titles start on one line. */
+  padding-left: calc(var(--s-6) - 12px);
+  border-left-width: 14px;
+  border-left-color: var(--v-accent);
+  background: var(--v-bg);
+  color: var(--v-text);
+}
+.way-text {
+  flex: 1 1 18rem;
+  min-width: 0;
+}
+.way h3 {
+  font-family: var(--v-font-heading);
+  font-size: clamp(1.5rem, 1.1rem + 1vw, 2.125rem);
+  font-weight: 800;
+  line-height: 1.05;
+}
+.way--web h3 {
+  color: var(--v-title);
+  font-family: var(--v-font-display);
+  font-size: var(--t-2xl);
+  font-weight: var(--v-display-weight);
+  text-shadow: var(--v-title-shadow);
+}
+.way p {
+  max-width: 34rem;
+  margin-top: 4px;
+  color: var(--v-on-paper-2);
+  font-size: var(--t-md);
+}
+.way--web p {
+  color: var(--v-text-2);
+  font-size: var(--t-lg);
+}
+/* The label and its version pill may sit on two lines in a narrow button. */
+.way .btn {
+  flex-wrap: wrap;
+  row-gap: 4px;
+  white-space: normal;
+  text-align: center;
+}
+.way .version {
+  padding: 2px 8px;
+  border: 1.5px solid var(--v-text);
+  border-radius: var(--v-radius-pill);
+  font-size: var(--t-xs);
+  font-weight: 800;
+}
+.way .version:empty {
+  display: none;
+}
+.install-foot {
+  margin-top: var(--s-6);
+  color: var(--v-on-paper-2);
+  font-size: var(--t-md);
+}
+.install-foot a {
+  color: var(--v-on-paper);
+  font-weight: 800;
+  text-underline-offset: 4px;
+}
+
+/* ---- 7. Questions: ledger rows that open in place ----------------------------- */
+.faq-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px clamp(16px, 2vw, 28px);
+  align-items: start;
+}
+.faq-list details {
+  border: var(--v-outline);
+  border-radius: var(--v-radius-md);
+  background: var(--v-surface-1);
+  box-shadow: var(--v-shadow-sm);
+}
+.faq-list summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  min-height: 56px;
+  padding: 12px 16px;
+  border-radius: var(--v-radius-md);
+  font-family: var(--v-font-heading);
+  font-size: var(--t-xl);
+  font-weight: 800;
+  line-height: 1.15;
+  list-style: none;
+  cursor: pointer;
+}
+.faq-list summary::-webkit-details-marker {
+  display: none;
+}
+/* Plus that becomes a minus. */
+.faq-list summary::after {
+  content: "";
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border: var(--v-outline);
+  border-radius: 50%;
+  background:
+    linear-gradient(var(--v-ink), var(--v-ink)) center / 12px 3px no-repeat,
+    linear-gradient(var(--v-ink), var(--v-ink)) center / 3px 12px no-repeat,
+    var(--v-gold);
+}
+.faq-list details[open] summary::after {
+  background:
+    linear-gradient(var(--v-ink), var(--v-ink)) center / 12px 3px no-repeat,
+    var(--v-accent);
+}
+.faq-list summary:hover {
+  color: var(--v-title);
+}
+.faq-list details[open] {
+  --focus: var(--v-on-paper);
+  background: var(--v-paper);
+  color: var(--v-on-paper);
+}
+.faq-list details[open] summary:hover {
+  color: var(--v-on-paper);
+}
+.faq-list details p {
+  padding: 0 16px 16px;
+  font-size: var(--t-md);
+  line-height: 1.55;
+}
+.faq-list details a {
+  font-weight: 800;
+  text-underline-offset: 4px;
+}
+.faq-list code {
+  padding: 1px 5px;
+  border: 1.5px solid currentColor;
+  border-radius: 6px;
+}
+
+/* ---- 8. Closing call and footer ----------------------------------------------- */
+/* A last room: the call on the left over the room's veil, The Fool on the
+   right. Like the co-op band, it keeps one shape so the floor stays put. */
+.closing {
+  position: relative;
+  border-top: 8px solid var(--v-ink);
+  background: var(--room-deep);
+  color: var(--v-text);
+}
+.closing-band {
+  --fig: 52cqh;
+  --ground: 15cqh;
+  position: relative;
+  aspect-ratio: 5.2 / 1;
+  overflow: hidden;
+  container-type: size;
+  /* The slice that shows the vats above and the floor below the wall foot. */
+  background: var(--room-flat) center 40% / cover no-repeat var(--room-deep);
+}
+.closing-band::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  /* Solid first, for browsers without color-mix(); the softer veil after. */
+  background: linear-gradient(90deg, var(--room-deep) 0%, var(--room-deep) 20%, transparent 58%);
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--room-deep) 92%, transparent) 0%,
+    color-mix(in srgb, var(--room-deep) 70%, transparent) 34%,
+    transparent 62%
+  );
+}
+.closing-band .duel {
+  left: 58%;
+  z-index: 1;
+}
+.closing-band .balloon {
+  animation: none;
+}
+.closing-inner {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: grid;
+  align-content: center;
+  justify-items: start;
+  gap: clamp(8px, 1vw, 16px);
+}
+.closing-inner p {
+  font-size: var(--t-lg);
+  font-weight: 600;
+  text-shadow: 0 1px 0 var(--v-ink);
+}
+
+.footer {
+  border-top: 8px solid var(--v-ink);
+  background: var(--v-bg-deep);
+  color: var(--v-text-2);
+  font-size: var(--t-sm);
+}
+/* The notice on the left, the links on one row at the right; when both no
+   longer fit, the links drop under the notice (see the media query below). */
+.footer-inner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--s-5) var(--s-7);
+  padding-block: var(--s-7);
+}
+.footer-brand {
+  display: flex;
+  flex: 1 1 18rem;
+  gap: 14px;
+  align-items: flex-start;
+  max-width: 40rem;
+}
+.footer-brand .brand-emblem {
+  flex: none;
+}
+.footer-brand strong {
+  color: var(--v-title);
+}
+.footer a {
+  color: var(--v-text);
+  text-underline-offset: 4px;
+}
+.footer a:hover {
+  color: var(--v-title);
+}
+.footer-links {
+  display: flex;
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px 20px;
+}
+.footer-links a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* A short word like "News" is still a full-size tap target. */
+  min-width: 44px;
+  min-height: 44px;
+  font-weight: 700;
+  text-decoration: none;
+}
+.footer-links a:hover {
+  text-decoration-line: underline;
+  text-decoration-style: dashed;
+  text-decoration-thickness: 2px;
+}
+
+/* ---- Smaller screens ----------------------------------------------------------- */
+@media (max-width: 1299px) {
+  .footer-links {
+    flex-basis: 100%;
+    justify-content: flex-start;
+  }
+}
+/* Two-column questions on a narrow screen: every row is two lines tall, so a
+   question that wraps does not leave uneven gaps beside one that does not. */
+@media (min-width: 900px) and (max-width: 1279px) {
+  .faq-list summary {
+    min-height: 76px;
+  }
+}
+@media (max-width: 899px) {
+  .codex {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .codex::before {
+    display: none;
+  }
+  .codex-page + .codex-page {
+    border-top: 3px solid var(--v-on-paper);
+  }
+  .ways,
+  .faq-list {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .way .btn {
+    width: 100%;
+  }
+  /* The band shows the room at full height (so its floor sits lower), with
+     the call above it instead of over it. */
+  .closing {
+    display: flex;
+    flex-direction: column-reverse;
+    /* The call stands on the page's own night colour here, not the room's. */
+    background: var(--v-bg-deep);
+  }
+  .closing-band {
+    --fig: 44cqh;
+    --ground: 30cqh;
+    aspect-ratio: 1.5 / 1;
+    background-position: 70% bottom;
+    border-top: var(--v-outline);
+  }
+  .closing-band::after {
+    display: none;
+  }
+  .closing-band .duel {
+    left: 0;
+  }
+  .closing-inner {
+    position: static;
+    padding-block: var(--s-6);
+  }
+  .closing-inner .btn {
+    width: 100%;
+  }
+}
+@media (max-width: 399px) {
+  .way {
+    padding-inline: var(--s-4);
+  }
+}

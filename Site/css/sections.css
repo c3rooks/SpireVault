@@ -1,0 +1,547 @@
+/* ==========================================================================
+   Sections 2 to 4, in page order: the import path, what you get, co-op.
+   (Privacy, downloads, questions, the closing band and the footer are in
+   sections-lower.css.) Night and parchment alternate; nothing here is a
+   uniform card grid.
+   ========================================================================== */
+
+/* ---- 2. Import: the game's map, three stops on one path ----------------------- */
+.route {
+  --route-gap: clamp(20px, 3vw, 56px);
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--route-gap);
+}
+/* The path: a dashed ink line through the three icons, like the map's. It
+   runs from the middle of the first icon to the middle of the last number. */
+.route::before {
+  content: "";
+  position: absolute;
+  top: 47px;
+  right: calc((100% - 2 * var(--route-gap)) / 3 - 136px);
+  left: 48px;
+  border-top: 4px dashed var(--v-on-paper);
+  opacity: 0.55;
+}
+.route-stop {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  column-gap: 14px;
+  align-content: start;
+  align-items: end;
+  row-gap: 10px;
+}
+.route-icon {
+  position: relative;
+  grid-column: 1;
+  width: 96px;
+  height: 96px;
+  filter: drop-shadow(3px 3px 0 var(--v-ink));
+}
+.route-num {
+  position: relative;
+  grid-column: 2;
+  align-self: center;
+  justify-self: start;
+  padding: 0 14px 4px;
+  border: var(--v-outline);
+  border-radius: var(--v-radius-pill);
+  background: var(--v-paper);
+  box-shadow: var(--v-shadow-sm);
+  font-family: var(--v-font-display);
+  font-size: 2.5rem;
+  font-weight: var(--v-display-weight);
+  line-height: 1;
+}
+.route-stop h3,
+.route-stop p {
+  grid-column: 1 / -1;
+}
+.route-stop h3 {
+  font-family: var(--v-font-heading);
+  font-size: clamp(1.5rem, 1.1rem + 1vw, 2.125rem);
+  font-weight: 800;
+  line-height: 1.05;
+}
+.route-stop p {
+  max-width: 30rem;
+  color: var(--v-on-paper-2);
+  font-size: var(--t-lg);
+}
+.route-stop code {
+  padding: 1px 6px;
+  border: 1.5px solid var(--v-on-paper);
+  border-radius: 6px;
+  background: var(--v-paper-2);
+  color: var(--v-on-paper);
+}
+
+.paths {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: var(--s-5) var(--s-6);
+  align-items: center;
+  margin-top: var(--s-7);
+  padding: var(--s-5) var(--s-6);
+  border: var(--v-outline);
+  border-radius: var(--v-radius-lg);
+  background: var(--v-paper-2);
+  box-shadow: var(--v-shadow-lg);
+}
+.paths-title {
+  font-family: var(--v-font-heading);
+  font-size: var(--t-xl);
+  font-weight: 800;
+  line-height: 1.1;
+}
+.paths-list {
+  display: grid;
+  gap: 8px;
+}
+.paths-list div {
+  display: grid;
+  grid-template-columns: 6.5rem minmax(0, 1fr);
+  gap: 12px;
+  align-items: baseline;
+}
+.paths-list dt {
+  font-size: var(--t-sm);
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.paths-list dd {
+  min-width: 0;
+}
+.paths-list code {
+  overflow-wrap: anywhere;
+  font-size: var(--t-sm);
+  font-weight: 600;
+}
+
+/* ---- 3. What you get: one framed picture and a button per screen -------------- */
+.viewer {
+  display: grid;
+  grid-template-columns: minmax(0, 0.42fr) minmax(0, 1fr);
+  gap: clamp(16px, 2.4vw, 40px);
+  align-items: stretch;
+}
+/* The six buttons share the picture's height, so both columns end together. */
+.viewer-tabs {
+  display: grid;
+  grid-auto-rows: 1fr;
+  align-self: stretch;
+  gap: 12px;
+}
+.viewer-tab {
+  display: grid;
+  align-content: center;
+  gap: 2px;
+  min-height: 44px;
+  padding: 12px 16px 12px 18px;
+  border: var(--v-outline);
+  border-left-width: 10px;
+  border-radius: var(--v-radius-md);
+  background: var(--v-surface-1);
+  box-shadow: var(--v-shadow-sm);
+  color: var(--v-text);
+  text-align: left;
+  cursor: pointer;
+  transition: transform var(--dur-1) ease;
+}
+.viewer-tab strong {
+  font-family: var(--v-font-heading);
+  font-size: var(--t-xl);
+  font-weight: 800;
+  line-height: 1.1;
+}
+.viewer-tab span {
+  color: var(--v-text-2);
+  font-size: var(--t-sm);
+  line-height: 1.4;
+}
+.viewer-tab:hover {
+  background: var(--v-surface-2);
+  box-shadow: var(--v-shadow-pressed);
+  transform: translate(var(--v-press), var(--v-press));
+}
+.viewer-tab.is-on {
+  --focus: var(--v-accent);
+  border-color: var(--v-ink);
+  border-left-color: var(--v-accent);
+  background: var(--v-paper);
+  box-shadow: var(--v-shadow);
+  color: var(--v-on-paper);
+  transform: none;
+}
+.viewer-tab.is-on span {
+  color: var(--v-on-paper-2);
+}
+.viewer-frame {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  border: var(--v-outline);
+  border-radius: var(--v-radius-lg);
+  background: var(--v-ink);
+  box-shadow: var(--v-shadow-lg);
+}
+/* The beta label sits in the caption, beside the words it belongs to, so it
+   never covers the picture. */
+.viewer-note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+/* The picture takes whatever height the buttons beside it need, so both
+   columns end on one line. It is never squashed: if the frame is taller than
+   the picture's own shape it is cropped from the right. It fades out at the
+   bottom, so the cut reads as "more below". */
+.viewer-picture {
+  position: relative;
+  display: block;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  aspect-ratio: 1440 / 900;
+  border-radius: calc(var(--v-radius-lg) - var(--v-outline-w)) calc(var(--v-radius-lg) - var(--v-outline-w)) 0 0;
+  background: var(--v-bg);
+}
+.viewer-picture::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 0;
+  height: 48px;
+  background: linear-gradient(transparent, var(--v-ink));
+  opacity: 0.85;
+  pointer-events: none;
+}
+.viewer-shot {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: left top;
+}
+.viewer-cap {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 18px;
+  padding: 12px 16px;
+  border-top: var(--v-outline);
+  border-radius: 0 0 calc(var(--v-radius-lg) - var(--v-outline-w)) calc(var(--v-radius-lg) - var(--v-outline-w));
+  background: var(--v-surface-1);
+  color: var(--v-text);
+  font-size: var(--t-sm);
+  font-weight: 600;
+}
+
+.share {
+  display: grid;
+  grid-template-columns: minmax(0, 0.42fr) minmax(0, 1fr);
+  gap: clamp(16px, 2.4vw, 40px);
+  align-items: center;
+  margin-top: var(--s-section);
+}
+.share-copy {
+  display: grid;
+  gap: var(--s-4);
+  justify-items: start;
+}
+.share-copy p {
+  color: var(--v-text-2);
+  font-size: var(--t-lg);
+}
+.share-link {
+  display: block;
+  width: 100%;
+  max-width: 900px;
+  justify-self: center;
+  border-radius: 20px;
+}
+.share-card {
+  width: 100%;
+  border: var(--v-outline);
+  border-radius: 20px;
+  box-shadow: 8px 8px 0 var(--v-ink);
+  transform: rotate(1.5deg);
+}
+
+/* ---- 4. Co-op: a room band, a ledger of steps and the live ticket ------------- */
+/* Two climbers standing together, facing the Architect. The band keeps one
+   shape (so the room's floor is always where the feet go) and its figures
+   are sized from its own height (cqh). */
+.party {
+  --fig: 50cqh;
+  --ground: 22cqh;
+  --duel-gap: clamp(18px, 3vw, 56px);
+  position: relative;
+  aspect-ratio: 4.2 / 1;
+  margin-bottom: var(--s-7);
+  overflow: hidden;
+  container-type: size;
+  border: var(--v-outline);
+  border-radius: var(--v-radius-lg);
+  background: var(--room-flat) center 60% / cover no-repeat var(--room-deep);
+  box-shadow: var(--v-shadow-lg);
+}
+/* The pair stand shoulder to shoulder. */
+.party .actor--climber + .actor--climber {
+  margin-left: calc(var(--duel-gap) * -0.5);
+}
+.party .balloon {
+  --tail: 50%;
+  left: 60%;
+  transform: translateX(-50%);
+  animation: none;
+}
+
+.coop-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 0.75fr);
+  gap: clamp(24px, 4vw, 72px);
+  align-items: center;
+}
+.ledger {
+  display: grid;
+}
+.ledger li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+  padding-block: 18px;
+  border-bottom: 3px dashed var(--v-on-paper-2);
+}
+.ledger li:last-child {
+  border-bottom: 0;
+}
+.ledger-num {
+  display: grid;
+  place-items: center;
+  width: 54px;
+  height: 54px;
+  border: var(--v-outline);
+  border-radius: 50%;
+  background: var(--v-gold);
+  box-shadow: var(--v-shadow-sm);
+  font-family: var(--v-font-display);
+  font-size: 2rem;
+  font-weight: var(--v-display-weight);
+  line-height: 1;
+}
+.ledger h3 {
+  font-family: var(--v-font-heading);
+  font-size: clamp(1.375rem, 1.1rem + 0.7vw, 1.75rem);
+  font-weight: 800;
+  line-height: 1.1;
+}
+.ledger p {
+  max-width: 40rem;
+  margin-top: 4px;
+  color: var(--v-on-paper-2);
+  font-size: var(--t-lg);
+}
+
+/* The live count: a night-coloured ticket on the parchment, a touch askew. */
+.ticket {
+  --focus: var(--v-title);
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  padding: var(--s-5) var(--s-5) var(--s-6);
+  border: var(--v-outline);
+  border-radius: var(--v-radius-lg);
+  background: var(--v-bg);
+  box-shadow: 8px 8px 0 var(--v-ink);
+  color: var(--v-text);
+  text-align: center;
+  rotate: 1.5deg;
+}
+.ticket-head {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px;
+  border: var(--v-outline);
+  border-radius: var(--v-radius-pill);
+  background: var(--v-bg-deep);
+  font-size: var(--t-xs);
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.ticket-num {
+  color: var(--v-title);
+  font-family: var(--v-font-display);
+  font-size: clamp(5rem, 3rem + 7vw, 9.5rem);
+  font-weight: var(--v-display-weight);
+  line-height: 0.9;
+  text-shadow: 5px 5px 0 var(--v-ink);
+}
+.ticket-label {
+  font-family: var(--v-font-heading);
+  font-size: var(--t-xl);
+  font-weight: 800;
+  line-height: 1.1;
+}
+.ticket-rows {
+  display: grid;
+  width: 100%;
+  margin-block: var(--s-4);
+  border-top: 2px dashed var(--v-line);
+}
+.ticket-rows div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding-block: 9px;
+  border-bottom: 2px dashed var(--v-line);
+  font-size: var(--t-sm);
+}
+.ticket-rows dt {
+  color: var(--v-text-2);
+  font-weight: 600;
+  text-align: left;
+}
+.ticket-rows dd {
+  font-weight: 800;
+  white-space: nowrap;
+}
+.ticket-cta {
+  width: 100%;
+}
+.ticket.is-empty .ticket-num {
+  color: var(--v-text-3);
+}
+
+/* ---- Tablets and phones -------------------------------------------------------- */
+@media (max-width: 1099px) {
+  .viewer,
+  .share {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  /* The screen buttons become a swipe row of names above the picture. The
+     padding leaves room for a focus ring inside the scroll box. */
+  .viewer-tabs {
+    display: flex;
+    gap: 10px;
+    margin-inline: calc(var(--site-gutter) * -1);
+    padding: 8px var(--site-gutter) 10px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .viewer-tabs::-webkit-scrollbar {
+    display: none;
+  }
+  .viewer-tab {
+    flex: none;
+    align-content: center;
+    padding: 8px 16px;
+    border-left-width: var(--v-outline-w);
+  }
+  .viewer-tab span {
+    display: none;
+  }
+  .viewer-tab.is-on {
+    border-left-color: var(--v-ink);
+    background: var(--v-gold);
+  }
+  .share-card {
+    transform: none;
+  }
+}
+/* Small laptops: only the chosen screen keeps its description, so the six
+   buttons never stand taller than the picture. */
+@media (min-width: 1100px) and (max-width: 1439px) {
+  .viewer-tab:not(.is-on) span {
+    display: none;
+  }
+}
+/* Very wide: the three save paths sit in one row and fill their box. */
+@media (min-width: 1680px) {
+  .paths-list {
+    grid-template-columns: repeat(3, auto);
+    justify-content: space-evenly;
+    gap: 8px var(--s-6);
+  }
+  .paths-list div {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px;
+  }
+}
+@media (max-width: 699px) {
+  .viewer-picture {
+    aspect-ratio: 780 / 1280;
+  }
+}
+@media (max-width: 899px) {
+  /* The band shows the room at full height, so the floor sits lower in it. */
+  .party {
+    --fig: 44cqh;
+    --ground: 30cqh;
+    --duel-gap: 14px;
+    aspect-ratio: 1.5 / 1;
+    background-position: center bottom;
+  }
+  .route {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s-6);
+  }
+  .coop-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .ticket {
+    justify-self: center;
+    width: min(100%, 26rem);
+  }
+  /* The path runs down the page, behind the icons only, from each stop to
+     the next and no further: each stop keeps its icon in a column of its
+     own, with the number and words beside it. */
+  .route::before {
+    display: none;
+  }
+  .route-stop:not(:last-child)::before {
+    content: "";
+    position: absolute;
+    top: 48px;
+    left: 46px;
+    height: calc(100% + var(--s-6));
+    border-left: 4px dashed var(--v-on-paper);
+    opacity: 0.55;
+  }
+  .route-stop {
+    grid-template-columns: 96px minmax(0, 1fr);
+    align-items: start;
+    row-gap: 4px;
+  }
+  .route-icon {
+    grid-row: 1 / span 3;
+  }
+  .route-num,
+  .route-stop h3,
+  .route-stop p {
+    grid-column: 2;
+  }
+  .paths {
+    grid-template-columns: minmax(0, 1fr);
+    padding: var(--s-5);
+  }
+  .paths-list div {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px;
+  }
+  .paths .btn {
+    width: 100%;
+  }
+  .ticket {
+    rotate: none;
+  }
+}

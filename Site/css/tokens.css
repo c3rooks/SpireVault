@@ -1,0 +1,192 @@
+/* ==========================================================================
+   Design tokens for the landing page. The only place raw values live.
+
+   Colour, shape, type and motion values are copied from the app's
+   Web/styles/src/tokens/tokens.css (Inked Codex), so the landing page and the
+   app are one product. The two are separate deploys, so this is a copy, not
+   an import: when the app's tokens change, change these too.
+
+   A theme is one block on [data-theme]. Components read tokens and nothing
+   else; no raw colour appears outside this file.
+   ========================================================================== */
+:root,
+[data-theme="inked"] {
+  /* ---- Colour ----------------------------------------------------------- */
+  --v-ink: #0a0616;
+  --v-bg: #15102b;
+  --v-bg-deep: #0f0a22;
+  --v-surface-1: #231b4a;
+  --v-surface-2: #2e2460;
+  --v-line: #3b3080;
+  --v-text: #fff1cf;
+  --v-text-2: #b7abe0;
+  --v-text-3: #8d81bd;
+  --v-title: #ffd24a;
+  --v-accent: #ff7a2f;
+  --v-accent-hi: #ff9a5c;
+  --v-on-accent: #0a0616;
+  --v-gold: #ffd24a;
+  --v-win: #57e389;
+  --v-loss: #ff6470;
+  --v-info: #3fd9c4;
+  --v-violet: #b583ff;
+  --v-paper: #fff1cf;
+  --v-paper-2: #f1dcae;
+  --v-paper-3: #e4c98f;
+  --v-on-paper: #0a0616;
+  --v-on-paper-2: #4d3d6e;
+  --v-seat: #2c2266;
+
+  --v-char-ironclad: #f2553f;
+  --v-char-silent: #3fd97f;
+  --v-char-defect: #4fc6ff;
+  --v-char-regent: #ffc53a;
+  --v-char-necrobinder: #b583ff;
+  --v-char-fool: #f27ec0;
+
+  /* ---- Shape ------------------------------------------------------------ */
+  --v-outline-w: 2px;
+  --v-outline: var(--v-outline-w) solid var(--v-ink);
+  --v-shadow-sm: 3px 3px 0 var(--v-ink);
+  --v-shadow: 4px 4px 0 var(--v-ink);
+  --v-shadow-lg: 6px 6px 0 var(--v-ink);
+  --v-shadow-pressed: 1px 1px 0 var(--v-ink);
+  --v-press: 2px;
+  --v-radius-sm: 8px;
+  --v-radius-md: 12px;
+  --v-radius-lg: 16px;
+  --v-radius-pill: 999px;
+
+  /* ---- Type ------------------------------------------------------------- */
+  --v-font-display: "Grenze Gotisch", "Figtree", Georgia, serif;
+  --v-font-heading: "Grenze", "Grenze Gotisch", Georgia, serif;
+  --v-font-text: "Figtree", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --v-display-weight: 900;
+  --v-title-tilt: -2deg;
+  --v-title-shadow: 3px 3px 0 var(--v-ink);
+
+  /* Figures are inked in CSS: an outline on all four sides, then the hard
+     shadow. Same recipe as the app's header duel. */
+  --v-actor-ink:
+    drop-shadow(var(--v-outline-w) 0 0 var(--v-ink))
+    drop-shadow(calc(var(--v-outline-w) * -1) 0 0 var(--v-ink))
+    drop-shadow(0 var(--v-outline-w) 0 var(--v-ink))
+    drop-shadow(0 calc(var(--v-outline-w) * -1) 0 var(--v-ink))
+    drop-shadow(3px 3px 0 var(--v-ink));
+
+  --v-texture: 0.07;
+}
+
+/* ---- Rooms ---------------------------------------------------------------
+   The game's own combat rooms, cut from the installed game by
+   scripts/build-site-backdrops.mjs. One room is one block: its pictures, the
+   colours its mist and motes take, how far up the picture the figures' feet
+   go (--room-floor), and how much of the room's dark washes over it. */
+:root,
+[data-room="glory"] {
+  --room-base: url("/assets/hero/glory-a-base-v1.webp");
+  --room-mid: url("/assets/hero/glory-a-mid-v1.webp");
+  --room-front: url("/assets/hero/glory-a-front-v1.webp");
+  --room-flat: url("/assets/hero/glory-a-flat-v1.webp");
+  --room-flat-sm: url("/assets/hero/glory-a-flat-sm-v1.webp");
+  --room-deep: #0b0d2c;
+  --room-haze: #8fc4ff;
+  --room-accent: #bfeaff;
+  --room-floor: 0.3;
+  --room-wash: 6%;
+}
+[data-room="overgrowth"] {
+  --room-base: url("/assets/hero/overgrowth-a-base-v1.webp");
+  --room-mid: url("/assets/hero/overgrowth-a-mid-v1.webp");
+  --room-front: url("/assets/hero/overgrowth-a-front-v1.webp");
+  --room-flat: url("/assets/hero/overgrowth-a-flat-v1.webp");
+  --room-flat-sm: url("/assets/hero/overgrowth-a-flat-sm-v1.webp");
+  --room-deep: #06170b;
+  --room-haze: #a6e58c;
+  --room-accent: #e9ff8f;
+  --room-floor: 0.3;
+  --room-wash: 4%;
+}
+[data-room="falls"] {
+  --room-base: url("/assets/hero/falls-a-flat-v1.webp");
+  --room-mid: none;
+  --room-front: none;
+  --room-flat: url("/assets/hero/falls-a-flat-v1.webp");
+  --room-flat-sm: url("/assets/hero/falls-a-flat-sm-v1.webp");
+  --room-deep: #051c26;
+  --room-haze: #a8ecf5;
+  --room-accent: #dcfcff;
+  --room-floor: 0.2;
+  --room-wash: 4%;
+}
+[data-room="study"] {
+  --room-base: url("/assets/hero/study-a-flat-v1.webp");
+  --room-mid: none;
+  --room-front: none;
+  --room-flat: url("/assets/hero/study-a-flat-v1.webp");
+  --room-flat-sm: url("/assets/hero/study-a-flat-sm-v1.webp");
+  --room-deep: #170e16;
+  --room-haze: #f2cfa8;
+  --room-accent: #ffe7a0;
+  --room-floor: 0.3;
+  --room-wash: 0%;
+}
+[data-room="hive"] {
+  --room-base: url("/assets/hero/hive-c-base-v1.webp");
+  --room-mid: url("/assets/hero/hive-c-mid-v1.webp");
+  --room-front: url("/assets/hero/hive-c-front-v1.webp");
+  --room-flat: url("/assets/hero/hive-c-flat-v1.webp");
+  --room-flat-sm: url("/assets/hero/hive-c-flat-sm-v1.webp");
+  --room-deep: #1b0f08;
+  --room-haze: #ffd28a;
+  --room-accent: #ffe9a8;
+  --room-floor: 0.3;
+  --room-wash: 4%;
+}
+[data-room="underdocks"] {
+  --room-base: url("/assets/hero/underdocks-b-base-v1.webp");
+  --room-mid: url("/assets/hero/underdocks-b-mid-v1.webp");
+  --room-front: url("/assets/hero/underdocks-b-front-v1.webp");
+  --room-flat: url("/assets/hero/underdocks-b-flat-v1.webp");
+  --room-flat-sm: url("/assets/hero/underdocks-b-flat-sm-v1.webp");
+  --room-deep: #06161c;
+  --room-haze: #8fd9d2;
+  --room-accent: #c8fff4;
+  --room-floor: 0.3;
+  --room-wash: 4%;
+}
+
+/* Theme-invariant tokens. */
+:root {
+  /* Type scale on a 16px root. 12px is the smallest text on the page. */
+  --t-xs: 0.75rem;
+  --t-sm: 0.875rem;
+  --t-md: 1rem;
+  --t-lg: 1.125rem;
+  --t-xl: 1.375rem;
+  --t-2xl: clamp(1.75rem, 1.2rem + 1.6vw, 2.75rem);
+  --t-3xl: clamp(2.25rem, 1.35rem + 2.9vw, 4.25rem);
+  --t-hero: clamp(2.75rem, 1rem + 4.4vw, 6rem);
+
+  --s-1: 4px;
+  --s-2: 8px;
+  --s-3: 12px;
+  --s-4: 16px;
+  --s-5: 24px;
+  --s-6: 32px;
+  --s-7: 48px;
+  --s-8: 72px;
+  --s-section: clamp(56px, 3rem + 4vw, 112px);
+
+  --dur-1: 120ms;
+  --dur-2: 200ms;
+  --dur-3: 420ms;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-spring: cubic-bezier(0.2, 1.4, 0.4, 1);
+
+  /* The column fills the window on laptops and desktops; the cap only bites
+     on very wide monitors. */
+  --site-max: 1720px;
+  --site-gutter: clamp(16px, 2.4vw, 44px);
+  --nav-h: 64px;
+}

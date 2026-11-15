@@ -1,813 +1,548 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="inked" data-room="glory" data-climber="ironclad">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>SpireVault · Slay the Spire 2 stats and co-op companion</title>
-  <meta name="description" content="Drop your Slay the Spire 2 save folder, see your stats, find a co-op partner at your level. Live Discord countdowns, synced GO moments, no-mic-friendly matchmaking. Free, no signup, your saves stay on your machine." />
-  <meta name="theme-color" content="#0c0a14" />
+  <title>SpireVault · Slay the Spire 2 run stats and co-op partner finder</title>
+  <meta name="description" content="See your Slay the Spire 2 win rate, streaks and every run from your save folder, then find a co-op partner. Free, open source, fan-made." />
+  <meta name="theme-color" content="#0f0a22" />
 
-  <!-- Open Graph -->
-  <meta property="og:title" content="SpireVault · Slay the Spire 2 stats and co-op companion" />
-  <meta property="og:description" content="Drop your STS2 save folder. See your stats. Find a co-op partner at your level. Live Discord countdowns, synced GO, no-mic-friendly. Free, source on GitHub." />
-  <meta property="og:image" content="https://spirevault.app/assets/og.png?v=1" />
+  <meta property="og:title" content="SpireVault: your Slay the Spire 2 stats, and someone to climb with" />
+  <meta property="og:description" content="Point it at your save folder once. Win rate, streaks, best floor, every run. Sign in with Steam to find a co-op partner. Free and open source." />
+  <meta property="og:image" content="https://spirevault.app/assets/og-v2.jpg" />
+  <meta property="og:image:alt" content="SpireVault: a climber faces the Architect in a Slay the Spire 2 room, above a fanned hand of six stat cards." />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
   <meta property="og:type" content="website" />
   <meta property="og:url" content="https://spirevault.app" />
   <meta property="og:site_name" content="SpireVault" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:title" content="SpireVault · Slay the Spire 2 stats and co-op companion" />
-  <meta name="twitter:description" content="Drop your STS2 save folder. See your stats. Find a co-op partner at your level. Live Discord countdowns, synced GO, no-mic-friendly. Free, source on GitHub." />
-  <meta name="twitter:image" content="https://spirevault.app/assets/og.png?v=1" />
+  <meta name="twitter:title" content="SpireVault: your Slay the Spire 2 stats, and someone to climb with" />
+  <meta name="twitter:description" content="Point it at your save folder once. Win rate, streaks, best floor, every run. Sign in with Steam to find a co-op partner. Free and open source." />
+  <meta name="twitter:image" content="https://spirevault.app/assets/og-v2.jpg" />
+  <meta name="twitter:image:alt" content="SpireVault: a climber faces the Architect in a Slay the Spire 2 room, above a fanned hand of six stat cards." />
 
   <link rel="icon" type="image/svg+xml" href="/assets/vault-mark.svg" />
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Playfair+Display:wght@700;900&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/styles.css?v=17" />
+  <link rel="preload" href="/assets/fonts/grenze-gotisch-latin-var-v1.woff2" as="font" type="font/woff2" crossorigin />
+  <link rel="preload" href="/assets/fonts/figtree-latin-var-v1.woff2" as="font" type="font/woff2" crossorigin />
+  <link rel="preload" href="/assets/hero/glory-a-base-v1.webp" as="image" type="image/webp" media="(min-width: 1100px)" fetchpriority="high" />
+  <link rel="preload" href="/assets/hero/glory-a-flat-v1.webp" as="image" type="image/webp" media="(min-width: 700px) and (max-width: 1099px)" fetchpriority="high" />
+  <link rel="preload" href="/assets/hero/glory-a-flat-sm-v1.webp" as="image" type="image/webp" media="(max-width: 699px)" fetchpriority="high" />
+
+  <link rel="stylesheet" href="/css/tokens.css?v=20" />
+  <link rel="stylesheet" href="/css/base.css?v=20" />
+  <link rel="stylesheet" href="/css/components.css?v=20" />
+  <link rel="stylesheet" href="/css/hero.css?v=20" />
+  <link rel="stylesheet" href="/css/hero-small.css?v=20" />
+  <link rel="stylesheet" href="/css/sections.css?v=20" />
+  <link rel="stylesheet" href="/css/sections-lower.css?v=20" />
+  <script src="/boot.js?v=20"></script>
 </head>
 <body>
-  <!-- Background ornament -->
-  <div class="bg-glow" aria-hidden="true"></div>
-  <div class="bg-grid" aria-hidden="true"></div>
+  <a class="skip-link" href="#main">Skip to content</a>
 
   <header class="nav">
-    <a class="brand" href="/">
-      <img src="/assets/vault-mark.svg" alt="" class="brand-emblem" />
-      <span class="brand-mark">THE VAULT</span>
-    </a>
-    <nav class="nav-links">
-      <a href="#features">Features</a>
-      <a href="#runcoach" class="nav-link-news">
-        Run Coach
-        <span class="nav-link-beta" aria-hidden="true">BETA</span>
+    <div class="wrap nav-inner">
+      <a class="brand" href="/" aria-label="SpireVault home">
+        <img class="brand-emblem" src="/assets/art/emblem-96-v1.webp" alt="" width="40" height="40" />
+        <span class="brand-name">SpireVault</span>
       </a>
-      <a href="#coop">Co-op</a>
-      <a href="#install">Install</a>
-      <a href="https://app.spirevault.app/?tab=news#news-001" class="nav-link-news">
-        News
-        <span class="nav-link-dot" aria-hidden="true"></span>
-      </a>
-      <a href="https://github.com/c3rooks/SpireVault" target="_blank" rel="noopener">GitHub</a>
-    </nav>
+      <nav class="nav-links" aria-label="Sections">
+        <a href="#features">Stats</a>
+        <a href="#coop">Co&#8209;op</a>
+        <a href="#install">Download</a>
+        <a href="#faq">FAQ</a>
+        <a href="https://github.com/c3rooks/SpireVault" target="_blank" rel="noopener">GitHub</a>
+      </nav>
+      <a class="btn btn--primary" href="https://app.spirevault.app">Open SpireVault</a>
+    </div>
   </header>
 
-  <!-- Hero -->
-  <section class="hero">
-    <div class="hero-inner">
-      <div class="hero-copy">
-        <span class="eyebrow">Free · Open source · No signup</span>
-        <h1 class="hero-h1">
-          Your <span class="grad">Slay&nbsp;the&nbsp;Spire&nbsp;2</span> stats.<br class="hero-break" />
-          And a <span class="hero-noun">co&#8209;op&nbsp;partner</span> at your level.
-        </h1>
-        <p class="lede">
-          Drop your save folder in once. The Vault parses every <code>.run</code>
-          file and hands you back winrate, current streak, PB floor, per-character
-          splits, every fight filterable. Sign in with Steam and the same app
-          shows you who else is around right now looking for a co-op run. Free,
-          no signup, your saves stay on your machine. The actual game invite
-          still goes through Steam &mdash; we just help you find each other.
-        </p>
-        <div class="cta-row">
-          <a class="btn-primary" href="https://app.spirevault.app" id="web-cta">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15 15 0 0 1 4 10 15 15 0 0 1-4 10 15 15 0 0 1-4-10 15 15 0 0 1 4-10z"/></svg>
-            <span>Open in your browser</span>
-            <span class="version">free &middot; no install</span>
-          </a>
-          <a class="btn-ghost" href="#install" id="download-cta-mac">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M17.5 12.5c0-2.6 2.1-3.9 2.2-3.9-1.2-1.7-3-2-3.7-2-1.6-.2-3 .9-3.8.9-.8 0-2-.9-3.3-.9-1.7 0-3.2 1-4.1 2.5-1.7 3-.4 7.5 1.3 10 .8 1.2 1.8 2.6 3.1 2.5 1.2-.1 1.7-.8 3.2-.8s2 .8 3.3.8c1.4 0 2.3-1.2 3.1-2.4.7-1.1 1-1.7 1.6-3-.1 0-3-1.2-3-4.7zm-2.6-8.5c.7-.8 1.1-1.9 1-3-.9 0-2.1.6-2.7 1.4-.7.8-1.1 1.9-1 3 1 .1 2-.5 2.7-1.4z"/></svg>
-            macOS
-            <span class="version" id="hero-version">v0.9.9</span>
-          </a>
-          <a class="btn-ghost" href="#install" id="download-cta-win" title="Windows installer (Tauri NSIS, ~2 MB, x64)">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M0 3.449L9.75 2.1v9.451H0m10.949-9.602L24 0v11.549H10.949M0 12.6h9.75v9.451L0 20.699M10.949 12.6H24V24l-12.9-1.801"/></svg>
-            Windows
-            <span class="version" id="hero-version-win">v0.9.9</span>
-          </a>
-        </div>
-        <p class="trust-line" id="presence-line">
-          <span class="dot dot-pulse"></span>
-          <span id="presence-text">Checking who's around…</span>
-          <span class="trust-sep">·</span>
-          <a class="trust-link" href="https://github.com/c3rooks/SpireVault" target="_blank" rel="noopener">Open source on GitHub</a>
-        </p>
+  <main id="main">
+    <!-- ================= Hero: the fight screen, your stats as the hand ================= -->
+    <section class="hero" aria-labelledby="hero-title">
+      <div class="hero-scene" aria-hidden="true">
+        <div class="scene-plane scene-plane--base"></div>
+        <div class="scene-plane scene-plane--mid"></div>
+        <div class="scene-mist scene-mist--far"></div>
+        <div class="scene-plane scene-plane--front"></div>
+        <div class="scene-mist scene-mist--near"></div>
+        <div class="scene-motes"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+        <div class="scene-veil"></div>
       </div>
 
-      <div class="hero-art">
-        <div class="hero-glow" aria-hidden="true"></div>
-        <div class="hero-window" aria-hidden="false">
-          <div class="hero-window-chrome">
-            <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
-            <span class="hero-window-title">The Vault</span>
+      <div class="wrap hero-inner">
+        <div class="hero-copy">
+          <ul class="hero-chips" role="list" aria-label="At a glance">
+            <li class="chip">Free</li>
+            <li class="chip">Open source</li>
+            <li class="chip">Fan-made</li>
+            <li class="chip chip--plain hero-presence"><span class="dot dot--pulse" aria-hidden="true"></span><span id="presence-text">Checking who's around…</span></li>
+          </ul>
+          <h1 class="hero-title" id="hero-title">
+            <span class="is-gold">Your Slay the</span>
+            <span class="is-gold">Spire&nbsp;2 stats.</span>
+            <span class="is-paper">And someone</span>
+            <span class="is-paper">to climb with.</span>
+          </h1>
+          <p class="hero-lede">
+            Point SpireVault at your save folder once and get your win rate, streaks, best floor and every run, in under a minute. Want a co&#8209;op partner? Sign in with Steam and tap Play.
+          </p>
+          <div class="hero-cta">
+            <a class="btn btn--primary btn--lg" href="https://app.spirevault.app" id="web-cta">
+              <span class="btn-stack">
+                <span>Open SpireVault</span>
+                <span class="btn-sub">free · no install · no account</span>
+              </span>
+            </a>
+            <a class="btn btn--lg" href="https://app.spirevault.app/?ui=next" id="newlook-cta">
+              <span class="btn-stack">
+                <span>Try the new look</span>
+                <span class="btn-sub">the one in these pictures</span>
+              </span>
+              <span class="btn-tag">Beta</span>
+            </a>
           </div>
-          <img
-            src="/assets/screenshots/web-overview.png?v=5"
-            alt="The Vault Overview tab — compact painted banner, KPI strip with current streak / last-10 form / PB floor / fastest win, winrate hero, per-character breakdown"
-            class="hero-window-shot"
-            loading="eager"
-            decoding="async"
-            fetchpriority="high"
-          />
+          <p class="hero-meta">
+            <a href="#install-mac" id="download-cta-mac">macOS app <span class="version" id="hero-version"></span></a>
+            <span aria-hidden="true">·</span>
+            <a href="#install-win" id="download-cta-win">Windows app <span class="version" id="hero-version-win"></span></a>
+          </p>
         </div>
-        <div class="hero-floating-card" aria-hidden="true">
-          <div class="hfc-dot"></div>
-          <div class="hfc-text">
-            <strong id="hero-floating-count">Live presence</strong>
-            <span>refreshes every 30s</span>
-          </div>
-        </div>
-      </div>
-    </div>
-  </section>
 
-  <!-- Why this exists -->
-  <section class="origin">
-    <div class="origin-inner">
-      <span class="eyebrow">Why this exists</span>
-      <h2>Because finding someone to play with shouldn't take an hour.</h2>
-      <p>
-        Mega Crit's call to gate multiplayer through Steam friends is correct.
-        It stops random griefers and keeps the experience tight. But it
-        creates a chicken-and-egg problem: before you can play with someone,
-        you need to already know them. If you didn't bring an STS2-loving
-        friend to launch night, your only option today is the global Discord,
-        and good luck filtering that for "someone pushing A10 who's online
-        right now."
-      </p>
-      <p>
-        SpireVault sits between "I want to play co-op" and "I have a Steam
-        friend to play with." It doesn't host games, route invites, or
-        replace anything Mega Crit built. It just shows you who's around,
-        what tier they're at, and how to reach out. Steam takes it from
-        there &mdash; same Steam invite, same in-game experience.
-      </p>
-      <p class="origin-bona-fides">
-        The whole thing is open source. The desktop apps only read files
-        already on your computer. Co-op uses Steam OpenID, so your password
-        never touches the server. Every line of code is on
-        <a href="https://github.com/c3rooks/SpireVault" target="_blank" rel="noopener">GitHub</a>,
-        and the full threat model is in
-        <a href="https://github.com/c3rooks/SpireVault/blob/main/SECURITY.md" target="_blank" rel="noopener">SECURITY.md</a>.
-        Audit anything before you install.
-      </p>
-    </div>
-  </section>
-
-  <!-- Feature grid -->
-  <section id="features" class="features">
-    <div class="section-head">
-      <span class="eyebrow">What it does</span>
-      <h2>One app. Two products. Zero account required.</h2>
-    </div>
-    <div class="feature-grid">
-      <article class="feature-card">
-        <div class="feature-icon" data-color="gold">📜</div>
-        <h3>Drop your save folder. Done.</h3>
-        <p>Points at your STS2 save folder, parses every <code>.run</code> file in it, builds a private history out of the lot. Winrate, max ascension, character splits, every relic you've touched. No upload, no signup, nothing leaves your computer. Re-scans silently in the background every 30 seconds.</p>
-      </article>
-      <article class="feature-card">
-        <div class="feature-icon" data-color="ember">🎴</div>
-        <h3>Image-rich Share-Run cards</h3>
-        <p>One-click PNG of any run with the actual relic icons and card art baked in — not just text. Drop straight into Discord, Reddit, or X. Markdown export ships in the same modal.</p>
-      </article>
-      <article class="feature-card">
-        <div class="feature-icon" data-color="ascend">🤝</div>
-        <span class="feature-beta-pill feature-beta-pill--ascend">CO-OP LOBBY · DEFAULT</span>
-        <h3>A lobby finder that does what Discord can&rsquo;t</h3>
-        <p>The default surface. Verified co-op reputation on every host (server-derived tier + badges, formula not directly farmable). Daily Co-op Challenge with a deterministic seed everyone shares. Synced ready-up auto-advances all members to in-game at T-0. Live-updating Discord LFG posts via native <code>&lt;t:UNIX:R&gt;</code> tags. Share-card URL after the run. Classic Co-op is one toggle away if you prefer the old roster.</p>
-      </article>
-      <article class="feature-card">
-        <div class="feature-icon" data-color="silent">📊</div>
-        <h3>Real stats, not vibes</h3>
-        <p>Six-card KPI strip (current streak, last-10 form, PB floor, fastest win, this week, best streak), winrate-over-time chart, floor-death histogram. Filter chips on Recent Runs by character, outcome, ascension. Export to CSV anytime.</p>
-      </article>
-      <article class="feature-card">
-        <div class="feature-icon" data-color="defect">🔒</div>
-        <h3>Privacy you can read in the source</h3>
-        <p>Run tracking works fully offline. Co-op uses Steam OpenID, no password ever leaves Valve. The public landing-page presence count is anonymized server-side &mdash; only signed-in users see the full roster. Cloud sync is keyed to your Steam ID and survives a clean install on any device.</p>
-      </article>
-      <article class="feature-card">
-        <div class="feature-icon" data-color="regent">⚡</div>
-        <h3>Open source, end to end</h3>
-        <p>MIT licensed. macOS app, Windows app, web companion, the matchmaking Worker &mdash; all in one repo on GitHub. Read it, fork it, host your own. No hidden binary, no proprietary service.</p>
-      </article>
-      <!-- Run Coach feature card. Frame as Beta and bring-your-own-key
-           up-front so nobody clicks Install expecting a free hosted AI.
-           Lives at the bottom of the grid because it's the newest +
-           most experimental thing in the app. -->
-      <article class="feature-card feature-card--beta">
-        <div class="feature-icon" data-color="ember">🪄</div>
-        <span class="feature-beta-pill">BETA · macOS + Windows · BYO KEY</span>
-        <h3>Run Coach — ask what to play next</h3>
-        <p>A small floating window that sits over Slay the Spire 2, glances at your screen when you ask, and tells you the best card to take, relic to swap, or path to push. Streamer-safe by default (invisible to OBS, Discord, Game Bar). Bring your own OpenAI or Anthropic key; nothing goes through our servers. <a href="#runcoach">See it in detail&nbsp;→</a></p>
-      </article>
-    </div>
-  </section>
-
-  <!-- Run Coach (Beta) — overlay value prop and visual showcase.
-       Lives between the feature grid and the design showcase because
-       it's the most-asked-about thing post-v0.9.2 ship and deserves a
-       dedicated section. The two-column layout mirrors the way the
-       overlay actually works in practice: the small floating pill
-       sits at the top of your screen, and the chat card unfolds from
-       it on demand. -->
-  <section id="runcoach" class="runcoach">
-    <div class="runcoach-inner">
-      <div class="runcoach-copy">
-        <span class="eyebrow runcoach-eyebrow">
-          <span class="beta-pill">BETA</span>
-          Run Coach · macOS &amp; Windows
-        </span>
-        <h2>A second pair of eyes on your run, sitting right above the game.</h2>
-        <p class="runcoach-lede">
-          Run Coach is a small always-on-top panel that lives over Slay
-          the Spire 2 &mdash; same idea as Cluely for code interviews,
-          but pointed at deck-building decisions. Tap a chip, ask a
-          question. It reads your live save (character, HP, gold, deck,
-          relics, floor) and grabs the current frame of your screen,
-          then tells you exactly which card to pick, which boss relic to
-          grab, or whether to go left or right at the fork. Bring your
-          own OpenAI or Anthropic key. Nothing routes through our
-          servers.
-        </p>
-        <ul class="runcoach-bullets">
-          <li>
-            <strong>Two states, one panel.</strong>
-            A 260&times;40 status pill that shows your live run summary
-            (<code>Defect&nbsp;A6 · F12 · 57/75 · 145g</code>), and a
-            420&times;540 chat card that unfolds when you ask for help.
-            Drag either to position once; it survives relaunches.
-          </li>
-          <li>
-            <strong>Streamer-safe by default.</strong>
-            The window sets <code>NSWindow.sharingType=.none</code>, so
-            it's invisible to OBS, Discord, and QuickTime captures.
-            Toggle the switch under <em>Beta&nbsp;→&nbsp;Run&nbsp;Coach</em>
-            if you actually want it on stream.
-          </li>
-          <li>
-            <strong>Context-aware chips, not generic prompts.</strong>
-            <kbd>⌘⏎</kbd>&thinsp;Assist auto-detects your current situation
-            (combat, map, shop, event) and gives the right advice without you
-            picking a chip. The explicit chips
-            ("Card pick", "Boss relic", "Shop", "Path", "Event",
-            "Fight", "Plan") add structured context — <em>Path</em> in particular
-            reads the map screenshot and tells you the exact fork direction to
-            take (LEFT, RIGHT, or straight) with reasoning, not just a
-            generic "elites are next" observation.
-          </li>
-          <li>
-            <strong>Bring your own key, no middleman.</strong>
-            Pick OpenAI or Anthropic, paste your API key into the panel.
-            Calls go directly from your Mac to the chosen provider.
-            Spire&nbsp;Vault never sees your prompts, your screenshots,
-            or your key — and there's nothing to bill you for.
-          </li>
-          <li>
-            <strong>Not a mod. Not a memory hook.</strong>
-            Run Coach is a SwiftUI panel. It reads the same
-            <code>.run</code> JSON files that the run tracker reads.
-            It does not modify the game, inject DLLs, or touch process
-            memory. Mega Crit-friendly by construction.
-          </li>
-        </ul>
-        <div class="runcoach-cta-row">
-          <a class="btn-primary" href="#install-mac" id="rc-dmg-link">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M17.5 12.5c0-2.6 2.1-3.9 2.2-3.9-1.2-1.7-3-2-3.7-2-1.6-.2-3 .9-3.8.9-.8 0-2-.9-3.3-.9-1.7 0-3.2 1-4.1 2.5-1.7 3-.4 7.5 1.3 10 .8 1.2 1.8 2.6 3.1 2.5 1.2-.1 1.7-.8 3.2-.8s2 .8 3.3.8c1.4 0 2.3-1.2 3.1-2.4.7-1.1 1-1.7 1.6-3-.1 0-3-1.2-3-4.7z"/></svg>
-            <span>macOS .dmg</span>
-            <span class="version" id="rc-mac-version">v0.9.9</span>
-          </a>
-          <a class="btn-ghost" href="#install-win" id="rc-exe-link">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M0 3.449L9.75 2.1v9.451H0m10.949-9.602L24 0v11.549H10.949M0 12.6h9.75v9.451L0 20.699M10.949 12.6H24V24l-12.9-1.801"/></svg>
-            Windows
-            <span class="version" id="rc-win-version">v0.9.9</span>
-          </a>
-          <a class="btn-ghost" href="https://github.com/c3rooks/SpireVault#run-coach-beta" target="_blank" rel="noopener">
-            How it works
-          </a>
-        </div>
-      </div>
-
-      <div class="runcoach-art" aria-hidden="false">
-        <!-- Faux-game backdrop so the panel is shown in context.
-             Just a CSS gradient that hints at a dark fantasy game
-             frame — we don't ship STS2 art on the marketing site. -->
-        <div class="runcoach-stage">
-          <div class="runcoach-stage-glow"></div>
-          <div class="runcoach-stage-grain"></div>
-
-          <!-- Pill sitting at the top of the stage — shows the collapsed state -->
-          <div class="runcoach-pill-float">
-            <img
-              src="/assets/screenshots/overlay-pill.png?v=2"
-              alt="Run Coach collapsed pill"
-              class="runcoach-pill-img"
-            />
-          </div>
-
-          <!-- High-fidelity HTML/CSS recreation of the chat card.
-               Pixel-matched to the SwiftUI source: 420×540, 20pt
-               radius, brand-tinted glass background, two-stop bevel
-               border, and the same chip vocabulary the in-app
-               command palette uses. We render this in HTML rather
-               than ship a screenshot so the panel stays sharp at
-               every Retina density and lands instantly without an
-               extra image request. -->
-          <figure class="runcoach-chat-figure">
-            <div class="oc">
-              <header class="oc-header">
-                <div class="oc-mark" aria-hidden="true">
-                  <img src="/assets/vault-mark.svg" alt="" />
-                </div>
-                <div class="oc-title">
-                  <strong>Run Coach</strong>
-                  <span>Anthropic · claude-sonnet-4-6</span>
-                </div>
-                <span class="oc-beta">BETA</span>
-                <div class="oc-iconrow">
-                  <span class="oc-icon" title="Coach settings">
-                    <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M19.43 12.98c.04-.32.07-.65.07-.98s-.03-.66-.07-.98l2.11-1.65c.19-.15.24-.42.12-.64l-2-3.46c-.12-.22-.39-.31-.61-.22l-2.49 1c-.52-.4-1.08-.73-1.69-.98l-.38-2.65C14.46 2.18 14.25 2 14 2h-4c-.25 0-.46.18-.49.42l-.38 2.65c-.61.25-1.17.59-1.69.98l-2.49-1c-.23-.09-.49 0-.61.22l-2 3.46c-.13.22-.07.49.12.64l2.11 1.65c-.04.32-.07.65-.07.98s.03.66.07.98l-2.11 1.65c-.19.15-.24.42-.12.64l2 3.46c.12.22.39.31.61.22l2.49-1c.52.4 1.08.73 1.69.98l.38 2.65c.03.24.24.42.49.42h4c.25 0 .46-.18.49-.42l.38-2.65c.61-.25 1.17-.59 1.69-.98l2.49 1c.23.09.49 0 .61-.22l2-3.46c.12-.22.07-.49-.12-.64l-2.11-1.65zM12 15.5c-1.93 0-3.5-1.57-3.5-3.5s1.57-3.5 3.5-3.5 3.5 1.57 3.5 3.5-1.57 3.5-3.5 3.5z"/></svg>
-                  </span>
-                  <span class="oc-icon" title="Collapse">
-                    <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="18 15 12 9 6 15"/></svg>
-                  </span>
-                  <span class="oc-icon" title="Open Vault">
-                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="6" width="13" height="13" rx="2"/><rect x="9" y="2" width="13" height="13" rx="2"/></svg>
-                  </span>
-                  <span class="oc-icon oc-icon-danger" title="End — disable overlay">
-                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="6" y1="6" x2="18" y2="18"/><line x1="6" y1="18" x2="18" y2="6"/></svg>
-                  </span>
-                </div>
-              </header>
-              <div class="oc-divider"></div>
-              <div class="oc-body">
-                <div class="oc-status">
-                  <span class="oc-status-emoji">⚡</span>
-                  <strong>Run Coach is ready.</strong>
-                </div>
-                <p class="oc-msg">
-                  Launch a Slay the Spire 2 run, then tap a chip below — Coach
-                  will read your save and give you specific advice.
-                </p>
-              </div>
-              <div class="oc-divider"></div>
-              <div class="oc-chips">
-                <button class="oc-chip oc-chip-primary">
-                  <span class="oc-chip-emoji">⚡</span>
-                  Assist
-                  <span class="oc-chip-shortcut">⌘⏎</span>
-                </button>
-                <button class="oc-chip"><span class="oc-chip-emoji">🎴</span>Card pick</button>
-                <button class="oc-chip"><span class="oc-chip-emoji">👑</span>Boss relic</button>
-                <button class="oc-chip"><span class="oc-chip-emoji">🛍</span>Shop</button>
-                <button class="oc-chip"><span class="oc-chip-emoji">🛣</span>Path</button>
-                <button class="oc-chip"><span class="oc-chip-emoji">❓</span>Event</button>
-                <button class="oc-chip"><span class="oc-chip-emoji">⚔</span>Fight</button>
-                <button class="oc-chip"><span class="oc-chip-emoji">📋</span>Plan</button>
-              </div>
-              <div class="oc-input">
-                <span class="oc-input-icon">
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
-                </span>
-                <span class="oc-input-text">Ask the Coach about your run…</span>
-                <span class="oc-input-send">
-                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
-                </span>
-              </div>
-              <div class="oc-footer">⌘⏎&nbsp;Assist · ⏎&nbsp;Send · Esc&nbsp;collapse</div>
+        <div class="hero-stage">
+          <div class="duel">
+            <div class="actor actor--climber">
+              <p class="balloon" id="hero-balloon">Up we go.</p>
+              <span class="actor-seat" aria-hidden="true"></span>
+              <span class="actor-art" id="hero-climber" role="img" aria-label="A climber from Slay the Spire 2"></span>
+              <span class="actor-shadow" aria-hidden="true"></span>
             </div>
-            <figcaption>Chat card · unfolds from the pill on demand</figcaption>
-          </figure>
+            <div class="actor actor--boss">
+              <span class="actor-art" role="img" aria-label="The Architect, a boss from Slay the Spire 2"></span>
+              <span class="actor-shadow" aria-hidden="true"></span>
+            </div>
+          </div>
+
+          <span class="tag hand-tag">Sample data</span>
+          <ul class="hand" role="list" aria-label="Your hand: six headline stats, shown on sample data">
+            <li class="stat-card" data-tone="loss">
+              <span class="stat-orb" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M13 2 4 14h6l-1 8 9-12h-6z"/></svg></span>
+              <span class="stat-band">Recent form</span>
+              <span class="stat-art"><span class="stat-value"><i class="stat-trend" aria-hidden="true"></i>20<small>%</small></span></span>
+              <span class="stat-text"><span>2W–8L · −28 vs. lifetime</span></span>
+            </li>
+            <li class="stat-card" data-tone="loss">
+              <span class="stat-orb" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2c1 4 5 5 5 10a5 5 0 0 1-10 0c0-2 1-3 2-4 0 2 1 3 2 3 0-3-1-5 1-9z"/></svg></span>
+              <span class="stat-band">Loss streak</span>
+              <span class="stat-art"><span class="stat-value">4</span></span>
+              <span class="stat-text"><span>4 in a row — reset and re-roll</span></span>
+            </li>
+            <li class="stat-card" data-tone="gold">
+              <span class="stat-orb" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor"><path d="m3 8 4 4 5-7 5 7 4-4-2 11H5z"/></svg></span>
+              <span class="stat-band">Best streak</span>
+              <span class="stat-art"><span class="stat-value">6<small>wins</small></span></span>
+              <span class="stat-text"><span>Set on <strong>Silent</strong></span></span>
+            </li>
+            <li class="stat-card" data-tone="violet">
+              <span class="stat-orb" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m3 17 6-6 4 4 8-8"/><path d="M15 7h6v6"/></svg></span>
+              <span class="stat-band">Best floor</span>
+              <span class="stat-art"><span class="stat-value">51</span></span>
+              <span class="stat-text"><span><strong>Ironclad</strong> at A9</span></span>
+            </li>
+            <li class="stat-card" data-tone="info">
+              <span class="stat-orb" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>
+              <span class="stat-band">Fastest win</span>
+              <span class="stat-art"><span class="stat-value is-long">25:01</span></span>
+              <span class="stat-text"><span><strong>Ironclad</strong> at A1</span></span>
+            </li>
+            <li class="stat-card" data-tone="loss">
+              <span class="stat-orb" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M9 3v4M15 3v4"/></svg></span>
+              <span class="stat-band">This week</span>
+              <span class="stat-art"><span class="stat-value">9<small>runs</small></span></span>
+              <span class="stat-text"><span>−7 vs. last week</span></span>
+            </li>
+          </ul>
         </div>
       </div>
-    </div>
-  </section>
+    </section>
 
-  <!-- Showcase -->
-  <section id="showcase" class="showcase">
-    <div class="section-head">
-      <span class="eyebrow">Looks the part</span>
-      <h2>Design that doesn't fight you.</h2>
-      <p class="section-sub">
-        Real captures from the web companion at
-        <a href="https://app.spirevault.app">app.spirevault.app</a>. Every
-        screenshot below is the actual app on sample data &mdash; including
-        the Share-Run card, which renders real relic icons and card art
-        straight into the canvas.
-      </p>
-    </div>
-
-    <!-- TODO: drop in product.webm here (5–15s autoplay-muted-loop, no
-         audio, no controls). Best candidate clip: the new victory
-         celebration over the Overview tab — confetti + character-tinted
-         edge flash when 1–3 new wins land. Slot it as the first figure
-         in the showcase rail with class "screenshot is-live
-         screenshot-video", or above the rail as a full-width hero
-         banner. Don't ship until the file actually exists in
-         Site/assets/screenshots/. -->
-
-    <div class="showcase-rail">
-      <figure class="screenshot is-live">
-        <img src="/assets/screenshots/web-overview.png?v=5" alt="Overview tab — six KPI cards (current streak, last-10 form, PB floor, fastest win, this week, best streak), winrate hero, highest-ascension panel" loading="lazy" />
-        <figcaption>Overview &middot; <strong>KPI strip, winrate hero, highest-ascension panel</strong></figcaption>
-      </figure>
-      <figure class="screenshot is-live">
-        <img src="/assets/screenshots/web-share.png?v=5" alt="Share-Run card with relic icons and final-deck card art rendered onto the canvas, character portrait, victory or defeat badge, SpireVault footer" loading="lazy" />
-        <figcaption>Share card &middot; <strong>relic icons + deck art baked in, paste into Discord</strong></figcaption>
-      </figure>
-      <figure class="screenshot is-live">
-        <img src="/assets/screenshots/web-run-detail.png?v=5" alt="Run detail modal — character portrait, full stats, every relic with its icon, every card in the final deck with its art" loading="lazy" />
-        <figcaption>Run detail &middot; <strong>every relic + every card in the final deck</strong></figcaption>
-      </figure>
-      <figure class="screenshot is-live">
-        <img src="/assets/screenshots/web-characters.png?v=5" alt="Characters tab — winrate cards for every STS2 character with run counts and per-character winrate trend" loading="lazy" />
-        <figcaption>Characters &middot; <strong>per-character winrate at a glance</strong></figcaption>
-      </figure>
-      <figure class="screenshot is-live">
-        <img src="/assets/screenshots/web-runs.png?v=5" alt="Recent Runs tab — filter chips by character, outcome, ascension; search; sortable run list" loading="lazy" />
-        <figcaption>Recent Runs &middot; <strong>filter chips, click any row to inspect</strong></figcaption>
-      </figure>
-      <figure class="screenshot is-live">
-        <img src="/assets/screenshots/web-coop-live.png?v=3" alt="Live capture of the Classic Co-op presence feed at app.spirevault.app" loading="lazy" />
-        <figcaption>Co-op feed &middot; <strong>live presence, signed in with Steam</strong></figcaption>
-      </figure>
-    </div>
-  </section>
-
-  <!-- Co-op explainer -->
-  <section id="coop" class="coop">
-    <div class="coop-inner">
-      <div class="coop-copy">
-        <span class="eyebrow">Co-op, demystified</span>
-        <h2>Find people. Then play with them.</h2>
-        <p>
-          STS2 multiplayer is friend-gated through Steam &mdash; no third-party tool can route
-          those invites, and we don't try. The Vault solves the actual problem: <em>finding
-          someone at your level who's around right now</em>.
-        </p>
-        <ol class="steps">
-          <li><span class="step-num">1</span><div><strong>Sign in with Steam.</strong> Official OpenID. Your password is typed into Steam&rsquo;s login page, never ours.</div></li>
-          <li><span class="step-num">2</span><div><strong>Quick Play, or host.</strong> Quick Play auto-matches you into the best open room. Hosting takes three taps: goal &amp; timing, party shape, review.</div></li>
-          <li><span class="step-num">3</span><div><strong>Bring Discord with you.</strong> One click copies a Discord LFG post that live-updates in your channel as the countdown ticks. Native <code>&lt;t:UNIX:R&gt;</code> timestamp tags &mdash; no edits, no bots.</div></li>
-          <li><span class="step-num">4</span><div><strong>Synced GO.</strong> Everyone in the lobby shares the same countdown. T-60s chime + browser notification (opt-in). T-0 launches Steam together.</div></li>
-        </ol>
-
-        <!-- v0.10.0 (May 26 2026): The Co-op Lobby is now the default
-             surface. Live Discord countdowns + synced GO + Campfire Log
-             are the three things Discord literally cannot do, and they
-             are the value prop. Classic Co-op is one toggle away. -->
-        <aside class="coop-beta-note">
-          <span class="coop-beta-note-pill">NEW &middot; DEFAULT</span>
-          <strong>Co-op Lobby v2 &mdash; the default now.</strong>
-          Host a room with a planned start, paste the Discord LFG post
-          into your channel, and watch the countdown live-update inside
-          Discord with no re-posts. Everyone in the lobby shares the
-          same GO chime at T-0. Quiet match toggle if you don&rsquo;t
-          want voice. The Campfire Log remembers who you played with so
-          repeat parties surface first. Prefer the old live-roster
-          layout? &ldquo;Switch to Classic Co-op&rdquo; is one click and
-          sticks for your browser.
-        </aside>
-      </div>
-      <aside class="coop-card" id="coop-card">
-        <header class="coop-card-head">
-          <div class="coop-card-status">
-            <span class="dot dot-pulse"></span>
-            <span class="coop-card-eyebrow">Live presence</span>
-          </div>
-          <span class="coop-card-tag">no signup</span>
+    <!-- ================= Import: the page's first job ================= -->
+    <section class="section section--paper import" id="import" aria-labelledby="import-title">
+      <div class="wrap">
+        <header class="section-head" data-reveal>
+          <span class="chip chip--gold">One-time setup · no sign-in needed</span>
+          <h2 id="import-title">Find your save folder once. That's the whole setup.</h2>
+          <p>SpireVault reads the <code>.run</code> files the game already writes after every run. It opens on sample data, so you can look around before you link anything.</p>
         </header>
 
-        <div class="coop-card-body">
-          <div class="big-num" id="presence-count">—</div>
-          <div class="big-label" id="presence-label">players signed up</div>
+        <ol class="route" role="list" data-reveal>
+          <li class="route-stop">
+            <img class="route-icon" src="/assets/art/map/combat-192-v1.webp" alt="" width="96" height="96" loading="lazy" decoding="async" />
+            <span class="route-num" aria-hidden="true">1</span>
+            <h3>Open SpireVault.</h3>
+            <p>Nothing to install, no account.</p>
+          </li>
+          <li class="route-stop">
+            <img class="route-icon" src="/assets/art/map/chest-192-v1.webp" alt="" width="96" height="96" loading="lazy" decoding="async" />
+            <span class="route-num" aria-hidden="true">2</span>
+            <h3>Click “Find my STS2 saves”.</h3>
+            <p>Pick your <code>SlayTheSpire2</code> folder, or drag it onto the page.</p>
+          </li>
+          <li class="route-stop">
+            <img class="route-icon" src="/assets/art/map/rest-192-v1.webp" alt="" width="96" height="96" loading="lazy" decoding="async" />
+            <span class="route-num" aria-hidden="true">3</span>
+            <h3>Done.</h3>
+            <p>Your runs stay saved on this device. Next visit, your dashboard is already there.</p>
+          </li>
+        </ol>
+
+        <div class="paths" data-reveal>
+          <h3 class="paths-title">Where your saves live</h3>
+          <dl class="paths-list">
+            <div><dt>Windows</dt><dd><code>%APPDATA%\SlayTheSpire2</code></dd></div>
+            <div><dt>macOS</dt><dd><code>~/Library/Application Support/SlayTheSpire2</code></dd></div>
+            <div><dt>Linux</dt><dd><code>~/.local/share/SlayTheSpire2</code></dd></div>
+          </dl>
+          <a class="btn btn--primary btn--lg" href="https://app.spirevault.app">Open SpireVault</a>
         </div>
-
-        <div class="coop-card-meta">
-          <div class="coop-card-meta-row">
-            <span>In&nbsp;STS2 right now</span>
-            <strong id="presence-ingame">—</strong>
-          </div>
-          <div class="coop-card-meta-row">
-            <span>Refresh interval</span>
-            <strong>30&nbsp;s</strong>
-          </div>
-          <div class="coop-card-meta-row">
-            <span>Sign-in</span>
-            <strong>Steam OpenID</strong>
-          </div>
-        </div>
-
-        <a class="coop-card-cta" href="https://app.spirevault.app">
-          Open the live feed
-          <span aria-hidden="true">→</span>
-        </a>
-      </aside>
-    </div>
-  </section>
-
-  <!-- Install -->
-  <section id="install" class="install">
-    <div class="section-head">
-      <span class="eyebrow">Install</span>
-      <h2>Three ways in. All free.</h2>
-      <p class="section-sub">
-        Pick your platform. macOS and Windows both have a native app today.
-        The web companion covers Linux, Chromebooks, and anywhere else with
-        a browser. Every surface shares the same co-op feed and the same
-        stats &mdash; sign in once, your runs sync across every device.
-      </p>
-    </div>
-    <div class="install-grid three">
-      <article class="install-card primary" id="install-mac">
-        <div class="install-os">
-          <svg width="32" height="32" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M17.5 12.5c0-2.6 2.1-3.9 2.2-3.9-1.2-1.7-3-2-3.7-2-1.6-.2-3 .9-3.8.9-.8 0-2-.9-3.3-.9-1.7 0-3.2 1-4.1 2.5-1.7 3-.4 7.5 1.3 10 .8 1.2 1.8 2.6 3.1 2.5 1.2-.1 1.7-.8 3.2-.8s2 .8 3.3.8c1.4 0 2.3-1.2 3.1-2.4.7-1.1 1-1.7 1.6-3-.1 0-3-1.2-3-4.7zm-2.6-8.5c.7-.8 1.1-1.9 1-3-.9 0-2.1.6-2.7 1.4-.7.8-1.1 1.9-1 3 1 .1 2-.5 2.7-1.4z"/></svg>
-          <div class="install-os-text">
-            <h3>Native macOS app</h3>
-            <p class="install-sub">Run tracker · co-op feed · Share-Run cards</p>
-          </div>
-        </div>
-        <ul class="feature-list">
-          <li>Reads your STS2 save folder, computes Vault stats locally</li>
-          <li>Live co-op feed with Steam + Discord reach-outs (Lobby Beta optional)</li>
-          <li>One-click PNG and Markdown share cards for any run</li>
-          <li>Run Coach (Beta) &mdash; opt-in, bring your own API key</li>
-          <li>In-app updates &middot; macOS 13+, Apple Silicon and Intel</li>
-        </ul>
-        <a class="btn-primary inline full-width" id="dmg-link" href="https://github.com/c3rooks/SpireVault/releases/latest">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
-          <span>Download .dmg</span>
-          <span class="version" id="install-version">v0.9.9</span>
-        </a>
-        <p class="install-meta">Ad-hoc signed. First launch: right-click → Open. Auto-updates from <code>Vault → Check for Updates…</code> after that.</p>
-      </article>
-
-      <article class="install-card" id="install-win">
-        <div class="install-os">
-          <svg width="32" height="32" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M0 3.449L9.75 2.1v9.451H0m10.949-9.602L24 0v11.549H10.949M0 12.6h9.75v9.451L0 20.699M10.949 12.6H24V24l-12.9-1.801"/></svg>
-          <div class="install-os-text">
-            <h3>Native Windows app</h3>
-            <p class="install-sub">Tauri 2 · system WebView2 · ~2 MB installer</p>
-          </div>
-        </div>
-        <ul class="feature-list">
-          <li>Same backend, same UI as the web companion &mdash; loads <code>app.spirevault.app</code> in a native window</li>
-          <li>Tauri 2 wrapper, uses Microsoft Edge WebView2 (already on Windows 11)</li>
-          <li>Co-op feed (Classic + Lobby Beta), Run Coach, Share-Run cards &mdash; full parity</li>
-          <li>Windows 10/11, x64 &middot; SmartScreen &ldquo;More info &rarr; Run anyway&rdquo; on first launch</li>
-        </ul>
-        <a class="btn-primary inline full-width alt" id="exe-link" href="https://github.com/c3rooks/SpireVault/releases/latest">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
-          <span>Download .exe</span>
-          <span class="version" id="install-version-win">v0.9.9</span>
-        </a>
-        <p class="install-meta">Unsigned for beta. First launch: SmartScreen → <em>More info</em> → <em>Run anyway</em>. Prefer no install? <a href="https://app.spirevault.app">app.spirevault.app</a> works on Windows today &mdash; same UI, same Steam sign-in.</p>
-      </article>
-
-      <article class="install-card" id="install-web">
-        <div class="install-os">
-          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15 15 0 0 1 4 10 15 15 0 0 1-4 10 15 15 0 0 1-4-10 15 15 0 0 1 4-10z"/></svg>
-          <div class="install-os-text">
-            <h3>Web companion</h3>
-            <p class="install-sub">Linux, Chromebook, anywhere with a browser</p>
-          </div>
-        </div>
-        <ul class="feature-list">
-          <li>Full run tracker &mdash; points at your STS2 folder, parses every <code>.run</code></li>
-          <li>KPI strip, winrate chart, Share-Run cards with real card art</li>
-          <li>Sign in with Steam &mdash; same identity, same live feed, same Lobby Beta</li>
-          <li>Cross-device sync &mdash; your stats follow you between Mac, Windows, browser</li>
-          <li>Zero install, zero download, works on Chromebooks and Linux</li>
-        </ul>
-        <a class="btn-primary inline full-width alt" href="https://app.spirevault.app">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 5l7 7-7 7"/></svg>
-          <span>Open in browser</span>
-        </a>
-        <p class="install-meta">No download. Chrome / Edge read your STS2 save folder directly via the File System Access API.</p>
-      </article>
-    </div>
-
-    <p class="install-foot">
-      Power user? <a href="https://github.com/c3rooks/SpireVault#build-it-yourself">Build from source</a>
-      with <code>git clone</code> + <code>make run</code> (macOS) or <code>cargo tauri build</code> (Windows).
-    </p>
-  </section>
-
-  <!-- Trust -->
-  <section class="trust" id="trust">
-    <div class="section-head">
-      <span class="eyebrow">Privacy &amp; trust</span>
-      <h2>You can audit every line.</h2>
-      <p class="section-sub">
-        Sign-in is Steam OpenID &mdash; the same flow Steam uses for every other
-        site. Your password never reaches our server. We store the minimum
-        required for matchmaking, and the entire codebase is on GitHub.
-      </p>
-    </div>
-    <div class="trust-grid">
-      <div>
-        <h4>What goes on the server</h4>
-        <ul>
-          <li>Your verified Steam ID, persona, and avatar URL (from the Steam Web API)</li>
-          <li>The status, note, and optional Discord handle <em>you</em> type into the app</li>
-          <li>A session token good for 30 days; sign-out drops it instantly</li>
-          <li><em>Optional:</em> your normalized run history, keyed to your Steam ID, only when you opt into cloud sync</li>
-        </ul>
       </div>
-      <div>
-        <h4>What stays on your machine</h4>
-        <ul>
-          <li>The raw STS2 save files (we read them; we never upload them)</li>
-          <li>Card-by-card pick-rate detail and per-run timing data</li>
-          <li>Anything at all when you haven't signed in for co-op</li>
-          <li>Your Discord chat, Steam friends list, anything Steam-account-adjacent that isn't Steam ID + persona + avatar</li>
-        </ul>
-      </div>
-    </div>
-    <div class="trust-cta">
-      <a class="btn-ghost" href="https://github.com/c3rooks/SpireVault" target="_blank" rel="noopener">View source on GitHub →</a>
-      <a class="btn-ghost" href="https://github.com/c3rooks/SpireVault/blob/main/SECURITY.md" target="_blank" rel="noopener">Read SECURITY.md →</a>
-    </div>
-  </section>
+    </section>
 
-  <!-- FAQ -->
-  <section class="faq" id="faq">
-    <div class="section-head">
-      <span class="eyebrow">FAQ</span>
-      <h2>Common questions.</h2>
-    </div>
-    <div class="faq-grid">
-      <details>
-        <summary>Is this affiliated with Mega Crit?</summary>
-        <p>No. SpireVault is an unofficial, fan-made companion. Mega Crit owns
-        Slay the Spire. We don't host games, route invites, or replace anything
-        they built — we just help players find each other before Steam takes over.</p>
-      </details>
-      <details>
-        <summary>What's the "Run Coach (Beta)" thing?</summary>
-        <p>Run Coach is an opt-in floating panel that sits on top of
-        Slay the Spire 2 &mdash; a 260&times;40 pill that collapses to
-        a 420&times;540 chat card. Ask it something and it grabs the
-        current frame of your screen, sends the question + the
-        screenshot to your chosen AI (OpenAI or Anthropic) using
-        <em>your own API key</em>, and shows you what the model says
-        back. That's it.</p>
-        <p>It's marked Beta on purpose and ships on both macOS and Windows.
-        <strong>What it doesn't do:</strong> modify the game, read game
-        memory, hook the process, talk to a Vault-hosted AI, or spend
-        money on your behalf. Nothing about Run Coach changes how runs
-        are tracked. The overlay is streamer-safe by default (hidden
-        from screen recordings via
-        <code>NSWindow.sharingType=.none</code>) &mdash; toggle it
-        under <em>Beta&nbsp;→&nbsp;Run&nbsp;Coach</em> if you do want
-        it on stream.</p>
-      </details>
-      <details>
-        <summary>What's the "Co-op Lobby Beta"?</summary>
-        <p>Classic Co-op is the live roster you've probably seen: sign
-        in with Steam, see who's around, fire a canned invite. The
-        Lobby Beta is the alternate path. You post the run you actually
-        want to play &mdash; character, ascension target, vibe &mdash;
-        and the page shows a board of Open Run Lobbies, a Best Matches
-        rail picked by the server, and a request-to-join flow with
-        accept / decline.</p>
-        <p>Classic stays the default. Flip the Lobby Beta on under the
-        <em>Beta</em> tab (or the in-tab toggle on the Co-op page),
-        flip it off whenever. Same Steam sign-in, same live presence
-        underneath, same Steam invite to start the actual game.</p>
-      </details>
-      <details>
-        <summary>Is this a mod? Could it get me banned?</summary>
-        <p><strong>No, it's not a mod.</strong> SpireVault doesn't modify
-        Slay the Spire 2, doesn't inject into the game process, doesn't load
-        DLLs or use ModTheSpire, and doesn't touch game memory. It only reads
-        the <code>.run</code> JSON files Slay the Spire 2 itself writes to your
-        save folder after each run — the same files you could open in any
-        text editor.</p>
-        <p>Run-history readers like this have existed for the original Slay
-        the Spire for years (Sky Diving, Mintotaur, etc.) and are universally
-        accepted by Mega Crit and the community. The macOS app has read-only
-        access to one folder. The web companion never touches your filesystem
-        at all.</p>
-      </details>
-      <details>
-        <summary>Is the Windows .exe the same as the Mac app?</summary>
-        <p>Same backend (Cloudflare Worker), same UI
-        (<code>app.spirevault.app</code> in a native window), same co-op feed,
-        same Run Coach panel. The native layer is Rust (Tauri 2) on Windows
-        and Swift on macOS, but every pixel the player sees and every API
-        call it makes is identical across both builds.</p>
-        <p>The Windows installer is a Tauri 2 wrapper around Microsoft Edge
-        WebView2, which is preinstalled on Windows 11 (and auto-installed on
-        Windows 10 by Microsoft Update). Result: a ~2&nbsp;MB NSIS installer
-        instead of the ~120&nbsp;MB Electron equivalent.</p>
-        <p>First-launch heads-up: ad-hoc signed builds trip SmartScreen&rsquo;s
-        &ldquo;More info &rarr; Run anyway&rdquo; prompt until the installer
-        earns reputation (~50 installs) &mdash; same energy as the macOS
-        &ldquo;right-click &rarr; Open&rdquo; step. Prefer not to install at
-        all? <a href="https://app.spirevault.app">app.spirevault.app</a> works
-        on Windows today with the same Steam sign-in.</p>
-      </details>
-      <details>
-        <summary>Do I need an account?</summary>
-        <p>For the run tracker, no &mdash; it works fully offline. For co-op
-        you sign in via Steam OpenID, which is Valve-hosted and never sees
-        your password. Sign out any time and your session disappears.</p>
-      </details>
-      <details>
-        <summary>What does it cost?</summary>
-        <p><strong>$0 to use.</strong> No tier, no premium, no donation
-        gate, no "supporter" perks dangled in front of free features. I
-        cover hosting (Cloudflare costs me a few dollars a month) and the
-        $14/year domain — that's the entire bill. It's MIT licensed, so
-        even if I disappear, anyone can fork the repo and keep it running
-        for themselves and their friends.</p>
-      </details>
-      <details>
-        <summary>Can I self-host my own copy?</summary>
-        <p>Yes, and the entire stack is designed for it. The marketing
-        site is a static page (any host works), the web companion is also
-        static, and the matchmaking server is a single Cloudflare Worker
-        with a KV namespace. The
-        <a href="https://github.com/c3rooks/SpireVault">repo</a>
-        includes a <code>Makefile</code> that deploys all three with
-        <code>wrangler</code>; bring your own Steam Web API key and
-        you're done. There's no hidden binary, no proprietary service,
-        nothing that only works on my domain.</p>
-      </details>
-      <details>
-        <summary>How does the co-op feed actually work?</summary>
-        <p>You sign in with Steam, set your status (Looking &middot; Playing &middot;
-        Idle), optionally add a Discord handle. Your client heartbeats your presence
-        every minute. The feed shows everyone heartbeating in the last few minutes,
-        with a button to open their Steam profile or copy their Discord. The actual
-        game session goes through Steam friends like normal.</p>
-        <p>If you opt into the Co-op Lobby Beta, the same presence layer is what
-        decides whether your posted lobby shows up in someone else's Open Run
-        Lobbies board. Drop offline, the lobby drops off the board.</p>
-      </details>
-      <details>
-        <summary>Can someone impersonate me?</summary>
-        <p>No. Every write to the server requires a signed Steam OpenID
-        verification — the server checks the signature with Valve directly.
-        Your session token can only be issued after that verification. Threat
-        model details in <a href="https://github.com/c3rooks/SpireVault/blob/main/SECURITY.md">SECURITY.md</a>.</p>
-      </details>
-      <details>
-        <summary>Why should I trust some random tool with my Steam account?</summary>
-        <p>You don't have to. Sign-in is Steam OpenID, which means your
-        password is typed into Steam's login page, not mine &mdash; the server
-        only ever sees the verified Steam ID Valve hands back. The
-        <a href="https://github.com/c3rooks/SpireVault" target="_blank" rel="noopener">whole stack is on GitHub</a>;
-        every outbound network call from the app is documented in
-        <a href="https://github.com/c3rooks/SpireVault/blob/main/SECURITY.md" target="_blank" rel="noopener">SECURITY.md</a>.
-        The desktop apps make zero network calls except to the matchmaking
-        server, and only when you're signed in. Read the code, build it
-        yourself, file an issue if something looks wrong.</p>
-      </details>
-    </div>
-  </section>
+    <!-- ================= What you get ================= -->
+    <section class="section section--night features" id="features" aria-labelledby="features-title">
+      <div class="wrap">
+        <header class="section-head" data-reveal>
+          <span class="chip">What you get</span>
+          <h2 id="features-title">Your numbers, drawn like the game.</h2>
+          <p>Everything here comes from your own save files. The pictures are the real app on sample data.</p>
+        </header>
 
-  <!-- Also building: Ascension Companion (iOS) — small cross-link, not a co-headliner -->
-  <section class="also" aria-label="Also from the same author">
-    <a class="also-card" href="https://apps.apple.com/us/app/ascension-companion/id6761977581" target="_blank" rel="noopener">
-      <div class="also-icon" aria-hidden="true">
-        <svg viewBox="0 0 24 24" fill="currentColor" width="22" height="22">
-          <path d="M16.365 1.43c0 1.14-.45 2.23-1.18 3.04-.78.86-2.06 1.52-3.07 1.45-.13-1.1.42-2.27 1.13-3.04.78-.85 2.16-1.5 3.12-1.45zM20.5 17.6c-.55 1.27-.81 1.84-1.51 2.97-.97 1.56-2.34 3.51-4.05 3.52-1.51.02-1.9-.99-3.95-.97-2.05.01-2.49 1-4 1-1.71 0-3.01-1.77-3.98-3.34C.32 17.2-.41 11.94 1.55 8.66c1.43-2.39 3.69-3.79 5.81-3.79 2.16 0 3.51 1.18 5.3 1.18 1.74 0 2.79-1.18 5.29-1.18 1.89 0 3.89 1.03 5.32 2.81-4.68 2.56-3.92 9.25-2.77 9.92z"/>
-        </svg>
+        <div class="viewer" id="showcase" data-reveal>
+          <div class="viewer-tabs" role="tablist" aria-label="Screens of the app">
+            <button class="viewer-tab is-on" type="button" role="tab" id="tab-overview" aria-selected="true" aria-controls="viewer-panel" data-shot="overview">
+              <strong>Overview</strong>
+              <span>Win rate in one ring. Six headline stats dealt as a hand.</span>
+            </button>
+            <button class="viewer-tab" type="button" role="tab" id="tab-characters" aria-selected="false" aria-controls="viewer-panel" tabindex="-1" data-shot="characters">
+              <strong>Characters</strong>
+              <span>Win rate and run count for every character you've played.</span>
+            </button>
+            <button class="viewer-tab" type="button" role="tab" id="tab-ascensions" aria-selected="false" aria-controls="viewer-panel" tabindex="-1" data-shot="ascensions">
+              <strong>Ascensions</strong>
+              <span>Every level as a spire: win rate, runs and your peak. Unreached levels stay unlit.</span>
+            </button>
+            <button class="viewer-tab" type="button" role="tab" id="tab-relics" aria-selected="false" aria-controls="viewer-panel" tabindex="-1" data-shot="relics">
+              <strong>Top relics</strong>
+              <span>Your best relics by win rate, on a podium with their real art.</span>
+            </button>
+            <button class="viewer-tab" type="button" role="tab" id="tab-cards" aria-selected="false" aria-controls="viewer-panel" tabindex="-1" data-shot="cards">
+              <strong>Cards</strong>
+              <span>The cards you take most often, and how those runs ended.</span>
+            </button>
+            <button class="viewer-tab" type="button" role="tab" id="tab-runs" aria-selected="false" aria-controls="viewer-panel" tabindex="-1" data-shot="runs">
+              <strong>Runs</strong>
+              <span>A Victory or Defeat stamp on every run. Filter them, or open one for its path, relics and deck.</span>
+            </button>
+          </div>
+
+          <div class="viewer-frame" id="viewer-panel" role="tabpanel" aria-labelledby="tab-overview">
+            <picture class="viewer-picture">
+              <source id="viewer-shot-phone" media="(max-width: 699px)" srcset="/assets/shots/overview-phone-780-v1.webp" width="780" height="1280" />
+              <img
+                class="viewer-shot"
+                id="viewer-shot"
+                src="/assets/shots/overview-1440-v1.webp"
+                srcset="/assets/shots/overview-960-v1.webp 960w, /assets/shots/overview-1440-v1.webp 1440w, /assets/shots/overview-1920-v1.webp 1920w"
+                sizes="(max-width: 1099px) 100vw, 62vw"
+                alt="SpireVault Overview on sample data: a win-rate ring, run totals, and six stat cards fanned like a hand."
+                width="1440" height="900" loading="lazy" decoding="async" />
+            </picture>
+            <div class="viewer-cap">
+              <p class="viewer-note">
+                <span class="chip chip--violet">New look · beta</span>
+                <span>The app opens in the classic look until you switch.</span>
+              </p>
+              <a class="btn btn--paper" href="https://app.spirevault.app/?ui=next">Try the new look</a>
+            </div>
+          </div>
+        </div>
+
+        <div class="share" data-reveal>
+          <div class="share-copy">
+            <h3>Share it.</h3>
+            <p>One click makes a PNG of any run with the real relic icons and card art baked in. Markdown too, and CSV export for the lot.</p>
+            <span class="tag">Sample run</span>
+          </div>
+          <a class="share-link" href="/assets/share/share-sample-2400-v1.webp" aria-label="Open the sample share card at full size">
+            <img class="share-card" src="/assets/share/share-sample-1200-v1.webp" alt="Share card for one run: the character in a game room, a result stamp, relics and a fanned hand of cards." width="1200" height="630" loading="lazy" decoding="async" />
+          </a>
+        </div>
       </div>
-      <div class="also-body">
-        <span class="also-eyebrow">Also from me &mdash; for iOS</span>
-        <strong>Ascension Companion</strong>
-        <p>STS run tracker for iPhone and iPad. The Vault parsing library feeds its stats tab. On the App Store now.</p>
+    </section>
+
+    <!-- ================= Co&#8209;op ================= -->
+    <section class="section section--paper coop" id="coop" aria-labelledby="coop-title">
+      <div class="wrap">
+        <header class="section-head" data-reveal>
+          <span class="chip chip--gold">Co&#8209;op</span>
+          <h2 id="coop-title">Find someone to climb with.</h2>
+          <p>Slay the Spire 2 co&#8209;op goes through Steam friends, so you have to know someone before you can play with them. SpireVault matches you with whoever else is looking. The game itself still starts through Steam.</p>
+        </header>
+
+        <div class="party" data-room="overgrowth" data-lazy-art aria-hidden="true" data-reveal>
+          <div class="duel">
+            <div class="actor actor--climber" data-climber="silent">
+              <span class="actor-seat"></span>
+              <span class="actor-art"></span>
+              <span class="actor-shadow"></span>
+            </div>
+            <div class="actor actor--climber" data-climber="defect">
+              <p class="balloon">Three acts. Easy.</p>
+              <span class="actor-art"></span>
+              <span class="actor-shadow"></span>
+            </div>
+            <div class="actor actor--boss">
+              <span class="actor-art"></span>
+              <span class="actor-shadow"></span>
+            </div>
+          </div>
+        </div>
+
+        <div class="coop-grid">
+          <ol class="ledger" role="list" data-reveal>
+            <li>
+              <span class="ledger-num" aria-hidden="true">1</span>
+              <div><h3>Sign in with Steam.</h3><p>Official Steam OpenID. You type your password on Steam's page, never ours.</p></div>
+            </li>
+            <li>
+              <span class="ledger-num" aria-hidden="true">2</span>
+              <div><h3>Tap Play.</h3><p>Pick a climber, or Any, and your game version. If someone on your version is already waiting, you're matched at once.</p></div>
+            </li>
+            <li>
+              <span class="ledger-num" aria-hidden="true">3</span>
+              <div><h3>Nobody around? Get pinged.</h3><p>Turn pings on and you can close the tab. Your browser pings you when a player is looking; tap it to come back and play. If it can't ping, keep the tab open and listen for the chime.</p></div>
+            </li>
+            <li>
+              <span class="ledger-num" aria-hidden="true">4</span>
+              <div><h3>Add each other, then climb.</h3><p>The game only lets Steam friends join, so the party card gives everyone an Add button and a Launch button. Up to four players. Whoever waited longest hosts.</p></div>
+            </li>
+          </ol>
+
+          <aside class="ticket" id="coop-card" aria-label="Live count" data-reveal>
+            <header class="ticket-head">
+              <span class="dot dot--pulse" aria-hidden="true"></span>
+              <span>Live count</span>
+            </header>
+            <p class="ticket-num" id="presence-count">—</p>
+            <p class="ticket-label" id="presence-label">players signed up</p>
+            <dl class="ticket-rows">
+              <div><dt>In Slay the Spire 2 right now</dt><dd id="presence-ingame">—</dd></div>
+              <div><dt>Updates every</dt><dd>30 s</dd></div>
+              <div><dt>Sign-in</dt><dd>Steam OpenID</dd></div>
+            </dl>
+            <a class="btn btn--primary btn--lg ticket-cta" href="https://app.spirevault.app/?tab=coop">Play co&#8209;op</a>
+          </aside>
+        </div>
       </div>
-      <span class="also-arrow" aria-hidden="true">→</span>
-    </a>
-  </section>
+    </section>
+
+    <!-- ================= Your data ================= -->
+    <section class="section section--night trust" id="trust" aria-labelledby="trust-title">
+      <div class="wrap">
+        <header class="section-head" data-reveal>
+          <span class="chip">Privacy</span>
+          <h2 id="trust-title">Your saves stay on your machine.</h2>
+          <p>SpireVault only reads the run files the game already wrote. It isn't a mod, and every line of it is on GitHub.</p>
+        </header>
+
+        <div class="codex" data-reveal>
+          <article class="codex-page">
+            <h3>Stays with you</h3>
+            <ul role="list">
+              <li>Your raw save files. SpireVault reads them and never uploads them.</li>
+              <li>Your Steam password. Sign-in happens on Steam's own page.</li>
+              <li>Your Steam friends list. SpireVault never reads it.</li>
+            </ul>
+          </article>
+          <article class="codex-page">
+            <h3>Goes to the server, only after you sign in with Steam</h3>
+            <ul role="list">
+              <li>Your Steam ID, name and avatar, when you were last active, and whether Steam shows you in Slay the Spire&nbsp;2. Other signed-in players can see these.</li>
+              <li>Your co&#8209;op pick (climber and game version), a log of when you played, and, if you turn pings on, your browser's notification address.</li>
+              <li>A copy of your run history, so your other devices have it.</li>
+              <li>A session that ends within 30 days of your last visit. Signing out ends it at once and removes your ping address. Your run copy stays.</li>
+            </ul>
+          </article>
+        </div>
+        <p class="trust-note" data-reveal>Signed in or not, the app also sends anonymous usage events (which tab you open, how many files you import, your browser type) to the SpireVault server and to Google Analytics.</p>
+        <p class="trust-links" data-reveal>
+          <a class="btn" href="https://github.com/c3rooks/SpireVault" target="_blank" rel="noopener">View the source on GitHub</a>
+          <a class="btn" href="https://github.com/c3rooks/SpireVault/blob/main/SECURITY.md" target="_blank" rel="noopener">Read SECURITY.md</a>
+        </p>
+      </div>
+    </section>
+
+    <!-- ================= Get it ================= -->
+    <section class="section section--paper install" id="install" aria-labelledby="install-title">
+      <div class="wrap">
+        <header class="section-head" data-reveal>
+          <span class="chip chip--gold">Download</span>
+          <h2 id="install-title">Three ways in. All free.</h2>
+          <p>The browser version is the whole app. The desktop apps open that same app in their own window.</p>
+        </header>
+
+        <div class="ways" data-reveal>
+          <article class="way way--web" id="install-web">
+            <div class="way-text">
+              <h3>In your browser</h3>
+              <p>Nothing to download. Windows, macOS, Linux, Chromebooks.</p>
+            </div>
+            <a class="btn btn--primary btn--lg" href="https://app.spirevault.app">Open SpireVault</a>
+          </article>
+          <article class="way" id="install-mac">
+            <div class="way-text">
+              <h3>macOS app</h3>
+              <p>macOS 13 or later, Apple Silicon and Intel. First launch: right-click, then Open.</p>
+            </div>
+            <a class="btn btn--ink btn--lg" id="dmg-link" href="https://github.com/c3rooks/SpireVault/releases/latest">
+              <span>Download for macOS</span>
+              <span class="version" id="install-version"></span>
+            </a>
+          </article>
+          <article class="way" id="install-win">
+            <div class="way-text">
+              <h3>Windows app</h3>
+              <p>Windows 10 and 11, 64-bit, about a 2 MB installer. First launch: SmartScreen, More info, Run anyway.</p>
+            </div>
+            <a class="btn btn--ink btn--lg" id="exe-link" href="https://github.com/c3rooks/SpireVault/releases/latest">
+              <span>Download for Windows</span>
+              <span class="version" id="install-version-win"></span>
+            </a>
+          </article>
+        </div>
+        <p class="install-foot" data-reveal>
+          The desktop apps include Run Coach (beta, bring your own API key). <a href="#runcoach">What is that?</a>
+          Rather build it yourself? <a href="https://github.com/c3rooks/SpireVault#build-from-source">The source and the steps are on GitHub.</a>
+        </p>
+      </div>
+    </section>
+
+    <!-- ================= Questions ================= -->
+    <section class="section section--night faq" id="faq" aria-labelledby="faq-title">
+      <div class="wrap">
+        <header class="section-head" data-reveal>
+          <span class="chip">FAQ</span>
+          <h2 id="faq-title">Questions.</h2>
+        </header>
+
+        <div class="faq-list" data-reveal>
+          <details>
+            <summary>Is SpireVault affiliated with Mega Crit?</summary>
+            <p>No. It's an unofficial, fan-made companion. Mega Crit owns Slay the Spire. SpireVault doesn't host games, route invites or replace anything they built.</p>
+          </details>
+          <details>
+            <summary>Is it a mod? Could it get me banned?</summary>
+            <p>No, it's not a mod. It doesn't change the game, inject into the game process, load DLLs or read game memory. It only reads the <code>.run</code> files Slay the Spire 2 writes to your save folder after each run, the same files you could open in a text editor.</p>
+          </details>
+          <details>
+            <summary>Do I need an account?</summary>
+            <p>Not for stats. Co&#8209;op needs a Steam sign-in, which happens on Steam's page. Sign out any time and the session is gone.</p>
+          </details>
+          <details>
+            <summary>What does it cost?</summary>
+            <p>$0. No tier, no premium, no supporter perks. I cover hosting (a few dollars a month) and the $14 a year domain. It's MIT licensed, so even if I disappear, anyone can fork it and keep it running.</p>
+          </details>
+          <details>
+            <summary>Do new runs show up on their own?</summary>
+            <p>Where the browser lets a page keep reading a folder, SpireVault re-reads yours in the background. In most browsers it can't, so click Refresh and choose the folder again.</p>
+          </details>
+          <details>
+            <summary>Do my runs sync between devices?</summary>
+            <p>Only if you sign in with Steam. Then a copy of your run history is kept under your Steam ID, so a new device or a clean install gets it back. Without signing in, your runs stay on this device.</p>
+          </details>
+          <details>
+            <summary>Does SpireVault track me?</summary>
+            <p>A little, and never your save files. Signed in or not, the app sends anonymous usage events (which tab you open, how many files you import, your browser type) to the SpireVault server and to Google Analytics. Signing in adds what the privacy section lists, and nothing more.</p>
+          </details>
+          <details>
+            <summary>How does co&#8209;op work?</summary>
+            <p>Sign in with Steam, pick a climber and your game version (Stable or Beta), and tap Play. You're matched with whoever is waiting on the same version. If nobody is, you wait in line. A party holds up to four, and the player who waited longest hosts. The game only lets Steam friends join, so the party card has an Add button for each player. The run itself still starts in Steam.</p>
+          </details>
+          <details>
+            <summary>Do I have to keep the tab open while I wait?</summary>
+            <p>Not if your browser can send notifications. Turn pings on and SpireVault pings you when a player is looking, even with the tab closed. Where a browser can't, keep the tab open and you'll hear a chime.</p>
+          </details>
+          <details id="runcoach">
+            <summary>What is Run Coach (beta)?</summary>
+            <p>An opt-in floating panel in the macOS and Windows apps. Ask a question and it sends that, your current run (character, HP, gold, deck, relics) and a screenshot of the game to OpenAI or Anthropic, using your own API key. Run Coach talks straight to the provider: SpireVault's server never sees your question, your screenshot or your key, and nothing is billed by me. It doesn't touch the game. On macOS it is hidden from screen recordings by default; the Windows app does not hide it yet. <a href="https://github.com/c3rooks/SpireVault#run-coach-beta" target="_blank" rel="noopener">How it works</a>.</p>
+          </details>
+          <details>
+            <summary>Is the Windows app the same as the macOS app?</summary>
+            <p>Same app. Both open <code>app.spirevault.app</code> in their own window. The Windows installer is about 2 MB because it uses the WebView2 that ships with Windows 11. It is unsigned, so SmartScreen asks once.</p>
+          </details>
+          <details>
+            <summary>Can someone impersonate me?</summary>
+            <p>No. Anything saved under your Steam ID needs a session that is only issued after Valve has verified your Steam sign-in. The details are in <a href="https://github.com/c3rooks/SpireVault/blob/main/SECURITY.md" target="_blank" rel="noopener">SECURITY.md</a>.</p>
+          </details>
+          <details>
+            <summary>Why should I trust this with my Steam account?</summary>
+            <p>You don't have to. Your password goes to Steam; the server only gets the Steam ID that Valve hands back. The <a href="https://github.com/c3rooks/SpireVault" target="_blank" rel="noopener">whole stack is on GitHub</a>. Read it, build it yourself, file an issue if something looks wrong.</p>
+          </details>
+          <details>
+            <summary>Can I host my own copy?</summary>
+            <p>Yes. This site is static files, the web app adds a small Pages proxy, and the server is one Cloudflare Worker with a KV namespace and a Durable Object. The repo's Makefile deploys all three with wrangler. Bring your own Steam Web API key, plus VAPID keys if you want pings.</p>
+          </details>
+          <details>
+            <summary>What's the new look?</summary>
+            <p>A redesign of the app, in beta and off by default. Open <code>app.spirevault.app/?ui=next</code> to try it and <code>?ui=classic</code> to go back. Same runs, same stats, no re-import.</p>
+          </details>
+          <details>
+            <summary>Is there a phone version?</summary>
+            <p>The web app works on a phone. There's also <a href="https://apps.apple.com/us/app/ascension-companion/id6761977581" target="_blank" rel="noopener">Ascension Companion</a>, my separate run tracker for iPhone and iPad, on the App Store.</p>
+          </details>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= Closing call ================= -->
+    <section class="closing" data-room="underdocks" aria-labelledby="closing-title">
+      <div class="closing-band" data-lazy-art aria-hidden="true">
+        <div class="duel">
+          <div class="actor actor--climber" data-climber="fool">
+            <p class="balloon">One more floor.</p>
+            <span class="actor-art"></span>
+            <span class="actor-shadow"></span>
+          </div>
+        </div>
+      </div>
+      <div class="wrap closing-inner">
+        <h2 class="closing-title" id="closing-title">Deal your first hand.</h2>
+        <p>Free, in your browser, on your own save files.</p>
+        <a class="btn btn--primary btn--lg" href="https://app.spirevault.app">Open SpireVault</a>
+      </div>
+    </section>
+  </main>
 
   <footer class="footer">
-    <div class="footer-inner">
+    <div class="wrap footer-inner">
       <div class="footer-brand">
-        <img src="/assets/vault-mark.svg" alt="" />
-        <div>
-          <strong>SpireVault</strong>
-          <p>Built by <a href="https://coreycrooks.com" target="_blank" rel="noopener">Corey Crooks</a>. Free, open source, fan-made. Not affiliated with Mega Crit Games. <em>Slay the Spire</em> is a trademark of Mega Crit Games.</p>
-        </div>
+        <img class="brand-emblem" src="/assets/art/emblem-96-v1.webp" alt="" width="40" height="40" loading="lazy" />
+        <p><strong>SpireVault</strong> is free, open source and fan-made, built by <a href="https://coreycrooks.com" target="_blank" rel="noopener">Corey Crooks</a>. Not affiliated with Mega Crit Games. <em>Slay the Spire</em> is a trademark of Mega Crit Games.</p>
       </div>
-      <div class="footer-links">
+      <nav class="footer-links" aria-label="More">
         <a href="https://github.com/c3rooks/SpireVault">GitHub</a>
         <a href="https://github.com/c3rooks/SpireVault/blob/main/SECURITY.md">Security</a>
         <a href="https://github.com/c3rooks/SpireVault/blob/main/LICENSE">License (MIT)</a>
         <a href="https://github.com/c3rooks/SpireVault/issues/new">Report an issue</a>
-        <a href="https://app.spirevault.app">Web companion</a>
-        <a href="https://apps.apple.com/us/app/ascension-companion/id6761977581" target="_blank" rel="noopener">iOS · Ascension Companion</a>
+        <a href="https://app.spirevault.app/?tab=news">News</a>
+        <a href="https://app.spirevault.app">Web app</a>
+        <a href="https://apps.apple.com/us/app/ascension-companion/id6761977581" target="_blank" rel="noopener">Ascension Companion for iOS</a>
         <a href="https://coreycrooks.com" target="_blank" rel="noopener">coreycrooks.com</a>
-      </div>
+      </nav>
     </div>
   </footer>
 
-  <script src="/script.js?v=10"></script>
+  <script src="/script.js?v=20" defer></script>
 </body>
 </html>

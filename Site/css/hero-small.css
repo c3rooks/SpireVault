@@ -1,0 +1,188 @@
+/* ==========================================================================
+   The first screen below 1100px: the copy first, then the room as a band
+   with the duel in it, then the hand as a row. Loaded after hero.css, which
+   holds the shared pieces and the two-column desktop layout.
+   ========================================================================== */
+@media (max-width: 1099px) {
+  .hero {
+    --band-h: clamp(250px, 46vw, 420px);
+    /* The hand's scroll box is the cards plus 20px of its own padding (room
+       for the badges above and the shadows below), 8px off the bottom, with
+       12px of air under the band. */
+    --hand-h: calc(var(--card-h) + 40px);
+    --img-h: var(--band-h);
+    --fig: clamp(118px, calc(var(--band-h) * 0.46), 220px);
+    /* Six cards share the row when it is wide enough for them (about 900px
+       up); below that they keep 132px and the row swipes. */
+    --card-w: clamp(132px, calc((100vw - 2 * var(--site-gutter) - 60px) / 6), 164px);
+    --hand-bottom: 8px;
+    height: auto;
+  }
+  .hero-inner {
+    display: block;
+    height: auto;
+  }
+  .hero-copy {
+    padding-block: clamp(24px, 5vw, 44px) clamp(20px, 4vw, 32px);
+  }
+  .hero-lede {
+    max-width: 40rem;
+  }
+  .hero-cta {
+    width: 100%;
+  }
+  .hero-meta a {
+    min-height: 44px;
+  }
+  .hero-stage {
+    height: calc(var(--band-h) + var(--hand-h));
+    margin-inline: calc(var(--site-gutter) * -1);
+  }
+  /* The room is the band under the copy, above the hand. */
+  .hero-scene {
+    top: auto;
+    bottom: var(--hand-h);
+    height: var(--band-h);
+    border-block: var(--v-outline);
+  }
+  /* One flat picture instead of three planes. Tablets get the whole room;
+     the tall crop (made for a narrow band) is for phones only, below. */
+  .scene-plane--base {
+    background-image: var(--room-flat, var(--room-base));
+  }
+  .scene-plane--mid,
+  .scene-plane--front {
+    display: none;
+  }
+  .scene-veil {
+    background: none;
+  }
+  /* The duel stands at the right of the band, so the balloon (which reaches
+     left from the climber's head) always has the room it needs. */
+  .hero .duel {
+    bottom: calc(var(--hand-h) + var(--band-h) * var(--room-floor, 0.3));
+    justify-content: flex-end;
+    /* Nearer the middle the wider the screen; hard right on the narrowest
+       phones, where the balloon needs all the room to its left. */
+    padding-right: clamp(var(--site-gutter), calc((100vw - 330px) * 0.5), 20vw);
+  }
+  /* Here the figures are small and the Architect's staff is close: the
+     balloon's right edge is pinned a little past the climber's head and it
+     grows leftwards only, so a long line can neither touch the staff nor
+     leave the screen. */
+  .hero .duel .balloon {
+    --tail: calc(100% - 26px);
+    right: calc(100% - var(--climber-head, 0.57) * 100% - 26px);
+    left: auto;
+    max-width: min(15rem, 46vw);
+    transform: none;
+  }
+  .hand-tag {
+    right: var(--site-gutter);
+    bottom: calc(var(--hand-bottom) + var(--card-h) + 22px);
+    left: auto;
+  }
+  /* The hand becomes a swipe row: no fan, snap to card. */
+  .hand {
+    justify-content: flex-start;
+    gap: 12px;
+    padding: 12px var(--site-gutter) 8px;
+    overflow-x: auto;
+    scroll-padding-inline: var(--site-gutter);
+    scroll-snap-type: x mandatory;
+    scrollbar-width: none;
+  }
+  .hand::-webkit-scrollbar {
+    display: none;
+  }
+  .stat-card,
+  .stat-card:nth-child(n) {
+    --rot: 0deg;
+    --lift: 0px;
+    margin-inline: 0;
+    scroll-snap-align: start;
+  }
+  /* Spare room (the widest tablets) goes either side of the row. Auto
+     margins, not centring: a centred row that overflows cannot be scrolled
+     back to its first card. */
+  .stat-card:first-child {
+    margin-left: auto;
+  }
+  .stat-card:last-child {
+    margin-right: auto;
+  }
+}
+/* Tablets: the headline on the left, the words and buttons beside it, so the
+   width is used and the room comes into the first screen. */
+@media (min-width: 700px) and (max-width: 1099px) {
+  .hero-copy {
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-rows: auto 1fr auto auto;
+    column-gap: clamp(24px, 4vw, 56px);
+  }
+  .hero-chips {
+    grid-column: 1 / -1;
+  }
+  .hero-title {
+    grid-row: 2 / span 3;
+    grid-column: 1;
+    align-self: center;
+  }
+  .hero-lede,
+  .hero-cta,
+  .hero-meta {
+    grid-column: 2;
+  }
+  .hero-lede {
+    align-self: end;
+  }
+}
+/* Tablets held upright: all six cards in view, without their small print,
+   rather than five and a sliver of the sixth. */
+@media (min-width: 700px) and (max-width: 899px) {
+  .hero {
+    --card-w: calc((100vw - 2 * var(--site-gutter) - 60px) / 6);
+    --hand-h: calc(var(--card-w) * 1.08 + 40px);
+  }
+  .stat-card {
+    height: calc(var(--card-w) * 1.08);
+  }
+  .stat-text {
+    display: none;
+  }
+  .stat-art {
+    margin-bottom: 6%;
+  }
+  .hand-tag {
+    bottom: calc(var(--hand-bottom) + var(--card-w) * 1.08 + 22px);
+  }
+}
+@media (max-width: 899px) {
+  .hero-title {
+    line-height: 0.98;
+    text-shadow: 3px 3px 0 var(--v-ink);
+  }
+}
+@media (max-width: 699px) {
+  /* Phones: a slightly taller band with the figures a touch smaller, so a
+     balloon that wraps to two lines still sits inside the room. */
+  .hero {
+    --band-h: clamp(290px, 46vw, 420px);
+    --fig: clamp(118px, calc(var(--band-h) * 0.4), 220px);
+  }
+  .scene-plane--base {
+    background-image: var(--room-flat-sm, var(--room-flat, var(--room-base)));
+  }
+}
+@media (max-width: 599px) {
+  .hero-cta .btn {
+    flex: 1 1 100%;
+  }
+}
+/* The narrowest phones: the two download links sit on a line each, so the
+   dot between them would be left dangling. */
+@media (max-width: 359px) {
+  .hero-meta > [aria-hidden="true"] {
+    display: none;
+  }
+}

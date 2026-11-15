@@ -1,0 +1,307 @@
+{
+  "generatedBy": "scripts/build-site-backdrops.mjs",
+  "artVersion": 1,
+  "outDir": "Site/assets/hero",
+  "phoneCut": {
+    "share": 0.55,
+    "height": 720
+  },
+  "rooms": [
+    {
+      "room": "glory",
+      "take": "a",
+      "label": "Glory",
+      "width": 2048,
+      "height": 960,
+      "footRatio": 0.4813,
+      "flip": false,
+      "floorLuma": 0.17,
+      "grade": {
+        "saturation": 1.2,
+        "highlight": 0.6,
+        "median": 0.19,
+        "p50": 0.086,
+        "p98": 0.224,
+        "gain": 2.6,
+        "gamma": 1.11
+      },
+      "files": {
+        "base": {
+          "file": "glory-a-base-v1.webp",
+          "width": 2048,
+          "height": 960,
+          "bytes": 86130
+        },
+        "mid": {
+          "file": "glory-a-mid-v1.webp",
+          "width": 2048,
+          "height": 960,
+          "bytes": 104226
+        },
+        "front": {
+          "file": "glory-a-front-v1.webp",
+          "width": 2048,
+          "height": 960,
+          "bytes": 76618
+        },
+        "flat": {
+          "file": "glory-a-flat-v1.webp",
+          "width": 2048,
+          "height": 960,
+          "bytes": 125624
+        },
+        "flatSm": {
+          "file": "glory-a-flat-sm-v1.webp",
+          "width": 845,
+          "height": 720,
+          "bytes": 43306
+        }
+      }
+    },
+    {
+      "room": "hive",
+      "take": "c",
+      "label": "Hive",
+      "width": 2048,
+      "height": 960,
+      "footRatio": 0.4646,
+      "flip": false,
+      "floorLuma": 0.289,
+      "grade": {
+        "saturation": 1.2,
+        "highlight": 0.6,
+        "median": 0.19,
+        "p50": 0.11,
+        "p98": 0.165,
+        "gain": 2.6,
+        "gamma": 1.32
+      },
+      "files": {
+        "base": {
+          "file": "hive-c-base-v1.webp",
+          "width": 2048,
+          "height": 960,
+          "bytes": 67944
+        },
+        "mid": {
+          "file": "hive-c-mid-v1.webp",
+          "width": 2048,
+          "height": 960,
+          "bytes": 151954
+        },
+        "front": {
+          "file": "hive-c-front-v1.webp",
+          "width": 2048,
+          "height": 960,
+          "bytes": 127522
+        },
+        "flat": {
+          "file": "hive-c-flat-v1.webp",
+          "width": 2048,
+          "height": 960,
+          "bytes": 89440
+        },
+        "flatSm": {
+          "file": "hive-c-flat-sm-v1.webp",
+          "width": 845,
+          "height": 720,
+          "bytes": 30124
+        }
+      }
+    },
+    {
+      "room": "overgrowth",
+      "take": "a",
+      "label": "Overgrowth",
+      "width": 2048,
+      "height": 960,
+      "footRatio": 0.5167,
+      "flip": false,
+      "floorLuma": 0.22,
+      "grade": {
+        "saturation": 1.2,
+        "highlight": 0.6,
+        "median": 0.19,
+        "p50": 0.118,
+        "p98": 0.188,
+        "gain": 2.6,
+        "gamma": 1.4
+      },
+      "files": {
+        "base": {
+          "file": "overgrowth-a-base-v1.webp",
+          "width": 2048,
+          "height": 960,
+          "bytes": 40360
+        },
+        "mid": {
+          "file": "overgrowth-a-mid-v1.webp",
+          "width": 2048,
+          "height": 960,
+          "bytes": 69652
+        },
+        "front": {
+          "file": "overgrowth-a-front-v1.webp",
+          "width": 2048,
+          "height": 960,
+          "bytes": 109986
+        },
+        "flat": {
+          "file": "overgrowth-a-flat-v1.webp",
+          "width": 2048,
+          "height": 960,
+          "bytes": 71872
+        },
+        "flatSm": {
+          "file": "overgrowth-a-flat-sm-v1.webp",
+          "width": 845,
+          "height": 720,
+          "bytes": 25562
+        }
+      }
+    },
+    {
+      "room": "underdocks",
+      "take": "b",
+      "label": "Underdocks",
+      "width": 2048,
+      "height": 960,
+      "footRatio": 0.4208,
+      "flip": false,
+      "floorLuma": 0.123,
+      "grade": {
+        "saturation": 1.2,
+        "highlight": 0.6,
+        "median": 0.19,
+        "p50": 0.125,
+        "p98": 0.247,
+        "gain": 2.43,
+        "gamma": 1.4
+      },
+      "files": {
+        "base": {
+          "file": "underdocks-b-base-v1.webp",
+          "width": 2048,
+          "height": 960,
+          "bytes": 50522
+        },
+        "mid": {
+          "file": "underdocks-b-mid-v1.webp",
+          "width": 2048,
+          "height": 960,
+          "bytes": 142564
+        },
+        "front": {
+          "file": "underdocks-b-front-v1.webp",
+          "width": 2048,
+          "height": 960,
+          "bytes": 99436
+        },
+        "flat": {
+          "file": "underdocks-b-flat-v1.webp",
+          "width": 2048,
+          "height": 960,
+          "bytes": 103824
+        },
+        "flatSm": {
+          "file": "underdocks-b-flat-sm-v1.webp",
+          "width": 845,
+          "height": 720,
+          "bytes": 37436
+        }
+      }
+    },
+    {
+      "room": "study",
+      "take": "a",
+      "label": "The Architect's study",
+      "width": 3072,
+      "height": 1440,
+      "footRatio": 0.625,
+      "flip": true,
+      "floorLuma": 0.075,
+      "grade": {
+        "saturation": 1.2,
+        "highlight": 0.6,
+        "median": 0.19,
+        "p50": 0.09,
+        "p98": 0.957,
+        "gain": 1,
+        "gamma": 0.69
+      },
+      "files": {
+        "flat": {
+          "file": "study-a-flat-v1.webp",
+          "width": 3072,
+          "height": 1440,
+          "bytes": 120018
+        },
+        "flatSm": {
+          "file": "study-a-flat-sm-v1.webp",
+          "width": 845,
+          "height": 720,
+          "bytes": 21732
+        }
+      }
+    },
+    {
+      "room": "falls",
+      "take": "a",
+      "label": "Waterfall grotto",
+      "width": 2560,
+      "height": 1200,
+      "footRatio": 0.4479,
+      "flip": false,
+      "water": [
+        [
+          0.683,
+          0,
+          0.079,
+          0.413
+        ],
+        [
+          0.772,
+          0.133,
+          0.03,
+          0.271
+        ],
+        [
+          0.826,
+          0.098,
+          0.05,
+          0.315
+        ],
+        [
+          0.36,
+          0,
+          0.045,
+          0.177
+        ]
+      ],
+      "floorLuma": 0.116,
+      "grade": {
+        "saturation": 1.2,
+        "highlight": 0.6,
+        "median": 0.19,
+        "p50": 0.204,
+        "p98": 0.412,
+        "gain": 1.46,
+        "gamma": 1.37
+      },
+      "files": {
+        "flat": {
+          "file": "falls-a-flat-v1.webp",
+          "width": 2560,
+          "height": 1200,
+          "bytes": 85102
+        },
+        "flatSm": {
+          "file": "falls-a-flat-sm-v1.webp",
+          "width": 845,
+          "height": 720,
+          "bytes": 23104
+        }
+      }
+    }
+  ]
+}

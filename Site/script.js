@@ -1,303 +1,341 @@
-/* The Vault — landing page enhancements
- *   1. Sticky-nav border on scroll
- *   2. Live "X players online" count from the matchmaking server
- *   3. Hero + install download buttons resolved to the latest GitHub release
- *   4. Click-to-zoom lightbox on showcase screenshots
+/* SpireVault landing page.
+ *
+ *   1. The climber in the hero says one of their own lines
+ *   2. Live "players signed up" count from the matchmaking server
+ *   3. Download links and version pills from the latest GitHub release
+ *   4. The screenshot buttons under "Your numbers, drawn like the game"
+ *   5. Sections rise into place as they scroll in
+ *   6. Small keyboard helps: the hand's scroll row, and links that open an answer
+ *
+ * The page is complete without any of this: every element below has a
+ * sensible server-rendered default, and each feature fails on its own.
+ * boot.js (in <head>) has already rolled the climber and marked reduced
+ * motion before this runs.
  */
-
-const SERVER_URL = "https://vault-coop.coreycrooks.workers.dev";
-const GITHUB_REPO = "c3rooks/SpireVault";
-
-// ─── Sticky nav border ──────────────────────────────────────────────────────
-const nav = document.querySelector(".nav");
-if (nav) {
-  const onScroll = () => nav.classList.toggle("scrolled", window.scrollY > 4);
-  document.addEventListener("scroll", onScroll, { passive: true });
-  onScroll();
-}
-
-// ─── Lightbox for showcase screenshots ──────────────────────────────────────
-//
-// Click any .screenshot tile → full-screen view of the image with the
-// figcaption underneath. Esc / click-outside / × button all close it.
-// Restores body scroll lock and previously-focused element on close so
-// keyboard users land back where they were.
 (() => {
-  const tiles = document.querySelectorAll("#showcase .screenshot");
-  if (tiles.length === 0) return;
+  "use strict";
 
-  const lb = document.createElement("div");
-  lb.className = "lightbox";
-  lb.setAttribute("role", "dialog");
-  lb.setAttribute("aria-modal", "true");
-  lb.setAttribute("aria-hidden", "true");
-  lb.innerHTML = `
-    <button class="lightbox-close" type="button" aria-label="Close">&times;</button>
-    <figure class="lightbox-figure">
-      <img alt="" />
-      <figcaption></figcaption>
-    </figure>
-  `;
-  document.body.appendChild(lb);
+  const SERVER_URL = "https://vault-coop.coreycrooks.workers.dev";
+  const GITHUB_REPO = "c3rooks/SpireVault";
+  // Matches the app's own poll and the "updates every 30 s" the page claims.
+  const PRESENCE_POLL_MS = 30_000;
+  const SHOT_WIDTHS = Object.freeze([960, 1440, 1920]);
+  const SHOT_DEFAULT_WIDTH = 1440;
+  // Installers may only be linked from this repository's own release downloads.
+  const RELEASE_ASSET_PREFIX = `https://github.com/${GITHUB_REPO}/releases/download/`;
 
-  const lbImg     = lb.querySelector("img");
-  const lbCap     = lb.querySelector("figcaption");
-  const lbClose   = lb.querySelector(".lightbox-close");
-  const lbFigure  = lb.querySelector(".lightbox-figure");
+  const root = document.documentElement;
+  const byId = (id) => document.getElementById(id);
+  const setText = (el, text) => {
+    if (el) el.textContent = text;
+  };
+  const params = (() => {
+    try {
+      return new URLSearchParams(window.location.search);
+    } catch {
+      return new URLSearchParams();
+    }
+  })();
 
-  let lastFocus = null;
+  // ---- 1. The climber's line ---------------------------------------------------
+  // The same lines the app's header duel uses (Web/script.js CLIMBER_LINES).
+  const CLIMBER_NAMES = Object.freeze({
+    ironclad: "The Ironclad",
+    silent: "The Silent",
+    defect: "The Defect",
+    regent: "The Regent",
+    necrobinder: "The Necrobinder",
+    fool: "The Fool",
+  });
+  const ANY_CLIMBER_LINES = Object.freeze([
+    "Up we go.",
+    "One more floor.",
+    "Bring it.",
+    "I've seen worse.",
+    "I've trained for this.",
+    "Block first. Strike harder.",
+    "Show me the boss.",
+    "Three acts. Easy.",
+    "My deck is ready.",
+    "The Spire bleeds today.",
+    "Heart, I'm coming for you.",
+    "Neow's blessing was enough.",
+    "Ascension 9 or nothing.",
+  ]);
+  const OWN_LINES = Object.freeze({
+    ironclad: Object.freeze(["Anger. Steel. Repeat.", "Burning Blood keeps me going.", "Strength I trust.", "Bash first. Talk never.", "Block, anger, kill."]),
+    silent: Object.freeze(["From the shadows.", "Silent. Deadly. Done.", "Daggers first.", "Poisons stack. So do bodies.", "Catalyst on full poison. Watch."]),
+    defect: Object.freeze(["Channel. Defend. Destroy.", "Three orbs. One plan.", "Compute the kill.", "Lightning prefers your face.", "Frost and Focus. That's all."]),
+    regent: Object.freeze(["Bow to the deck.", "My court awaits.", "The crown is heavy. So is my hammer.", "Kneel or fall. Either works."]),
+    necrobinder: Object.freeze(["Bones remember.", "Death is a setback.", "I bound them. They bind back.", "The grave has a deck list."]),
+  });
 
-  function open(srcImg, caption) {
-    lastFocus = document.activeElement;
-    lbImg.src = srcImg.currentSrc || srcImg.src;
-    lbImg.alt = srcImg.alt || "";
-    lbCap.innerHTML = caption || "";
-    lb.classList.add("is-open");
-    lb.setAttribute("aria-hidden", "false");
-    document.documentElement.style.overflow = "hidden";
-    requestAnimationFrame(() => lbClose.focus());
+  /**
+   * The lines a climber may say: their own, or the shared ones for a climber
+   * with none of their own yet.
+   * @param {string} climber
+   * @returns {ReadonlyArray<string>}
+   */
+  function linesFor(climber) {
+    return OWN_LINES[climber] || ANY_CLIMBER_LINES;
   }
 
-  function close() {
-    lb.classList.remove("is-open");
-    lb.setAttribute("aria-hidden", "true");
-    document.documentElement.style.overflow = "";
-    lbImg.src = "";
-    if (lastFocus && lastFocus.focus) lastFocus.focus();
+  function speak() {
+    const climber = root.getAttribute("data-climber") || "";
+    const name = CLIMBER_NAMES[climber];
+    if (!name) return;
+    const lines = linesFor(climber);
+    // ?line=<n> pins the line (the screenshot checks use it).
+    const pinned = Number.parseInt(params.get("line") || "", 10);
+    const index = Number.isInteger(pinned) ? Math.abs(pinned) % lines.length : Math.floor(Math.random() * lines.length);
+    setText(byId("hero-balloon"), lines[index]);
+    const figure = byId("hero-climber");
+    if (figure) figure.setAttribute("aria-label", `${name}, a climber from Slay the Spire 2`);
   }
 
-  tiles.forEach((tile) => {
-    tile.addEventListener("click", (e) => {
-      // Don't hijack clicks on real anchor links inside captions.
-      if (e.target.closest("a")) return;
-      const img = tile.querySelector("img");
-      const cap = tile.querySelector("figcaption");
-      if (!img) return;
-      open(img, cap ? cap.innerHTML : "");
+  // ---- 2. Live count -----------------------------------------------------------
+  // The server's roster is everyone signed up, not everyone online right now,
+  // so the wording says "signed up".
+  /** @param {number} count @param {number} inGame */
+  function presenceCopy(count, inGame) {
+    if (count === 0) {
+      return { line: "Be the first to sign up.", count: "—", label: "no one signed up yet · be the first", inGame: "—" };
+    }
+    const plural = count === 1 ? "player signed up" : "players signed up";
+    return {
+      line: inGame > 0 ? `${count} signed up · ${inGame} currently in Slay the Spire 2` : `${count} ${plural}`,
+      count: String(count),
+      label: plural,
+      inGame: String(inGame),
+    };
+  }
+
+  const PRESENCE_DOWN = Object.freeze({
+    line: "Live count unavailable right now.",
+    count: "—",
+    label: "live count unavailable right now",
+    inGame: "—",
+  });
+
+  /** @param {{ line: string, count: string, label: string, inGame: string }} copy @param {boolean} isEmpty */
+  function showPresence(copy, isEmpty) {
+    setText(byId("presence-text"), copy.line);
+    setText(byId("presence-count"), copy.count);
+    setText(byId("presence-label"), copy.label);
+    setText(byId("presence-ingame"), copy.inGame);
+    const card = byId("coop-card");
+    if (card) card.classList.toggle("is-empty", isEmpty);
+  }
+
+  let presenceInFlight = false;
+
+  async function refreshPresence() {
+    // A hidden tab does not need the number, and two answers must not race.
+    if (document.hidden || presenceInFlight) return;
+    presenceInFlight = true;
+    try {
+      const response = await fetch(`${SERVER_URL}/presence`, { cache: "no-store" });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const roster = await response.json();
+      const people = Array.isArray(roster) ? roster : [];
+      const inGame = people.filter((person) => person && person.inSTS2).length;
+      showPresence(presenceCopy(people.length, inGame), people.length === 0);
+    } catch {
+      // The count is decoration; say so plainly and try again next tick.
+      showPresence(PRESENCE_DOWN, true);
+    } finally {
+      presenceInFlight = false;
+    }
+  }
+
+  // ---- 3. Latest release -------------------------------------------------------
+  // Truthfulness contract: a version pill shows a tag GitHub actually returned,
+  // and a download link only points at an installer that is attached to that
+  // release. Otherwise the server-rendered defaults stay: the links go to the
+  // releases page and the pills stay empty (hidden).
+  /**
+   * @param {{ assets?: Array<{ name?: string, browser_download_url?: string }> }} release
+   * @param {RegExp} pattern
+   * @returns {string | null}
+   */
+  function pickAsset(release, pattern) {
+    const assets = Array.isArray(release && release.assets) ? release.assets : [];
+    const hit = assets.find((asset) => {
+      const name = String((asset && asset.name) || "");
+      return pattern.test(name) && !/\.blockmap$/i.test(name);
     });
-    tile.setAttribute("tabindex", "0");
-    tile.setAttribute("role", "button");
-    tile.addEventListener("keydown", (e) => {
-      if (e.key === "Enter" || e.key === " ") {
-        e.preventDefault();
-        const img = tile.querySelector("img");
-        const cap = tile.querySelector("figcaption");
-        if (img) open(img, cap ? cap.innerHTML : "");
-      }
-    });
-  });
-
-  // Close on backdrop click (but not when clicking the figure itself)
-  lb.addEventListener("click", (e) => {
-    if (e.target === lb) close();
-  });
-  lbClose.addEventListener("click", close);
-  lbFigure.addEventListener("click", (e) => e.stopPropagation());
-  document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && lb.classList.contains("is-open")) close();
-  });
-})();
-
-// ─── Live presence count ────────────────────────────────────────────────────
-const presenceText      = document.getElementById("presence-text");
-const presenceCount     = document.getElementById("presence-count");
-const presenceLabel     = document.getElementById("presence-label");
-const presenceInGame    = document.getElementById("presence-ingame");
-const coopCard          = document.getElementById("coop-card");
-const heroFloatingCount = document.getElementById("hero-floating-count");
-
-async function refreshPresence() {
-  try {
-    const resp = await fetch(`${SERVER_URL}/presence`, { cache: "no-store" });
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    const list = await resp.json();
-    const count = Array.isArray(list) ? list.length : 0;
-    const inGame = Array.isArray(list)
-      ? list.filter((p) => p && p.inSTS2).length
-      : 0;
-
-    // Co-op card: count + label (with humane empty state)
-    if (presenceCount) presenceCount.textContent = count === 0 ? "—" : String(count);
-    if (presenceLabel) {
-      presenceLabel.textContent =
-        count === 0
-          ? "no one signed up yet · be the first"
-          : count === 1
-            ? "player signed up"
-            : "players signed up";
-    }
-    if (presenceInGame) {
-      presenceInGame.textContent = inGame === 0 && count === 0 ? "—" : String(inGame);
-    }
-    if (coopCard) coopCard.classList.toggle("is-empty", count === 0);
-
-    // Inline trust line under the install CTAs
-    if (presenceText) {
-      if (count === 0) {
-        presenceText.textContent = "Be the first to sign up.";
-      } else if (inGame > 0) {
-        presenceText.textContent =
-          `${count} signed up · ${inGame} currently in Slay the Spire 2`;
-      } else {
-        presenceText.textContent =
-          count === 1
-            ? "1 player signed up"
-            : `${count} players signed up`;
-      }
-    }
-
-    // Hero floating card
-    if (heroFloatingCount) {
-      heroFloatingCount.textContent =
-        count === 0
-          ? "Live presence"
-          : count === 1
-            ? "1 player signed up"
-            : `${count} players signed up`;
-    }
-  } catch {
-    if (presenceCount) presenceCount.textContent = "—";
-    if (presenceLabel) presenceLabel.textContent = "live count momentarily unavailable";
-    if (presenceInGame) presenceInGame.textContent = "—";
-    if (coopCard) coopCard.classList.add("is-empty");
-    if (presenceText) presenceText.textContent = "Live count momentarily unavailable.";
-    if (heroFloatingCount) heroFloatingCount.textContent = "Live presence";
+    const url = String((hit && hit.browser_download_url) || "");
+    return url.startsWith(RELEASE_ASSET_PREFIX) ? url : null;
   }
-}
-refreshPresence();
-// 30 s matches the web companion's poll cadence and the value we claim in
-// the live-presence card. The /presence endpoint is edge-cached for 15 s on
-// Cloudflare, so most of these polls don't even hit the worker.
-setInterval(refreshPresence, 30_000);
 
-// ─── Latest release auto-link ───────────────────────────────────────────────
-//
-// Resolves the hero "Download for macOS" + the install card's "Download .dmg"
-// to the freshest release on GitHub. Three cases handled:
-//   1. Release exists + .dmg asset attached  -> direct download
-//   2. Release exists, no .dmg               -> point at release page
-//   3. No release / repo not yet public      -> "Build from source" fallback
-//
-// Case 3 is what we hit before the v0.1 release is cut. Better to send the user
-// to a real working URL (the build-from-source section in the README) than a 404.
-const dmgLink      = document.getElementById("dmg-link");
-const exeLink      = document.getElementById("exe-link");
-const heroCTA      = document.getElementById("download-cta-mac");
-const heroWinCTA   = document.getElementById("download-cta-win");
-const heroVersion  = document.getElementById("hero-version");
-const heroVersionWin = document.getElementById("hero-version-win");
-const installVer   = document.getElementById("install-version");
-const installVerWin = document.getElementById("install-version-win");
-const rcMacVersion = document.getElementById("rc-mac-version");
-const rcWinVersion = document.getElementById("rc-win-version");
+  /** @param {string[]} ids @param {string} href */
+  function pointAt(ids, href) {
+    ids.forEach((id) => {
+      const link = byId(id);
+      if (!link) return;
+      link.setAttribute("href", href);
+      link.setAttribute("target", "_blank");
+      link.setAttribute("rel", "noopener");
+    });
+  }
 
-const BUILD_FROM_SOURCE_URL =
-  `https://github.com/${GITHUB_REPO}#build-from-source`;
-const RELEASES_URL = `https://github.com/${GITHUB_REPO}/releases`;
+  async function resolveLatestRelease() {
+    let release = null;
+    try {
+      const response = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/releases/latest`, {
+        headers: { accept: "application/vnd.github+json" },
+      });
+      if (response.ok) release = await response.json();
+    } catch {
+      release = null; // rate-limited or offline: keep the defaults
+    }
+    if (!release) return;
 
-/**
- * Pick a release asset by suffix pattern. Skips blockmap sidecars.
- *
- *   pickAsset(release, /\.dmg$/i)       → first .dmg
- *   pickAsset(release, /_x64-setup\.exe$/i) → Tauri NSIS installer
- */
-function pickAsset(release, pattern) {
-  const assets = release?.assets;
-  if (!Array.isArray(assets)) return null;
-  const hit = assets.find((a) => {
-    const name = String(a?.name || "");
-    return pattern.test(name) && !/\.blockmap$/i.test(name);
+    const version = typeof release.tag_name === "string" ? release.tag_name : "";
+    const dmg = pickAsset(release, /\.dmg$/i);
+    const exe = pickAsset(release, /_x64-setup\.exe$/i);
+
+    if (version) ["hero-version", "install-version"].forEach((id) => setText(byId(id), version));
+    if (dmg) pointAt(["dmg-link", "download-cta-mac"], dmg);
+    if (exe) {
+      pointAt(["exe-link", "download-cta-win"], exe);
+      if (version) ["hero-version-win", "install-version-win"].forEach((id) => setText(byId(id), version));
+    }
+  }
+
+  // ---- 4. The screenshot buttons -----------------------------------------------
+  const SHOT_ALT = Object.freeze({
+    overview: "SpireVault Overview on sample data: a win-rate ring, run totals, and six stat cards fanned like a hand.",
+    characters: "Characters tab on sample data: one banner per character with win rate and run count.",
+    ascensions: "Ascensions tab on sample data: a spire with one storey per ascension level, each with its win rate and run count, the highest one reached marked as your peak.",
+    relics: "Top Relics tab on sample data: the three best relics on a podium with their in-game art, and a ranked list below.",
+    cards: "Cards tab on sample data: the three most-picked cards on a podium, shown as real game cards, with pick counts and win rates.",
+    runs: "Recent Runs tab on sample data: filter chips for outcome, ascension and character above a list of runs, each with its floor, time and a Victory or Defeat stamp.",
   });
-  return hit?.browser_download_url || null;
-}
 
-/**
- * Resolve real download URLs + version from the latest GitHub release.
- *
- * Truthfulness contract:
- *   - The version pill shows the actual published tag (e.g. v0.9.8),
- *     never an aspirational future tag.
- *   - The Mac DMG link points at the actual .dmg asset on GitHub if
- *     one is attached to the latest release; falls back to the locally
- *     served /assets/The.Vault.dmg only when GitHub's API is
- *     unreachable (rate-limited browsers, offline previews).
- *   - The Windows .exe link is only upgraded to a real release URL
- *     when the latest release ACTUALLY has a `_x64-setup.exe` asset.
- *     If the release has no Windows installer (current state during
- *     Tauri build-out), the Windows CTAs keep their server-rendered
- *     "Coming soon" stub instead of redirecting to /releases/latest,
- *     which would 302 to a release page with no .exe attached — the
- *     credibility-bleed pattern we're explicitly avoiding.
- */
-async function resolveLatestRelease() {
-  let version = null;
-  let exeHref = null;
-  let dmgHref = null;
+  function wireViewer() {
+    const tabs = Array.from(document.querySelectorAll(".viewer-tab"));
+    const shot = byId("viewer-shot");
+    const phoneShot = byId("viewer-shot-phone");
+    const panel = byId("viewer-panel");
+    if (tabs.length === 0 || !shot || !panel) return;
 
-  try {
-    const resp = await fetch(
-      `https://api.github.com/repos/${GITHUB_REPO}/releases/latest`,
-      { headers: { accept: "application/vnd.github+json" } },
+    /** @param {HTMLElement} tab @param {boolean} moveFocus */
+    const select = (tab, moveFocus) => {
+      const name = tab.dataset.shot || "";
+      if (!SHOT_ALT[name]) return;
+      tabs.forEach((other) => {
+        const isOn = other === tab;
+        other.classList.toggle("is-on", isOn);
+        other.setAttribute("aria-selected", String(isOn));
+        other.tabIndex = isOn ? 0 : -1;
+      });
+      // Phones get the same tab as the app draws it on a phone.
+      if (phoneShot) phoneShot.setAttribute("srcset", `/assets/shots/${name}-phone-780-v1.webp`);
+      shot.setAttribute("srcset", SHOT_WIDTHS.map((w) => `/assets/shots/${name}-${w}-v1.webp ${w}w`).join(", "));
+      shot.setAttribute("src", `/assets/shots/${name}-${SHOT_DEFAULT_WIDTH}-v1.webp`);
+      shot.setAttribute("alt", SHOT_ALT[name]);
+      panel.setAttribute("aria-labelledby", tab.id);
+      if (moveFocus) tab.focus();
+    };
+
+    const STEP = Object.freeze({ ArrowDown: 1, ArrowRight: 1, ArrowUp: -1, ArrowLeft: -1 });
+    tabs.forEach((tab, index) => {
+      tab.addEventListener("click", () => select(tab, false));
+      tab.addEventListener("keydown", (event) => {
+        let next = -1;
+        if (event.key in STEP) next = (index + STEP[event.key] + tabs.length) % tabs.length;
+        else if (event.key === "Home") next = 0;
+        else if (event.key === "End") next = tabs.length - 1;
+        if (next < 0) return;
+        event.preventDefault();
+        select(tabs[next], true);
+      });
+    });
+  }
+
+  // ---- 5. Scroll reveals -------------------------------------------------------
+  function wireReveals() {
+    if (root.classList.contains("reduce-motion") || !("IntersectionObserver" in window)) return;
+    const targets = Array.from(document.querySelectorAll("[data-reveal]"));
+    if (targets.length === 0) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (!entry.isIntersecting) return;
+          entry.target.classList.add("is-in");
+          observer.unobserve(entry.target);
+        });
+      },
+      { threshold: 0, rootMargin: "0px 0px -10% 0px" },
     );
-    if (resp.ok) {
-      const release = await resp.json();
-      if (release?.tag_name) version = release.tag_name;
-      exeHref = pickAsset(release, /_x64-setup\.exe$/i);
-      dmgHref = pickAsset(release, /\.dmg$/i);
-    }
-  } catch {
-    /* keep server-rendered defaults */
+    // Only now may anything start hidden: the observer exists to show it.
+    root.classList.add("can-reveal");
+    targets.forEach((target) => observer.observe(target));
   }
 
-  // ── macOS: version pill + DMG link ──
-  if (version) {
-    if (heroVersion)    heroVersion.textContent    = version;
-    if (installVer)     installVer.textContent     = version;
-    if (rcMacVersion)   rcMacVersion.textContent   = version;
+  // ---- 5b. Rooms further down load when they come near ---------------------------
+  // boot.js holds their pictures back (html.lazy-art); this lets each one in.
+  const LAZY_ART_MARGIN = "900px 0px";
+  function wireLazyArt() {
+    const bands = Array.from(document.querySelectorAll("[data-lazy-art]"));
+    if (!("IntersectionObserver" in window)) {
+      root.classList.remove("lazy-art");
+      return;
+    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (!entry.isIntersecting) return;
+          entry.target.classList.add("is-near");
+          observer.unobserve(entry.target);
+        });
+      },
+      { rootMargin: LAZY_ART_MARGIN },
+    );
+    bands.forEach((band) => observer.observe(band));
   }
 
-  // Prefer the actual GitHub release asset over the local /assets copy
-  // so the version label and the bytes the user downloads agree.
-  const macHref = dmgHref || "/assets/The.Vault.dmg";
-  if (dmgLink) {
-    dmgLink.href = macHref;
-    if (macHref.startsWith("http")) { dmgLink.target = "_blank"; dmgLink.rel = "noopener"; }
-    else                            { dmgLink.removeAttribute("target"); }
-  }
-  if (heroCTA) {
-    heroCTA.href = macHref;
-    if (macHref.startsWith("http")) { heroCTA.target = "_blank"; heroCTA.rel = "noopener"; }
-    else                            { heroCTA.removeAttribute("target"); }
+  // ---- 6. Keyboard helps ---------------------------------------------------------
+  // On small screens the hand is a sideways scroll row with nothing focusable
+  // inside it: give it a tab stop while (and only while) it scrolls.
+  function wireHand() {
+    const hand = document.querySelector(".hand");
+    if (!hand) return;
+    const sync = () => {
+      if (hand.scrollWidth > hand.clientWidth + 1) hand.setAttribute("tabindex", "0");
+      else hand.removeAttribute("tabindex");
+    };
+    sync();
+    window.addEventListener("resize", sync, { passive: true });
   }
 
-  // ── Windows: upgrade the CTA only when a real .exe asset exists ──
-  // The SSR fallback (live download buttons hard-pinned to the current
-  // shipped tag) is correct for the typical case; this block swaps in
-  // the precise asset URL once the GitHub API confirms it. If a future
-  // release ships Mac-only by mistake, we leave the Windows pill at the
-  // SSR-rendered version so users don't see a brand-new tag advertised
-  // for an OS that didn't actually get a binary.
-  if (exeHref) {
-    if (exeLink) {
-      exeLink.href = exeHref;
-      exeLink.classList.remove("is-soon", "alt");
-      exeLink.target = "_blank";
-      exeLink.rel = "noopener";
-      const label = exeLink.querySelector("span:first-of-type");
-      if (label) label.textContent = "Download .exe";
+  // A link to an answer (#runcoach, or an old link from elsewhere) opens it.
+  function openLinkedAnswer() {
+    let id = "";
+    try {
+      id = decodeURIComponent(window.location.hash.slice(1));
+    } catch {
+      return; // a malformed fragment names nothing
     }
-    if (heroWinCTA) {
-      heroWinCTA.href = exeHref;
-      heroWinCTA.classList.remove("is-soon");
-      heroWinCTA.target = "_blank";
-      heroWinCTA.rel = "noopener";
-      heroWinCTA.removeAttribute("title");
-    }
-    if (heroVersionWin)  heroVersionWin.textContent  = version || "latest";
-    if (installVerWin)   installVerWin.textContent   = version || "latest";
-    if (rcWinVersion)    rcWinVersion.textContent    = version || "latest";
-    if (heroVersionWin)  heroVersionWin.classList.remove("version-soon");
-    if (installVerWin)   installVerWin.classList.remove("version-soon");
+    if (!id) return;
+    const target = document.getElementById(id);
+    if (target && target.tagName === "DETAILS") target.open = true;
   }
-}
-resolveLatestRelease();
+
+  // The checks ask which lines a climber may say.
+  window.SpireVaultSite = Object.freeze({ linesFor });
+
+  speak();
+  wireViewer();
+  wireReveals();
+  wireLazyArt();
+  wireHand();
+  openLinkedAnswer();
+  window.addEventListener("hashchange", openLinkedAnswer);
+  refreshPresence();
+  window.setInterval(refreshPresence, PRESENCE_POLL_MS);
+  // Catch up at once when the tab comes back, instead of waiting for the tick.
+  document.addEventListener("visibilitychange", refreshPresence);
+  resolveLatestRelease();
+})();
