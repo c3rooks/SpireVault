@@ -1,7 +1,6 @@
 # Co-op: one-tap Play
 
 **Status:** built 2026-11-14, replaces the lobby board, the Party Hub and "When are you free?".
-**Plan:** `/Users/corey/.claude/plans/new-ux-and-flow-smooth-rocket.md`
 
 ## Why
 

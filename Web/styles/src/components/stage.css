@@ -29,8 +29,8 @@
      the boss's head with little added height. */
   --duel-scale: 0.88;
   --duel-boss-right: calc(var(--stage-gutter) + 26px);
-  /* 0.67 (the boss's share of the stage height) x 399/620 (its art). */
-  --duel-boss-w: calc(var(--v-stage-h) * 0.4312 * var(--duel-scale));
+  /* 0.67 (the boss's share of the stage height) x 511/820 (its art). */
+  --duel-boss-w: calc(var(--v-stage-h) * 0.4175 * var(--duel-scale));
   --duel-gap: 44px;
   /* Right offset of the climber's right edge. */
   --duel-climber-right: calc(var(--duel-boss-right) + var(--duel-boss-w) + var(--duel-gap));
@@ -231,6 +231,11 @@
   color: var(--v-title);
   font-weight: 800;
 }
+/* The torches' count is wins: win green, as everywhere else. The spire's
+   "Highest A9" stays gold. */
+.v-torches .v-stage-cap b {
+  color: var(--v-win);
+}
 /* The nub: a corner of the chip pulled out toward the object. */
 .v-stage-cap::before {
   content: "";
@@ -350,10 +355,10 @@
 }
 /* Both figures answer the pointer the same way: the art lifts a little.
    Only the art moves, not the button, so the pointer never loses it. */
-.v-actor--climber:hover .v-actor-art,
-.v-actor--climber:focus-visible .v-actor-art,
-.v-actor--boss:hover .v-actor-art,
-.v-actor--boss:focus-visible .v-actor-art {
+.v-actor--climber:hover :is(.v-actor-art, .v-actor-glows),
+.v-actor--climber:focus-visible :is(.v-actor-art, .v-actor-glows),
+.v-actor--boss:hover :is(.v-actor-art, .v-actor-glows),
+.v-actor--boss:focus-visible :is(.v-actor-art, .v-actor-glows) {
   translate: 0 -3px;
 }
 /* The boss breathes too, from his feet, a beat slower. He does not bob on
@@ -367,6 +372,90 @@
 @keyframes v-breathe {
   50% {
     transform: scaleY(1.02);
+  }
+}
+/* The figure's own lights (the Architect's flame, the Defect's orb and core,
+   glowing eyes): added light in a layer laid exactly over the art, breathing
+   and lifting with it. A flame flickers; eyes and cores breathe. Positions
+   and colours come from the actor's staging in lib/ui/stage.js. */
+.v-actor-glows {
+  position: absolute;
+  z-index: 2;
+  inset: 0;
+  pointer-events: none;
+  transform-origin: 50% 100%;
+  animation: v-breathe 3.8s ease-in-out infinite;
+  transition: translate var(--v-dur-2) var(--v-ease-spring);
+}
+/* The climber's box can be wider than its art on touch screens (a fingertip
+   minimum); the layer keeps the art's own width, centred like the art. */
+.v-actor--climber .v-actor-glows {
+  --art-w: calc(var(--v-stage-h) * var(--climber-h) * var(--climber-aspect) * var(--duel-scale));
+  left: 50%;
+  right: auto;
+  width: var(--art-w);
+  margin-left: calc(var(--art-w) / -2);
+}
+.v-actor--boss .v-actor-glows {
+  transform-origin: 50% calc(var(--boss-foot, 1) * 100%);
+  animation-duration: 5.2s;
+}
+.v-actor-glow {
+  position: absolute;
+  left: var(--x);
+  top: var(--y);
+  width: calc(var(--r) * 200%);
+  aspect-ratio: 1;
+  translate: -50% -50%;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--c) 80%, #fff) 0 7%,
+    color-mix(in srgb, var(--c) 58%, transparent) 20%,
+    color-mix(in srgb, var(--c) 20%, transparent) 44%,
+    transparent 70%
+  );
+  mix-blend-mode: screen;
+  animation: v-glow-breathe var(--t) ease-in-out var(--d) infinite alternate;
+}
+.v-actor-glow[data-pulse="flicker"] {
+  animation: v-glow-flicker var(--t) linear var(--d) infinite;
+}
+@keyframes v-glow-breathe {
+  from {
+    opacity: 0.45;
+    transform: scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1.08);
+  }
+}
+@keyframes v-glow-flicker {
+  0%,
+  100% {
+    opacity: 0.8;
+    transform: scale(1);
+  }
+  17% {
+    opacity: 1;
+    transform: scale(1.08) translateY(-2%);
+  }
+  34% {
+    opacity: 0.7;
+    transform: scale(0.96);
+  }
+  52% {
+    opacity: 0.95;
+    transform: scale(1.05) translateY(-1%);
+  }
+  71% {
+    opacity: 0.74;
+    transform: scale(0.98);
+  }
+  86% {
+    opacity: 1;
+    transform: scale(1.06) translateY(-2%);
   }
 }
 /* Ground shadow: a flat ink ellipse under the feet, like the game's. */
@@ -383,13 +472,16 @@
 .v-actor--boss .v-actor-shadow {
   bottom: calc(var(--boss-sink) - 6px);
 }
-/* Seat: a drum of fallen column for the seated poses to rest on. */
+/* Seat: a drum of fallen column for the seated poses to rest on. Weathered
+   stone, only tinged with the theme's spire colour, so it belongs in every
+   painted scene rather than reading as a flat purple prop. */
 .v-actor-seat {
+  --seat-stone: color-mix(in oklab, var(--v-stage-spire) 38%, #2a2533);
   position: absolute;
   z-index: 0;
   border: var(--v-outline);
   border-radius: 50% / 24%;
-  background: var(--v-stage-spire);
+  background: linear-gradient(90deg, color-mix(in oklab, var(--seat-stone) 80%, #000) 0%, var(--seat-stone) 45%, color-mix(in oklab, var(--seat-stone) 70%, #000) 100%);
   box-shadow: var(--v-shadow-sm);
 }
 .v-actor-seat::before {
@@ -399,7 +491,7 @@
   height: 46%;
   border-bottom: var(--v-outline);
   border-radius: 50%;
-  background: color-mix(in srgb, var(--v-stage-spire) 70%, var(--v-text));
+  background: color-mix(in oklab, var(--seat-stone) 62%, #b9b2c8);
 }
 .v-actor-glyph {
   position: relative;
@@ -676,6 +768,8 @@
   .v-spire-win,
   .v-torch-flame,
   .v-actor-art,
+  .v-actor-glows,
+  .v-actor-glow,
   .v-actor-shadow,
   .v-bubble {
     animation: none;
@@ -684,6 +778,8 @@
 .prefer-reduced-motion .v-spire-win,
 .prefer-reduced-motion .v-torch-flame,
 .prefer-reduced-motion .v-actor-art,
+.prefer-reduced-motion .v-actor-glows,
+.prefer-reduced-motion .v-actor-glow,
 .prefer-reduced-motion .v-actor-shadow,
 .prefer-reduced-motion .v-bubble {
   animation: none;

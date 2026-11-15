@@ -1,29 +1,39 @@
 /* ==========================================================================
-   Stage scenery — the place the duel happens in, picked at random per page
-   load by lib/ui/stage-scenes.js (`.v-stage-bg[data-scene]`).
+   Stage scenery — the painted place the duel happens in. Each stage is dealt
+   its own scene, a new one whenever its tab is opened (lib/ui/stage-scenes.js
+   writes the markup; scripts/build-stage-scenes.mjs builds the pictures).
 
-   The place is one of the game's own combat rooms, kept as the depth planes
-   the game paints it in (scripts/build-stage-backdrops.mjs). Back to front:
-     1. base: the sky and the floor. Still.
-     2. mid: the distance. Drifts slowly from side to side.
-     3. far mist, between the distance and the near wall.
-     4. front: the near wall, rooted on the floor. Still.
-     5. the veil: the theme's own dark, heaviest behind the title and the
+   Back to front, inside the scene:
+     1. the plate: one painted, ink-lined panorama, sized to cover the header
+        and anchored at the duel's corner, carrying everything that belongs
+        to the picture (so it stays registered however the header crops it):
+          - shafts of light falling from above, fading in and out
+          - glows on the picture's own lights: the moon breathes, candles
+            flicker, reflections shimmer, an aurora sways
+          - the room's air, one layer per kind: dust, spores, fireflies,
+            embers, snow, stars
+        The camera eases slowly in and out of the plate, centred on the
+        duel's feet, so the ground under the figures stays put.
+     2. far mist, drifting across the room
+     3. the veil: the theme's own dark, heaviest behind the title and the
         toolbar, so the room recedes there and stays readable behind the fight
-     6. near mist over the floor, and the room's lights adrift in its air.
+   then, in front of the spire and behind the figures, near mist on the floor.
 
    The room moves on its own; nothing follows the pointer. Every motion is a
-   transform or an opacity, and all of it stops under reduced motion.
+   transform or an opacity, and all of it stops under reduced motion. Only
+   the shown tab animates: hidden tabs are display:none.
 
-   The veil starts from the theme's --v-stage-sky-1, pulled toward the
-   room's own darkest tone, so every theme keeps its mood and no room turns
-   muddy. The spire, torches, ledge and captions (the data) are not scenery
-   and look the same in every scene (components/stage.css).
+   The scene's own colours arrive inline on .v-stage-bg (--scene-deep,
+   --scene-haze, --scene-accent, --scene-veil), with how thick its mist is
+   (--scene-mist, 1 the usual). The veil starts from the theme's
+   --v-stage-sky-1, pulled toward the room's darkest tone, so every theme
+   keeps its mood. The spire, torches, ledge and captions (the data) are not
+   scenery and look the same in every scene (components/stage.css).
    ========================================================================== */
 
 .v-stage-bg {
-  /* Defaults: the theme's tokens untouched (also what shows until a
-     backdrop has loaded). */
+  /* Defaults: the theme's tokens untouched (also what shows until a scene's
+     picture has loaded). */
   --scene-sky-1: var(--v-stage-sky-1);
   --scene-sky-2: var(--v-stage-sky-2);
   --scene-sky-3: var(--v-stage-sky-3);
@@ -31,219 +41,221 @@
   --scene-accent: var(--v-stage-lit);
   /* The room's haze: what its mist is made of. */
   --scene-haze: #cdd6ff;
-  /* How strongly the veil covers the room: overall, behind the title, and
-     under the toolbar. */
-  --veil-all: 16%;
-  --veil-title: 84%;
-  --veil-top: 46%;
-  /* How far the distance drifts to each side, and how long one crossing takes. */
-  --sway: 22px;
-  --sway-time: 26s;
+  /* How strongly the veil covers the room: overall (the scene's own value),
+     behind the title, and under the toolbar. */
+  --veil-all: var(--scene-veil, 14%);
+  --veil-title: 80%;
+  --veil-top: 44%;
+  /* One slow push in and out of the picture. */
+  --camera-zoom: 1.06;
+  --camera-time: 46s;
 }
 
-/* A room is a deep tone (its own shadows), an accent (its own light) and a
+/* A scene is a deep tone (its own shadows), an accent (its own light) and a
    haze (its own air). */
 .v-stage-bg[data-scene] {
   --scene-sky-1: color-mix(in oklab, var(--v-stage-sky-1) 55%, var(--scene-deep));
   --scene-sky-2: color-mix(in oklab, var(--v-stage-sky-2) 45%, var(--scene-deep));
   --scene-sky-3: color-mix(in oklab, var(--v-stage-sky-3) 35%, var(--scene-deep));
 }
-.v-stage-bg[data-scene="glory"] {
-  --scene-deep: #0b1232;
-  --scene-accent: #7fe3ff;
-  --scene-haze: #9fdcff;
-}
-.v-stage-bg[data-scene="hive"] {
-  --scene-deep: #1a1705;
-  --scene-accent: #5cf0a8;
-  --scene-haze: #e9d86a;
-}
-.v-stage-bg[data-scene="overgrowth"] {
-  --scene-deep: #071d10;
-  --scene-accent: #e6f56a;
-  --scene-haze: #b9f0c4;
-}
-.v-stage-bg[data-scene="underdocks"] {
-  --scene-deep: #170f2e;
-  --scene-accent: #6ff0b0;
-  --scene-haze: #8ff0c8;
-  --veil-all: 24%;
-}
-.v-stage-bg[data-scene="study"] {
-  --scene-deep: #200f0b;
-  --scene-accent: #ffc27a;
-  --scene-haze: #ffcf9a;
-  --veil-all: 8%;
-}
-.v-stage-bg[data-scene="falls"] {
-  --scene-deep: #06222c;
-  --scene-accent: #b8f4ff;
-  --scene-haze: #d6fbff;
-  --veil-all: 26%;
-}
 
-/* ---- The room: planes ---------------------------------------------------------- */
+/* ---- The plate ------------------------------------------------------------------ */
 /* Full height of the scene, down to just under the ledge's top edge (the
-   ledge covers the cut). */
+   ledge covers the cut). A size container, so the plate can be sized from
+   the scene's own width and height. */
 .v-scene {
   position: absolute;
   inset: 0 0 calc(var(--v-ledge-h) - 12px);
   overflow: hidden;
+  container-type: size;
 }
-/* A plane is the image at the scene's height, laid from the duel's corner
-   leftwards. Every other copy is mirrored, so neighbours meet on the same
-   pixels and the room simply goes on. All planes share one box, so they
-   register exactly. */
-.v-scene-strip {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  flex-direction: row-reverse;
-}
+/* The picture at whichever is larger: the scene's width, or the width that
+   fills its height down to the scene's --focus line (the rest of the near
+   floor hangs below, cropped). Anchored bottom right, where the duel is. */
 .v-scene-plate {
-  position: relative;
-  flex: none;
-  height: 100%;
-  aspect-ratio: var(--plate-ratio, 4.876);
-  /* A pixel of overlap hides the hairline between fractional widths. */
-  margin-left: -1px;
-  background: var(--plate) center / 100% 100% no-repeat;
-}
-.v-scene-plate--mirror {
-  transform: scaleX(-1);
-}
-/* The extra copy of a drifting plane, just past the corner. */
-.v-scene-plate--lead {
+  --plate-w: max(100cqw, calc(100cqh * var(--plate-ratio) / var(--focus)));
   position: absolute;
-  top: 0;
-  left: 100%;
+  right: 0;
+  bottom: calc(var(--plate-w) / var(--plate-ratio) * (var(--focus) - 1));
+  width: var(--plate-w);
+  aspect-ratio: var(--plate-ratio);
+  /* The lights and shafts blend with the picture only, not the page. */
+  isolation: isolate;
+  /* The camera's still point: the duel's feet. */
+  transform-origin: 88% calc(var(--focus) * 100%);
+  animation: v-scene-camera var(--camera-time) ease-in-out calc(var(--camera-time) / -3) infinite alternate;
 }
-
-/* The distance drifts behind the near wall: what you see through an arch or
-   between two trunks slides, slowly, there and back. It starts mid-way, so
-   the first thing it does is move. */
-.v-scene-strip--mid {
-  animation: v-scene-sway var(--sway-time) ease-in-out calc(var(--sway-time) / -2) infinite alternate;
-}
-@keyframes v-scene-sway {
+@keyframes v-scene-camera {
   from {
-    transform: translate3d(calc(-1 * var(--sway)), 0, 0);
+    transform: scale(1);
   }
   to {
-    transform: translate3d(var(--sway), 0, 0);
+    transform: scale(var(--camera-zoom));
   }
 }
-
-/* ---- Falling water ------------------------------------------------------------- */
-/* A strip per fall, placed by the backdrop's own list. Pale streaks run down
-   it, a streak's spacing per loop, so the loop has no seam. */
-.v-scene-water {
-  position: absolute;
-  overflow: hidden;
-  -webkit-mask-image: linear-gradient(90deg, transparent, #000 22%, #000 78%, transparent);
-  mask-image: linear-gradient(90deg, transparent, #000 22%, #000 78%, transparent);
-}
-.v-scene-water::before {
-  content: "";
-  position: absolute;
-  inset: -48px 0 0;
-  background-image:
-    repeating-linear-gradient(
-      180deg,
-      transparent 0 9px,
-      color-mix(in srgb, var(--scene-haze) 46%, transparent) 9px 15px,
-      transparent 15px 48px
-    ),
-    repeating-linear-gradient(
-      180deg,
-      transparent 0 30px,
-      color-mix(in srgb, var(--scene-haze) 30%, transparent) 30px 33px,
-      transparent 33px 48px
-    );
-  background-position: 0 0, 40% 0;
-  background-size: 60% 100%, 40% 100%;
-  background-repeat: repeat-x;
-  animation: v-scene-fall 0.8s linear infinite;
-}
-@keyframes v-scene-fall {
-  to {
-    transform: translate3d(0, 48px, 0);
-  }
-}
-
-/* ---- Mist ---------------------------------------------------------------------- */
-/* Soft banks of the room's haze, twice the header's width with the same
-   banks in each half, sliding by half its width: the loop has no seam. The
-   far mist hangs between the distance and the near wall; the near mist lies
-   on the floor, in front of the wall and behind the figures, and goes the
-   other way. */
-.v-scene-mist {
-  --bank: color-mix(in srgb, var(--scene-haze) 30%, transparent);
-  position: absolute;
-  left: 0;
-  width: 200%;
-  pointer-events: none;
-  background-image:
-    radial-gradient(ellipse 24% 58% at 16% 74%, var(--bank), transparent 72%),
-    radial-gradient(ellipse 30% 46% at 52% 90%, var(--bank), transparent 72%),
-    radial-gradient(ellipse 20% 62% at 83% 70%, var(--bank), transparent 72%);
-  background-size: 50% 100%;
-  background-repeat: repeat-x;
-  animation: v-scene-mist 90s linear infinite;
-}
-.v-scene-mist--far {
-  bottom: 8%;
-  height: 62%;
-  opacity: 0.7;
-}
-.v-scene-mist--near {
-  --bank: color-mix(in srgb, var(--scene-haze) 22%, transparent);
-  bottom: calc(var(--v-ledge-h) - 14px);
-  height: 34%;
-  animation-duration: 60s;
-  animation-direction: reverse;
-}
-@keyframes v-scene-mist {
-  to {
-    transform: translate3d(-50%, 0, 0);
-  }
-}
-
-/* ---- The veil ----------------------------------------------------------------- */
-.v-scene-veil {
+.v-scene-img {
   position: absolute;
   inset: 0;
-  background:
-    /* behind the title, the torches and their chip */
-    linear-gradient(
-      90deg,
-      color-mix(in srgb, var(--scene-sky-1) var(--veil-title), transparent) 0%,
-      color-mix(in srgb, var(--scene-sky-1) calc(var(--veil-title) * 0.72), transparent) 26%,
-      transparent 64%
-    ),
-    /* under the toolbar row */
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--scene-sky-1) var(--veil-top), transparent) 0%,
-      transparent 38%
-    ),
-    /* the whole room, a step back */
-    color-mix(in srgb, var(--scene-sky-1) var(--veil-all), transparent);
+  display: block;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  transition: opacity 700ms var(--v-ease-out);
+  user-select: none;
+  -webkit-user-drag: none;
+}
+.v-scene-img.is-in {
+  opacity: 1;
+}
+/* Nothing to light until the picture is there. */
+.v-scene-img:not(.is-in) ~ * {
+  visibility: hidden;
 }
 
-/* ---- The air: the room's lights adrift ---------------------------------------- */
-/* Each mote has its own place (--x, --y), size (--s), pace (--t) and head
-   start (--d), set inline by stage-scenes.js. The room decides how they
+/* ---- Light ---------------------------------------------------------------------- */
+/* A soft glow on one of the picture's light sources, added onto it. --x/--y
+   centre it, --r is its radius as a share of the picture's width. */
+.v-scene-light {
+  position: absolute;
+  left: var(--x);
+  top: var(--y);
+  width: calc(var(--r) * 200%);
+  aspect-ratio: 1;
+  translate: -50% -50%;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--c) 58%, transparent) 0%,
+    color-mix(in srgb, var(--c) 24%, transparent) 36%,
+    transparent 70%
+  );
+  mix-blend-mode: screen;
+  opacity: 0.7;
+  pointer-events: none;
+  animation: v-light-breathe var(--t) ease-in-out var(--d) infinite alternate;
+}
+.v-scene-light[data-pulse="flicker"] {
+  animation: v-light-flicker var(--t) linear var(--d) infinite;
+}
+.v-scene-light[data-pulse="shimmer"] {
+  border-radius: 50% / 30%;
+  animation: v-light-shimmer var(--t) ease-in-out var(--d) infinite alternate;
+}
+/* An aurora's curtain: a tall band of light leaning and drifting side to
+   side, brightening as it goes. */
+.v-scene-light[data-pulse="sway"] {
+  border-radius: 46% / 50%;
+  animation: v-light-sway var(--t) ease-in-out var(--d) infinite alternate;
+}
+@keyframes v-light-breathe {
+  from {
+    opacity: 0.5;
+  }
+  to {
+    opacity: 0.95;
+  }
+}
+@keyframes v-light-flicker {
+  0% {
+    opacity: 0.78;
+    transform: scale(1);
+  }
+  11% {
+    opacity: 0.98;
+    transform: scale(1.05);
+  }
+  23% {
+    opacity: 0.72;
+    transform: scale(0.98);
+  }
+  37% {
+    opacity: 0.92;
+    transform: scale(1.03);
+  }
+  49% {
+    opacity: 0.8;
+    transform: scale(1);
+  }
+  63% {
+    opacity: 1;
+    transform: scale(1.06);
+  }
+  78% {
+    opacity: 0.74;
+    transform: scale(0.99);
+  }
+  100% {
+    opacity: 0.78;
+    transform: scale(1);
+  }
+}
+@keyframes v-light-shimmer {
+  from {
+    opacity: 0.35;
+    transform: translateX(-2%) scaleX(0.96);
+  }
+  to {
+    opacity: 0.75;
+    transform: translateX(2%) scaleX(1.04);
+  }
+}
+@keyframes v-light-sway {
+  from {
+    opacity: 0.4;
+    transform: translateX(-5%) skewX(-7deg) scaleY(1.2);
+  }
+  to {
+    opacity: 0.9;
+    transform: translateX(5%) skewX(7deg) scaleY(1.4);
+  }
+}
+
+/* A shaft of light from the top of the picture: brightest where it enters,
+   gone before the floor, soft at both edges. It fades in and out on its own
+   beat; --a leans it. */
+.v-scene-shaft {
+  position: absolute;
+  top: -6%;
+  left: var(--x);
+  width: var(--w);
+  height: 96%;
+  transform-origin: 50% 0;
+  rotate: var(--a);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--c) 46%, transparent) 0%,
+    color-mix(in srgb, var(--c) 18%, transparent) 52%,
+    transparent 100%
+  );
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 32%, #000 68%, transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 32%, #000 68%, transparent);
+  mix-blend-mode: screen;
+  opacity: 0.5;
+  pointer-events: none;
+  animation: v-shaft-breathe var(--t) ease-in-out var(--d) infinite alternate;
+}
+@keyframes v-shaft-breathe {
+  from {
+    opacity: 0.22;
+  }
+  to {
+    opacity: 0.72;
+  }
+}
+
+/* ---- The air -------------------------------------------------------------------- */
+/* Each mote has its own place (--mx, --my, on the picture), size (--s),
+   pace (--t) and head start (--d), set inline. The scene decides how they
    move (data-air). */
 .v-scene-motes {
   position: absolute;
-  inset: 0 0 var(--v-ledge-h);
+  inset: 0;
   pointer-events: none;
 }
 .v-scene-motes i {
   position: absolute;
-  left: var(--x);
-  bottom: var(--y);
+  left: var(--mx);
+  top: var(--my);
   width: var(--s);
   height: var(--s);
   border-radius: 50%;
@@ -268,23 +280,26 @@
   animation-name: v-mote-wander;
   animation-timing-function: ease-in-out;
 }
-/* Spray: smaller and quicker than spores. */
-.v-scene-motes[data-air="spray"] i {
+/* Embers: rise quickly from below, flaring and dying. */
+.v-scene-motes[data-air="embers"] i {
   width: calc(var(--s) * 0.8);
   height: calc(var(--s) * 0.8);
+  animation-name: v-mote-ember;
   animation-duration: calc(var(--t) * 0.6);
 }
-/* Drips: a thin streak that hangs near the ceiling, then falls. */
-.v-scene-motes[data-air="drips"] i {
-  bottom: auto;
-  top: calc(var(--y) * 0.4);
-  width: 2px;
-  height: 9px;
-  border-radius: 2px;
-  background: color-mix(in srgb, var(--scene-accent) 78%, transparent);
-  animation-name: v-mote-drip;
-  animation-duration: calc(var(--t) * 0.55);
-  animation-timing-function: ease-in;
+/* Snow: falls slant, slowly. */
+.v-scene-motes[data-air="snow"] i {
+  background: radial-gradient(circle, #fff 0 40%, transparent 72%);
+  animation-name: v-mote-snow;
+}
+/* Stars: twinkle where they are. */
+.v-scene-motes[data-air="stars"] i {
+  width: calc(var(--s) * 0.8);
+  height: calc(var(--s) * 0.8);
+  background: radial-gradient(circle, #fff 0 22%, color-mix(in srgb, var(--scene-accent) 40%, transparent) 40%, transparent 70%);
+  animation-name: v-mote-twinkle;
+  animation-timing-function: ease-in-out;
+  animation-duration: calc(var(--t) * 0.5);
 }
 
 @keyframes v-mote-rise {
@@ -312,10 +327,10 @@
     transform: translate3d(0, 0, 0);
   }
   20% {
-    opacity: 0.55;
+    opacity: 0.6;
   }
   60% {
-    opacity: 0.4;
+    opacity: 0.45;
     transform: translate3d(18px, -10px, 0);
   }
   100% {
@@ -342,49 +357,144 @@
     transform: translate3d(9px, 11px, 0);
   }
 }
-@keyframes v-mote-drip {
-  0%,
-  62% {
+@keyframes v-mote-ember {
+  0% {
     opacity: 0;
-    transform: translate3d(0, 0, 0);
+    transform: translate3d(0, 0, 0) scale(1);
   }
-  66% {
-    opacity: 0.9;
+  12% {
+    opacity: 1;
+  }
+  60% {
+    opacity: 0.8;
+    transform: translate3d(-12px, -60px, 0) scale(0.8);
   }
   100% {
     opacity: 0;
-    transform: translate3d(0, 130px, 0);
+    transform: translate3d(6px, -110px, 0) scale(0.4);
   }
+}
+@keyframes v-mote-snow {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 0, 0);
+  }
+  15% {
+    opacity: 0.85;
+  }
+  85% {
+    opacity: 0.7;
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(-34px, 96px, 0);
+  }
+}
+@keyframes v-mote-twinkle {
+  0%,
+  100% {
+    opacity: 0.1;
+    transform: scale(0.6);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.15);
+  }
+}
+
+/* ---- Mist ----------------------------------------------------------------------- */
+/* Soft banks of the room's haze, twice the header's width with the same
+   banks in each half, sliding by half its width: the loop has no seam. The
+   far mist hangs over the room; the near mist lies on the floor, in front
+   of the spire and behind the figures, and goes the other way. */
+.v-scene-mist {
+  --bank: color-mix(in srgb, var(--scene-haze) calc(22% * var(--scene-mist, 1)), transparent);
+  position: absolute;
+  left: 0;
+  width: 200%;
+  pointer-events: none;
+  background-image:
+    radial-gradient(ellipse 24% 58% at 16% 74%, var(--bank), transparent 72%),
+    radial-gradient(ellipse 30% 46% at 52% 90%, var(--bank), transparent 72%),
+    radial-gradient(ellipse 20% 62% at 83% 70%, var(--bank), transparent 72%);
+  background-size: 50% 100%;
+  background-repeat: repeat-x;
+  animation: v-scene-mist 110s linear infinite;
+}
+.v-scene-mist--far {
+  bottom: 6%;
+  height: 56%;
+  opacity: 0.6;
+}
+.v-scene-mist--near {
+  --bank: color-mix(in srgb, var(--scene-haze) calc(16% * var(--scene-mist, 1)), transparent);
+  bottom: calc(var(--v-ledge-h) - 14px);
+  height: 30%;
+  animation-duration: 70s;
+  animation-direction: reverse;
+}
+@keyframes v-scene-mist {
+  to {
+    transform: translate3d(-50%, 0, 0);
+  }
+}
+
+/* ---- The veil ------------------------------------------------------------------ */
+.v-scene-veil {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    /* behind the title, the torches and their chip */
+    linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--scene-sky-1) var(--veil-title), transparent) 0%,
+      color-mix(in srgb, var(--scene-sky-1) calc(var(--veil-title) * 0.7), transparent) 26%,
+      transparent 62%
+    ),
+    /* under the toolbar row */
+    linear-gradient(180deg, color-mix(in srgb, var(--scene-sky-1) var(--veil-top), transparent) 0%, transparent 36%),
+    /* the whole room, a step back */
+    color-mix(in srgb, var(--scene-sky-1) var(--veil-all), transparent);
 }
 
 /* ---- Smaller screens ------------------------------------------------------------ */
 @media (max-width: 880px) {
   /* The title runs most of the way across: veil the room evenly instead of
-     from the left. The scene is shorter, so everything travels less. */
-  .v-stage-bg[data-scene] {
-    --veil-all: 38%;
-    --veil-title: 56%;
-    --sway: 14px;
+     from the left, and move the camera less. */
+  .v-stage-bg {
+    --veil-all: max(var(--scene-veil, 14%), 34%);
+    --veil-title: 54%;
+    --camera-zoom: 1.04;
   }
 }
 
-/* Reduced motion: the room holds still. Mist stays where it lies; the motes
-   and the water's streaks would only be specks, so they go. */
+/* Reduced motion: the room holds still. Lights and shafts keep a steady
+   glow and mist stays where it lies; the motes would only be specks, so
+   they go. */
 @media (prefers-reduced-motion: reduce) {
-  .v-scene-strip--mid,
+  .v-scene-plate,
+  .v-scene-light,
+  .v-scene-shaft,
   .v-scene-mist {
     animation: none;
   }
-  .v-scene-motes,
-  .v-scene-water {
+  .v-scene-motes {
     display: none;
   }
+  .v-scene-img {
+    transition: none;
+  }
 }
-.prefer-reduced-motion .v-scene-strip--mid,
+.prefer-reduced-motion .v-scene-plate,
+.prefer-reduced-motion .v-scene-light,
+.prefer-reduced-motion .v-scene-shaft,
 .prefer-reduced-motion .v-scene-mist {
   animation: none;
 }
-.prefer-reduced-motion .v-scene-motes,
-.prefer-reduced-motion .v-scene-water {
+.prefer-reduced-motion .v-scene-motes {
   display: none;
+}
+.prefer-reduced-motion .v-scene-img {
+  transition: none;
 }

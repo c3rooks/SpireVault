@@ -17,11 +17,11 @@
 
 /** @type {Readonly<Record<string, StageActorArt>>} */
 export const STAGE_ACTOR_ART = Object.freeze({
-  ironclad: Object.freeze({ kind: "climber", src: "/assets/stage/ironclad-ink-v1.webp", width: 261, height: 420, groundLeft: 0.147, groundRight: 0.425 }),
-  silent: Object.freeze({ kind: "climber", src: "/assets/stage/silent-ink-v1.webp", width: 219, height: 420, groundLeft: 0, groundRight: 0.77 }),
-  defect: Object.freeze({ kind: "climber", src: "/assets/stage/defect-ink-v1.webp", width: 394, height: 420, groundLeft: 0, groundRight: 0.351 }),
-  regent: Object.freeze({ kind: "climber", src: "/assets/stage/regent-ink-v2.webp", width: 214, height: 420, groundLeft: 0.042, groundRight: 1 }),
-  necrobinder: Object.freeze({ kind: "climber", src: "/assets/stage/necrobinder-ink-v1.webp", width: 242, height: 420, groundLeft: 0.502, groundRight: 1 }),
-  fool: Object.freeze({ kind: "climber", src: "/assets/stage/fool-ink-v1.webp", width: 359, height: 420, groundLeft: 0.113, groundRight: 0.799 }),
-  architect: Object.freeze({ kind: "boss", src: "/assets/stage/architect-ink-v1.webp", width: 399, height: 620, groundLeft: 0.431, groundRight: 0.953 }),
+  ironclad: Object.freeze({ kind: "climber", src: "/assets/stage/ironclad-ink-v3.webp", width: 387, height: 640, groundLeft: 0.198, groundRight: 0.427 }),
+  silent: Object.freeze({ kind: "climber", src: "/assets/stage/silent-ink-v3.webp", width: 314, height: 640, groundLeft: 0.246, groundRight: 0.781 }),
+  defect: Object.freeze({ kind: "climber", src: "/assets/stage/defect-ink-v3.webp", width: 601, height: 640, groundLeft: 0.001, groundRight: 0.37 }),
+  regent: Object.freeze({ kind: "climber", src: "/assets/stage/regent-ink-v3.webp", width: 330, height: 640, groundLeft: 0.157, groundRight: 0.978 }),
+  necrobinder: Object.freeze({ kind: "climber", src: "/assets/stage/necrobinder-ink-v3.webp", width: 355, height: 640, groundLeft: 0.496, groundRight: 0.983 }),
+  fool: Object.freeze({ kind: "climber", src: "/assets/stage/fool-ink-v3.webp", width: 537, height: 640, groundLeft: 0.251, groundRight: 0.379 }),
+  architect: Object.freeze({ kind: "boss", src: "/assets/stage/architect-ink-v4.webp", width: 512, height: 820, groundLeft: 0.429, groundRight: 0.757 }),
 });

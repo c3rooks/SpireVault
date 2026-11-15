@@ -2206,7 +2206,7 @@
     --stage-ground: calc(var(--v-ledge-h) - 9px);
     --duel-scale: 0.88;
     --duel-boss-right: calc(var(--stage-gutter) + 26px);
-    --duel-boss-w: calc(var(--v-stage-h) * 0.4312 * var(--duel-scale));
+    --duel-boss-w: calc(var(--v-stage-h) * 0.4175 * var(--duel-scale));
     --duel-gap: 44px;
     --duel-climber-right: calc(var(--duel-boss-right) + var(--duel-boss-w) + var(--duel-gap));
     --duel-climber-w: calc(
@@ -2371,6 +2371,9 @@
     color: var(--v-title);
     font-weight: 800;
   }
+  .v-torches .v-stage-cap b {
+    color: var(--v-win);
+  }
   .v-stage-cap::before {
     content: "";
     position: absolute;
@@ -2468,10 +2471,10 @@
     animation: v-breathe 3.8s ease-in-out infinite;
     transition: translate var(--v-dur-2) var(--v-ease-spring);
   }
-  .v-actor--climber:hover .v-actor-art,
-  .v-actor--climber:focus-visible .v-actor-art,
-  .v-actor--boss:hover .v-actor-art,
-  .v-actor--boss:focus-visible .v-actor-art {
+  .v-actor--climber:hover :is(.v-actor-art, .v-actor-glows),
+  .v-actor--climber:focus-visible :is(.v-actor-art, .v-actor-glows),
+  .v-actor--boss:hover :is(.v-actor-art, .v-actor-glows),
+  .v-actor--boss:focus-visible :is(.v-actor-art, .v-actor-glows) {
     translate: 0 -3px;
   }
   .v-actor--boss .v-actor-art {
@@ -2482,6 +2485,84 @@
   @keyframes v-breathe {
     50% {
       transform: scaleY(1.02);
+    }
+  }
+  .v-actor-glows {
+    position: absolute;
+    z-index: 2;
+    inset: 0;
+    pointer-events: none;
+    transform-origin: 50% 100%;
+    animation: v-breathe 3.8s ease-in-out infinite;
+    transition: translate var(--v-dur-2) var(--v-ease-spring);
+  }
+  .v-actor--climber .v-actor-glows {
+    --art-w: calc(var(--v-stage-h) * var(--climber-h) * var(--climber-aspect) * var(--duel-scale));
+    left: 50%;
+    right: auto;
+    width: var(--art-w);
+    margin-left: calc(var(--art-w) / -2);
+  }
+  .v-actor--boss .v-actor-glows {
+    transform-origin: 50% calc(var(--boss-foot, 1) * 100%);
+    animation-duration: 5.2s;
+  }
+  .v-actor-glow {
+    position: absolute;
+    left: var(--x);
+    top: var(--y);
+    width: calc(var(--r) * 200%);
+    aspect-ratio: 1;
+    translate: -50% -50%;
+    border-radius: 50%;
+    background: radial-gradient(
+      circle,
+      color-mix(in srgb, var(--c) 80%, #fff) 0 7%,
+      color-mix(in srgb, var(--c) 58%, transparent) 20%,
+      color-mix(in srgb, var(--c) 20%, transparent) 44%,
+      transparent 70%
+    );
+    mix-blend-mode: screen;
+    animation: v-glow-breathe var(--t) ease-in-out var(--d) infinite alternate;
+  }
+  .v-actor-glow[data-pulse="flicker"] {
+    animation: v-glow-flicker var(--t) linear var(--d) infinite;
+  }
+  @keyframes v-glow-breathe {
+    from {
+      opacity: 0.45;
+      transform: scale(0.9);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1.08);
+    }
+  }
+  @keyframes v-glow-flicker {
+    0%,
+    100% {
+      opacity: 0.8;
+      transform: scale(1);
+    }
+    17% {
+      opacity: 1;
+      transform: scale(1.08) translateY(-2%);
+    }
+    34% {
+      opacity: 0.7;
+      transform: scale(0.96);
+    }
+    52% {
+      opacity: 0.95;
+      transform: scale(1.05) translateY(-1%);
+    }
+    71% {
+      opacity: 0.74;
+      transform: scale(0.98);
+    }
+    86% {
+      opacity: 1;
+      transform: scale(1.06) translateY(-2%);
     }
   }
   .v-actor-shadow {
@@ -2497,11 +2578,12 @@
     bottom: calc(var(--boss-sink) - 6px);
   }
   .v-actor-seat {
+    --seat-stone: color-mix(in oklab, var(--v-stage-spire) 38%, #2a2533);
     position: absolute;
     z-index: 0;
     border: var(--v-outline);
     border-radius: 50% / 24%;
-    background: var(--v-stage-spire);
+    background: linear-gradient(90deg, color-mix(in oklab, var(--seat-stone) 80%, #000) 0%, var(--seat-stone) 45%, color-mix(in oklab, var(--seat-stone) 70%, #000) 100%);
     box-shadow: var(--v-shadow-sm);
   }
   .v-actor-seat::before {
@@ -2511,7 +2593,7 @@
     height: 46%;
     border-bottom: var(--v-outline);
     border-radius: 50%;
-    background: color-mix(in srgb, var(--v-stage-spire) 70%, var(--v-text));
+    background: color-mix(in oklab, var(--seat-stone) 62%, #b9b2c8);
   }
   .v-actor-glyph {
     position: relative;
@@ -2750,6 +2832,8 @@
     .v-spire-win,
     .v-torch-flame,
     .v-actor-art,
+    .v-actor-glows,
+    .v-actor-glow,
     .v-actor-shadow,
     .v-bubble {
       animation: none;
@@ -2758,6 +2842,8 @@
   .prefer-reduced-motion .v-spire-win,
   .prefer-reduced-motion .v-torch-flame,
   .prefer-reduced-motion .v-actor-art,
+  .prefer-reduced-motion .v-actor-glows,
+  .prefer-reduced-motion .v-actor-glow,
   .prefer-reduced-motion .v-actor-shadow,
   .prefer-reduced-motion .v-bubble {
     animation: none;
@@ -2772,178 +2858,189 @@
     --scene-deep: var(--v-stage-sky-1);
     --scene-accent: var(--v-stage-lit);
     --scene-haze: #cdd6ff;
-    --veil-all: 16%;
-    --veil-title: 84%;
-    --veil-top: 46%;
-    --sway: 22px;
-    --sway-time: 26s;
+    --veil-all: var(--scene-veil, 14%);
+    --veil-title: 80%;
+    --veil-top: 44%;
+    --camera-zoom: 1.06;
+    --camera-time: 46s;
   }
   .v-stage-bg[data-scene] {
     --scene-sky-1: color-mix(in oklab, var(--v-stage-sky-1) 55%, var(--scene-deep));
     --scene-sky-2: color-mix(in oklab, var(--v-stage-sky-2) 45%, var(--scene-deep));
     --scene-sky-3: color-mix(in oklab, var(--v-stage-sky-3) 35%, var(--scene-deep));
   }
-  .v-stage-bg[data-scene="glory"] {
-    --scene-deep: #0b1232;
-    --scene-accent: #7fe3ff;
-    --scene-haze: #9fdcff;
-  }
-  .v-stage-bg[data-scene="hive"] {
-    --scene-deep: #1a1705;
-    --scene-accent: #5cf0a8;
-    --scene-haze: #e9d86a;
-  }
-  .v-stage-bg[data-scene="overgrowth"] {
-    --scene-deep: #071d10;
-    --scene-accent: #e6f56a;
-    --scene-haze: #b9f0c4;
-  }
-  .v-stage-bg[data-scene="underdocks"] {
-    --scene-deep: #170f2e;
-    --scene-accent: #6ff0b0;
-    --scene-haze: #8ff0c8;
-    --veil-all: 24%;
-  }
-  .v-stage-bg[data-scene="study"] {
-    --scene-deep: #200f0b;
-    --scene-accent: #ffc27a;
-    --scene-haze: #ffcf9a;
-    --veil-all: 8%;
-  }
-  .v-stage-bg[data-scene="falls"] {
-    --scene-deep: #06222c;
-    --scene-accent: #b8f4ff;
-    --scene-haze: #d6fbff;
-    --veil-all: 26%;
-  }
   .v-scene {
     position: absolute;
     inset: 0 0 calc(var(--v-ledge-h) - 12px);
     overflow: hidden;
-  }
-  .v-scene-strip {
-    position: absolute;
-    inset: 0;
-    display: flex;
-    flex-direction: row-reverse;
+    container-type: size;
   }
   .v-scene-plate {
-    position: relative;
-    flex: none;
-    height: 100%;
-    aspect-ratio: var(--plate-ratio, 4.876);
-    margin-left: -1px;
-    background: var(--plate) center / 100% 100% no-repeat;
-  }
-  .v-scene-plate--mirror {
-    transform: scaleX(-1);
-  }
-  .v-scene-plate--lead {
+    --plate-w: max(100cqw, calc(100cqh * var(--plate-ratio) / var(--focus)));
     position: absolute;
-    top: 0;
-    left: 100%;
+    right: 0;
+    bottom: calc(var(--plate-w) / var(--plate-ratio) * (var(--focus) - 1));
+    width: var(--plate-w);
+    aspect-ratio: var(--plate-ratio);
+    isolation: isolate;
+    transform-origin: 88% calc(var(--focus) * 100%);
+    animation: v-scene-camera var(--camera-time) ease-in-out calc(var(--camera-time) / -3) infinite alternate;
   }
-  .v-scene-strip--mid {
-    animation: v-scene-sway var(--sway-time) ease-in-out calc(var(--sway-time) / -2) infinite alternate;
-  }
-  @keyframes v-scene-sway {
+  @keyframes v-scene-camera {
     from {
-      transform: translate3d(calc(-1 * var(--sway)), 0, 0);
+      transform: scale(1);
     }
     to {
-      transform: translate3d(var(--sway), 0, 0);
+      transform: scale(var(--camera-zoom));
     }
   }
-  .v-scene-water {
-    position: absolute;
-    overflow: hidden;
-    -webkit-mask-image: linear-gradient(90deg, transparent, #000 22%, #000 78%, transparent);
-    mask-image: linear-gradient(90deg, transparent, #000 22%, #000 78%, transparent);
-  }
-  .v-scene-water::before {
-    content: "";
-    position: absolute;
-    inset: -48px 0 0;
-    background-image:
-      repeating-linear-gradient(
-        180deg,
-        transparent 0 9px,
-        color-mix(in srgb, var(--scene-haze) 46%, transparent) 9px 15px,
-        transparent 15px 48px
-      ),
-      repeating-linear-gradient(
-        180deg,
-        transparent 0 30px,
-        color-mix(in srgb, var(--scene-haze) 30%, transparent) 30px 33px,
-        transparent 33px 48px
-      );
-    background-position: 0 0, 40% 0;
-    background-size: 60% 100%, 40% 100%;
-    background-repeat: repeat-x;
-    animation: v-scene-fall 0.8s linear infinite;
-  }
-  @keyframes v-scene-fall {
-    to {
-      transform: translate3d(0, 48px, 0);
-    }
-  }
-  .v-scene-mist {
-    --bank: color-mix(in srgb, var(--scene-haze) 30%, transparent);
-    position: absolute;
-    left: 0;
-    width: 200%;
-    pointer-events: none;
-    background-image:
-      radial-gradient(ellipse 24% 58% at 16% 74%, var(--bank), transparent 72%),
-      radial-gradient(ellipse 30% 46% at 52% 90%, var(--bank), transparent 72%),
-      radial-gradient(ellipse 20% 62% at 83% 70%, var(--bank), transparent 72%);
-    background-size: 50% 100%;
-    background-repeat: repeat-x;
-    animation: v-scene-mist 90s linear infinite;
-  }
-  .v-scene-mist--far {
-    bottom: 8%;
-    height: 62%;
-    opacity: 0.7;
-  }
-  .v-scene-mist--near {
-    --bank: color-mix(in srgb, var(--scene-haze) 22%, transparent);
-    bottom: calc(var(--v-ledge-h) - 14px);
-    height: 34%;
-    animation-duration: 60s;
-    animation-direction: reverse;
-  }
-  @keyframes v-scene-mist {
-    to {
-      transform: translate3d(-50%, 0, 0);
-    }
-  }
-  .v-scene-veil {
+  .v-scene-img {
     position: absolute;
     inset: 0;
-    background:
-      linear-gradient(
-        90deg,
-        color-mix(in srgb, var(--scene-sky-1) var(--veil-title), transparent) 0%,
-        color-mix(in srgb, var(--scene-sky-1) calc(var(--veil-title) * 0.72), transparent) 26%,
-        transparent 64%
-      ),
-      linear-gradient(
-        180deg,
-        color-mix(in srgb, var(--scene-sky-1) var(--veil-top), transparent) 0%,
-        transparent 38%
-      ),
-      color-mix(in srgb, var(--scene-sky-1) var(--veil-all), transparent);
+    display: block;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    transition: opacity 700ms var(--v-ease-out);
+    user-select: none;
+    -webkit-user-drag: none;
+  }
+  .v-scene-img.is-in {
+    opacity: 1;
+  }
+  .v-scene-img:not(.is-in) ~ * {
+    visibility: hidden;
+  }
+  .v-scene-light {
+    position: absolute;
+    left: var(--x);
+    top: var(--y);
+    width: calc(var(--r) * 200%);
+    aspect-ratio: 1;
+    translate: -50% -50%;
+    border-radius: 50%;
+    background: radial-gradient(
+      circle,
+      color-mix(in srgb, var(--c) 58%, transparent) 0%,
+      color-mix(in srgb, var(--c) 24%, transparent) 36%,
+      transparent 70%
+    );
+    mix-blend-mode: screen;
+    opacity: 0.7;
+    pointer-events: none;
+    animation: v-light-breathe var(--t) ease-in-out var(--d) infinite alternate;
+  }
+  .v-scene-light[data-pulse="flicker"] {
+    animation: v-light-flicker var(--t) linear var(--d) infinite;
+  }
+  .v-scene-light[data-pulse="shimmer"] {
+    border-radius: 50% / 30%;
+    animation: v-light-shimmer var(--t) ease-in-out var(--d) infinite alternate;
+  }
+  .v-scene-light[data-pulse="sway"] {
+    border-radius: 46% / 50%;
+    animation: v-light-sway var(--t) ease-in-out var(--d) infinite alternate;
+  }
+  @keyframes v-light-breathe {
+    from {
+      opacity: 0.5;
+    }
+    to {
+      opacity: 0.95;
+    }
+  }
+  @keyframes v-light-flicker {
+    0% {
+      opacity: 0.78;
+      transform: scale(1);
+    }
+    11% {
+      opacity: 0.98;
+      transform: scale(1.05);
+    }
+    23% {
+      opacity: 0.72;
+      transform: scale(0.98);
+    }
+    37% {
+      opacity: 0.92;
+      transform: scale(1.03);
+    }
+    49% {
+      opacity: 0.8;
+      transform: scale(1);
+    }
+    63% {
+      opacity: 1;
+      transform: scale(1.06);
+    }
+    78% {
+      opacity: 0.74;
+      transform: scale(0.99);
+    }
+    100% {
+      opacity: 0.78;
+      transform: scale(1);
+    }
+  }
+  @keyframes v-light-shimmer {
+    from {
+      opacity: 0.35;
+      transform: translateX(-2%) scaleX(0.96);
+    }
+    to {
+      opacity: 0.75;
+      transform: translateX(2%) scaleX(1.04);
+    }
+  }
+  @keyframes v-light-sway {
+    from {
+      opacity: 0.4;
+      transform: translateX(-5%) skewX(-7deg) scaleY(1.2);
+    }
+    to {
+      opacity: 0.9;
+      transform: translateX(5%) skewX(7deg) scaleY(1.4);
+    }
+  }
+  .v-scene-shaft {
+    position: absolute;
+    top: -6%;
+    left: var(--x);
+    width: var(--w);
+    height: 96%;
+    transform-origin: 50% 0;
+    rotate: var(--a);
+    background: linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--c) 46%, transparent) 0%,
+      color-mix(in srgb, var(--c) 18%, transparent) 52%,
+      transparent 100%
+    );
+    -webkit-mask-image: linear-gradient(90deg, transparent, #000 32%, #000 68%, transparent);
+    mask-image: linear-gradient(90deg, transparent, #000 32%, #000 68%, transparent);
+    mix-blend-mode: screen;
+    opacity: 0.5;
+    pointer-events: none;
+    animation: v-shaft-breathe var(--t) ease-in-out var(--d) infinite alternate;
+  }
+  @keyframes v-shaft-breathe {
+    from {
+      opacity: 0.22;
+    }
+    to {
+      opacity: 0.72;
+    }
   }
   .v-scene-motes {
     position: absolute;
-    inset: 0 0 var(--v-ledge-h);
+    inset: 0;
     pointer-events: none;
   }
   .v-scene-motes i {
     position: absolute;
-    left: var(--x);
-    bottom: var(--y);
+    left: var(--mx);
+    top: var(--my);
     width: var(--s);
     height: var(--s);
     border-radius: 50%;
@@ -2966,21 +3063,23 @@
     animation-name: v-mote-wander;
     animation-timing-function: ease-in-out;
   }
-  .v-scene-motes[data-air="spray"] i {
+  .v-scene-motes[data-air="embers"] i {
     width: calc(var(--s) * 0.8);
     height: calc(var(--s) * 0.8);
+    animation-name: v-mote-ember;
     animation-duration: calc(var(--t) * 0.6);
   }
-  .v-scene-motes[data-air="drips"] i {
-    bottom: auto;
-    top: calc(var(--y) * 0.4);
-    width: 2px;
-    height: 9px;
-    border-radius: 2px;
-    background: color-mix(in srgb, var(--scene-accent) 78%, transparent);
-    animation-name: v-mote-drip;
-    animation-duration: calc(var(--t) * 0.55);
-    animation-timing-function: ease-in;
+  .v-scene-motes[data-air="snow"] i {
+    background: radial-gradient(circle, #fff 0 40%, transparent 72%);
+    animation-name: v-mote-snow;
+  }
+  .v-scene-motes[data-air="stars"] i {
+    width: calc(var(--s) * 0.8);
+    height: calc(var(--s) * 0.8);
+    background: radial-gradient(circle, #fff 0 22%, color-mix(in srgb, var(--scene-accent) 40%, transparent) 40%, transparent 70%);
+    animation-name: v-mote-twinkle;
+    animation-timing-function: ease-in-out;
+    animation-duration: calc(var(--t) * 0.5);
   }
   @keyframes v-mote-rise {
     0% {
@@ -3007,10 +3106,10 @@
       transform: translate3d(0, 0, 0);
     }
     20% {
-      opacity: 0.55;
+      opacity: 0.6;
     }
     60% {
-      opacity: 0.4;
+      opacity: 0.45;
       transform: translate3d(18px, -10px, 0);
     }
     100% {
@@ -3037,44 +3136,127 @@
       transform: translate3d(9px, 11px, 0);
     }
   }
-  @keyframes v-mote-drip {
-    0%,
-    62% {
+  @keyframes v-mote-ember {
+    0% {
       opacity: 0;
-      transform: translate3d(0, 0, 0);
+      transform: translate3d(0, 0, 0) scale(1);
     }
-    66% {
-      opacity: 0.9;
+    12% {
+      opacity: 1;
+    }
+    60% {
+      opacity: 0.8;
+      transform: translate3d(-12px, -60px, 0) scale(0.8);
     }
     100% {
       opacity: 0;
-      transform: translate3d(0, 130px, 0);
+      transform: translate3d(6px, -110px, 0) scale(0.4);
     }
   }
+  @keyframes v-mote-snow {
+    0% {
+      opacity: 0;
+      transform: translate3d(0, 0, 0);
+    }
+    15% {
+      opacity: 0.85;
+    }
+    85% {
+      opacity: 0.7;
+    }
+    100% {
+      opacity: 0;
+      transform: translate3d(-34px, 96px, 0);
+    }
+  }
+  @keyframes v-mote-twinkle {
+    0%,
+    100% {
+      opacity: 0.1;
+      transform: scale(0.6);
+    }
+    50% {
+      opacity: 1;
+      transform: scale(1.15);
+    }
+  }
+  .v-scene-mist {
+    --bank: color-mix(in srgb, var(--scene-haze) calc(22% * var(--scene-mist, 1)), transparent);
+    position: absolute;
+    left: 0;
+    width: 200%;
+    pointer-events: none;
+    background-image:
+      radial-gradient(ellipse 24% 58% at 16% 74%, var(--bank), transparent 72%),
+      radial-gradient(ellipse 30% 46% at 52% 90%, var(--bank), transparent 72%),
+      radial-gradient(ellipse 20% 62% at 83% 70%, var(--bank), transparent 72%);
+    background-size: 50% 100%;
+    background-repeat: repeat-x;
+    animation: v-scene-mist 110s linear infinite;
+  }
+  .v-scene-mist--far {
+    bottom: 6%;
+    height: 56%;
+    opacity: 0.6;
+  }
+  .v-scene-mist--near {
+    --bank: color-mix(in srgb, var(--scene-haze) calc(16% * var(--scene-mist, 1)), transparent);
+    bottom: calc(var(--v-ledge-h) - 14px);
+    height: 30%;
+    animation-duration: 70s;
+    animation-direction: reverse;
+  }
+  @keyframes v-scene-mist {
+    to {
+      transform: translate3d(-50%, 0, 0);
+    }
+  }
+  .v-scene-veil {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background:
+      linear-gradient(
+        90deg,
+        color-mix(in srgb, var(--scene-sky-1) var(--veil-title), transparent) 0%,
+        color-mix(in srgb, var(--scene-sky-1) calc(var(--veil-title) * 0.7), transparent) 26%,
+        transparent 62%
+      ),
+      linear-gradient(180deg, color-mix(in srgb, var(--scene-sky-1) var(--veil-top), transparent) 0%, transparent 36%),
+      color-mix(in srgb, var(--scene-sky-1) var(--veil-all), transparent);
+  }
   @media (max-width: 880px) {
-    .v-stage-bg[data-scene] {
-      --veil-all: 38%;
-      --veil-title: 56%;
-      --sway: 14px;
+    .v-stage-bg {
+      --veil-all: max(var(--scene-veil, 14%), 34%);
+      --veil-title: 54%;
+      --camera-zoom: 1.04;
     }
   }
   @media (prefers-reduced-motion: reduce) {
-    .v-scene-strip--mid,
+    .v-scene-plate,
+    .v-scene-light,
+    .v-scene-shaft,
     .v-scene-mist {
       animation: none;
     }
-    .v-scene-motes,
-    .v-scene-water {
+    .v-scene-motes {
       display: none;
     }
+    .v-scene-img {
+      transition: none;
+    }
   }
-  .prefer-reduced-motion .v-scene-strip--mid,
+  .prefer-reduced-motion .v-scene-plate,
+  .prefer-reduced-motion .v-scene-light,
+  .prefer-reduced-motion .v-scene-shaft,
   .prefer-reduced-motion .v-scene-mist {
     animation: none;
   }
-  .prefer-reduced-motion .v-scene-motes,
-  .prefer-reduced-motion .v-scene-water {
+  .prefer-reduced-motion .v-scene-motes {
     display: none;
+  }
+  .prefer-reduced-motion .v-scene-img {
+    transition: none;
   }
 }
 /* components/cards.css */

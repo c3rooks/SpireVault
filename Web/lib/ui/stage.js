@@ -11,7 +11,7 @@
 
 import { esc } from "./html.js?v=1";
 import { STAGE_ACTOR_ART } from "./stage-actors.js?v=1";
-import { pickScene, sceneFarHtml, sceneMidHtml } from "./stage-scenes.js?v=1";
+import { dealScene, peekScene, preloadScene, sceneFarHtml, sceneMidHtml, sceneTints } from "./stage-scenes.js?v=1";
 
 const DEFAULT_ASCENSION_CAP = 10;
 /** Hard ceiling on windows drawn. A corrupt save must not be able to ask
@@ -141,20 +141,22 @@ function torchesHtml(recent) {
  * @property {number} hiLevel   highest ascension reached, -1 when none
  * @property {number} [cap]     top ascension level (defaults to 10)
  * @property {ReadonlyArray<{ won: boolean, label?: string }>} [recent]  last runs, oldest → newest
- * @property {string} [scene]   scenery id (stage-scenes.js); defaults to this page load's random pick
+ * @property {string} [scene]   scenery id (stage-scenes.js) for every stage; by default each stage
+ *                              is dealt its own, a new one each time its tab is shown
  */
 
 /**
  * Builds the scenery markup for one stage.
  * @param {StageModel} model
+ * @param {string | null} [sceneId]  the scene to draw; null draws the data on the plain sky
  * @returns {string}
  */
-export function stageBackdropHtml(model) {
+export function stageBackdropHtml(model, sceneId = null) {
   const hiLevel = Number.isFinite(model.hiLevel)
     ? Math.min(MAX_ASCENSION_CAP, Math.max(-1, Math.floor(model.hiLevel)))
     : -1;
   const cap = Math.min(MAX_ASCENSION_CAP, Math.max(DEFAULT_ASCENSION_CAP, Math.floor(model.cap || 0), hiLevel));
-  const scene = model.scene || pickScene();
+  const scene = model.scene || sceneId;
   return `
     <div class="v-stage-layer v-stage-far">
       ${sceneFarHtml(scene)}
@@ -189,15 +191,44 @@ export function stageBackdropHtml(model) {
  *           the art's bottom edge on the ground left him standing higher than
  *           the climber. The feet go on the shared ground line; whatever
  *           hangs lower is planted just in front of it.
+ *   glows   the figure's own lights, alive on the art: x, y as fractions of
+ *           its box, r a fraction of its width; a flame flickers, eyes and
+ *           cores breathe. Placed on the built art (stage-actors.js), so they
+ *           move if the art is redrawn.
  */
+const glow = (x, y, r, color, pulse = "breathe") => Object.freeze({ x, y, r, color, pulse });
 const ACTOR_STAGING = Object.freeze({
-  ironclad: Object.freeze({ height: 0.52, headX: 0.57, seat: Object.freeze({ left: -0.04, top: 0.5, width: 0.6, height: 0.44 }) }),
-  silent: Object.freeze({ height: 0.54, headX: 0.47, seat: Object.freeze({ left: 0.02, top: 0.52, width: 0.62, height: 0.4 }) }),
-  defect: Object.freeze({ height: 0.48, headX: 0.43 }),
-  regent: Object.freeze({ height: 0.58, headX: 0.7 }),
-  necrobinder: Object.freeze({ height: 0.55, headX: 0.37, seat: Object.freeze({ left: -0.02, top: 0.56, width: 0.66, height: 0.36 }) }),
-  fool: Object.freeze({ height: 0.5, headX: 0.55 }),
-  architect: Object.freeze({ height: 0.67, headX: 0.66, footY: 0.922 }),
+  ironclad: Object.freeze({
+    height: 0.52,
+    headX: 0.57,
+    seat: Object.freeze({ left: -0.04, top: 0.5, width: 0.6, height: 0.44 }),
+    glows: Object.freeze([glow(0.53, 0.165, 0.08, "#ff3a2a")]),
+  }),
+  silent: Object.freeze({
+    height: 0.56,
+    headX: 0.3,
+    seat: Object.freeze({ left: 0.34, top: 0.5, width: 0.64, height: 0.43 }),
+    glows: Object.freeze([glow(0.255, 0.215, 0.075, "#f2ff5a")]),
+  }),
+  defect: Object.freeze({
+    height: 0.48,
+    headX: 0.42,
+    glows: Object.freeze([glow(0.415, 0.115, 0.09, "#6fe6ff"), glow(0.42, 0.43, 0.1, "#4fd8ff")]),
+  }),
+  regent: Object.freeze({ height: 0.58, headX: 0.56, glows: Object.freeze([glow(0.555, 0.37, 0.07, "#ffe04a")]) }),
+  necrobinder: Object.freeze({
+    height: 0.55,
+    headX: 0.27,
+    seat: Object.freeze({ left: 0.02, top: 0.58, width: 0.62, height: 0.34 }),
+    glows: Object.freeze([glow(0.33, 0.19, 0.07, "#4aa8ff")]),
+  }),
+  fool: Object.freeze({ height: 0.5, headX: 0.55, glows: Object.freeze([glow(0.565, 0.185, 0.09, "#b8ff5a")]) }),
+  architect: Object.freeze({
+    height: 0.67,
+    headX: 0.66,
+    footY: 0.922,
+    glows: Object.freeze([glow(0.12, 0.215, 0.13, "#5cb8ff", "flicker")]),
+  }),
 });
 const FALLBACK_STAGING = Object.freeze({
   climber: Object.freeze({ height: 0.52, headX: 0.5 }),
@@ -275,8 +306,28 @@ function actorParts(actor, kind) {
     aspect: aspect.toFixed(4),
     headX: headX.toFixed(2),
     footY: footY.toFixed(3),
-    html: `${shadow}${seat}${image}`,
+    html: `${shadow}${seat}${image}${art ? glowsHtml(staging.glows) : ""}`,
   };
+}
+
+/** How long one beat of a figure's glow lasts, by how it moves. */
+const GLOW_PACE = Object.freeze({ breathe: 3.4, flicker: 1.7 });
+
+/**
+ * A figure's own lights, in one layer over the art that breathes and lifts
+ * with it (components/stage.css). None for art without glows.
+ * @param {ReadonlyArray<{ x: number, y: number, r: number, color: string, pulse: string }> | undefined} glows
+ */
+function glowsHtml(glows) {
+  if (!glows || glows.length === 0) return "";
+  const spans = glows
+    .map((g, index) => {
+      const pulse = g.pulse === "flicker" ? "flicker" : "breathe";
+      const delay = (-index * 0.9).toFixed(1);
+      return `<span class="v-actor-glow" data-pulse="${pulse}" style="--x:${percent(g.x)};--y:${percent(g.y)};--r:${g.r};--c:${esc(g.color)};--t:${GLOW_PACE[pulse]}s;--d:${delay}s"></span>`;
+    })
+    .join("");
+  return `<span class="v-actor-glows" aria-hidden="true">${spans}</span>`;
 }
 
 /**
@@ -694,6 +745,81 @@ export function fitStages(root = document) {
 /** Width each header was last fitted at; a fit may change only its height. */
 const fittedWidth = new WeakMap();
 
+// ---- Scenes: one per stage, a new one each time its tab is shown --------------
+
+/** @type {WeakMap<Element, string>} the scene dealt to each backdrop */
+const sceneOf = new WeakMap();
+/** The tab last opened; opening a different one deals its stage a scene. */
+let openTab = null;
+/** @type {StageModel | null} the model last painted, to repaint one stage on its own */
+let lastModel = null;
+/** The inline tints a scene puts on its backdrop. */
+const TINT_PROPS = Object.freeze(["--scene-deep", "--scene-haze", "--scene-accent", "--scene-veil", "--scene-mist"]);
+
+/**
+ * Fades the scene in once its picture has arrived (the header's own sky
+ * shows until then), and starts fetching the scene the next tab will get.
+ * @param {Element} backdrop
+ */
+function revealScene(backdrop) {
+  const image = backdrop.querySelector(".v-scene-img");
+  if (!(image instanceof HTMLImageElement)) return;
+  const show = () => {
+    image.classList.add("is-in");
+    const idle = window.requestIdleCallback || ((callback) => window.setTimeout(callback, 400));
+    idle(() => preloadScene(peekScene()));
+  };
+  if (image.complete) {
+    // Settled already (from cache): drawn, or broken before we could listen.
+    if (image.naturalWidth > 0) show();
+    else image.classList.add("is-missing");
+    return;
+  }
+  image.addEventListener("load", show, { once: true });
+  // A missing picture leaves the sky, the data and the figures as they are.
+  image.addEventListener("error", () => image.classList.add("is-missing"), { once: true });
+}
+
+/**
+ * Paints one backdrop from the model with the scene dealt to it.
+ * @param {Element} backdrop
+ * @param {StageModel} model
+ */
+function paintBackdrop(backdrop, model) {
+  const scene = model.scene || sceneOf.get(backdrop) || null;
+  const html = stageBackdropHtml(model, scene);
+  // The 60-second background refresh calls this with unchanged data;
+  // rewriting identical markup would restart every flame animation.
+  if (painted.get(backdrop) === html) return;
+  backdrop.innerHTML = html;
+  painted.set(backdrop, html);
+  if (backdrop instanceof HTMLElement) {
+    if (scene) backdrop.dataset.scene = scene;
+    else delete backdrop.dataset.scene;
+    TINT_PROPS.forEach((prop) => backdrop.style.removeProperty(prop));
+    Object.entries(sceneTints(scene)).forEach(([prop, value]) => backdrop.style.setProperty(prop, value));
+  }
+  revealScene(backdrop);
+}
+
+/**
+ * Opening a tab deals its stage a new scene. script.js announces every tab
+ * switch with a `spirevault:tab` event (before the panels swap), so this
+ * needs no layout. Re-selecting the open tab changes nothing.
+ * @param {Event} event
+ */
+function onTabOpened(event) {
+  const tab = event instanceof CustomEvent && event.detail ? event.detail.tab : null;
+  if (typeof tab !== "string" || tab === openTab) return;
+  openTab = tab;
+  if (!lastModel || lastModel.scene) return;
+  const backdrop = document.querySelector(`.tab-panel[data-tab="${CSS.escape(tab)}"] > .panel-head > .v-stage-bg`);
+  if (!backdrop) return;
+  sceneOf.set(backdrop, dealScene());
+  paintBackdrop(backdrop, lastModel);
+}
+if (typeof window !== "undefined") window.addEventListener("spirevault:tab", onTabOpened);
+
 /**
  * Re-fits a header when its width changes, including when its tab is shown.
  * Height changes are ignored: growing the header is one of the fit's own
@@ -740,18 +866,21 @@ export function ensureStageMounts(tabs) {
 }
 
 /**
- * Repaints every mounted stage from the same model.
+ * Repaints every mounted stage from the same data, each in its own scene. A
+ * stage on screen that has no scene yet (the tab the page opened on) is
+ * dealt one now; the others are dealt one when their tab is opened.
  * @param {StageModel} model
  */
 export function renderStage(model) {
-  const html = stageBackdropHtml(model);
+  lastModel = model;
   document.querySelectorAll(".v-stage-bg").forEach((backdrop) => {
-    // The 60-second background refresh calls this with unchanged data;
-    // rewriting identical markup would restart every flame animation.
-    if (painted.get(backdrop) === html) return;
-    backdrop.innerHTML = html;
-    painted.set(backdrop, html);
-    if (backdrop instanceof HTMLElement) backdrop.dataset.scene = model.scene || pickScene();
+    const panel = backdrop.closest(".tab-panel");
+    const onScreen = panel instanceof HTMLElement && !panel.hidden;
+    if (onScreen && !model.scene && !sceneOf.has(backdrop)) {
+      sceneOf.set(backdrop, dealScene());
+      if (panel.dataset.tab) openTab = panel.dataset.tab;
+    }
+    paintBackdrop(backdrop, model);
   });
   fitStages();
 }

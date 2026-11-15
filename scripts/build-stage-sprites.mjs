@@ -80,47 +80,97 @@ const DEFAULTS = Object.freeze({
 });
 
 /**
+ * Settings for drawn figures: art that is already inked (clean outlines,
+ * flat cel shading, transparent background), redrawn from the game's own
+ * sprites and kept as masters in scripts/stage-art/figures/. They skip the
+ * ink filter: only trimmed, turned to face the boss, sized and measured.
+ */
+const DRAWN_DEFAULTS = Object.freeze({
+  mirror: false,
+  boundsAlpha: 24, // fainter than this is stray haze, not figure
+  groundAlpha: 128,
+  groundBand: 0.08,
+  outHeight: 640,
+  type: "image/webp",
+  quality: 0.9,
+});
+
+/**
  * One entry per actor. `kind` decides which side of the stage it stands on.
  * The climbers' source art faces left; mirroring bakes in "faces the boss"
  * so the page needs no flip (a CSS flip would also flip the hard shadow).
+ *
+ * `drawn` (a repo-relative path) marks a figure built from drawn art instead
+ * of the ink filter; see DRAWN_DEFAULTS. Drawn masters are redrawn from the
+ * game sprite named in `source`, pose and costume unchanged.
  */
 const ACTORS = Object.freeze([
-  { id: "ironclad", kind: "climber", source: "characters/ironclad-v2.webp", options: { mirror: true } },
-  { id: "silent", kind: "climber", source: "characters/silent-v2.webp", options: { mirror: true } },
-  { id: "defect", kind: "climber", source: "characters/defect-v2.webp", options: { mirror: true } },
+  {
+    id: "ironclad",
+    kind: "climber",
+    source: "characters/ironclad-v2.webp",
+    drawn: "scripts/stage-art/figures/ironclad.webp",
+    version: 3,
+    options: { mirror: true },
+  },
+  {
+    id: "silent",
+    kind: "climber",
+    source: "characters/silent-v2.webp",
+    drawn: "scripts/stage-art/figures/silent.webp",
+    version: 3,
+    options: { mirror: true },
+  },
+  {
+    id: "defect",
+    kind: "climber",
+    source: "characters/defect-v2.webp",
+    drawn: "scripts/stage-art/figures/defect.webp",
+    version: 3,
+    options: { mirror: true },
+  },
   {
     // The game's Regent art is him on his throne with a creature crushed
     // under its front corner. On the stage that creature read as the Regent
-    // sitting on an enemy, so it is erased (the throne still meets the ground
-    // at its front foot), and the throne face is painted back where the
-    // creature's claws gripped its edge. Points are regent-v2.webp pixels.
+    // sitting on an enemy, so his redraw leaves it out: the throne stands on
+    // an intact stone base.
     id: "regent",
     kind: "climber",
     source: "characters/regent-v2.webp",
-    version: 2,
-    options: {
-      mirror: true,
-      patches: [
-        // left claw, over the throne's lower-left corner
-        { points: [[178, 367], [198, 367], [198, 394], [192, 392], [186, 388], [178, 383]], fill: "#5d4f4e" },
-        // right claw and forearm, over the throne's front face
-        { points: [[242, 394], [259, 394], [259, 432], [249, 429], [240, 424], [240, 410]], fill: "#544b4a" },
-        // the creature itself: everything under the throne's front edge
-        { points: [[120, 512], [120, 385], [166, 385], [176, 387], [186, 390], [192, 394], [206, 401], [221, 413], [240, 426], [249, 430], [257, 433], [257, 512]] },
-      ],
-    },
+    drawn: "scripts/stage-art/figures/regent.webp",
+    version: 3,
+    options: { mirror: true },
   },
-  { id: "necrobinder", kind: "climber", source: "characters/necrobinder-v2.webp", options: { mirror: true } },
+  {
+    id: "necrobinder",
+    kind: "climber",
+    source: "characters/necrobinder-v2.webp",
+    drawn: "scripts/stage-art/figures/necrobinder.webp",
+    version: 3,
+    options: { mirror: true },
+  },
   // The Fool (STS2 public beta v0.113.0). Source: the game's own rest-site
   // art for him (images/rooms/rest_sites/rest_site_fool_placeholder.png in
   // the v0.113.0 pack), the same crouched campfire pose the others use.
   // Unlike the others it is painted facing right, toward the boss: no mirror.
-  { id: "fool", kind: "climber", source: "characters/fool-v2.webp", options: { mirror: false } },
   {
+    id: "fool",
+    kind: "climber",
+    source: "characters/fool-v2.webp",
+    drawn: "scripts/stage-art/figures/fool.webp",
+    version: 3,
+    options: { mirror: false },
+  },
+  {
+    // The ink filter cut his painting into blotches ("choppy"); the redraw
+    // keeps the painting's pose and costume in the same inked style as the
+    // climbers.
     id: "architect",
     kind: "boss",
     source: "bosses/architect-crystal-v4@2x.webp",
-    options: { workScale: 1, outHeight: 620, colors: 18 },
+    drawn: "scripts/stage-art/figures/architect.webp",
+    version: 4,
+    options: { outHeight: 820 },
   },
 ]);
 
@@ -163,6 +213,93 @@ async function inkActor(page, actor, extra) {
   const url = `data:image/webp;base64,${bytes.toString("base64")}`;
   const options = { ...DEFAULTS, ...actor.options, ...extra };
   const result = await page.evaluate(([dataUrl, settings]) => window.InkFilter.process(dataUrl, settings), [url, options]);
+  return {
+    id: actor.id,
+    kind: actor.kind,
+    file: `${actor.id}-ink-v${actor.version ?? ART_VERSION}.webp`,
+    bytes: Buffer.from(result.base64, "base64"),
+    width: result.width,
+    height: result.height,
+    ground: { left: round3(result.ground.left), right: round3(result.ground.right) },
+  };
+}
+
+/**
+ * Page side, for drawn figures: draws the art (mirrored if asked), finds the
+ * figure's bounds and where it meets the ground, and encodes it cropped to
+ * the output height.
+ */
+async function drawnInPage({ dataUrl, settings }) {
+  const source = new Image();
+  source.src = dataUrl;
+  await source.decode();
+  const width = source.naturalWidth;
+  const height = source.naturalHeight;
+  const full = document.createElement("canvas");
+  full.width = width;
+  full.height = height;
+  const ctx = full.getContext("2d", { willReadFrequently: true });
+  if (settings.mirror) {
+    ctx.translate(width, 0);
+    ctx.scale(-1, 1);
+  }
+  ctx.drawImage(source, 0, 0);
+  const { data } = ctx.getImageData(0, 0, width, height);
+  let minX = width;
+  let minY = height;
+  let maxX = -1;
+  let maxY = -1;
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      if (data[(y * width + x) * 4 + 3] < settings.boundsAlpha) continue;
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+    }
+  }
+  if (maxX < 0) throw new Error("drawn figure is empty: no pixel above boundsAlpha");
+  const bounds = { x: minX, y: minY, width: maxX - minX + 1, height: maxY - minY + 1 };
+  const bandTop = Math.floor(bounds.y + bounds.height * (1 - settings.groundBand));
+  let left = Infinity;
+  let right = -Infinity;
+  for (let y = bandTop; y <= maxY; y++) {
+    for (let x = minX; x <= maxX; x++) {
+      if (data[(y * width + x) * 4 + 3] < settings.groundAlpha) continue;
+      if (x < left) left = x;
+      if (x > right) right = x;
+    }
+  }
+  const ground = Number.isFinite(left)
+    ? { left: (left - minX) / bounds.width, right: (right - minX + 1) / bounds.width }
+    : { left: 0, right: 1 };
+  const outHeight = settings.outHeight;
+  const outWidth = Math.round((bounds.width / bounds.height) * outHeight);
+  const canvas = document.createElement("canvas");
+  canvas.width = outWidth;
+  canvas.height = outHeight;
+  const out = canvas.getContext("2d");
+  out.imageSmoothingEnabled = true;
+  out.imageSmoothingQuality = "high";
+  out.drawImage(full, bounds.x, bounds.y, bounds.width, bounds.height, 0, 0, outWidth, outHeight);
+  const blob = await new Promise((resolve) => canvas.toBlob(resolve, settings.type, settings.quality));
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  return { base64: btoa(binary), width: outWidth, height: outHeight, ground };
+}
+
+/**
+ * @param {import("playwright").Page} page
+ * @param {typeof ACTORS[number]} actor
+ */
+async function drawActor(page, actor) {
+  const path = join(REPO_ROOT, actor.drawn);
+  const bytes = readFileSync(path);
+  if (bytes.length === 0) throw new Error(`build-stage-sprites: ${actor.drawn} is empty (iCloud-evicted? run brctl download on it)`);
+  const type = actor.drawn.endsWith(".png") ? "png" : "webp";
+  const settings = { ...DRAWN_DEFAULTS, ...actor.options };
+  const result = await page.evaluate(drawnInPage, { dataUrl: `data:image/${type};base64,${bytes.toString("base64")}`, settings });
   return {
     id: actor.id,
     kind: actor.kind,
@@ -255,7 +392,7 @@ async function main() {
     await page.addScriptTag({ path: FILTER_FILE });
     const results = [];
     for (const actor of actors) {
-      const result = await inkActor(page, actor, extra);
+      const result = actor.drawn ? await drawActor(page, actor) : await inkActor(page, actor, extra);
       results.push(result);
       process.stdout.write(
         `${result.id.padEnd(12)} ${result.width}x${result.height}  ${(result.bytes.length / 1024).toFixed(1)} KB\n`

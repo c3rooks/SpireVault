@@ -1106,97 +1106,107 @@ function pinnedScene(take) {
 }
 
 /**
- * The header's room: the game's own art in depth planes, moving on its own,
- * and holding still under the pointer.
+ * Scenes the header must be able to deal from: Corey asked for at least ten
+ * (2026-11-15). The painted masters live in scripts/stage-art/scenes/
+ * (build-stage-scenes.mjs).
+ */
+const MIN_STAGE_SCENES = 10;
+
+/**
+ * The header's scenery: one painted plate per scene, a new scene each time a
+ * tab is opened, moving on its own and holding still under the pointer.
  */
 async function runScene(browser) {
-  await check("every room's planes are on disk", async () => {
+  await check("every scene's pictures are on disk", async () => {
     const { context, page: p } = await open(browser, "/?ui=next");
     const result = await p.evaluate(async () => {
-      const { STAGE_BACKDROPS } = await import("/lib/ui/stage-backdrops.js?v=1");
-      const srcs = STAGE_BACKDROPS.flatMap((backdrop) => Object.values(backdrop.planes));
+      const { STAGE_SCENES } = await import("/lib/ui/stage-scene-list.js?v=1");
+      const srcs = STAGE_SCENES.flatMap((scene) => scene.srcset.split(",").map((part) => part.trim().split(" ")[0]));
       const bad = [];
       for (const src of srcs) {
         const response = await fetch(src);
         if (!response.ok || !/^image\/webp/.test(response.headers.get("content-type") || "")) bad.push(`${src} -> ${response.status}`);
       }
-      return { rooms: [...new Set(STAGE_BACKDROPS.map((backdrop) => backdrop.room))].length, takes: STAGE_BACKDROPS.length, files: srcs.length, bad };
+      return { scenes: STAGE_SCENES.length, ids: new Set(STAGE_SCENES.map((scene) => scene.id)).size, files: srcs.length, bad };
     });
-    assert.ok(result.rooms >= 6, `${result.rooms} rooms`);
-    assert.ok(result.takes >= 12, `${result.takes} takes`);
-    assert.deepEqual(result.bad, [], "every plane loads as a WebP");
+    assert.ok(result.scenes >= MIN_STAGE_SCENES, `${result.scenes} scenes`);
+    assert.equal(result.ids, result.scenes, "scene ids are unique");
+    assert.deepEqual(result.bad, [], "every picture loads as a WebP");
     await context.close();
   });
 
-  await check("the room is drawn in planes and moves on its own", async () => {
-    const { context, page: p, errors } = await open(browser, "/?ui=next", pinnedScene("glory-a"));
-    await p.waitForSelector('.tab-panel[data-tab="overview"] .v-scene[data-take="glory-a"]');
+  await check("the scene is one painted plate covering the header, alive on its own", async () => {
+    const { context, page: p, errors } = await open(browser, "/?ui=next", pinnedScene("glory"));
+    await p.waitForSelector('.tab-panel[data-tab="overview"] .v-scene[data-scene-id="glory"] .v-scene-img.is-in');
     const read = () =>
       p.evaluate(() => {
         const root = document.querySelector('.tab-panel[data-tab="overview"] .v-stage-bg');
-        const x = (el) => new DOMMatrix(getComputedStyle(el).transform).m41;
-        const planes = ["base", "mid", "front"].map((name) => {
-          const strip = root.querySelector(`.v-scene-strip--${name}`);
-          const tile = strip && strip.querySelector(".v-scene-plate");
-          return {
-            name,
-            tiles: strip ? strip.querySelectorAll(".v-scene-plate").length : 0,
-            image: tile ? getComputedStyle(tile).backgroundImage : "",
-            height: tile ? Math.round(tile.getBoundingClientRect().height) : 0,
-          };
-        });
+        const scene = root.querySelector(".v-scene").getBoundingClientRect();
+        const plate = root.querySelector(".v-scene-plate");
+        const box = plate.getBoundingClientRect();
         return {
           scene: root.dataset.scene,
-          planes,
-          midX: x(root.querySelector(".v-scene-strip--mid")),
-          mistX: x(root.querySelector(".v-scene-mist--near")),
+          images: root.querySelectorAll(".v-scene-img").length,
+          src: root.querySelector(".v-scene-img").currentSrc,
+          covers: box.left <= scene.left + 1 && box.right >= scene.right - 1 && box.top <= scene.top + 1 && box.bottom >= scene.bottom - 1,
+          camera: getComputedStyle(plate).transform,
+          mistX: new DOMMatrix(getComputedStyle(root.querySelector(".v-scene-mist--near")).transform).m41,
+          lights: root.querySelectorAll(".v-scene-light").length,
           motes: root.querySelectorAll(".v-scene-motes i").length,
-          moving: document.getAnimations().filter((a) => a.playState === "running" && /^v-(scene|mote)-/.test(a.animationName || "")).length,
+          moving: document.getAnimations().filter((a) => a.playState === "running" && /^v-(scene|mote|light|shaft)-/.test(a.animationName || "")).length,
         };
       });
     const first = await read();
     assert.equal(first.scene, "glory");
-    for (const plane of first.planes) {
-      assert.ok(plane.tiles >= 4, `${plane.name}: ${plane.tiles} copies`);
-      assert.match(plane.image, new RegExp(`/assets/stage/backdrops/glory-a-${plane.name}-v\\d+\\.webp`), `${plane.name} plane's image`);
-      assert.ok(plane.height > 150, `${plane.name}: ${plane.height}px tall`);
-    }
+    assert.equal(first.images, 1, "one picture, never tiled or repeated");
+    assert.match(first.src, /\/assets\/stage\/scenes\/glory-\d+-v\d+\.webp$/);
+    assert.equal(first.covers, true, "the plate covers the whole scene");
+    assert.ok(first.lights >= 2, `${first.lights} lights`);
     assert.ok(first.motes >= 9, `${first.motes} motes in the air`);
-    assert.ok(first.moving >= 3, `${first.moving} scenery animations running`);
+    assert.ok(first.moving >= 8, `${first.moving} scenery animations running`);
     await p.waitForTimeout(1500);
     const later = await read();
-    assert.ok(Math.abs(later.midX - first.midX) > 0.5, `the distance drifted (${first.midX} -> ${later.midX})`);
-    assert.ok(Math.abs(later.mistX - first.mistX) > 5, `the mist moved (${first.mistX} -> ${later.mistX})`);
+    assert.notEqual(later.camera, first.camera, "the camera eased");
+    assert.ok(Math.abs(later.mistX - first.mistX) > 2, `the mist moved (${first.mistX} -> ${later.mistX})`);
+    assert.equal(later.covers, true, "the plate still covers the scene mid-move");
     assert.deepEqual(errors, []);
     await context.close();
   });
 
-  await check("falling water runs down the grotto's falls", async () => {
-    const { context, page: p } = await open(browser, "/?ui=next", pinnedScene("falls-a"));
-    await p.waitForSelector('.tab-panel[data-tab="overview"] .v-scene[data-take="falls-a"]');
-    const water = await p.evaluate(() => {
-      const root = document.querySelector('.tab-panel[data-tab="overview"] .v-stage-bg');
-      const falls = [...root.querySelectorAll(".v-scene-strip--base .v-scene-plate:first-child .v-scene-water")];
-      return {
-        falls: falls.length,
-        running: falls.filter((el) => getComputedStyle(el, "::before").animationName === "v-scene-fall").length,
-        inside: falls.every((el) => el.getBoundingClientRect().height > 20),
-      };
+  await check("each tab opened shows a new scene", async () => {
+    const { context, page: p, errors } = await open(browser, "/?ui=next");
+    await p.waitForSelector('.tab-panel[data-tab="overview"] .v-scene-img');
+    const seen = await p.evaluate(async () => {
+      const sceneOf = (tab) => document.querySelector(`.tab-panel[data-tab="${tab}"] .v-stage-bg`).dataset.scene;
+      const pause = () => new Promise((resolve) => setTimeout(resolve, 150));
+      const log = [["overview", sceneOf("overview")]];
+      for (const tab of ["characters", "characters", "ascensions", "overview", "cards", "relics"]) {
+        window.SpireVault.switchTab(tab);
+        await pause();
+        log.push([tab, sceneOf(tab)]);
+      }
+      return log;
     });
-    assert.ok(water.falls >= 3, `${water.falls} falls marked`);
-    assert.equal(water.running, water.falls, "each has its streaks running");
-    assert.equal(water.inside, true);
+    for (let i = 1; i < seen.length; i += 1) {
+      const [tab, scene] = seen[i];
+      const [prevTab, prevScene] = seen[i - 1];
+      if (tab === prevTab) assert.equal(scene, prevScene, `re-selecting ${tab} keeps its scene`);
+      else assert.notEqual(scene, prevScene, `${prevTab} -> ${tab}: a new scene (${seen.map((s) => s.join(":")).join(", ")})`);
+    }
+    const overview = seen.filter(([tab]) => tab === "overview").map(([, scene]) => scene);
+    assert.notEqual(overview[1], overview[0], "coming back to Overview deals it a new scene");
+    assert.deepEqual(errors, []);
     await context.close();
   });
 
   await check("the header holds still under the pointer", async () => {
-    const { context, page: p } = await open(browser, "/?ui=next", pinnedScene("hive-a"));
+    const { context, page: p } = await open(browser, "/?ui=next", pinnedScene("hive"));
     await p.waitForFunction(() => [...document.querySelectorAll(".v-actor-art")].every((img) => img.complete));
     await p.waitForTimeout(BUBBLE_SETTLE_MS);
     const boxes = () =>
       p.evaluate(() => {
         const head = document.querySelector('.tab-panel[data-tab="overview"] > .panel-head');
-        const names = { torches: ".v-torches", ledge: ".v-stage-ledge", spire: ".v-spire", climber: ".v-actor--climber", boss: ".v-actor--boss", torchCap: ".v-torches .v-stage-cap", front: ".v-scene-strip--front", base: ".v-scene-strip--base" };
+        const names = { torches: ".v-torches", ledge: ".v-stage-ledge", spire: ".v-spire", climber: ".v-actor--climber", boss: ".v-actor--boss", torchCap: ".v-torches .v-stage-cap", scene: ".v-scene" };
         const out = { px: head.style.getPropertyValue("--px") };
         for (const [key, selector] of Object.entries(names)) {
           const el = head.querySelector(selector);
