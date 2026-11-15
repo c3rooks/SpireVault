@@ -128,10 +128,11 @@
   gap: clamp(16px, 2.4vw, 40px);
   align-items: stretch;
 }
-/* The six buttons share the picture's height, so both columns end together. */
+/* The six buttons share the picture's height, so both columns end together.
+   Rows keep their own height and split what is left over; equal (1fr) rows
+   would all grow to the tallest button and stand taller than the picture. */
 .viewer-tabs {
   display: grid;
-  grid-auto-rows: 1fr;
   align-self: stretch;
   gap: 12px;
 }

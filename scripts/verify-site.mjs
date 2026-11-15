@@ -35,18 +35,15 @@
 
 import { chromium, firefox, webkit } from "playwright";
 import { existsSync, readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import { startSiteServer } from "./site-server.mjs";
 import { heroGeometry, lowContrast } from "./verify-site-page.mjs";
-import { gzipSync } from "node:zlib";
+import { RELEASE, RELEASES_PAGE, SCENARIOS, SITE_ROOT, existsExactly, loadLazy, openPage } from "./verify-site-harness.mjs";
 import { collectFindings } from "./mobile-audit/page-checks.mjs";
 
-const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
-const SITE_ROOT = join(REPO_ROOT, "Site");
 const OWN_PORT = 8797;
 const ENGINES = Object.freeze({ chromium, firefox, webkit });
-const GROUPS = Object.freeze(["layout", "fold", "duel", "health", "content", "links", "wiring", "motion", "perf", "contrast"]);
+const GROUPS = Object.freeze(["layout", "fold", "duel", "health", "content", "links", "wiring", "motion", "perf", "contrast", "resilience"]);
 const HEIGHTS = Object.freeze({ 320: 568, 375: 812, 390: 844, 768: 1024, 1024: 768, 1100: 720, 1280: 720, 1366: 768, 1440: 900, 1728: 1000, 1920: 1080, 2560: 1300 });
 const DEFAULT_WIDTHS = "320,375,390,768,1024,1100,1280,1366,1440,1728,1920,2560";
 /** The duel is checked at a phone and the two review windows, whatever --widths says. */
@@ -54,14 +51,14 @@ const DUEL_WIDTHS = Object.freeze([320, 390, 768, 1024, 1440, 1728]);
 /** Every screen button's picture must exist in these sizes. */
 const SHOT_FILES = Object.freeze(["960", "1440", "1920", "phone-780"]);
 const PHONE_MAX_W = 480;
+/** Widths where the viewer's buttons sit beside the picture, and how far the picture may be cropped. */
+const VIEWER_WIDTHS = Object.freeze([1100, 1280, 1440, 1728]);
+const VIEWER_MIN_RATIO = 1.5;
 const DESKTOP_MIN_W = 1100;
-const NAV_TIMEOUT_MS = 180_000;
 /** Windows the first screen must fit whole: a 1440 laptop and his 1728 Safari. */
 const FOLDS = Object.freeze([{ width: 1440, height: 760 }, { width: 1728, height: 950 }]);
 const CLIMBERS = Object.freeze(["ironclad", "silent", "defect", "regent", "necrobinder", "fool"]);
 const OLD_BRAND = /\bThe Vault\b|\bSpire Vault\b/i;
-/** Hosts the content-security-policy allows the page to talk to. */
-const ALLOWED_HOSTS = Object.freeze(["127.0.0.1", "localhost", "vault-coop.coreycrooks.workers.dev", "api.github.com", "static.cloudflareinsights.com", "cloudflareinsights.com"]);
 /** Asset files that keep an unversioned name on purpose (old links point at them). */
 const UNVERSIONED_OK = Object.freeze(["/assets/vault-mark.svg", "/assets/og.png"]);
 /** Every external link today's page has: the new page must keep each. */
@@ -84,27 +81,6 @@ const LAZY_HEADROOM = 1.5;
 const PHONE_LIMITS = Object.freeze({ ignore: "", minTapPx: 44, goodTapPx: 44, minTextPx: 11, goodTextPx: 12, zoomSafeInputPx: 16, maxSamples: 6, maxCoveredProbes: 300 });
 const DESKTOP_LIMITS = Object.freeze({ ...PHONE_LIMITS, minTapPx: 24 });
 
-const RELEASE = Object.freeze({
-  dmg: "https://github.com/c3rooks/SpireVault/releases/download/v9.9.9-test/The.Vault.dmg",
-  exe: "https://github.com/c3rooks/SpireVault/releases/download/v9.9.9-test/The.Vault_9.9.9_x64-setup.exe",
-});
-const RELEASES_PAGE = "https://github.com/c3rooks/SpireVault/releases/latest";
-/** The three network cases the page must handle. */
-const SCENARIOS = Object.freeze({
-  busy: {
-    presence: () => Array.from({ length: 7 }, (_, i) => ({ inSTS2: i < 2 })),
-    release: () => ({
-      tag_name: "v9.9.9-test",
-      assets: [
-        { name: "The.Vault.dmg", browser_download_url: RELEASE.dmg },
-        { name: "The.Vault_9.9.9_x64-setup.exe", browser_download_url: RELEASE.exe },
-        { name: "The.Vault_9.9.9_x64-setup.exe.blockmap", browser_download_url: `${RELEASE.exe}.blockmap` },
-      ],
-    }),
-  },
-  empty: { presence: () => [], release: () => ({ tag_name: "v1.2.3", assets: [] }) },
-  down: { presence: null, release: null },
-});
 
 const arg = (name, fallback) => {
   const i = process.argv.indexOf(`--${name}`);
@@ -112,109 +88,12 @@ const arg = (name, fallback) => {
 };
 const list = (name, fallback) => String(arg(name, fallback)).split(",").map((s) => s.trim()).filter(Boolean);
 
-// ---- Server and pages ----------------------------------------------------------
-
-
-/** Answers the page's two endpoints for one scenario. */
-async function stubNetwork(page, scenario) {
-  const answer = (route, make) => {
-    if (!make) return route.abort("failed");
-    return route.fulfill({ contentType: "application/json", headers: { "access-control-allow-origin": "*" }, body: JSON.stringify(make()) });
-  };
-  await page.route("**/vault-coop.coreycrooks.workers.dev/**", (route) => answer(route, scenario.presence));
-  await page.route("**/api.github.com/**", (route) => answer(route, scenario.release));
-}
-
-/**
- * A page on the site with its problems recorded as they happen.
- * @returns {Promise<{ page: import("playwright").Page, context: import("playwright").BrowserContext, log: { console: string[], failed: string[], hosts: string[], bytes: number, responses: Array<{ url: string, status: number, bytes: number }> } }>}
- */
-async function openPage(browser, baseUrl, { width, height, scenario = SCENARIOS.busy, query = "climber=ironclad&motion=off", reducedMotion, phone = false, engine = "chromium" }) {
-  const context = await browser.newContext({
-    viewport: { width, height },
-    deviceScaleFactor: 1,
-    ...(reducedMotion ? { reducedMotion } : {}),
-    ...(phone && engine !== "firefox" ? { isMobile: true, hasTouch: true } : {}),
-  });
-  const page = await context.newPage();
-  page.setDefaultTimeout(NAV_TIMEOUT_MS);
-  const log = { console: [], failed: [], hosts: [], bytes: 0, responses: [] };
-  await page.addInitScript(() => {
-    window.__csp = [];
-    document.addEventListener("securitypolicyviolation", (e) => window.__csp.push(`${e.violatedDirective}: ${e.blockedURI || "inline"}`));
-    window.__cls = 0;
-    try {
-      new PerformanceObserver((entries) => {
-        for (const entry of entries.getEntries()) if (!entry.hadRecentInput) window.__cls += entry.value;
-      }).observe({ type: "layout-shift", buffered: true });
-    } catch {
-      /* engines without these observers: the perf group only runs in Chromium */
-    }
-  });
-  page.on("console", (message) => {
-    if (message.type() === "error") log.console.push(message.text());
-  });
-  page.on("pageerror", (error) => log.console.push(`pageerror: ${error.message}`));
-  page.on("requestfailed", (request) => {
-    const url = request.url();
-    // The "down" scenario aborts these two on purpose.
-    if (/vault-coop\.coreycrooks\.workers\.dev|api\.github\.com/.test(url)) return;
-    log.failed.push(`${request.failure()?.errorText || "failed"} ${url}`);
-  });
-  page.on("request", (request) => {
-    try {
-      const host = new URL(request.url()).hostname;
-      if (!ALLOWED_HOSTS.includes(host)) log.hosts.push(host);
-    } catch {
-      /* data: and blob: URLs have no host to check */
-    }
-  });
-  page.on("response", async (response) => {
-    const url = response.url();
-    if (response.status() >= 400) log.failed.push(`HTTP ${response.status()} ${url}`);
-    if (!url.startsWith(baseUrl)) return;
-    const body = await response.body().catch(() => null);
-    const raw = body ? body.length : 0;
-    // Text is weighed as it travels (gzipped); "/" and "/?…" are the document.
-    const bytes = body && /(\.(html|css|js|svg|json)|\/)(\?|$)/.test(url) ? gzipSync(body).length : raw;
-    log.bytes += bytes;
-    log.responses.push({ url, status: response.status(), bytes });
-  });
-  await stubNetwork(page, scenario);
-  await page.goto(`${baseUrl}/?${query}`, { waitUntil: "load" });
-  await page.evaluate(() => document.fonts.ready);
-  await page.waitForLoadState("networkidle", { timeout: 60_000 }).catch(() => {});
-  await page.waitForTimeout(350);
-  return { page, context, log };
-}
-
-async function loadLazy(page) {
-  await page.evaluate(async () => {
-    // "instant" matters: with motion on, the page scrolls smoothly, a 50 ms
-    // step never arrives anywhere, and the lazy images further down never
-    // start loading.
-    const step = Math.max(200, window.innerHeight - 100);
-    for (let y = 0; y < document.documentElement.scrollHeight; y += step) {
-      window.scrollTo({ top: y, behavior: "instant" });
-      await new Promise((r) => setTimeout(r, 50));
-    }
-    window.scrollTo({ top: 0, behavior: "instant" });
-    // decode() on an image that never loads never settles, and evaluate()
-    // has no timeout of its own: give up on a slow image and let the
-    // broken-image check report it.
-    const giveUp = new Promise((r) => setTimeout(r, 15_000));
-    const decoded = Promise.all(Array.from(document.images, (img) => (img.complete ? null : img.decode().catch(() => null))));
-    await Promise.race([decoded, giveUp]);
-  });
-  await page.waitForLoadState("networkidle", { timeout: 60_000 }).catch(() => {});
-}
-
 // ---- Check groups ---------------------------------------------------------------
 
 /** @returns {Promise<string[]>} */
 async function checkLayout(browser, baseUrl, engine, width) {
   const phone = width <= PHONE_MAX_W;
-  const { page, context, log } = await openPage(browser, baseUrl, { width, height: HEIGHTS[width] || 900, phone, engine });
+  const { page, context, log } = await openPage(browser, baseUrl, { width, height: HEIGHTS[width] || 900, phone });
   const failures = [];
   try {
     await loadLazy(page);
@@ -397,7 +276,7 @@ async function checkContent(browser, baseUrl) {
     const versions = new Set();
     for (const ref of [...new Set([...found.refs, ...cssRefs])]) {
       const [path, query] = ref.split("?");
-      if (!existsSync(join(SITE_ROOT, path))) failures.push(`missing file: ${ref}`);
+      if (!existsExactly(join(SITE_ROOT, path))) failures.push(`missing file (or wrong letter case): ${ref}`);
       if (path.startsWith("/assets/") && !UNVERSIONED_OK.includes(path) && !/-v\d+\.[a-z0-9]+$/.test(path)) failures.push(`asset without a version in its name: ${path}`);
       if (/\.(css|js)$/.test(path)) versions.add(query || "(none)");
     }
@@ -463,8 +342,9 @@ async function checkWiring(browser, baseUrl) {
     ["empty", SCENARIOS.empty, (s) => {
       expect("empty", "hero line", s.presence, "Be the first to sign up.");
       expect("empty", "count", [s.count, s.label, s.ingame, s.empty], ["—", "no one signed up yet · be the first", "—", true]);
-      // A release with no installers: the tag is known for macOS; no Windows pill is claimed.
-      expect("empty", "version pills", s.pills, ["v1.2.3", "", "v1.2.3", ""]);
+      // A release with no installers attached shows no version on either
+      // platform: a pill names a version only where that installer exists.
+      expect("empty", "version pills", s.pills, ["", "", "", ""]);
       expect("empty", "macOS download", s.dmg?.href, RELEASES_PAGE);
       expect("empty", "hero macOS link", s.macCta?.href, "#install-mac");
       expect("empty", "Windows download", s.exe?.href, RELEASES_PAGE);
@@ -592,11 +472,23 @@ async function checkMotion(browser, baseUrl) {
       });
       const snapshot = () => page.evaluate(() => Array.from(document.querySelectorAll(".actor, .stat-card, .balloon, .scene-plane"), (el) => { const r = el.getBoundingClientRect(); return [r.left, r.top, r.width, r.height].map((n) => Math.round(n * 10)).join(","); }).join("|"));
       const before = await snapshot();
-      for (const [x, y] of [[900, 300], [1100, 620], [1300, 200]]) {
-        await page.mouse.move(x, y, { steps: 4 });
-        await page.waitForTimeout(120);
+      // Hover the middle of each figure, the balloon and every card, and look
+      // after each move: a lift that drops back when the pointer leaves would
+      // slip past a single look at the end.
+      const points = await page.evaluate(() =>
+        Array.from(document.querySelectorAll(".hero .actor, .hero .balloon, .hero .stat-card"), (el) => {
+          const r = el.getBoundingClientRect();
+          return [Math.round(r.left + r.width / 2), Math.round(r.top + r.height / 2)];
+        }),
+      );
+      if (points.length < 8) failures.push(`motion: the pointer test found only ${points.length} hero pieces to hover`);
+      let moved = false;
+      for (const [x, y] of points) {
+        await page.mouse.move(x, y, { steps: 3 });
+        await page.waitForTimeout(80);
+        if ((await snapshot()) !== before) moved = true;
       }
-      if ((await snapshot()) !== before) failures.push("motion: something in the hero moved with the pointer");
+      if (moved) failures.push("motion: something in the hero moved with the pointer");
     } finally {
       await context.close();
     }
@@ -633,6 +525,96 @@ async function checkPerf(browser, baseUrl) {
       const lit = state.heldBack.filter((image) => image !== "none").length;
       if (lit > 0) failures.push(`${label}: ${lit} room(s) below the first screen loaded their picture before any scrolling`);
       process.stdout.write(`    ${label}: first screen ${kb(needed)} KB + ${kb(lazyBytes)} KB of lazy pictures fetched early, ${log.responses.length} requests, shift ${Number(state.cls).toFixed(3)}\n`);
+    } finally {
+      await context.close();
+    }
+  }
+  return failures;
+}
+
+/**
+ * Two states a visitor can be in that the other groups never load: the page
+ * with JavaScript off, and the first paint on a window tall enough to show
+ * the section under the hero before anyone scrolls.
+ */
+async function checkResilience(browser, baseUrl) {
+  const failures = [];
+  {
+    const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, javaScriptEnabled: false });
+    const page = await context.newPage();
+    try {
+      await page.goto(`${baseUrl}/`, { waitUntil: "load" });
+      const state = await page.evaluate(() => {
+        const shown = (id) => {
+          const el = document.getElementById(id);
+          return el && el.getClientRects().length > 0 ? (el.textContent || "").trim() : null;
+        };
+        return {
+          chip: shown("presence-text"),
+          count: shown("presence-count"),
+          hidden: Array.from(document.querySelectorAll("[data-reveal]")).filter((el) => getComputedStyle(el).opacity !== "1").length,
+          bare: Array.from(document.querySelectorAll("[data-lazy-art]")).filter((el) => getComputedStyle(el).backgroundImage === "none").length,
+        };
+      });
+      if (state.chip !== null) failures.push(`without JavaScript the hero still shows "${state.chip}", which nothing will ever replace`);
+      if (state.count !== null) failures.push(`without JavaScript the live-count ticket still shows "${state.count}"`);
+      if (state.hidden) failures.push(`without JavaScript ${state.hidden} block(s) are invisible`);
+      if (state.bare) failures.push(`without JavaScript ${state.bare} room(s) have no picture`);
+    } finally {
+      await context.close();
+    }
+  }
+  {
+    const { page, context } = await openPage(browser, baseUrl, { width: 1440, height: 1500, query: "climber=ironclad" });
+    try {
+      await page.waitForTimeout(1500);
+      const unseen = await page.evaluate(() =>
+        Array.from(document.querySelectorAll("[data-reveal]"))
+          .filter((el) => {
+            const box = el.getBoundingClientRect();
+            return box.top < window.innerHeight && box.bottom > 0 && Number(getComputedStyle(el).opacity) < 0.99;
+          })
+          .map((el) => el.className || el.tagName),
+      );
+      if (unseen.length) failures.push(`on a tall window ${unseen.length} block(s) on screen at load stay invisible until scrolled: ${unseen.join(", ")}`);
+    } finally {
+      await context.close();
+    }
+  }
+  // ?motion=off on its own (the class, without the system setting) must still everything too.
+  {
+    const { page, context } = await openPage(browser, baseUrl, { width: 1440, height: 900, query: "climber=ironclad&motion=off" });
+    try {
+      const running = await page.evaluate(() => document.getAnimations().filter((a) => a.playState === "running").length);
+      if (running > 0) failures.push(`?motion=off: ${running} animation(s) still running`);
+    } finally {
+      await context.close();
+    }
+  }
+  // The screenshot viewer: the picture keeps its shape and the block does not
+  // change height as screens are chosen, at the widths where the buttons sit beside it.
+  for (const width of VIEWER_WIDTHS) {
+    const { page, context } = await openPage(browser, baseUrl, { width, height: 900 });
+    try {
+      await loadLazy(page);
+      const measure = () =>
+        page.evaluate(() => {
+          const frame = document.querySelector(".viewer-frame").getBoundingClientRect();
+          const picture = document.querySelector(".viewer-picture").getBoundingClientRect();
+          const tabs = document.querySelector(".viewer-tabs").getBoundingClientRect();
+          return { frame: Math.round(frame.height), tabs: Math.round(tabs.height), ratio: picture.width / picture.height };
+        });
+      const heights = [];
+      const shots = await page.evaluate(() => Array.from(document.querySelectorAll(".viewer-tab[data-shot]"), (tab) => tab.getAttribute("data-shot")));
+      if (shots.length < 2) failures.push(`viewer at ${width}: found ${shots.length} screen button(s)`);
+      for (const shot of shots) {
+        await page.click(`.viewer-tab[data-shot="${shot}"]`);
+        const m = await measure();
+        heights.push(m.frame);
+        if (m.ratio < VIEWER_MIN_RATIO) failures.push(`viewer at ${width}, ${shot}: the picture is cropped to ${m.ratio.toFixed(2)}:1 (its own shape is 1.60:1)`);
+        if (Math.abs(m.tabs - m.frame) > 2) failures.push(`viewer at ${width}, ${shot}: buttons ${m.tabs}px tall beside a ${m.frame}px picture frame`);
+      }
+      if (Math.max(...heights) - Math.min(...heights) > 2) failures.push(`viewer at ${width}: the block changes height between screens (${Math.min(...heights)} to ${Math.max(...heights)}px)`);
     } finally {
       await context.close();
     }
@@ -696,6 +678,7 @@ async function main() {
         if (want("wiring")) await run("wiring", () => checkWiring(browser, server.baseUrl));
         if (want("motion")) await run("motion", () => checkMotion(browser, server.baseUrl));
         if (want("perf") && engine === "chromium") await run("perf", () => checkPerf(browser, server.baseUrl));
+        if (want("resilience")) await run("resilience", () => checkResilience(browser, server.baseUrl));
         if (want("contrast")) await run("contrast", () => checkContrast(browser, server.baseUrl));
       } finally {
         await browser.close();
@@ -705,6 +688,10 @@ async function main() {
     server.stop();
   }
   process.stdout.write(`\n${passed} passed, ${failed} failed\n`);
+  if (passed + failed === 0) {
+    process.stderr.write("verify-site: no check ran for that combination of --only and --engines\n");
+    process.exitCode = 1;
+  }
   if (failed) process.exitCode = 1;
 }
 

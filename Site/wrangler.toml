@@ -1,13 +1,15 @@
 # Cloudflare Pages config for the public landing site (spirevault.app).
 #
-# The deploy is a plain directory upload — no build step, no framework. Run:
+# The deploy is a plain directory upload — no build step, no framework. It
+# uploads a staged copy of the files the page serves, never this folder
+# (which also holds the Makefile, the README, README pictures and a Mac
+# installer). See the Makefile:
 #
-#   wrangler pages project create vault-site --production-branch main
-#   wrangler pages deploy . --project-name=vault-site
+#   make deploy DMG=none BRANCH=preview    # a preview address
+#   make deploy DMG=none                   # production
 #
-# Or hook the GitHub repo to Cloudflare Pages via the dashboard with
-# "Build command: (none)" and "Build output: Site/" and pushes will deploy
-# automatically.
+# Do not connect this folder to Cloudflare Pages as a Git build output: that
+# would publish everything in it.
 name = "vault-site"
 pages_build_output_dir = "."
 compatibility_date = "2026-04-29"

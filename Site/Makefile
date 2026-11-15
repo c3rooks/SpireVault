@@ -23,6 +23,10 @@ NODE    ?= /opt/homebrew/opt/node@24/bin/node
 PORT    ?= 8791
 STAGE   ?= $(HOME)/Library/Caches/spirevault-site/stage
 DMG     ?=
+# The repo's own wrangler when it is installed (Backend/node_modules), so a
+# deploy does not download and run whatever the newest release happens to be.
+LOCAL_WRANGLER := $(abspath ../Backend/node_modules/.bin/wrangler)
+WRANGLER ?= $(if $(wildcard $(LOCAL_WRANGLER)),$(LOCAL_WRANGLER),npx --yes wrangler@latest)
 
 .PHONY: dev check shots list stage deploy verify check-deps
 
@@ -45,9 +49,9 @@ stage:
 	$(NODE) ../scripts/stage-site.mjs --out "$(STAGE)" --dmg "$(DMG)"
 
 deploy: check-deps stage
-	cd "$(STAGE)" && npx --yes wrangler@latest pages deploy . \
-	    --project-name=$(PROJECT) \
-	    --branch=$(BRANCH) \
+	cd "$(STAGE)" && PATH="$(dir $(NODE)):$$PATH" $(WRANGLER) pages deploy . \
+	    --project-name="$(PROJECT)" \
+	    --branch="$(BRANCH)" \
 	    --commit-dirty=true
 
 verify:

@@ -60,7 +60,13 @@ export async function startSiteServer(preferredPort) {
       clearTimeout(timer);
       resolve({ baseUrl: `http://${HOST}:${port}`, stop: () => child.kill() });
     });
-    child.stderr.on("data", (chunk) => fail(`dev-site did not start: ${String(chunk).trim()}`));
+    child.stderr.on("data", (chunk) => {
+      // Before it is serving, anything on stderr means it could not start.
+      // After that it is the server's own log (a file offloaded to iCloud and
+      // not served, say), which the person running the checks needs to see.
+      if (settled) process.stderr.write(chunk);
+      else fail(`dev-site did not start: ${String(chunk).trim()}`);
+    });
     child.on("exit", (code) => fail(`dev-site exited early (code ${code})`));
   });
 }

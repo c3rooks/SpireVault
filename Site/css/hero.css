@@ -178,22 +178,28 @@
 .scene-veil {
   position: absolute;
   inset: 0;
-  /* Solid first, for browsers without color-mix(); the layered veil after. */
+  /* A solid veil; browsers with color-mix() get the layered one below. (Two
+     declarations in one rule would not work as a fallback: both use var(),
+     so the first is thrown away before the second is found invalid.) */
   background: linear-gradient(90deg, var(--room-deep, var(--v-bg-deep)) 0%, var(--room-deep, var(--v-bg-deep)) 28%, transparent 60%);
-  background:
-    linear-gradient(
-      90deg,
-      color-mix(in srgb, var(--room-deep, var(--v-bg-deep)) 94%, transparent) 0%,
-      color-mix(in srgb, var(--room-deep, var(--v-bg-deep)) 86%, transparent) 30%,
-      color-mix(in srgb, var(--room-deep, var(--v-bg-deep)) 40%, transparent) 48%,
-      transparent 64%
-    ),
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--room-deep, var(--v-bg-deep)) 46%, transparent) 0%,
-      transparent 26%
-    ),
-    color-mix(in srgb, var(--room-deep, var(--v-bg-deep)) var(--room-wash, 8%), transparent);
+}
+@supports (color: color-mix(in srgb, red, blue)) {
+  .scene-veil {
+    background:
+      linear-gradient(
+        90deg,
+        color-mix(in srgb, var(--room-deep, var(--v-bg-deep)) 94%, transparent) 0%,
+        color-mix(in srgb, var(--room-deep, var(--v-bg-deep)) 86%, transparent) 30%,
+        color-mix(in srgb, var(--room-deep, var(--v-bg-deep)) 40%, transparent) 48%,
+        transparent 64%
+      ),
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--room-deep, var(--v-bg-deep)) 46%, transparent) 0%,
+        transparent 26%
+      ),
+      color-mix(in srgb, var(--room-deep, var(--v-bg-deep)) var(--room-wash, 8%), transparent);
+  }
 }
 
 /* ---- Layout ------------------------------------------------------------------ */
@@ -388,7 +394,11 @@
   border-bottom: var(--v-outline);
   border-radius: 50%;
   background: var(--v-surface-2);
-  background: color-mix(in srgb, var(--v-seat) 70%, var(--v-text));
+}
+@supports (color: color-mix(in srgb, red, blue)) {
+  .actor-seat::before {
+    background: color-mix(in srgb, var(--v-seat) 70%, var(--v-text));
+  }
 }
 
 /* The balloon stands over the climber's head, tail pointing down at them,
@@ -564,7 +574,11 @@
   border: var(--v-outline);
   border-radius: var(--v-radius-sm);
   background: var(--v-paper-2);
-  background: color-mix(in srgb, var(--tone) 26%, var(--v-paper-2));
+}
+@supports (color: color-mix(in srgb, red, blue)) {
+  .stat-art {
+    background: color-mix(in srgb, var(--tone) 26%, var(--v-paper-2));
+  }
 }
 .stat-value {
   font-family: var(--v-font-display);

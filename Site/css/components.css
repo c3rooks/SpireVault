@@ -316,9 +316,11 @@
 /* ---- Rooms below the first screen --------------------------------------------- */
 /* Their room picture and figures are not fetched with the first screen:
    boot.js sets .lazy-art, script.js adds .is-near as each room approaches. */
-.lazy-art [data-lazy-art]:not(.is-near),
-.lazy-art [data-lazy-art]:not(.is-near) .actor-art {
-  background-image: none;
+@media screen {
+  .lazy-art [data-lazy-art]:not(.is-near),
+  .lazy-art [data-lazy-art]:not(.is-near) .actor-art {
+    background-image: none;
+  }
 }
 
 /* ---- Speech balloon --------------------------------------------------------- */

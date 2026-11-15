@@ -128,13 +128,16 @@
   }
 
   let presenceInFlight = false;
+  /** A request that goes silent is given up on, so the next tick can try again. */
+  const PRESENCE_TIMEOUT_MS = 10_000;
 
   async function refreshPresence() {
     // A hidden tab does not need the number, and two answers must not race.
     if (document.hidden || presenceInFlight) return;
     presenceInFlight = true;
     try {
-      const response = await fetch(`${SERVER_URL}/presence`, { cache: "no-store" });
+      const signal = typeof AbortSignal.timeout === "function" ? AbortSignal.timeout(PRESENCE_TIMEOUT_MS) : undefined;
+      const response = await fetch(`${SERVER_URL}/presence`, { cache: "no-store", signal });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const roster = await response.json();
       const people = Array.isArray(roster) ? roster : [];
@@ -195,8 +198,10 @@
     const dmg = pickAsset(release, /\.dmg$/i);
     const exe = pickAsset(release, /_x64-setup\.exe$/i);
 
-    if (version) ["hero-version", "install-version"].forEach((id) => setText(byId(id), version));
-    if (dmg) pointAt(["dmg-link", "download-cta-mac"], dmg);
+    if (dmg) {
+      pointAt(["dmg-link", "download-cta-mac"], dmg);
+      if (version) ["hero-version", "install-version"].forEach((id) => setText(byId(id), version));
+    }
     if (exe) {
       pointAt(["exe-link", "download-cta-win"], exe);
       if (version) ["hero-version-win", "install-version-win"].forEach((id) => setText(byId(id), version));
@@ -269,9 +274,16 @@
       },
       { threshold: 0, rootMargin: "0px 0px -10% 0px" },
     );
-    // Only now may anything start hidden: the observer exists to show it.
+    // What is already on screen (or above it) stays as it was painted; only
+    // what is below the window starts hidden, and the observer shows it.
+    const windowBottom = window.innerHeight;
+    const waiting = targets.filter((target) => {
+      if (target.getBoundingClientRect().top >= windowBottom) return true;
+      target.classList.add("is-in");
+      return false;
+    });
     root.classList.add("can-reveal");
-    targets.forEach((target) => observer.observe(target));
+    waiting.forEach((target) => observer.observe(target));
   }
 
   // ---- 5b. Rooms further down load when they come near ---------------------------
@@ -303,7 +315,10 @@
     const hand = document.querySelector(".hand");
     if (!hand) return;
     const sync = () => {
-      if (hand.scrollWidth > hand.clientWidth + 1) hand.setAttribute("tabindex", "0");
+      // A fanned hand's tilted corner also pokes past its box: only a hand
+      // that is a scroll row gets the tab stop.
+      const scrolls = getComputedStyle(hand).overflowX !== "visible" && hand.scrollWidth > hand.clientWidth + 1;
+      if (scrolls) hand.setAttribute("tabindex", "0");
       else hand.removeAttribute("tabindex");
     };
     sync();
@@ -323,15 +338,31 @@
     if (target && target.tagName === "DETAILS") target.open = true;
   }
 
-  // The checks ask which lines a climber may say.
-  window.SpireVaultSite = Object.freeze({ linesFor });
+  /**
+   * Runs one start-up step. A step that throws is reported and the rest
+   * still run: each feature fails on its own.
+   * @param {() => void} step
+   * @returns {boolean} whether it finished
+   */
+  function start(step) {
+    try {
+      step();
+      return true;
+    } catch (error) {
+      console.error(`SpireVault: ${step.name} failed`, error);
+      return false;
+    }
+  }
 
-  speak();
-  wireViewer();
-  wireReveals();
-  wireLazyArt();
-  wireHand();
-  openLinkedAnswer();
+  start(speak);
+  start(wireViewer);
+  start(wireReveals);
+  // If the rooms further down cannot be watched for, let their art in now.
+  if (!start(wireLazyArt)) root.classList.remove("lazy-art");
+  start(wireHand);
+  start(openLinkedAnswer);
+  // boot.js reads this to know script.js ran; the checks ask it for a climber's lines.
+  window.SpireVaultSite = Object.freeze({ linesFor });
   window.addEventListener("hashchange", openLinkedAnswer);
   refreshPresence();
   window.setInterval(refreshPresence, PRESENCE_POLL_MS);

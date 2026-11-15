@@ -82,7 +82,9 @@ function plan() {
   publish.push(...walk(CSS_DIR).filter((file) => file.endsWith(".css")));
   const leftOut = [];
   for (const file of walk(ASSETS_DIR)) {
-    if (file === INSTALLER || ASSET_EXCLUDES.some((prefix) => file.startsWith(prefix))) leftOut.push(file);
+    // No installer is ever published by the whitelist, whatever it is called
+    // (a conflict copy such as "The.Vault 2.dmg" included).
+    if (file === INSTALLER || /\.dmg$/i.test(file) || ASSET_EXCLUDES.some((prefix) => file.startsWith(prefix))) leftOut.push(file);
     else publish.push(file);
   }
   return { publish: publish.sort(), leftOut: leftOut.sort() };
@@ -127,6 +129,7 @@ function main() {
 
   const offloaded = publish.filter((file) => isOffloaded(join(SITE_ROOT, file)));
   if (offloaded.length) fail(`offloaded to iCloud, bring them back first (brctl download): ${offloaded.join(", ")}`);
+  if (installer && isOffloaded(installer)) fail(`the installer is offloaded to iCloud, bring it back first (brctl download): ${installer}`);
 
   rmSync(out, { recursive: true, force: true });
   for (const file of publish) {
@@ -142,7 +145,7 @@ function main() {
     installerNote = `the Mac installer is ${relative(REPO_ROOT, installer) || installer} (${statSync(installer).size} bytes)`;
   }
   process.stdout.write(`stage-site: ${publish.length} file(s), ${kb(total)}, staged in ${out}; ${installerNote}\n`);
-  process.stdout.write(`stage-site: left out of the deploy: ${leftOut.filter((file) => file !== INSTALLER).join(", ") || "nothing"}\n`);
+  process.stdout.write(`stage-site: left out of the deploy: ${leftOut.filter((file) => !/\.dmg$/i.test(file)).join(", ") || "nothing"}\n`);
 }
 
 main();

@@ -280,14 +280,18 @@
   content: "";
   position: absolute;
   inset: 0;
-  /* Solid first, for browsers without color-mix(); the softer veil after. */
+  /* A solid veil; browsers with color-mix() get the softer one below. */
   background: linear-gradient(90deg, var(--room-deep) 0%, var(--room-deep) 20%, transparent 58%);
-  background: linear-gradient(
-    90deg,
-    color-mix(in srgb, var(--room-deep) 92%, transparent) 0%,
-    color-mix(in srgb, var(--room-deep) 70%, transparent) 34%,
-    transparent 62%
-  );
+}
+@supports (color: color-mix(in srgb, red, blue)) {
+  .closing-band::after {
+    background: linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--room-deep) 92%, transparent) 0%,
+      color-mix(in srgb, var(--room-deep) 70%, transparent) 34%,
+      transparent 62%
+    );
+  }
 }
 .closing-band .duel {
   left: 58%;
@@ -433,5 +437,9 @@
 @media (max-width: 399px) {
   .way {
     padding-inline: var(--s-4);
+  }
+  /* The browser row still gives back its stripe, so the three titles line up. */
+  .way--web {
+    padding-left: calc(var(--s-4) - 12px);
   }
 }

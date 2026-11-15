@@ -23,8 +23,8 @@
  */
 
 import { createServer } from "node:http";
-import { readFile, stat } from "node:fs/promises";
-import { existsSync, readFileSync } from "node:fs";
+import { readFile, realpath, stat } from "node:fs/promises";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { dirname, extname, join, normalize, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -116,9 +116,16 @@ function parseRedirectsFile(path) {
   return rules;
 }
 
-/** Pages control files and dotfiles are never served. @param {string} pathname */
-function isPrivatePath(pathname) {
-  return pathname.split("/").some((part) => part.startsWith(".") || part === "_headers" || part === "_redirects");
+/**
+ * Pages control files and dotfiles are never served. Takes the decoded,
+ * normalised path (an encoded dot or another letter case must not get past).
+ * @param {string} decodedPath
+ */
+function isPrivatePath(decodedPath) {
+  return decodedPath
+    .toLowerCase()
+    .split(/[/\\]/)
+    .some((part) => part.startsWith(".") || part === "_headers" || part === "_redirects");
 }
 
 /** @param {string} pattern @param {string} pathname */
@@ -143,7 +150,10 @@ async function isOffloaded(file) {
 }
 
 function main() {
-  const { port, root } = parseArgs(process.argv.slice(2));
+  const parsed = parseArgs(process.argv.slice(2));
+  const port = parsed.port;
+  // The folder's real spelling, so a file's real spelling can be compared with what was asked for.
+  const root = realpathSync.native(parsed.root);
   const headerRules = parseHeadersFile(join(root, "_headers"));
   const redirects = parseRedirectsFile(join(root, "_redirects"));
   const reportedOffloaded = new Set();
@@ -170,20 +180,32 @@ function main() {
       return null;
     }
     const safe = normalize(decoded).replace(/^(\.\.[/\\])+/, "");
+    if (isPrivatePath(safe)) return null;
     let full = join(root, safe);
     if (full !== root && !full.startsWith(root + sep)) return null;
     try {
       const info = await stat(full);
       if (info.isDirectory()) full = join(full, "index.html");
-      await stat(full);
-      return full;
+      // This disk ignores letter case and Cloudflare Pages does not: a path
+      // spelled differently from the file is a 404 here too.
+      return (await realpath(full)) === full ? full : null;
     } catch {
       return null;
     }
   };
 
-  const server = createServer(async (req, res) => {
-    const { pathname } = new URL(req.url || "/", `http://${HOST}:${port}`);
+  const PLAIN = { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" };
+
+  /** @param {import("node:http").IncomingMessage} req @param {import("node:http").ServerResponse} res */
+  const handle = async (req, res) => {
+    let pathname;
+    try {
+      ({ pathname } = new URL(req.url || "/", `http://${HOST}:${port}`));
+    } catch {
+      res.writeHead(400, PLAIN);
+      res.end("Bad request");
+      return;
+    }
     const headers = headersFor(pathname);
     const text = { ...headers, "Content-Type": "text/plain; charset=utf-8" };
 
@@ -193,12 +215,6 @@ function main() {
       res.end("dev-site only answers requests for 127.0.0.1 or localhost");
       return;
     }
-    if (isPrivatePath(pathname)) {
-      res.writeHead(404, text);
-      res.end("Not found");
-      return;
-    }
-
     const redirect = redirects.get(pathname);
     if (redirect && redirect.status >= 300 && redirect.status < 400) {
       res.writeHead(redirect.status, { ...headers, Location: redirect.to });
@@ -229,6 +245,15 @@ function main() {
       res.writeHead(500, text);
       res.end(`Read failed: ${error instanceof Error ? error.message : String(error)}`);
     }
+  };
+
+  // Nothing a request does may end the server: an unexpected failure is a 500.
+  const server = createServer((req, res) => {
+    handle(req, res).catch((error) => {
+      process.stderr.write(`dev-site: ${req.url}: ${error instanceof Error ? error.message : String(error)}\n`);
+      if (!res.headersSent) res.writeHead(500, PLAIN);
+      res.end("Server error");
+    });
   });
 
   server.on("error", (error) => {

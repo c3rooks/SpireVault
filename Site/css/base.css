@@ -182,6 +182,24 @@ kbd {
     translate var(--dur-3) var(--ease-out);
 }
 
+/* On paper nothing has been scrolled to, so nothing may wait to be revealed. */
+@media print {
+  .can-reveal [data-reveal] {
+    opacity: 1;
+    translate: none;
+  }
+}
+
+/* Without JavaScript (boot.js never set .js) nothing can fetch the live
+   count: leave out the parts that would say "checking" for ever. */
+html:not(.js) .hero-presence,
+html:not(.js) .ticket-head,
+html:not(.js) .ticket-num,
+html:not(.js) .ticket-label,
+html:not(.js) .ticket-rows {
+  display: none;
+}
+
 /* Reduced motion: everything still and visible. The class is set before
    first paint by boot.js; the media query covers the no-JS case. */
 @media (prefers-reduced-motion: reduce) {

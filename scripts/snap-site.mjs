@@ -58,11 +58,6 @@ const flag = (name) => process.argv.includes(`--${name}`);
 /** @param {string} name @param {string} fallback */
 const list = (name, fallback) => String(arg(name, fallback)).split(",").map((s) => s.trim()).filter(Boolean);
 
-/**
- * Starts dev-site on our own port and resolves once it is serving.
- * @returns {Promise<{ baseUrl: string, stop: () => void }>}
- */
-
 /** Canned answers for the two endpoints the page calls. */
 async function stubNetwork(page) {
   await page.route("**/vault-coop.coreycrooks.workers.dev/**", (route) =>
@@ -242,14 +237,18 @@ async function main() {
                         return { id: el.id || el.classList[0] || `part-${i}`, top: box.top + window.scrollY, height: box.height };
                       }),
                     );
-                    for (const part of parts) {
-                      const file = join(outDir, "sections", `${part.id}-${width}.png`);
-                      const y = Math.round(part.top * scale);
-                      const h = Math.round(part.height * scale);
-                      execFileSync("ffmpeg", ["-loglevel", "error", "-y", "-i", whole, "-vf", `crop=iw:${h}:0:${y}`, file]);
-                      written.push(file);
+                    try {
+                      for (const part of parts) {
+                        const file = join(outDir, "sections", `${part.id}-${width}.png`);
+                        const y = Math.round(part.top * scale);
+                        const h = Math.round(part.height * scale);
+                        execFileSync("ffmpeg", ["-loglevel", "error", "-y", "-i", whole, "-vf", `crop=iw:${h}:0:${y}`, file]);
+                        written.push(file);
+                      }
+                    } finally {
+                      // The working copy of the whole page goes even if a crop fails.
+                      if (!wantFull) rmSync(whole, { force: true });
                     }
-                    if (!wantFull) rmSync(whole, { force: true });
                   }
                 }
                 first = false;
