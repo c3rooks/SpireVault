@@ -80,14 +80,26 @@ function spireHtml(hiLevel, cap) {
 }
 
 /**
- * The spire's caption. It lives on the ledge strip (near layer), under the
- * spire, so the boss standing in front of the tower never covers it.
+ * The spire's marker: a chip beside the tower's foot that says what the lit
+ * windows count, in the words Overview uses for the same number. It lives in
+ * the near layer, so the figures in front of the tower never cover it.
  * @param {number} hiLevel
  * @returns {string}
  */
 function spireCaptionHtml(hiLevel) {
   if (hiLevel < 0) return "";
-  return `<span class="v-stage-cap v-spire-cap" aria-hidden="true">spire lit to <strong>A${hiLevel}</strong></span>`;
+  return `<span class="v-stage-cap v-spire-cap" aria-hidden="true">Highest <b>A${hiLevel}</b></span>`;
+}
+
+/**
+ * The torches' marker: how many runs the row covers and how many were won.
+ * @param {number} runCount  torches drawn, at least 1
+ * @param {number} wins
+ * @returns {string}
+ */
+function torchCaptionHtml(runCount, wins) {
+  const text = runCount === 1 ? `Last run <b>${wins === 1 ? "won" : "lost"}</b>` : `Last ${runCount} runs <b>${wins} won</b>`;
+  return `<span class="v-stage-cap" aria-hidden="true">${text}</span>`;
 }
 
 /**
@@ -120,7 +132,7 @@ function torchesHtml(recent) {
   return `
     <div class="v-torches" role="img" aria-label="${esc(label)}" style="--torch-count:${runs.length}">
       <svg viewBox="0 0 ${width} ${TORCH_VIEW_H}" aria-hidden="true">${torches}</svg>
-      <span class="v-stage-cap">${wins} of your last ${runs.length} torches lit</span>
+      ${torchCaptionHtml(runs.length, wins)}
     </div>`;
 }
 
@@ -280,8 +292,10 @@ function actorParts(actor, kind) {
 
 /**
  * The climber and the boss facing each other across a short gap, with the
- * speaker's line in a balloon above them (placed by fitStages()). The `data-action` hooks are the
- * ones renderCompanion() has always used.
+ * speaker's line in a balloon above them (placed by fitStages()). Both
+ * figures are buttons and answer the pointer the same way: the climber opens
+ * the character picker, the boss says a line (`boss-speak`). The other
+ * `data-action` hooks are the ones renderCompanion() has always used.
  * @param {DuelModel} model
  * @returns {string}
  */
@@ -297,9 +311,10 @@ export function duelHtml(model) {
               aria-label="${esc(model.climber.ariaLabel)}" title="${esc(model.climber.hint)}">
         ${climber.html}
       </button>
-      <div class="v-actor v-actor--boss" data-head-x="${boss.headX}" data-foot-y="${boss.footY}" role="img" aria-label="${esc(model.boss.label)}" title="${esc(model.boss.label)}">
+      <button class="v-actor v-actor--boss" type="button" data-action="boss-speak" data-head-x="${boss.headX}" data-foot-y="${boss.footY}"
+              aria-label="${esc(`${model.boss.label}. Tap for a line.`)}" title="${esc(`${model.boss.label}: tap for a line`)}">
         ${boss.html}
-      </div>
+      </button>
       <div class="v-duel-gap">
         <button class="v-bubble" type="button" data-action="scene-reroll"
                 aria-label="${esc(`${speakerLabel} says: ${model.quote.text} Tap for another line.`)}" title="Tap for a new line">
@@ -520,7 +535,7 @@ function fitBalloon(head) {
   const ceiling = ceilingOf(head);
   const scenery = () => [
     ...textRects(head, TITLE_TEXT),
-    ...[...head.querySelectorAll(".v-torches svg, .v-torches .v-stage-cap, .v-spire, .v-spire-cap, .v-stage-moon")]
+    ...[...head.querySelectorAll(".v-torches svg, .v-torches .v-stage-cap, .v-spire, .v-spire-cap")]
       .map(drawnRect)
       .filter(Boolean),
   ];

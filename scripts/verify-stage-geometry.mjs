@@ -5,7 +5,7 @@
  * overlap that would make the scene read wrong:
  *
  *   - the spire behind (or touching) a figure — "sitting on the tower"
- *   - the spire or moon under the title, subtitle, torches or toolbar
+ *   - the spire under the title, subtitle, torches or toolbar
  *   - the two figures touching each other, or standing far apart
  *   - the speech balloon over the title, the toolbar or either figure, not
  *     above whoever is speaking, or with its tail not over them
@@ -15,7 +15,7 @@
  * the boss.
  *
  * Elements that are display:none at a width (the spire on the narrowest
- * phones, the moon on tablets) are skipped and listed, not failed.
+ * phones) are skipped and listed, not failed.
  *
  *   node scripts/verify-stage-geometry.mjs                     # starts its own server
  *   node scripts/verify-stage-geometry.mjs --base-url http://127.0.0.1:8788
@@ -130,7 +130,6 @@ function measure(tab) {
   return {
     head: { left: headRect.left, top: headRect.top, right: headRect.right, bottom: headRect.bottom },
     spire: rect(head.querySelector(".v-spire")),
-    moon: rect(head.querySelector(".v-stage-moon")),
     climber: rect(head.querySelector(".v-actor--climber .v-actor-art")),
     boss: rect(head.querySelector(".v-actor--boss .v-actor-art")),
     bubble: rect(head.querySelector(".v-bubble")),
@@ -167,7 +166,7 @@ function check(m) {
     const g = gap(m[a], m[b]);
     if (g < min) problems.push(`${a} vs ${b}: ${g < 0 ? "overlap" : "gap"} ${Math.round(g)}px (need ≥ ${min})`);
   };
-  ["spire", "moon", "climber", "boss", "bubble", "title"].forEach((k) => {
+  ["spire", "climber", "boss", "bubble", "title"].forEach((k) => {
     if (!m[k]) skipped.push(k);
   });
   if (!m.climber) problems.push("climber not rendered");
@@ -181,10 +180,6 @@ function check(m) {
   apart("spire", "torches", 8);
   apart("spire", "toolbar", 4);
   apart("spire", "bubble", 4);
-  apart("moon", "title", 4);
-  apart("moon", "subtitle", 4);
-  apart("moon", "toolbar", 4);
-  apart("moon", "climber", 0);
   apart("spireCap", "torches", 6);
   apart("spireCap", "climber", 4);
   apart("climber", "boss", FIGURE_CLEARANCE_PX);
@@ -214,7 +209,7 @@ function check(m) {
   apart("bubble", "subtitle", 4);
   apart("bubble", "toolbar", 4);
   apart("climber", "toolbar", 0);
-  ["spire", "moon", "climber", "boss", "bubble"].forEach((k) => {
+  ["spire", "climber", "boss", "bubble"].forEach((k) => {
     if (m[k] && (m[k].left < m.head.left - 1 || m[k].right > m.head.right + 1)) {
       problems.push(`${k} pokes out of the header (${Math.round(m[k].left)}..${Math.round(m[k].right)} vs ${Math.round(m.head.left)}..${Math.round(m.head.right)})`);
     }

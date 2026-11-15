@@ -121,9 +121,33 @@ function clearTilt(el) {
   /** @type {HTMLElement} */ (el).style.removeProperty("--ry");
 }
 
+/**
+ * A thumbnail that grows on hover names its large image in `data-hd`. The
+ * first time its row (`[data-hd-zoom]`) is hovered, load that image and put
+ * it in; the attribute is removed straight away, so it happens once.
+ * @param {Element} host
+ */
+function sharpenArt(host) {
+  host.querySelectorAll("img[data-hd]").forEach((img) => {
+    const large = img.getAttribute("data-hd");
+    img.removeAttribute("data-hd");
+    if (!large) return;
+    const loader = new Image();
+    // Swap only once it has arrived, so the thumbnail never blanks. If it
+    // fails, the small image simply stays.
+    loader.onload = () => {
+      if (img.isConnected) img.setAttribute("src", large);
+    };
+    loader.src = large;
+  });
+}
+
 /** @param {PointerEvent} event */
 function handlePointer(event) {
   const target = event.target instanceof Element ? event.target : null;
+
+  const zoomHost = target ? target.closest("[data-hd-zoom]") : null;
+  if (zoomHost) sharpenArt(zoomHost);
 
   // Card tilt: lean toward the pointer.
   const tilt = target ? target.closest("[data-tilt]") : null;
@@ -137,14 +161,6 @@ function handlePointer(event) {
     const dy = (event.clientY - box.top) / box.height - 0.5;
     /** @type {HTMLElement} */ (tilt).style.setProperty("--ry", `${(dx * 2 * TILT_MAX_DEG).toFixed(2)}deg`);
     /** @type {HTMLElement} */ (tilt).style.setProperty("--rx", `${(-dy * 2 * TILT_MAX_DEG).toFixed(2)}deg`);
-  }
-
-  // Stage parallax: one custom property drives every layer.
-  const stage = target ? target.closest(".v-has-stage") : null;
-  if (stage) {
-    const box = stage.getBoundingClientRect();
-    const px = (event.clientX - box.left) / box.width - 0.5;
-    /** @type {HTMLElement} */ (stage).style.setProperty("--px", px.toFixed(3));
   }
 }
 
@@ -179,9 +195,6 @@ export function initMotion() {
     () => {
       clearTilt(tiltedEl);
       tiltedEl = null;
-      document.querySelectorAll(".v-has-stage").forEach((stage) => {
-        /** @type {HTMLElement} */ (stage).style.setProperty("--px", "0");
-      });
     },
     { passive: true }
   );

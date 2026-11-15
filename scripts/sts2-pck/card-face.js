@@ -480,7 +480,20 @@
     return { canvas, ctx };
   }
 
-  function shrink(canvas) {
+  /**
+   * The working canvas at the output size. `scale` 1 is the shipped 205x256
+   * framing (in two steps, as those renders were made); a larger scale goes
+   * straight from the working canvas, which is still bigger than the output
+   * up to scale 3.
+   */
+  function shrink(canvas, scale = 1) {
+    if (scale !== 1) {
+      const large = canvasOf(Math.round(OUT.width * scale), Math.round(OUT.height * scale));
+      const lctx = large.getContext("2d");
+      lctx.imageSmoothingQuality = "high";
+      lctx.drawImage(canvas, 0, 0, large.width, large.height);
+      return large;
+    }
     const half = canvasOf(VIEW.width, VIEW.height);
     const hctx = half.getContext("2d");
     hctx.imageSmoothingQuality = "high";
@@ -514,7 +527,8 @@
    *   ancientAssets { border, textBg, banner, flame, mask, glass } for ancient cards,
    *   cost { text, color, outline, icon } | null, star { text, color, outline, icon } | null,
    *   description (BBCode), icons { "res://...png": data URL },
-   *   fonts { titleBase64, boldBase64, bodyBase64 }, metrics { ascent, descent, winAscent, winDescent } (Kreon, per unit of size), quality
+   *   fonts { titleBase64, boldBase64, bodyBase64 }, metrics { ascent, descent, winAscent, winDescent } (Kreon, per unit of size), quality,
+   *   scale (output size as a multiple of 205x256; default 1)
    * @returns {Promise<string>} base64 webp
    */
   async function render(spec) {
@@ -582,7 +596,7 @@
         outlineSize: STAR.outlineSize, shadowOffset: STAR.shadowOffset, shadow: COLOR.titleShadow,
       });
     }
-    return shrink(canvas).toDataURL("image/webp", spec.quality).split(",")[1];
+    return shrink(canvas, spec.scale ?? 1).toDataURL("image/webp", spec.quality).split(",")[1];
   }
 
   window.CardFace = { render, COLOR };

@@ -134,7 +134,13 @@
   --v-ease-spring: cubic-bezier(0.2, 1.4, 0.4, 1);
 
   --v-rail-w: 216px;
-  --v-content-max: 1200px;
+  /* The content column fills the window on laptops and desktops, so the page
+     sits close to the rail and the window edge. The cap only bites on
+     ultra-wide monitors, where rows would otherwise stretch past reading. */
+  --v-content-max: 1760px;
+  /* Side padding of every panel head and body: slim, and the only gutter the
+     page has below the cap. */
+  --v-gutter: clamp(16px, 2vw, 28px);
   --v-stage-h: 256px;
   --v-ledge-h: 34px;
 }

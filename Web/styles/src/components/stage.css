@@ -16,7 +16,7 @@
 .panel-head.v-has-stage {
   /* The stage's inner column lines up with the page content beneath it; the
      scenery itself runs edge to edge. */
-  --stage-gutter: calc(max(0px, (100% - var(--v-content-max)) / 2) + clamp(16px, 3vw, 36px));
+  --stage-gutter: calc(max(0px, (100% - var(--v-content-max)) / 2) + var(--v-gutter));
   /* Where feet meet the ground, measured up from the stage's bottom edge. */
   --stage-ground: calc(var(--v-ledge-h) - 9px);
 
@@ -60,7 +60,6 @@
   min-height: calc(var(--v-stage-h) + var(--stage-extra, var(--stage-extra-guess)));
   padding-inline: var(--stage-gutter);
   padding-bottom: 0;
-  --px: 0;
 }
 .v-has-stage .panel-head-stage {
   position: static;
@@ -83,61 +82,17 @@
     var(--scene-sky-3, var(--v-stage-sky-3)) 100%
   );
 }
+/* Three layers, back to front: far (the room, the spire), mid (the room's
+   air), near (ledge, torches, captions). They only stack. Nothing here
+   follows the pointer: the room moves on its own (stage-scenes.css), and
+   the data standing in it — torches, captions, the ground under the
+   figures' feet — stays where it is. */
 .v-stage-layer {
   position: absolute;
   inset: 0;
-  transition: transform 260ms ease-out;
-  will-change: transform;
-}
-.v-stage-far {
-  transform: translate3d(calc(var(--px) * -8px), 0, 0);
-}
-.v-stage-mid {
-  transform: translate3d(calc(var(--px) * -18px), 0, 0);
-}
-.v-stage-near {
-  transform: translate3d(calc(var(--px) * -30px), 0, 0);
 }
 
-/* ---- Far layer: stars, moon, hills, spire ---------------------------------- */
-.v-stage-stars {
-  position: absolute;
-  inset: 0;
-  opacity: 0.85;
-  background-image:
-    radial-gradient(1.5px 1.5px at 8% 22%, var(--v-text) 99%, transparent),
-    radial-gradient(1px 1px at 19% 9%, var(--v-text) 99%, transparent),
-    radial-gradient(1.5px 1.5px at 31% 30%, var(--v-text) 99%, transparent),
-    radial-gradient(1px 1px at 44% 14%, var(--v-text) 99%, transparent),
-    radial-gradient(1.5px 1.5px at 58% 24%, var(--v-text) 99%, transparent),
-    radial-gradient(1px 1px at 71% 10%, var(--v-text) 99%, transparent),
-    radial-gradient(1px 1px at 83% 28%, var(--v-text) 99%, transparent),
-    radial-gradient(1.5px 1.5px at 93% 16%, var(--v-text) 99%, transparent);
-}
-/* The moon sits behind the spire's shoulder: the tower cuts into it. */
-.v-stage-moon {
-  position: absolute;
-  /* Level with the spire's top (the spire stands on the ground, so this is
-     measured from the bottom: the header can grow above both). */
-  top: calc(100% - var(--v-ledge-h) + 8px - var(--spire-w) * 230 / 120 - 4px);
-  right: calc(var(--spire-right) + var(--spire-w) * 0.55);
-  width: 86px;
-  height: 86px;
-  border: var(--v-outline);
-  border-radius: 50%;
-  background: var(--scene-glow, var(--v-stage-moon));
-}
-.v-stage-hills {
-  position: absolute;
-  bottom: calc(var(--v-ledge-h) - 6px);
-  left: -3%;
-  width: 106%;
-  height: 50%;
-  fill: var(--scene-far, var(--v-stage-far));
-}
-.v-stage-hills .v-hills-back {
-  fill: color-mix(in srgb, var(--scene-far, var(--v-stage-far)) 55%, var(--scene-sky-2, var(--v-stage-sky-2)));
-}
+/* ---- Far layer: the scenery (components/stage-scenes.css), then the spire ---- */
 /* The spire rises in the distance behind the climber's back — the tower
    they are climbing — with open ground between it and the figure. */
 .v-spire {
@@ -149,8 +104,7 @@
 }
 /* No room for the tower between the title and the fight on this layout. */
 .v-stage--no-spire .v-spire,
-.v-stage--no-spire .v-spire-cap,
-.v-stage--no-spire .v-stage-moon {
+.v-stage--no-spire .v-spire-cap {
   display: none;
 }
 .v-spire-svg {
@@ -251,29 +205,79 @@
     transform: scale(1.06, 0.92);
   }
 }
-/* Captions sit on the ledge strip, under the thing they describe. */
+/* Markers: what the torches and the spire are counting, said in the app's
+   own chip (label, then the value in the title colour — the same voice as
+   "Highest A9" on Overview) with a nub pointing at the thing it reads. Both
+   stand in the scene on one line just above the ground, beside their object.
+   Never in the ledge strip: that is the top edge of the page, and a caption
+   there belongs to neither. */
 .v-stage-cap {
   position: absolute;
-  color: var(--v-text-2);
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  padding: 3px 10px;
+  border: var(--v-outline);
+  border-radius: var(--v-radius-pill);
+  background: var(--v-bg-deep);
+  box-shadow: var(--v-shadow-sm);
+  color: var(--v-text);
   font-size: var(--v-text-xs);
-  font-weight: 800;
-  letter-spacing: 0.04em;
-  text-shadow: 1px 1px 0 var(--v-ink);
+  font-weight: 700;
+  line-height: 1.4;
   white-space: nowrap;
 }
-.v-torches .v-stage-cap {
-  top: 100%;
-  left: 2px;
-  margin-top: -2px;
-}
-.v-spire-cap {
-  right: calc(var(--spire-right) + var(--spire-w) * 0.5);
-  bottom: calc(var(--v-ledge-h) - 25px);
-  translate: 50% 0;
-}
-.v-spire-cap strong {
-  color: var(--v-stage-lit);
+.v-stage-cap b {
+  color: var(--v-title);
   font-weight: 800;
+}
+/* The nub: a corner of the chip pulled out toward the object. */
+.v-stage-cap::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  box-sizing: border-box;
+  width: 9px;
+  height: 9px;
+  background: var(--v-bg-deep);
+  translate: 0 -50%;
+  rotate: 45deg;
+}
+/* Torches: past the last torch, pointing back along the row. The row's own
+   box ends a pixel under the ground line, so 10px up is 9px of air. */
+.v-torches .v-stage-cap {
+  bottom: 10px;
+  left: calc(100% + 14px);
+}
+.v-torches .v-stage-cap::before {
+  left: -5.5px;
+  border-bottom: var(--v-outline);
+  border-left: var(--v-outline);
+}
+/* Spire: beside the tower's foot, pointing at it. The tower's base starts a
+   quarter of the way across its box; the gap leaves room for the parallax
+   (this is the near layer, the tower the far one: they drift ±11px). */
+.v-spire-cap {
+  right: calc(var(--spire-right) + var(--spire-w) * 0.78 + 16px);
+  bottom: var(--v-ledge-h);
+}
+.v-spire-cap::before {
+  right: -5.5px;
+  border-top: var(--v-outline);
+  border-right: var(--v-outline);
+}
+/* The spire's marker needs open ground between the torches and the tower;
+   below this width there is none. The torches' marker goes next, before it
+   would squeeze the tower. (Phones drop both: see Small screens.) */
+@media (max-width: 1180px) {
+  .v-spire-cap {
+    display: none;
+  }
+}
+@media (max-width: 1020px) {
+  .v-stage-cap {
+    display: none;
+  }
 }
 
 /* ---- The duel ------------------------------------------------------------------ */
@@ -292,8 +296,6 @@
   --boss-sink: calc(var(--v-stage-h) * var(--boss-h, 0.67) * var(--duel-scale) * (1 - var(--boss-foot, 1)));
   position: absolute;
   inset: 0;
-  transform: translate3d(calc(var(--px) * -30px), 0, 0);
-  transition: transform 260ms ease-out;
 }
 .v-actor {
   position: absolute;
@@ -304,8 +306,10 @@
 }
 .v-actor--boss {
   right: var(--duel-boss-right);
-  /* So his name shows on hover; nothing clickable sits behind him. */
+  /* A button, like the climber: tapping him makes him speak. */
+  border-radius: var(--v-radius-sm);
   pointer-events: auto;
+  cursor: pointer;
   /* Feet on the same ground line as the climber: one line, both figures. */
   bottom: calc(var(--stage-ground) - var(--boss-sink));
   width: calc(var(--v-stage-h) * var(--boss-h) * var(--boss-aspect) * var(--duel-scale));
@@ -320,7 +324,8 @@
   pointer-events: auto;
   cursor: pointer;
 }
-.v-actor--climber:focus-visible {
+.v-actor--climber:focus-visible,
+.v-actor--boss:focus-visible {
   outline: 2px solid var(--v-title);
   outline-offset: 6px;
 }
@@ -343,15 +348,21 @@
   animation: v-breathe 3.8s ease-in-out infinite;
   transition: translate var(--v-dur-2) var(--v-ease-spring);
 }
+/* Both figures answer the pointer the same way: the art lifts a little.
+   Only the art moves, not the button, so the pointer never loses it. */
 .v-actor--climber:hover .v-actor-art,
-.v-actor--climber:focus-visible .v-actor-art {
+.v-actor--climber:focus-visible .v-actor-art,
+.v-actor--boss:hover .v-actor-art,
+.v-actor--boss:focus-visible .v-actor-art {
   translate: 0 -3px;
 }
-/* The boss breathes too, from his feet, a beat slower. He does not bob: a
-   figure that rises and falls reads as standing higher than the other. */
+/* The boss breathes too, from his feet, a beat slower. He does not bob on
+   his own: a figure that rises and falls reads as standing higher than the
+   other. */
 .v-actor--boss .v-actor-art {
   transform-origin: 50% calc(var(--boss-foot, 1) * 100%);
   animation: v-breathe 5.2s ease-in-out infinite;
+  transition: translate var(--v-dur-2) var(--v-ease-spring);
 }
 @keyframes v-breathe {
   50% {
@@ -449,6 +460,17 @@
 }
 .v-bubble:hover {
   transform: translateY(-2px) rotate(-1deg);
+}
+/* The lift and tilt move the balloon's edges: the bottom edge by up to 5px
+   at its right end, the others by a pixel. Without this, a pointer resting
+   on an edge loses the balloon as it lifts, the balloon drops back under
+   it, and the two chase each other for good. While hovered, the hit area
+   reaches past each edge by a little more than that edge moves (the spring
+   overshoots), and no further, so it never covers a neighbour. */
+.v-bubble:hover::before {
+  content: "";
+  position: absolute;
+  inset: -2px -2px -7px;
 }
 .v-bubble:focus-visible {
   outline: 2px solid var(--v-title);
@@ -559,10 +581,6 @@
     --duel-gap: 40px;
     --spire-clear: 40px;
   }
-  .v-stage-moon {
-    width: 62px;
-    height: 62px;
-  }
   .v-bubble {
     padding: 7px 10px;
     font-size: var(--v-text-xs);
@@ -575,7 +593,6 @@
     --duel-gap: 36px;
     --spire-clear: 32px;
   }
-  .v-stage-moon,
   .v-spire-cap {
     display: none;
   }
@@ -592,7 +609,8 @@
     --duel-boss-right: var(--stage-gutter);
     --duel-gap: 32px;
     --spire-clear: 32px;
-    --spire-top: 57px;
+    /* Below the toolbar row, whose buttons are 44px tall on phones. */
+    --spire-top: 61px;
     --bubble-max: min(60%, 320px);
     --stage-extra-guess: 40px;
   }
@@ -600,9 +618,6 @@
     padding-bottom: calc(var(--v-ledge-h) + 44px);
   }
   .v-stage-cap {
-    display: none;
-  }
-  .v-stage-moon {
     display: none;
   }
   .v-torches {
@@ -654,14 +669,10 @@
   }
 }
 
-/* Reduced motion: no parallax, and nothing on the stage loops. (Today the
-   legacy sheet's global rule also flattens every animation; these keep the
-   stage honest once that sheet is gone.) */
+/* Reduced motion: nothing on the stage loops. (Today the legacy sheet's
+   global rule also flattens every animation; these keep the stage honest
+   once that sheet is gone.) */
 @media (prefers-reduced-motion: reduce) {
-  .v-stage-layer,
-  .v-duel {
-    transform: none;
-  }
   .v-spire-win,
   .v-torch-flame,
   .v-actor-art,
@@ -669,10 +680,6 @@
   .v-bubble {
     animation: none;
   }
-}
-.prefer-reduced-motion .v-stage-layer,
-.prefer-reduced-motion .v-duel {
-  transform: none;
 }
 .prefer-reduced-motion .v-spire-win,
 .prefer-reduced-motion .v-torch-flame,

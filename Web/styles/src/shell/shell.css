@@ -27,11 +27,12 @@
   border-right: var(--v-outline);
 }
 
+/* The brand row runs the rail's full inner width: the emblem starts on the
+   nav rows' left edge and the theme button ends on their right one. */
 .sidebar-brand {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 0 2px;
 }
 .sidebar-brand img {
   flex: none;
@@ -52,7 +53,10 @@
 .sidebar-wordmark {
   font-family: var(--v-font-display);
   font-weight: var(--v-display-weight);
-  font-size: 1.625rem;
+  /* The widest the word can be and still clear the theme button: with its
+     2px shadow it ends level with the line under it, 11px short of the
+     button. At 1.625rem the last letter ran into the button. */
+  font-size: 1.5rem;
   line-height: 0.95;
   color: var(--v-title);
   text-shadow: 2px 2px 0 var(--v-ink);
@@ -71,17 +75,18 @@
   display: none;
 }
 
-/* The nav scrolls on short viewports. It is 10px wider than the rail so the
-   active row can poke past the rail edge like a bookmark tab. */
+/* The nav scrolls on short viewports. Its box runs out to the rail's edge so
+   the scroller never clips the active row's hard shadow, but every row —
+   the active one included — ends on the rail's inner margin, in line with
+   the brand row above and the account card below. */
 .sidebar-nav {
-  --nav-poke: calc(var(--v-space-3) + 10px);
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
   gap: var(--v-space-4);
   min-height: 0;
-  margin-right: calc(-1 * var(--nav-poke));
-  padding: 4px var(--nav-poke) 4px 0;
+  margin-right: calc(-1 * var(--v-space-3));
+  padding: 4px var(--v-space-3) 4px 0;
   overflow-y: auto;
   scrollbar-width: none;
 }
@@ -130,7 +135,6 @@
   transform: translateX(1px) scale(0.98);
 }
 .nav-row.is-active {
-  margin-right: calc(-1 * var(--nav-poke));
   background: var(--v-title);
   border-color: var(--v-outline-color);
   box-shadow: var(--v-shadow-sm);
@@ -258,11 +262,14 @@
   justify-content: center;
   width: 100%;
 }
+/* One centre line down the card: the button's label, the note, Settings. */
 .me-pill-guest-note {
   margin: 0;
   color: var(--v-text-2);
   font-size: var(--v-text-xs);
   line-height: 1.35;
+  text-align: center;
+  text-wrap: balance;
 }
 .me-pill-guest-settings {
   display: inline-flex;
@@ -338,7 +345,7 @@
 .panel-body {
   max-width: var(--v-content-max);
   margin-inline: auto;
-  padding: var(--v-space-5) clamp(16px, 3vw, 36px) var(--v-space-8);
+  padding: var(--v-space-5) var(--v-gutter) var(--v-space-8);
 }
 
 /* ---- Phones and small tablets: top bar + bottom tab bar ------------------- */
@@ -497,9 +504,6 @@
   .nav-row:hover {
     transform: none;
   }
-  .nav-row.is-active {
-    margin-right: 0;
-  }
   .nav-label {
     flex: none;
     max-width: 11ch;
@@ -549,6 +553,20 @@
    the 12px floor, and full-height links on phones. */
 .footer-inner p {
   font-size: var(--v-text-xs);
+}
+/* The footer sits under the content column, not the window: clear of this
+   rail (the legacy sheet offsets it by the classic rail's 248px), with the
+   column's own gutters and cap, so its text starts where the page's does.
+   The desktop shells draw no rail, so there the footer keeps the full width
+   — the same exclusion the legacy offset carries. */
+@media (min-width: 881px) {
+  html:not(.is-desktop-host) .footer {
+    margin-left: var(--v-rail-w);
+  }
+  .footer-inner {
+    max-width: var(--v-content-max);
+    padding-inline: var(--v-gutter);
+  }
 }
 @media (max-width: 880px) {
   .footer-links {
