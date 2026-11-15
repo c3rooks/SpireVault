@@ -1057,6 +1057,71 @@
             <!-- exactly what goes wrong if you reference a webp that isn't uploaded     -->
             <!-- yet (Cloudflare caches the SPA-fallback HTML at that path for a year).  -->
             <!-- Add the <figure class="news-post-banner"> block back once art ships.    -->
+            <!-- ====== Post 015 — Nov 15 2026 — Co-op is one-tap Play ====== -->
+            <!-- Posts 007, 011 and 012 link here from their "Replaced" notes. If this     -->
+            <!-- goes live on a later day, change the date in the eyebrow (both places),  -->
+            <!-- LATEST_NEWS_POST_ID in script.js and this comment.                       -->
+            <article class="news-post" id="news-015" data-news-id="015" data-news-eyebrow="Update · November 15, 2026" data-news-tags="Update,Co-op" aria-labelledby="news-015-title">
+              <header class="news-post-head">
+                <span class="news-post-eyebrow">Update &middot; November 15, 2026</span>
+                <h3 class="news-post-title" id="news-015-title">Co-op is one button now</h3>
+                <p class="news-post-byline">
+                  Corey
+                  <span class="news-post-byline-sep">&middot;</span>
+                  <span class="news-post-byline-meta">~2 min read</span>
+                </p>
+              </header>
+
+              <div class="news-post-body">
+                <p class="news-lede">
+                  The lobby board, &ldquo;When are you free?&rdquo;, the campfire log and the rest of the old Co-op tab are gone. In their place is one <strong>Play</strong> button. The honest reason: nobody was using it. When I checked on November 14, not one account had ever hosted, joined or finished a party through it, and the board only looked busy because of two placeholder rooms the server kept open. Those are gone too.
+                </p>
+
+                <h4 class="news-post-section">How Play works</h4>
+                <ol class="news-post-list">
+                  <li>Pick a climber (or Any) and your game version, Stable or Beta, then tap <strong>Play</strong>.</li>
+                  <li>If someone is waiting on the same version, you&rsquo;re matched straight away. If nobody is, you wait in line and you&rsquo;re matched with the next person who taps Play.</li>
+                  <li>The party card walks you through the rest. The game only lets Steam friends join each other, so first you add each other on Steam. Then the player who waited longest hosts from Multiplayer &rarr; Host, and everyone else joins them from Multiplayer &rarr; Join.</li>
+                  <li>Up to four can join until the host taps <strong>We&rsquo;re in</strong>. After that the party is closed and you&rsquo;re playing.</li>
+                </ol>
+                <p>
+                  If someone leaves before the run starts, the next player in the party becomes host. If you&rsquo;re the only one left, you go back in line at the place you had.
+                </p>
+
+                <h4 class="news-post-section">You don&rsquo;t have to watch the tab</h4>
+                <p>
+                  Turn on pings and your browser tells you when someone joins you, even with the tab closed. You can also ask for a ping whenever someone starts looking, at most once every half hour. On an iPhone, pings need SpireVault added to your Home Screen first (Share &rarr; Add to Home Screen). Where pings can&rsquo;t work, including the Windows app, keep the page open and you&rsquo;ll hear a chime. The Mac app&rsquo;s Co-op tab is still its own who&rsquo;s-online list for now; Play is in the browser and the Windows app.
+                </p>
+
+                <h4 class="news-post-section">What Play keeps</h4>
+                <ul class="news-bullets">
+                  <li>While you&rsquo;re in line or in a party: your Steam ID and name, the climber and game version you picked, and whether you&rsquo;ve added the others on Steam. A party is cleared within four hours.</li>
+                  <li>When your party starts its run: one line in your co-op history saying when, and whether you hosted.</li>
+                  <li>If you turn pings on: your browser&rsquo;s notification address, until you turn pings off.</li>
+                  <li>Daily totals for me (how many taps, matches and how long people waited), plus which accounts tapped Play that day so each person counts once. Those are deleted after 90 days.</li>
+                </ul>
+
+                <p>
+                  Matching is open to anyone, with no filters beyond the game version. If that turns out to be the wrong call, tell me with the link below.
+                </p>
+
+                <p class="news-post-signoff">
+                  &mdash; Corey
+                </p>
+              </div>
+
+              <footer class="news-post-foot">
+                <div class="news-post-foot-meta">
+                  <span class="news-post-tag">Update</span>
+                  <span class="news-post-tag">Co-op</span>
+                </div>
+                <div class="news-post-foot-actions">
+                  <a class="action-link" href="/coop">Open Co-op &rarr;</a>
+                  <a class="action-link" href="https://github.com/c3rooks/SpireVault/issues/new" target="_blank" rel="noopener">Report an issue &rarr;</a>
+                </div>
+              </footer>
+            </article>
+
             <!-- ====== Post 014 — Nov 13 2026 — STS2 beta v0.113.0 (The Fool, Blitz, Dread) ====== -->
             <!-- ======                          + main branch promoted to v0.111.0          ====== -->
             <!-- No banner figure: no uploaded art for this post (see the post-007 cache-key -->
@@ -1116,7 +1181,7 @@
                   <strong>Wild cards.</strong> Mythic Form adds a random Tarot card to your hand every turn, Simpleton plays your cheapest card for you at the end of the turn, and Coda costs 6 but gets cheaper with every Melody.
                 </p>
                 <p>
-                  Every card&rsquo;s exact text, and how often players pick it, is on <a class="action-link" href="https://sts2.untapped.gg/en/cards/fool" target="_blank" rel="noopener">Untapped.gg&rsquo;s Fool page</a>.
+                  Every card&rsquo;s exact text, and how often players pick it, is on <a href="https://sts2.untapped.gg/en/cards/fool" target="_blank" rel="noopener">Untapped.gg&rsquo;s Fool page</a>.
                 </p>
 
                 <h4 class="news-post-section">What isn&rsquo;t done yet</h4>
@@ -1250,6 +1315,10 @@
               </header>
 
               <div class="news-post-body">
+                <div class="news-feature-block news-post-replaced">
+                  <h5><span class="news-feature-tag">Replaced</span> Co-op works differently now</h5>
+                  <p>Scheduling is gone. In November 2026 Co-op became one Play button, and pings let you close the tab while you wait in line. <a href="#news-015">Read about Play &rarr;</a></p>
+                </div>
                 <p class="news-lede">
                   If you&rsquo;re here from Discord: welcome. The whole product now bends around one promise &mdash; <strong>find your save folder once, see your stats in under a minute, and never redo that dance.</strong> Overview stays clean: your numbers live in one place, not four.
                 </p>
@@ -1313,6 +1382,10 @@
               </header>
 
               <div class="news-post-body">
+                <div class="news-feature-block news-post-replaced">
+                  <h5><span class="news-feature-tag">Replaced</span> Co-op works differently now</h5>
+                  <p>&ldquo;When are you free?&rdquo; is gone. In November 2026 Co-op became one Play button, and pings let you close the tab while you wait in line. <a href="#news-015">Read about Play &rarr;</a></p>
+                </div>
                 <p class="news-lede">
                   Today's release is the biggest one since launch, and before anything else: <strong>thank you.</strong> There are 84 of you now, and some of you open this thing every single day &mdash; I see the same names come back morning after morning, and honestly that's the whole reason this update exists. Everything below was built for the people who kept showing up.
                 </p>
@@ -1521,6 +1594,10 @@
               </header>
 
               <div class="news-post-body">
+                <div class="news-feature-block news-post-replaced">
+                  <h5><span class="news-feature-tag">Replaced</span> Co-op works differently now</h5>
+                  <p>The lobby is gone. Nobody used it, so in November 2026 Co-op became one Play button: tap it and you&rsquo;re matched with the next player who does. <a href="#news-015">Read about Play &rarr;</a></p>
+                </div>
                 <p class="news-lede">
                   Open the Co-op tab today and you&rsquo;ll land on the new lobby surface instead of the live roster. Same Steam OpenID sign-in, same friend-gated invite at the end &mdash; the middle is what changed. The big bet: a co-op tool earns its real estate by doing things the Slay the Spire 2 Discord <em>can&rsquo;t</em> do, not by being a prettier version of the same thing. Eight of those landed today, in two back-to-back releases (v0.10.0 and v0.11.0). The biggest of them &mdash; <strong>verified co-op reputation</strong> &mdash; is the first SpireVault feature that&rsquo;s strictly impossible without the save data we already have, and it&rsquo;s the start of the lock-in.
                 </p>
@@ -1656,7 +1733,7 @@
                   <span class="news-post-tag">v0.11.0</span>
                 </div>
                 <div class="news-post-foot-actions">
-                  <a class="action-link" href="https://app.spirevault.app/?tab=coop" target="_blank" rel="noopener">Open the Co-op Lobby &rarr;</a>
+                  <a class="action-link" href="https://app.spirevault.app/?tab=coop" target="_blank" rel="noopener">Open Co-op &rarr;</a>
                   <a class="action-link" href="https://github.com/c3rooks/SpireVault/blob/main/CHANGELOG.md#v0110--2026-05-26" target="_blank" rel="noopener">Full changelog &rarr;</a>
                   <a class="action-link" href="https://github.com/c3rooks/SpireVault/issues/new" target="_blank" rel="noopener">Report something off &rarr;</a>
                 </div>
@@ -2433,6 +2510,6 @@
   })();
   </script>
   <script src="/run-coach.js?v=3" defer></script>
-  <script src="/script.js?v=222" type="module"></script>
+  <script src="/script.js?v=223" type="module"></script>
 </body>
 </html>

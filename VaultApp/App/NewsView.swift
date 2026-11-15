@@ -273,7 +273,7 @@ enum NewsCatalog {
             id: "014-2026-11-13-sts2-v0113",
             eyebrow: "Game update · November 13, 2026",
             title: "The Fool, Blitz and Dread are tracked — and main just caught up to v0.111.0",
-            readMinutes: 2,
+            readMinutes: 3,
             tags: ["Game data", "v0.113.0", "The Fool"],
             body: [
                 .lede("Mega Crit shipped their biggest beta patch yet last night — v0.113.0, with the first new character, two new modes and a stack of new events — and in the same breath brought the main branch up to v0.111.0. That's two game updates at once. Back in August I said the data checks we built were there so SpireVault could catch up within hours when the big one landed. This is the big one."),
@@ -284,7 +284,7 @@ enum NewsCatalog {
                 .heading("If you're on the beta (v0.113.0)"),
                 .feature(
                     title: "The Fool",
-                    body: "Fool runs import like any other character. Once you've played one, the Fool gets a place next to the other five and in the run filters; if you haven't, nothing moves. There's no Fool art or card guide yet — Mega Crit hasn't published the card list, and I'm not going to make one up."
+                    body: "Fool runs import like any other character, and he stands with the other five for everyone: on the Characters tab, in the header's climber picker (Random can roll him too) and in the Recent Runs filters. Until you've played him, his banner says Unplayed and his filter stays greyed out. All 90 of his cards show their real names in your decks and on the Cards tab."
                 ),
                 .feature(
                     title: "Blitz and Dread",
@@ -295,8 +295,20 @@ enum NewsCatalog {
                     body: "The new event relics (Wuppy, Obsidian Vice, Thumbscrew, Tormentous Collar, Mighty Wings, Bath Towel, Bath Robes) and cards (My Shinies, Dingy Dagger, Mighty Weapon, Mighty Shield) are labelled properly. The beta's balance changes — Expect a Fight, Expertise and Memento Mori reworked; Salvo, Phantom Blades and CHARGE!! trimmed; Speedster buffed; Brilliant Scarf on the 6th card; Dowsing Rod down to 4 ? rooms — are tracked, but tooltips stay on main until they reach it."
                 ),
 
-                .heading("What isn't done yet"),
-                .paragraph("Fool cards don't have proper names yet, so a Fool deck shows a cleaned-up version of the game's internal name until Mega Crit publishes the list. If you've played the Fool, the co-op lobby pickers offer it too. If you're playing the Fool and something looks off, a screenshot or a .run file from a Fool run is the most useful thing anyone can send right now."),
+                .heading("The Fool's cards, in short"),
+                .paragraph("He's an archer and a musician, and his 90 cards pull in a few directions at once."),
+                .bullets([
+                    "Arrows. A lot of his attacks Shoot an Arrow, and an Arrow can stay stuck in the enemy (Impaled). Wrest, Uproot and Recall pull it back out for a bonus; Nail, Ki Hop and Wah Hammer hit harder while it's in. Aim makes your Shots stronger, Quiver gives you an extra Arrow and Honing makes every Arrow hit harder.",
+                    "Melodies. The cards named Wah, Cho and Ki are his song: Wah cards hit, Cho cards block and Ki cards set up your next turn. Coda, Rhythm Strike, Melodic Shot and Harmonic Shield get stronger for every Melody you hold.",
+                    "Stretch. A second resource his cards build and spend: Yoga, Hidden Roots, Deep Stretch and Bounce give it, and Blossom Shot turns damage into it.",
+                    "Sadness and Joy. Vitriol, Jest, Rummage and Sorrowful Strike add Sadness to your hand; Anguish, All Is Well, Growth and Ennui pay you for it, and Punch of Joy, Ecstasy and Brighten Up turn it into Joy.",
+                    "Built for co-op. Covering Fire gives your allies Block whenever you Shoot, Ensemble makes their next cards free, and Self Deprecate gives the whole party Joy at the cost of a Sadness for you.",
+                    "Wild cards. Mythic Form adds a random Tarot card to your hand every turn, Simpleton plays your cheapest card for you at the end of the turn, and Coda costs 6 but gets cheaper with every Melody.",
+                ]),
+                .paragraph("Every card's exact text, and how often players pick it, is on Untapped.gg's Fool page (sts2.untapped.gg/en/cards/fool)."),
+
+                .heading("Spotted something off?"),
+                .paragraph("If you're playing the Fool and something looks wrong, a screenshot or a .run file from a Fool run is the most useful thing anyone can send right now."),
             ]
         ),
         NewsPost(
