@@ -131,7 +131,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link id="vault-legacy-fonts" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Playfair+Display:wght@700;900&family=Cinzel:wght@700;800;900&display=swap" rel="stylesheet" />
-  <link id="vault-legacy-css" rel="stylesheet" href="/styles.css?v=160" />
+  <link id="vault-legacy-css" rel="stylesheet" href="/styles.css?v=161" />
   <!-- Co-op Play card (structure + classic paint). The new look loads it again
        inside the legacy layer below and repaints it from styles.next.css. -->
   <link id="vault-coop-play-css" rel="stylesheet" href="/lib/coop-play.css?v=1" />
@@ -159,11 +159,11 @@
         '<link rel="preload" as="font" type="font/woff2" crossorigin href="/assets/fonts/grenze-gotisch-latin-var-v1.woff2">' +
         '<style id="vault-legacy-layer">' +
           '@layer v-override, legacy, v-reset, v-tokens, v-base, v-shell, v-components, v-surfaces, v-host, v-util;' +
-          '@import url("/styles.css?v=160") layer(legacy);' +
+          '@import url("/styles.css?v=161") layer(legacy);' +
           '@import url("/styles.mobile.css?v=2") layer(legacy) (max-width: 880px);' +
           '@import url("/lib/coop-play.css?v=1") layer(legacy);' +
         '</style>' +
-        '<link rel="stylesheet" href="/styles.next.css?v=3">'
+        '<link rel="stylesheet" href="/styles.next.css?v=4">'
       );
     })();
   }
@@ -2510,6 +2510,6 @@
   })();
   </script>
   <script src="/run-coach.js?v=3" defer></script>
-  <script src="/script.js?v=226" type="module"></script>
+  <script src="/script.js?v=227" type="module"></script>
 </body>
 </html>

@@ -1110,6 +1110,37 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+  .sync-pill-dot {
+    flex: none;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--v-text-3);
+    box-shadow: none;
+    animation: none;
+  }
+  .sync-pill.is-live .sync-pill-dot {
+    background: var(--v-win);
+  }
+  .sync-pill.is-stale .sync-pill-dot {
+    background: var(--v-gold);
+  }
+  .sync-pill-text {
+    display: block;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .sync-pill-text strong {
+    color: var(--v-text);
+    font-weight: 800;
+  }
+  .sync-pill-ago {
+    margin-left: 5px;
+    color: var(--v-text-2);
+    font-size: inherit;
+  }
   .app-toolbar-export {
     position: relative;
   }
@@ -1222,11 +1253,16 @@
     .v-has-stage .panel-head-title-wrap {
       max-width: 52%;
     }
-    .app-toolbar-empty-text {
+    .app-toolbar-empty-text,
+    .sync-pill-text {
       max-width: 36vw;
+    }
+    .sync-pill-ago {
+      display: none;
     }
   }
   @media (max-width: 380px) {
+    .sync-pill-text,
     .app-toolbar-empty-text {
       max-width: 22vw;
     }

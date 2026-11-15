@@ -9545,6 +9545,28 @@ html.prefer-compact-density .h-stat-num { font-size: 18px; }
   color: var(--text-1);
 }
 .sync-pill-ago { color: var(--text-2); font-size: 11px; }
+/* Runs status (renderSyncPill): neutral when the saves were read within a
+   day, green while auto-refresh is live, amber once a day passes. */
+.sync-pill:not(.is-live) {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.14);
+}
+.sync-pill:not(.is-live) .sync-pill-dot {
+  background: var(--text-3);
+  box-shadow: none;
+  animation: none;
+}
+.sync-pill.is-stale {
+  background: rgba(212, 175, 55, 0.10);
+  border-color: rgba(212, 175, 55, 0.40);
+}
+.sync-pill.is-stale .sync-pill-dot {
+  background: var(--gold);
+  box-shadow: 0 0 0 2px rgba(212, 175, 55, 0.18);
+}
+@media (prefers-reduced-motion: reduce) {
+  .sync-pill-dot { animation: none; }
+}
 .sync-pill-refresh {
   display: inline-flex;
   align-items: center;

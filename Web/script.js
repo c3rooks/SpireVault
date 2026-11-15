@@ -81,7 +81,7 @@ const STS2_APP_ID = "2868840";
  * on an old client — instruct hard refresh. If it DOES match, the
  * bug is real and we can stop chasing cache ghosts.
  */
-const VAULT_BUILD = "v226-2026-11-15-coop-signout";
+const VAULT_BUILD = "v227-2026-11-15-runs-status";
 
 /** True on wrangler pages dev / local loopback — not production hostnames. */
 function isLocalDevHost() {
@@ -3715,26 +3715,9 @@ function renderLinkedPill() {
   });
 }
 
-/** Cloud-sync status pill. Surfaces what the user CANNOT otherwise
- *  see: that their uploaded run history is synced to their Steam
- *  account, when the last sync happened, and how many runs are in
- *  the cloud copy. Without this surface, "did it actually save?"
- *  has no observable answer — and that's why users keep asking
- *  whether they need to re-pick their save files.
- *
- *  Three states:
- *   - signed-in + has runs in memory + uploaded recently → green dot
- *     "Synced N runs · just now / 2m ago"
- *   - signed-in + has runs but never uploaded → amber dot
- *     "Local only · Sign in to sync" (rare; we auto-upload after
- *     ingest)
- *   - signed-out → hidden (no cloud account to sync with)
- *
- *  Updated by:
- *    - boot (after IDB load)
- *    - every CloudRuns.upload success
- *    - every hydrateFromCloudIfAvailable
- *    - timer every 30 s so the "X ago" string stays fresh */
+/** Cloud-sync bookkeeping: when the runs last went to (or came from) the
+ *  player's Steam copy. Read by the runs status in the toolbar
+ *  (renderSyncPill below). */
 let lastCloudSyncAt = 0;
 let lastCloudSyncCount = 0;
 
@@ -3770,109 +3753,78 @@ function relativeAgoLabel(ts) {
   return `${day}d ago`;
 }
 
+/** A day without reading the saves turns the runs status amber. */
+const RUNS_STALE_AFTER_MS = 24 * 60 * 60 * 1000;
+
+/** The save folder to point the picker at on this computer, or "". */
+function savePathForPlatform() {
+  const platform = detectPlatform();
+  if (platform === "mac") return HISTORY_PATH_MAC;
+  if (platform === "windows") return HISTORY_PATH_WIN;
+  if (platform === "linux") return HISTORY_PATH_LINUX;
+  return "";
+}
+
+/** What the runs status says right now, or null when it should hide
+ *  (sample data has its own pill). */
+function runsStatus() {
+  if (isDemoMode || parsedRuns.length === 0) return null;
+  let readAt = 0;
+  try { readAt = Number(localStorage.getItem(STORAGE_LAST_IMPORT_AT)) || 0; } catch { /* private mode */ }
+  const newest = newestRunEndedAt();
+  const newestLabel = newest
+    ? `newest run ${new Date(newest).toLocaleDateString(undefined, { month: "short", day: "numeric" })}`
+    : "";
+  if (autoRefreshState.phase === "ok" || autoRefreshState.phase === "running") {
+    return { live: true, stale: false, main: "Live from your saves", sub: newestLabel };
+  }
+  if (readAt) {
+    return {
+      stale: Date.now() - readAt > RUNS_STALE_AFTER_MS,
+      main: `Saves read ${relativeAgoLabel(readAt)}`,
+      sub: newestLabel,
+    };
+  }
+  if (lastCloudSyncAt) {
+    return { stale: true, main: "From your Steam copy", sub: "not read from your saves here yet" };
+  }
+  return { stale: true, main: "Not read from your saves here yet", sub: newestLabel };
+}
+
+/** Runs status, in the toolbar's left slot on Overview (both looks): where
+ *  the runs on screen came from and how old they are, so a stale page shows
+ *  before anyone trusts its numbers. One quiet line and no button, because
+ *  Refresh sits beside it. It replaced the v109 "Synced N runs" pill (removed
+ *  as clutter) on 2026-11-15, after a player couldn't tell his runs were
+ *  days old. Updated by renderActiveTab, recordCloudSync,
+ *  publishAutoRefreshState and a 30 s timer. */
 function renderSyncPill() {
   const slots = document.querySelectorAll("[data-sync-pill]");
   if (!slots.length) return;
-  // Sync pill suppressed in v109 per user request — they don't want
-  // it cluttering the panel-head. Cloud sync still runs in the
-  // background (recordCloudSync, CloudRuns.upload). Users who really
-  // want a manual cloud refresh can use the toolbar Refresh button.
-  slots.forEach((el) => { el.hidden = true; el.innerHTML = ""; });
-  return;
-  // eslint-disable-next-line no-unreachable
-  const signedIn = !!session?.steamID;
-  const hasData = parsedRuns.length > 0 && !isDemoMode;
-  if (!signedIn || !hasData) {
+  const status = runsStatus();
+  if (!status) {
     slots.forEach((el) => { el.hidden = true; el.innerHTML = ""; });
     return;
   }
-  const count = lastCloudSyncCount || parsedRuns.length;
-  // Stuck-state pill: signed-in but only 1 run — overwhelmingly means
-  // the user has not successfully linked their SlayTheSpire2 folder yet.
-  // Show a clear "Set up history" CTA instead of a green "Synced" pill
-  // that hides the real problem.
-  const stuck = count <= 1;
-  const ago = lastCloudSyncAt ? relativeAgoLabel(lastCloudSyncAt) : "syncing…";
+  const path = savePathForPlatform();
+  const detail = status.sub ? ` · ${status.sub}` : "";
+  const title = `${status.main}${detail}. Refresh reads your save folder again${path ? ` (${path})` : ""}.`;
+  const html = `
+      <span class="sync-pill-dot" aria-hidden="true"></span>
+      <span class="sync-pill-text"><strong>${esc(status.main)}</strong>${status.sub ? `<span class="sync-pill-ago">&middot; ${esc(status.sub)}</span>` : ""}</span>`;
   slots.forEach((el) => {
     el.hidden = false;
-    if (stuck) {
-      el.innerHTML = `
-        <span class="sync-pill-dot sync-pill-dot--warn" aria-hidden="true"></span>
-        <span class="sync-pill-text">
-          <strong>${count} run synced</strong>
-          <span class="sync-pill-ago">&middot; link your save folder</span>
-        </span>
-        <button class="sync-pill-refresh" type="button" data-action="link-saves" title="Pick your SlayTheSpire2 folder so we can import all your runs">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-          <span>Link folder</span>
-        </button>`;
-    } else {
-      el.innerHTML = `
-        <span class="sync-pill-dot" aria-hidden="true"></span>
-        <span class="sync-pill-text">
-          <strong>Synced ${count} run${count === 1 ? "" : "s"}</strong>
-          <span class="sync-pill-ago">&middot; ${esc(ago)}</span>
-        </span>
-        <button class="sync-pill-refresh" type="button" data-action="refresh-cloud" title="Pull the latest history from your Steam account">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
-          <span>Refresh</span>
-        </button>`;
-    }
-  });
-
-  document.querySelectorAll('[data-action="link-saves"]').forEach((btn) => {
-    if (btn.dataset.wired === "1") return;
-    btn.dataset.wired = "1";
-    btn.addEventListener("click", () => { void scanForHistory(); });
-  });
-
-  // Wire the refresh button — it manually triggers a cloud merge.
-  // Helps users who want to verify "is my latest run synced?".
-  document.querySelectorAll('[data-action="refresh-cloud"]').forEach((btn) => {
-    if (btn.dataset.wired === "1") return;
-    btn.dataset.wired = "1";
-    btn.addEventListener("click", async () => {
-      btn.disabled = true;
-      try {
-        // Re-scan the linked save folder first (if any) so the cloud
-        // merge has fresh local data to upload. Without this step,
-        // Refresh would always claim "Already up to date" even when the
-        // user just played 50 new runs that hadn't been re-ingested.
-        try {
-          const dirHandle = await HistoryStore.loadDirectoryHandle();
-          if (dirHandle) {
-            const files = await collectFilesFromDirectoryHandle(dirHandle);
-            if (files && files.length > 0) {
-              await ingestHistoryFiles(files, { silent: true });
-            }
-          }
-        } catch (e) {
-          console.warn("[Vault] refresh: rescan failed", e);
-        }
-        const res = await hydrateFromCloudIfAvailable();
-        const localCount = parsedRuns.length;
-        if (res?.changed) {
-          toast(`Synced ${res.count} run${res.count === 1 ? "" : "s"} from your Steam account.`);
-        } else if (localCount <= 1) {
-          // Sync says "no new runs", but local stats are still empty.
-          // Tell the user the truth: nothing to sync because no history
-          // has been imported yet. This was the misleading
-          // "Already up to date" toast that hid a stuck import.
-          toast("No history found yet. Click Import and pick your SlayTheSpire2 folder, or drag it onto the page.", { duration: 9000 });
-        } else {
-          toast(`Up to date — ${localCount} run${localCount === 1 ? "" : "s"} synced.`);
-        }
-      } finally {
-        btn.disabled = false;
-      }
-    });
+    el.classList.toggle("is-live", Boolean(status.live));
+    el.classList.toggle("is-stale", status.stale);
+    el.title = title;
+    if (el.innerHTML !== html) el.innerHTML = html;
   });
 }
 
 // Update the relative time string every 30s so "1m ago" doesn't
 // stay stuck while the user is staring at the toolbar.
 setInterval(() => {
-  if (lastCloudSyncAt) renderSyncPill();
+  renderSyncPill();
 }, 30_000);
 
 /**
@@ -6568,6 +6520,7 @@ function scanForHistory() {
     console.info(
       "[Vault import] platform=windows → using webkitdirectory (skips Chromium's %APPDATA% blocklist)"
     );
+    void copySavePathHint();
     triggerFolderPicker();
     return;
   }
@@ -6646,38 +6599,35 @@ function triggerFolderPicker() {
  * picker does, and Windows/Linux file dialogs all have a pasteable
  * location bar.
  */
-async function copySavePathHint() {
+async function copySavePathHint({ lead = "" } = {}) {
   const platform = detectPlatform();
-  let copiedPath = null;
-  try {
-    if (navigator.clipboard?.writeText) {
-      if (platform === "mac") copiedPath = HISTORY_PATH_MAC;
-      else if (platform === "windows") copiedPath = HISTORY_PATH_WIN;
-      else if (platform === "linux") copiedPath = HISTORY_PATH_LINUX;
-      if (copiedPath) await navigator.clipboard.writeText(copiedPath);
-    }
-  } catch { /* ignore */ }
-  if (copiedPath) {
-    if (platform === "mac") {
-      // The picker button literally says "Select" (not "Open"). Earlier
-      // copy said Open and confused users who were already at
-      // SlayTheSpire2 and didn't know to click Select.
-      toast(
-        `Path copied. In the picker → press ⌘⇧G → paste → Enter. You'll see SlayTheSpire2 with subfolders (steam, logs, etc.). Click Select — we walk into steam/<id>/profile1/saves/history automatically.`,
-        { duration: 14000 }
-      );
-    } else if (platform === "windows") {
-      toast(
-        "Path copied. In the picker → click the address bar at the top → paste → Enter. You'll see SlayTheSpire2. Click the Select Folder button — we walk every subfolder automatically.",
-        { duration: 14000 }
-      );
-    } else {
-      toast(
-        "Path copied. Press Ctrl+L in the picker → paste → Enter. You'll see SlayTheSpire2. Click the Select button — we walk every subfolder automatically.",
-        { duration: 14000 }
-      );
-    }
+  const path = savePathForPlatform();
+  const prefix = lead ? `${lead} ` : "";
+  if (!path) {
+    if (lead) toast(lead, { duration: 9000 });
+    return;
   }
+  let copied = false;
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(path);
+      copied = true;
+    } catch { /* clipboard blocked: the toast spells the path out instead */ }
+  }
+  const where = copied ? "Path copied." : `Your saves are in ${path}.`;
+  const paste = copied ? "paste" : "type that path";
+  // The macOS picker's button says "Select" (not "Open"); Windows says
+  // "Select Folder". The walker finds steam/<id>/profile1/saves/history
+  // inside whichever level is picked.
+  let steps;
+  if (platform === "mac") {
+    steps = `In the picker press ⌘⇧G, ${paste}, press Enter, then click Select. SpireVault finds the runs inside.`;
+  } else if (platform === "windows") {
+    steps = `In the picker click the address bar, ${paste}, press Enter, then click Select Folder. SpireVault finds the runs inside.`;
+  } else {
+    steps = `In the picker press Ctrl+L, ${paste}, press Enter, then click Select. SpireVault finds the runs inside.`;
+  }
+  toast(`${prefix}${where} ${steps}`, { duration: 14000 });
 }
 
 async function scanForHistoryViaDirectoryPicker() {
@@ -7082,6 +7032,12 @@ async function autoReloadHistoryFromFileHandle({ silent, allowPermissionPrompt }
  * prompting for permission if the tab never got a persistent grant.
  */
 async function reloadSavedHistoryInteractive() {
+  // Safari and Firefox never keep a way back into the folder. Decide before
+  // any await: Safari only opens a picker inside the click's own task.
+  if (!HistoryStore.supportsFSA()) {
+    repickSaveFolder();
+    return;
+  }
   let hasDir = null;
   let hasFile = null;
   try {
@@ -7091,14 +7047,7 @@ async function reloadSavedHistoryInteractive() {
     hasFile = await HistoryStore.loadHandle();
   } catch { /* ignore */ }
   if (!hasDir && !hasFile) {
-    if (getLinkedFolderName()) {
-      // Imported through the folder <input>: the browser kept no way back
-      // in, so a refresh means choosing the folder again.
-      toast("Choose your history folder again to pick up new runs.");
-      triggerFolderPicker();
-      return;
-    }
-    toast("Nothing linked yet. Use Find my STS2 saves or Import first.");
+    repickSaveFolder();
     return;
   }
   const before = new Set(parsedRuns.map((r) => r.id));
@@ -7118,6 +7067,28 @@ async function reloadSavedHistoryInteractive() {
   if (newRuns === 0 && !isDemoMode) {
     toast("Already up to date.");
   }
+}
+
+/**
+ * Refresh with no saved way into the save folder: say why the picker is
+ * opening, copy the folder's path, and open it. Mac and Windows Chrome
+ * always land here (Chromium blocks ~/Library and %APPDATA% from lasting
+ * access, so those reads go through a one-time folder pick), and so do
+ * Safari and Firefox. Synchronous up to the picker on purpose.
+ */
+function repickSaveFolder() {
+  const platform = detectPlatform();
+  if (platform !== "mac" && platform !== "windows" && typeof window.showDirectoryPicker === "function") {
+    // Chromium on Linux and ChromeOS keeps a handle: the Import flow links
+    // the folder so it refreshes by itself from then on.
+    scanForHistory();
+    return;
+  }
+  const lead = getLinkedFolderName()
+    ? "Your browser can't re-read the save folder by itself, so pick it again."
+    : "This browser hasn't read your save folder yet, so pick it to add your newest runs.";
+  void copySavePathHint({ lead });
+  triggerFolderPicker();
 }
 
 // How often the auto-refresh loop re-checks linked saves (folder or
@@ -7186,6 +7157,7 @@ function publishAutoRefreshState(patch) {
     window.__autoRefreshBannerDismissed = false;
   }
   refreshAutoRefreshPill();
+  renderSyncPill();
   // The in-tab pill ONLY renders on Recent Runs. When the browser
   // silently drops the FSA permission grant (common on Chromium after
   // restart / sleep), a user on Overview has zero signal that the
