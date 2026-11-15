@@ -704,6 +704,23 @@ export function setLookingPings(
   return { state, view: viewFor(state, sid), events: ticked.events };
 }
 
+/**
+ * Pings were switched on or off (a push subscription saved or dropped). A
+ * player already in line keeps their place: the waiting ticket, or party
+ * seat, just takes the new flag, so the ticket lives 10 minutes with pings
+ * and 90 s without, and a match made while they are away can reach them.
+ */
+export function setPushFlag(state: PlayState, sid: string, push: boolean): PlayState {
+  const ticket = state.tickets[sid];
+  if (ticket) {
+    return { ...state, tickets: { ...state.tickets, [sid]: { ...ticket, push } } };
+  }
+  const match = findMatchFor(state, sid);
+  if (!match) return state;
+  const members = match.members.map((m) => (m.sid === sid ? { ...m, push } : m));
+  return { ...state, matches: { ...state.matches, [match.matchId]: { ...match, members } } };
+}
+
 /** True when nothing time-based is pending, so the DO can skip its alarm. */
 export function isQuiet(state: PlayState): boolean {
   return Object.keys(state.tickets).length === 0 && Object.keys(state.matches).length === 0;

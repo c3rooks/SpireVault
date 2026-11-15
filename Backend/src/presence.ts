@@ -337,14 +337,30 @@ export async function getSessionProfile(env: Env, steamID: string): Promise<Sess
 
 // MARK: - Steam Web API enrichment ------------------------------------------
 
+/** GetPlayerSummaries accepts at most this many Steam IDs per call. */
+const STEAM_SUMMARIES_BATCH = 100;
+
+/**
+ * Which of `ids` are in STS2 right now. The whole roster is asked about, 100
+ * IDs per Steam call (two calls at the 200-entry cap). A batch that fails
+ * only loses its own players' highlight; the others still count.
+ */
 async function fetchInGameSet(env: Env, ids: string[]): Promise<Set<string>> {
   if (!env.STEAM_WEB_API_KEY) return new Set();
-  const filtered = Array.from(new Set(ids.filter((s) => /^\d{17}$/.test(s)))).slice(0, 100);
-  if (filtered.length === 0) return new Set();
+  const filtered = Array.from(new Set(ids.filter((s) => /^\d{17}$/.test(s))));
+  const batches: string[][] = [];
+  for (let i = 0; i < filtered.length; i += STEAM_SUMMARIES_BATCH) {
+    batches.push(filtered.slice(i, i + STEAM_SUMMARIES_BATCH));
+  }
+  const found = await Promise.all(batches.map((batch) => fetchInGameBatch(env, batch)));
+  return new Set(found.flatMap((set) => [...set]));
+}
+
+async function fetchInGameBatch(env: Env, batch: string[]): Promise<Set<string>> {
   try {
     const url =
       `https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v2/` +
-      `?key=${env.STEAM_WEB_API_KEY}&steamids=${filtered.join(",")}`;
+      `?key=${env.STEAM_WEB_API_KEY}&steamids=${batch.join(",")}`;
     const resp = await fetch(url, { cf: { cacheTtl: 30, cacheEverything: true } });
     if (!resp.ok) return new Set();
     const data = (await resp.json()) as any;

@@ -79,6 +79,10 @@ function world() {
     pings(sid, on, branch = "stable") {
       return w.run(P.setLookingPings(w.state, sid, on, branch, w.ctx()));
     },
+    /** What the Durable Object does when a push subscription is saved or dropped. */
+    pushFlag(sid, on) {
+      w.state = P.setPushFlag(w.state, sid, on);
+    },
     advance(ms) {
       w.now += ms;
     },
@@ -308,6 +312,46 @@ await check("nobody gets a push while they are watching", () => {
   w.advance(5 * SEC);
   w.play("b", { push: true });
   assert.equal(w.events.filter((e) => e.type === "push_matched").length, 0);
+});
+
+// Pings switched on (or off) while already waiting change the ticket in place.
+await check("pings turned on mid-search keep the place in line, last 10 min and push", () => {
+  const w = world();
+  w.play("a"); // tapped Play without pings: a 90 s ticket
+  w.advance(30 * SEC);
+  w.poll("a");
+  w.pushFlag("a", true); // "Ping me instead"
+  const a = w.poll("a");
+  assert.equal(a.state, "searching");
+  assert.equal(a.ticket.push, true);
+  assert.equal(a.ticket.createdAt, T0, "same place in line");
+  assert.equal(w.count("play_tap"), 1, "not counted as a second tap");
+  w.advance(5 * MIN); // a closed the tab, as the card said they could
+  assert.equal(w.poll("x").lookingCount, 1, "still in line after 5 min of silence");
+  const b = w.play("b");
+  assert.equal(b.match.hostSid, "a", "a waited longest, so a hosts");
+  const pushes = w.events.filter((e) => e.type === "push_matched");
+  assert.deepEqual(pushes.map((p) => p.sid), ["a"], "a is told the party formed");
+});
+
+await check("pings turned off mid-search put the ticket back on the 90 s clock", () => {
+  const w = world();
+  w.play("a", { push: true });
+  w.pushFlag("a", false);
+  assert.equal(w.poll("a").ticket.push, false);
+  w.advance(91 * SEC);
+  assert.equal(w.poll("x").lookingCount, 0, "no pings and no polls: out of line");
+});
+
+await check("a party seat follows the push flag too, and strangers are untouched", () => {
+  const w = world();
+  w.play("a", { push: true });
+  w.play("b");
+  w.pushFlag("a", false); // a signed out: nothing left to ping
+  w.pushFlag("nobody", true);
+  w.act("b", "leave"); // the party dissolves and a is put back in line
+  assert.equal(w.state.tickets.a.push, false, "re-queued without the long lifetime");
+  assert.equal(w.state.tickets.nobody, undefined);
 });
 
 // 11. Push throttles hold.

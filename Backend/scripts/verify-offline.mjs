@@ -34,7 +34,8 @@ const entry = join(workDir, "entry.ts");
 writeFileSync(
   entry,
   `export { computeRetention, computeIngestFunnel } from ${JSON.stringify(join(SRC, "admin"))};\n` +
-    `export * as intents from ${JSON.stringify(join(SRC, "coop-intents"))};\n`
+    `export * as intents from ${JSON.stringify(join(SRC, "coop-intents"))};\n` +
+    `export { listPresence } from ${JSON.stringify(join(SRC, "presence"))};\n`
 );
 
 const bundle = join(workDir, "bundle.mjs");
@@ -44,7 +45,7 @@ execFileSync(
   { stdio: "inherit" }
 );
 
-const { computeRetention, computeIngestFunnel, intents } = await import(pathToFileURL(bundle).href);
+const { computeRetention, computeIngestFunnel, intents, listPresence } = await import(pathToFileURL(bundle).href);
 
 const DAY = 86_400_000;
 const HOUR = 3_600_000;
@@ -354,6 +355,94 @@ await check("an empty funnel reports no data instead of zeros", () => {
     await check("notes are clamped and stripped of control characters", () => {
       assert.ok(note.length <= 140);
       assert.ok(!note.includes("\u0000"));
+    });
+  })();
+}
+
+// ------------------------------------------- presence: who is in STS2 now
+//
+// Steam's GetPlayerSummaries takes at most 100 IDs per call. The roster holds
+// up to 200, so the lookup has to be batched or the newest sign-ups are never
+// counted as "in Slay the Spire 2 right now".
+
+{
+  const ROSTER_SIZE = 150;
+  const STEAM_BATCH_MAX = 100;
+  const sidAt = (i) => `7656119${String(1_000_000_000 + i)}`;
+  const first = sidAt(0);
+  const last = sidAt(ROSTER_SIZE - 1);
+
+  const rosterEnv = async () => {
+    const env = { ...makeKV(), STEAM_WEB_API_KEY: "test-key" };
+    const entries = Array.from({ length: ROSTER_SIZE }, (_, i) => ({
+      steamID: sidAt(i),
+      personaName: `P${i}`,
+      status: "looking",
+      note: "",
+      inSTS2: false,
+      updatedAt: new Date(Date.UTC(2026, 10, 1) + i * HOUR).toISOString(),
+    }));
+    await env.LOBBIES.put("presence:roster", JSON.stringify({ entries }));
+    return env;
+  };
+
+  /** Stands in for Steam: `answer(ids)` returns a Response or throws. */
+  const withSteam = async (answer, run) => {
+    const calls = [];
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = async (url, init) => {
+      const ids = new URL(url).searchParams.get("steamids").split(",");
+      calls.push({ ids, init });
+      return answer(ids);
+    };
+    try {
+      return { result: await run(), calls };
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  };
+
+  const inGame = (ids) =>
+    new Response(
+      JSON.stringify({ response: { players: ids.filter((id) => id === first || id === last).map((steamid) => ({ steamid, gameid: "2868840" })) } }),
+      { status: 200 },
+    );
+
+  await (async () => {
+    const env = await rosterEnv();
+    const { result, calls } = await withSteam(inGame, () => listPresence(env));
+    await check("the in-game lookup covers the whole roster, 100 IDs per Steam call", () => {
+      assert.equal(result.length, ROSTER_SIZE);
+      assert.equal(calls.length, 2);
+      assert.ok(calls.every((c) => c.ids.length <= STEAM_BATCH_MAX), "no call exceeds Steam's limit");
+      assert.equal(new Set(calls.flatMap((c) => c.ids)).size, ROSTER_SIZE, "every player asked about once");
+      assert.deepEqual(result.filter((e) => e.inSTS2).map((e) => e.steamID), [first, last]);
+    });
+    await check("each Steam call keeps the 30 s edge cache", () => {
+      assert.ok(calls.every((c) => c.init?.cf?.cacheTtl === 30 && c.init?.cf?.cacheEverything === true));
+    });
+  })();
+
+  await (async () => {
+    const env = await rosterEnv();
+    const firstBatchDown = (ids) => (ids.includes(first) ? new Response("busy", { status: 503 }) : inGame(ids));
+    const { result } = await withSteam(firstBatchDown, () => listPresence(env));
+    await check("a failed Steam batch costs only its own players, never the roster", () => {
+      assert.equal(result.length, ROSTER_SIZE);
+      assert.deepEqual(result.filter((e) => e.inSTS2).map((e) => e.steamID), [last]);
+    });
+  })();
+
+  await (async () => {
+    const env = await rosterEnv();
+    const secondBatchThrows = (ids) => {
+      if (ids.includes(last)) throw new Error("network");
+      return inGame(ids);
+    };
+    const { result } = await withSteam(secondBatchThrows, () => listPresence(env));
+    await check("a Steam call that throws is treated the same way", () => {
+      assert.equal(result.length, ROSTER_SIZE);
+      assert.deepEqual(result.filter((e) => e.inSTS2).map((e) => e.steamID), [first]);
     });
   })();
 }

@@ -145,10 +145,49 @@ await step("host saying 'we're in' locks the party", async () => {
   await call("DELETE", "/coop/play", { token: mako });
 });
 
+let pushEnabled = false;
 await step("push config answers even without VAPID keys", async () => {
   const r = await call("GET", "/coop/play/push/config");
   assert.equal(r.status, 200);
   assert.equal(typeof r.data.enabled, "boolean");
+  pushEnabled = r.data.enabled;
+});
+
+// Pings switched on or off while waiting change the ticket in place. Turning
+// them on needs VAPID keys (start the worker with them to cover that half).
+let makoQueuedAt = 0;
+await step("pings switched off mid-search take the long lifetime off the ticket", async () => {
+  const play = await call("POST", "/coop/play", { token: mako, body: { branch: "beta", push: true } });
+  assert.equal(play.data.ticket.push, true);
+  makoQueuedAt = play.data.ticket.createdAt;
+  const off = await call("DELETE", "/coop/play/push", { token: mako });
+  assert.equal(off.data.state, "searching", "still in line");
+  assert.equal(off.data.ticket.push, false);
+  assert.equal(off.data.ticket.createdAt, makoQueuedAt, "same place in line");
+});
+
+if (pushEnabled) {
+  await step("pings switched on mid-search upgrade the waiting ticket", async () => {
+    const subscription = { endpoint: "https://fcm.googleapis.com/fcm/send/verify-flow", keys: { p256dh: "p", auth: "a" } };
+    const on = await call("POST", "/coop/play/push", { token: mako, body: { subscription, looking: true, branch: "beta" } });
+    assert.equal(on.status, 200, JSON.stringify(on.data));
+    assert.equal(on.data.state, "searching");
+    assert.equal(on.data.ticket.push, true);
+    assert.equal(on.data.ticket.createdAt, makoQueuedAt, "same place in line");
+    assert.equal(on.data.pushOn, true);
+  });
+} else {
+  console.log("  skip pings switched on mid-search upgrade the waiting ticket (no VAPID keys on this worker)");
+}
+
+await step("the two sign-out calls drop the subscription and leave the line", async () => {
+  await call("DELETE", "/coop/play/push", { token: mako });
+  const left = await call("DELETE", "/coop/play", { token: mako });
+  assert.equal(left.data.state, "idle");
+  const after = await call("GET", "/coop/play", { token: mako });
+  assert.equal(after.data.state, "idle");
+  assert.equal(after.data.pushOn, false);
+  assert.equal(after.data.pings.looking, false);
 });
 
 await step("house rooms no longer appear or count on /coop/rooms", async () => {

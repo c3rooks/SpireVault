@@ -81,7 +81,7 @@ const STS2_APP_ID = "2868840";
  * on an old client — instruct hard refresh. If it DOES match, the
  * bug is real and we can stop chasing cache ghosts.
  */
-const VAULT_BUILD = "v223-2026-11-15-coop-play-news";
+const VAULT_BUILD = "v226-2026-11-15-coop-signout";
 
 /** True on wrangler pages dev / local loopback — not production hostnames. */
 function isLocalDevHost() {
@@ -5996,7 +5996,48 @@ function updateCoopBadge() {
   }
 }
 
+/** Unsubscribes this browser from co-op pings, if it ever subscribed. */
+async function dropCoopPushSubscription() {
+  const reg = await navigator.serviceWorker?.getRegistration("/sw.js");
+  const sub = await reg?.pushManager?.getSubscription();
+  await sub?.unsubscribe();
+}
+
+/** The longest sign-out waits for the co-op clean-up before moving on. */
+const COOP_SIGNOUT_WAIT_MS = 4000;
+
 async function signOut() {
+  // Co-op Play goes first, while the session can still authorize it. Left
+  // alone, the push subscription outlives the sign-out and this browser keeps
+  // getting "someone's looking" pings, and a player waiting in line stays
+  // there as a ghost. All three are no-ops without pings or a ticket.
+  // `keepalive` lets the requests finish even if the wait below runs out and
+  // the page reloads first.
+  const coopAuth = { authorization: `Bearer ${session.sessionToken || "__cookie__"}` };
+  const coopDelete = { method: "DELETE", credentials: "include", keepalive: true, headers: coopAuth };
+  const coopCalls = [
+    fetch(`${API_BASE}/coop/play/push`, coopDelete),
+    fetch(`${API_BASE}/coop/play`, coopDelete),
+    dropCoopPushSubscription(),
+  ];
+  // In a party that has not started its run: leave it, so the others get a
+  // new host or go back in line now instead of waiting out an empty seat. A
+  // run already under way is left as it is.
+  if (CoopPlay?.getView?.()?.state === "matched") {
+    coopCalls.push(
+      fetch(`${API_BASE}/coop/play/action`, {
+        method: "POST",
+        credentials: "include",
+        keepalive: true,
+        headers: { ...coopAuth, "content-type": "application/json" },
+        body: JSON.stringify({ action: "leave" }),
+      }),
+    );
+  }
+  const coopCleanup = Promise.allSettled(coopCalls);
+  // Bounded, so a slow worker or push service can't hold the sign-out up.
+  await Promise.race([coopCleanup, new Promise((resolve) => setTimeout(resolve, COOP_SIGNOUT_WAIT_MS))]);
+
   // Three teardown calls in parallel — none of them block sign-out, so
   // wrapping them in Promise.allSettled means a single failure (worker
   // down, cookie endpoint 500'd) doesn't strand the user signed-in:

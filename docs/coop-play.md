@@ -16,7 +16,7 @@ Nobody used the lobby system. On 2026-11-14 prod had 124 accounts, and every pla
    2. Launch STS2 (`steam://run/2868840`). Host: Multiplayer → Host, then "I'm hosting". Joiners: Multiplayer → Join → the host.
    3. The host taps "We're in". The party locks (nobody else can join) and counts as a co-op run.
 
-Leaving before the run starts hands the host role on, or dissolves the party and puts the remaining player back in line at their original place.
+Leaving before the run starts hands the host role on, or dissolves the party and puts the remaining player back in line at their original place. Signing out does the same for a party that has not started, takes you out of line, and turns pings off for the account.
 
 ## Where things live
 
@@ -48,7 +48,7 @@ Usage counters (taps, matches, wait times, Steam adds, "we're in") are kept per 
 ## Checks
 
 - `make -C Backend preflight`: types, offline suite, and `scripts/verify-coop-play.mjs` (matching and push).
-- `node Backend/scripts/verify-coop-play-flow.mjs`: end to end against the local worker.
+- `node Backend/scripts/verify-coop-play-flow.mjs`: end to end against the local worker. Its "pings switched on mid-search" step only runs when that worker has VAPID keys; without them it prints `skip`.
 - `node scripts/verify-ui-next.mjs --only coop`: every state in both looks, Play visible without scrolling at 1440, 1024 and 390px. Set `VERIFY_UI_PORT` if 8798 is taken.
 - `node scripts/snap-coop-play.mjs`: screenshots of every state into `docs/screenshots/coop-play/`.
 

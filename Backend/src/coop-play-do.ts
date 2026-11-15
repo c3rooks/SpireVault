@@ -25,6 +25,7 @@ import {
   poll,
   pulse,
   setLookingPings,
+  setPushFlag,
   tick,
   type Branch,
   type CounterKey,
@@ -102,7 +103,10 @@ export class CoopPlayDO extends DurableObject<Env> {
     return pulse(this.state);
   }
 
-  /** Save (or drop) a push subscription and the "someone's looking" choice. */
+  /**
+   * Save (or drop) a push subscription and the "someone's looking" choice.
+   * Someone already waiting keeps their ticket; it only gains or loses pings.
+   */
   async setPush(
     sid: string,
     sub: PushSubscriptionRecord | null,
@@ -111,7 +115,8 @@ export class CoopPlayDO extends DurableObject<Env> {
   ): Promise<PlayCallResult> {
     if (sub) await this.ctx.storage.put(`sub:${sid}`, sub);
     else await this.ctx.storage.delete(`sub:${sid}`);
-    const r = setLookingPings(this.state, sid, Boolean(sub) && looking, branch, this.coreCtx());
+    const flagged = setPushFlag(this.state, sid, Boolean(sub));
+    const r = setLookingPings(flagged, sid, Boolean(sub) && looking, branch, this.coreCtx());
     await this.apply(r, true);
     return { ok: true, view: r.view };
   }
