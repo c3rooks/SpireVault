@@ -1,3 +1,4 @@
+import type { DayStats } from "./coop-play-do";
 import type { Env, PresenceEntry } from "./types";
 
 /**
@@ -163,6 +164,10 @@ interface AdminStats {
   // The import funnel, in order, derived from beacons the client already
   // sends. Signing in is not the hard part — getting a save folder parsed is.
   ingestFunnel: IngestFunnel;
+
+  // One-tap co-op Play, from the CoopPlayDO's own daily counters. Null when
+  // the Durable Object isn't bound (older deploys) or can't be reached.
+  coopPlay: DayStats[] | null;
   recentSignIns: Array<{
     when: string;
     steamID: string;
@@ -604,6 +609,7 @@ async function adminStats(env: Env): Promise<Response> {
     retention,
     writeBudget: computeWriteBudget(activeLast24h),
     ingestFunnel: computeIngestFunnel(clientDiagnostics),
+    coopPlay: await coopPlayStats(env),
     recentSignIns: signIns,
     funnel: {
       today,
@@ -628,6 +634,16 @@ async function adminStats(env: Env): Promise<Response> {
 
 function ymd(d: Date): string {
   return d.toISOString().slice(0, 10).replace(/-/g, "");
+}
+
+async function coopPlayStats(env: Env): Promise<DayStats[] | null> {
+  if (!env.COOP_PLAY) return null;
+  try {
+    return await env.COOP_PLAY.get(env.COOP_PLAY.idFromName("global")).stats(14);
+  } catch (err) {
+    console.warn(`[admin] coop play stats unavailable: ${(err as Error)?.message ?? err}`);
+    return null;
+  }
 }
 
 /**
@@ -762,7 +778,8 @@ export function computeIngestFunnel(diag: Record<string, number>): IngestFunnel 
 const WRITES_PER_COOP_USER_HOUR = 165;
 const WRITES_PER_CLASSIC_USER_HOUR = 40;
 const WRITES_PER_USER_DAY_FIXED = 2;
-const CRON_WRITES_PER_DAY = 96 * 3;
+// House-room cron removed 2026-11-14 (coop Play replaced it).
+const CRON_WRITES_PER_DAY = 0;
 const FREE_DAILY_WRITES = 1000;
 
 function computeWriteBudget(activeToday: number): WriteBudget {
@@ -1450,6 +1467,39 @@ function adminHTML(): Response {
           <td class="muted"><a href="https://steamcommunity.com/profiles/\${e.steamID}" target="_blank" rel="noopener">profile</a></td>
         </tr>\`).join("");
 
+    const playDays = s.coopPlay || [];
+    const playTotal = (k) => playDays.reduce((n, d) => n + (d.counters[k] || 0), 0);
+    const playRows = playDays.map(d => {
+      const c = d.counters;
+      return \`
+      <tr>
+        <td>\${fmtDay(d.day)}</td>
+        <td><strong>\${d.players}</strong></td>
+        <td>\${c.play_tap || 0}</td>
+        <td>\${(c.matched || 0) + (c.joined_party || 0)}</td>
+        <td>\${c.steam_add || 0}</td>
+        <td><strong>\${c.in_game || 0}</strong></td>
+        <td class="muted">\${c.cancel || 0} / \${c.expired || 0} / \${c.partner_left || 0}</td>
+        <td class="muted">\${c.wait_lt10s || 0} · \${c.wait_lt30s || 0} · \${c.wait_lt2m || 0} · \${c.wait_lt10m || 0} · \${c.wait_gt10m || 0}</td>
+      </tr>\`;
+    }).join("");
+    const playSection = s.coopPlay === null
+      ? \`<section><h2>Co-op Play · last 14 days</h2><p class="note">Play queue not reachable from this deploy.</p></section>\`
+      : \`<section>
+          <h2>Co-op Play · last 14 days</h2>
+          <p class="note">
+            \${playTotal("play_tap")} taps on Play, \${playTotal("matched")} new parties,
+            \${playTotal("in_game")} that reached "we're in". Waits are counted per player matched.
+          </p>
+          <table>
+            <thead><tr>
+              <th>day</th><th>players</th><th>taps</th><th>matched</th><th>steam add</th>
+              <th>in game</th><th>cancel / expired / partner left</th><th>wait &lt;10s · &lt;30s · &lt;2m · &lt;10m · longer</th>
+            </tr></thead>
+            <tbody>\${playRows}</tbody>
+          </table>
+        </section>\`;
+
     const signinRows = s.recentSignIns.length === 0
       ? \`<tr><td colspan="3" class="muted">no recent sign-ins.</td></tr>\`
       : s.recentSignIns.map(e => \`
@@ -1746,6 +1796,8 @@ function adminHTML(): Response {
             <tbody>\${funnelRows}</tbody>
           </table>
         </section>
+
+        \${playSection}
 
         \${ingestSection}
 

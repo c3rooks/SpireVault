@@ -159,7 +159,7 @@ export const CHARACTER_INFO = {
     archetypes: ["Arrows", "Wah · Cho · Ki", "Tarot"],
     tips: [
       "Starting deck: 4 Strike, 3 Defend, Foolish Shot, Epic Retrieval and Recall.",
-      "Public beta only: main-branch saves have no Fool runs, so he appears here once you have played him.",
+      "Public beta only: he can be played on the Steam beta branch, so on main his banner stays Unplayed.",
       "No strategy notes yet: the beta is new and his cards are still changing.",
     ],
     playstyle: { aggression: 0, complexity: 0 },

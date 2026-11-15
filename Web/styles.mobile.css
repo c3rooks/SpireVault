@@ -75,11 +75,7 @@
   /* `minmax(320px, 1fr)` and friends: on a 320–350px screen the single
      column was wider than the page and the cards ran off the right edge.
      At this width these grids are one column anyway. */
-  .relic-grid,
-  .guest-rooms-grid,
-  .coop-lobbies-list,
-  .coop-recs-list,
-  .coop-invites-list {
+  .relic-grid {
     grid-template-columns: minmax(0, 1fr);
   }
 }
@@ -360,15 +356,12 @@
     height: 44px;
   }
   /* Text-only controls 15–19px tall. */
-  .coop-link-btn,
   .btn-link-danger {
     display: inline-flex;
     align-items: center;
     min-height: 44px;
   }
-  .guest-coop-explainer > summary {
-    padding-block: 9px;
-  }
+  
 
   /* Classic only from here to the end of the block (the new look draws its
      own chrome and captions). Measured on seven phone profiles on
@@ -388,7 +381,6 @@
   html:not([data-ui="next"]) .demo-strip-actions .btn-primary,
   html:not([data-ui="next"]) .demo-strip-actions .btn-ghost,
   html:not([data-ui="next"]) .empty-state .btn-sm,
-  html:not([data-ui="next"]) .coop-refresh,
   html:not([data-ui="next"]) .h-filter-chip,
   html:not([data-ui="next"]) .h-sort-select,
   html:not([data-ui="next"]) .beta-seg button,
@@ -400,7 +392,6 @@
   html:not([data-ui="next"]) .chart-chip,
   html:not([data-ui="next"]) .h-filter-chip,
   html:not([data-ui="next"]) .run-filter-compare,
-  html:not([data-ui="next"]) .coop-refresh,
   html:not([data-ui="next"]) .beta-seg button,
   html:not([data-ui="next"]) .beta-panel .btn-ghost.sm,
   html:not([data-ui="next"]) .empty-state .btn-sm {
@@ -416,11 +407,7 @@
     min-width: 44px;
     justify-content: center;
   }
-  /* The gear on the co-op stage: 36px. */
-  html:not([data-ui="next"]) .pf-stage-gear {
-    width: 44px;
-    height: 44px;
-  }
+  
   /* "Report an issue" and its kin: 34px. */
   html:not([data-ui="next"]) .action-link {
     display: inline-flex;
@@ -452,17 +439,7 @@
   html:not([data-ui="next"]) .demo-banner .demo-strip-eyebrow,
   html:not([data-ui="next"]) .asc-mod-badge,
   html:not([data-ui="next"]) .beta-hero-kicker,
-  html:not([data-ui="next"]) .coop-beta-badge,
-  html:not([data-ui="next"]) .coop-showtime-eyebrow,
   html:not([data-ui="next"]) .h-filter-dot,
-  html:not([data-ui="next"]) .pf-coop-log-eyebrow,
-  html:not([data-ui="next"]) .pf-coop-log-dot,
-  html:not([data-ui="next"]) .pf-coop-log-stat-lbl,
-  html:not([data-ui="next"]) .pf-coop-log-xp-label,
-  html:not([data-ui="next"]) .pf-stage-presence-eye,
-  html:not([data-ui="next"]) .pf-stage-presence-cta-arrow,
-  html:not([data-ui="next"]) .pf-activity-ticker-eye,
-  html:not([data-ui="next"]) .pf-activity-ticker-eye span,
   html:not([data-ui="next"]) .hero-side-label,
   html:not([data-ui="next"]) .num-label,
   html:not([data-ui="next"]) .ring-label,

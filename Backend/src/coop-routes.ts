@@ -1326,7 +1326,9 @@ function lobbyVisibleOnBoard(
   // (`listLobbies` already filtered expired rows out), it stays on
   // the board. See module doc on `runHouseLobbyRenewer` for the
   // lifecycle that backs this bypass.
-  if (l.isHouseLobby) return true;
+  // House rooms are switched off (2026-11-14): they made an empty board
+  // look busy. They no longer count or show, even if a stale one lingers.
+  if (l.isHouseLobby) return false;
   const host = allPresence.find((p) => p.steamId === l.hostSteamId);
   if (!host) return false;
   if (!isPresenceActive(host, now)) return false;

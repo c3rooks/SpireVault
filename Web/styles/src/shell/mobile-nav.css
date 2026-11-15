@@ -689,11 +689,6 @@
   .v-mnav-link:active {
     color: var(--v-title);
   }
-
-  /* The localhost-only co-op dev sandbox toggle sits on the bottom edge. */
-  .coop-sandbox-wrap {
-    bottom: calc(var(--v-tabbar-h) + 12px + env(safe-area-inset-bottom));
-  }
 }
 
 /* The profile popover (opened from the sheet's account row) is positioned

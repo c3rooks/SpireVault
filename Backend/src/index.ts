@@ -51,6 +51,8 @@ import { steamIDForRequest } from "./auth";
 import { checkAndConsume, clientIP, hashID } from "./ratelimit";
 import { handleNotifySignup } from "./notify";
 import { handleCoopRoute } from "./coop-routes";
+import { handleCoopPlayRoute } from "./coop-play-routes";
+export { CoopPlayDO } from "./coop-play-do";
 import { handleCoopSandboxRoute } from "./coop-sandbox";
 import { handleDiscordInteractions } from "./discord-interactions";
 import {
@@ -166,6 +168,12 @@ export default {
     env: Env,
     ctx: ExecutionContext,
   ): Promise<void> {
+    // House rooms are off unless explicitly re-enabled; the cron trigger was
+    // removed from wrangler.toml at the same time.
+    if (env.HOUSE_LOBBIES_ENABLED !== "1") {
+      console.log(`[house-lobbies] skipped (disabled) cron=${event.cron}`);
+      return;
+    }
     ctx.waitUntil(
       runHouseLobbyRenewer(env).catch((err) => {
         console.log(
@@ -220,6 +228,10 @@ async function handle(
       // through to the legacy presence/invites/pair surfaces below.
       // This means old clients that hit `/presence` and `/invites/...`
       // keep working unchanged while new clients use the lobby model.
+      if (pathname.startsWith("/coop/play")) {
+        const resp = await handleCoopPlayRoute(req, env, pathname, method);
+        if (resp) return resp;
+      }
       if (pathname.startsWith("/coop/")) {
         const resp = await handleCoopRoute(req, env, pathname, method);
         if (resp) return resp;

@@ -9,7 +9,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--v-space-3);
-  padding: var(--v-space-4) clamp(16px, 3vw, 36px) 0;
+  padding: var(--v-space-4) var(--v-gutter) 0;
 }
 .panel-head:not(.v-has-stage) {
   max-width: var(--v-content-max);

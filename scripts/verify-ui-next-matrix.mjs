@@ -23,7 +23,7 @@
  *   node scripts/verify-ui-next-matrix.mjs --base-url http://127.0.0.1:8788
  *   node scripts/verify-ui-next-matrix.mjs --tabs runs,coop --widths 375,1440 --themes inked,vault
  *   node scripts/verify-ui-next-matrix.mjs --signed-in --tabs coop,highlights,beta
- *   node scripts/verify-ui-next-matrix.mjs --tabs overview --scene storm   # pin the header scenery
+ *   node scripts/verify-ui-next-matrix.mjs --tabs overview --scene glory-b # pin the header scenery: a place, or one take of it
  */
 
 import { chromium, webkit } from "playwright";
@@ -150,8 +150,6 @@ async function main() {
         if (scene) window.localStorage.setItem("vault.web.stage-scene", scene);
         if (session) {
           window.localStorage.setItem("vault.web.session", JSON.stringify(session));
-          // Co-op's one-time welcome dialog covers the page; mark it seen.
-          window.localStorage.setItem("spirevault.coop.welcome.v1", "1");
         }
       } catch { /* none */ }
     }, { scene: options.scene, session: options.signedIn ? TEST_SESSION : null });

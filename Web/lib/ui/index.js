@@ -13,18 +13,20 @@ import * as Views from "./views.js?v=1";
 import * as CharactersView from "./views-characters.js?v=1";
 import * as AscensionsView from "./views-ascensions.js?v=1";
 import * as RelicsView from "./views-relics.js?v=1";
-import * as CardsView from "./views-cards.js?v=1";
-import * as RunsView from "./views-runs.js?v=1";
-import * as CoopView from "./views-coop.js?v=1";
+import * as CardsView from "./views-cards.js?v=2";
+import * as RunsView from "./views-runs.js?v=2";
 import * as CommunityView from "./views-community.js?v=1";
 import * as EmptyView from "./views-empty.js?v=1";
+import * as ShareCard from "./share-card.js?v=1";
+import * as CardArt from "./card-art-hd.js?v=1";
 import { initCharts, hideChartTip } from "./charts.js?v=1";
 import { startLegacyLayering } from "./legacy-layer.js?v=1";
 import { mountMobileNav } from "./mobile-nav.js?v=1";
 
 export {
   Motion, Theme, Tokens, Stage, Views, hideChartTip,
-  CharactersView, AscensionsView, RelicsView, CardsView, RunsView, CoopView, CommunityView, EmptyView,
+  CharactersView, AscensionsView, RelicsView, CardsView, RunsView, CommunityView, EmptyView,
+  ShareCard, CardArt,
 };
 
 /**

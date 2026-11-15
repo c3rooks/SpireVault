@@ -25,7 +25,8 @@ import { fileURLToPath } from "node:url";
 import assert from "node:assert/strict";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
-const PORT = 8798;
+/** VERIFY_UI_PORT moves the test server when 8798 is taken by something else. */
+const PORT = Number(process.env.VERIFY_UI_PORT) || 8798;
 const BASE = `http://127.0.0.1:${PORT}`;
 const BOOT_TIMEOUT_MS = 20000;
 const WIDTHS = [320, 375, 768, 1024, 1440, 1920];
@@ -101,11 +102,13 @@ function startServer() {
  * Opens a fresh, storage-isolated page and waits for the app to finish boot.
  * @param {import("playwright").Browser} browser
  * @param {string} path
- * @param {import("playwright").BrowserContextOptions & { abort?: string, signedIn?: boolean }} [options]
+ * @param {import("playwright").BrowserContextOptions & { abort?: string, signedIn?: boolean, routes?: Array<[string, (route: import("playwright").Route) => unknown]> }} [options]
  *   signedIn: start with a stored Steam session (the Steam-only tabs open)
+ *   routes:   request mocks installed before the page boots (the static
+ *             server has no /api)
  */
 async function open(browser, path, options = {}) {
-  const { abort, signedIn, ...contextOptions } = options;
+  const { abort, signedIn, routes = [], ...contextOptions } = options;
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, ...contextOptions });
   if (signedIn) {
     await context.addInitScript((value) => {
@@ -131,6 +134,7 @@ async function open(browser, path, options = {}) {
     (route) => route.abort()
   );
   if (abort) await page.route(abort, (route) => route.abort());
+  for (const [pattern, handler] of routes) await context.route(pattern, handler);
   await page.goto(`${BASE}${path}`, { waitUntil: "domcontentloaded" });
   await page.waitForFunction(() => window.SpireVault && !window.SpireVault.__isStub, null, { timeout: BOOT_TIMEOUT_MS });
   // Signed out, Overview shows the sample data. A signed-in account with no
@@ -195,7 +199,8 @@ async function run(browser) {
     assert.equal(await page.$("#overview-body .kpi-strip"), null);
     assert.equal(await page.locator(".v-ring").count(), 1);
     assert.equal(await page.locator(".v-hand .v-card").count(), 6);
-    assert.equal(await page.locator(".v-char").count(), 5);
+    // Six climbers: The Fool (STS2 beta) is on the roster for everyone, unplayed or not.
+    assert.equal(await page.locator(".v-char").count(), 6);
     assert.equal(await page.locator('.v-chart[data-chart="trend"]').count(), 1);
     assert.equal(await page.locator('.v-chart[data-chart="floors"]').count(), 1);
     assert.equal(await page.locator(".v-relic").count(), 6);
@@ -401,35 +406,6 @@ async function run(browser) {
     await context.close();
   });
 
-  // ---- Legacy CSS layering ---------------------------------------------------
-  await check("runtime co-op stylesheets join the legacy layer, once each", async () => {
-    // Signed in: a signed-out visitor gets Co-op's sign-in screen and the
-    // lobby scripts (which inject these stylesheets) are never loaded.
-    const { context, page: p } = await open(browser, "/?ui=next", { signedIn: true });
-    for (let visit = 0; visit < 2; visit += 1) {
-      await p.evaluate(() => window.SpireVault.switchTab("coop"));
-      await p.waitForTimeout(1500);
-      await p.evaluate(() => window.SpireVault.switchTab("overview"));
-    }
-    const state = await p.evaluate(() => {
-      const links = [...document.querySelectorAll('link[rel="stylesheet"]')].filter((link) =>
-        new URL(link.href).pathname.startsWith("/lib/")
-      );
-      const layered = [...document.querySelectorAll("style[data-v-layer-for]")].map((style) => style.dataset.vLayerFor);
-      return {
-        links: links.length,
-        live: links.filter((link) => link.media !== "not all").length,
-        layered: layered.length,
-        unique: new Set(layered).size,
-      };
-    });
-    assert.ok(state.links > 0, "expected the co-op tab to inject stylesheets");
-    assert.equal(state.live, 0, "an injected stylesheet is still unlayered");
-    assert.equal(state.layered, state.links);
-    assert.equal(state.unique, state.layered, "a stylesheet was layered more than once");
-    await context.close();
-  });
-
   // ---- Responsive -------------------------------------------------------------
   for (const width of WIDTHS) {
     await check(`no horizontal overflow at ${width}px`, async () => {
@@ -588,6 +564,47 @@ async function runDuel(browser) {
       inOverview: !!(document.activeElement && document.activeElement.closest('.tab-panel[data-tab="overview"]')),
     }));
     assert.deepEqual(focused, { action: "scene-reroll", inOverview: true });
+    await context.close();
+  });
+
+  await check("both figures answer the pointer, and tapping the boss gives him the line", async () => {
+    const { context, page: p, errors } = await open(browser, "/?ui=next");
+    await p.waitForFunction(() => [...document.querySelectorAll(".v-actor-art")].every((img) => img.complete));
+    await p.waitForTimeout(BUBBLE_SETTLE_MS);
+    const scope = '.tab-panel[data-tab="overview"]';
+    const lift = (selector) => p.evaluate((sel) => getComputedStyle(document.querySelector(sel)).translate, `${scope} ${selector} .v-actor-art`);
+    for (const who of ["climber", "boss"]) {
+      assert.equal(await p.evaluate((sel) => document.querySelector(sel).tagName, `${scope} .v-actor--${who}`), "BUTTON", `the ${who} is a button`);
+      await p.hover(`${scope} .v-actor--${who}`);
+      await p.waitForTimeout(350);
+      assert.equal(await lift(`.v-actor--${who}`), "0px -3px", `the ${who} lifts under the pointer`);
+    }
+    const state = () =>
+      p.evaluate((sel) => {
+        const duel = document.querySelector(`${sel} .v-duel`);
+        return {
+          speaker: duel.classList.contains("v-duel--boss-speaks") ? "boss" : "climber",
+          climber: duel.querySelector(".v-actor--climber .v-actor-art").getAttribute("src"),
+          height: document.querySelector(`${sel} > .panel-head`).getBoundingClientRect().height,
+          focus: document.activeElement ? document.activeElement.getAttribute("data-action") : null,
+        };
+      }, scope);
+    const before = await state();
+    for (let i = 0; i < 3; i += 1) {
+      await p.click(`${scope} .v-actor--boss`);
+      await p.waitForTimeout(150);
+      const now = await state();
+      assert.equal(now.speaker, "boss", `tap ${i + 1}: the boss speaks`);
+      assert.equal(now.climber, before.climber, "the climber stays");
+      assert.ok(Math.abs(now.height - before.height) < 1, `tap ${i + 1}: the header keeps its height`);
+    }
+    await p.focus(`${scope} .v-actor--boss`);
+    await p.keyboard.press("Enter");
+    await p.waitForTimeout(150);
+    const keyed = await state();
+    assert.equal(keyed.speaker, "boss");
+    assert.equal(keyed.focus, "boss-speak", "focus stays on the boss after the keyboard");
+    assert.deepEqual(errors, []);
     await context.close();
   });
 
@@ -1083,14 +1100,476 @@ async function runLock(browser) {
   });
 }
 
+/** A context whose first page load already has the header scenery pinned. */
+function pinnedScene(take) {
+  return { storageState: { cookies: [], origins: [{ origin: BASE, localStorage: [{ name: "vault.web.stage-scene", value: take }] }] } };
+}
+
+/**
+ * The header's room: the game's own art in depth planes, moving on its own,
+ * and holding still under the pointer.
+ */
+async function runScene(browser) {
+  await check("every room's planes are on disk", async () => {
+    const { context, page: p } = await open(browser, "/?ui=next");
+    const result = await p.evaluate(async () => {
+      const { STAGE_BACKDROPS } = await import("/lib/ui/stage-backdrops.js?v=1");
+      const srcs = STAGE_BACKDROPS.flatMap((backdrop) => Object.values(backdrop.planes));
+      const bad = [];
+      for (const src of srcs) {
+        const response = await fetch(src);
+        if (!response.ok || !/^image\/webp/.test(response.headers.get("content-type") || "")) bad.push(`${src} -> ${response.status}`);
+      }
+      return { rooms: [...new Set(STAGE_BACKDROPS.map((backdrop) => backdrop.room))].length, takes: STAGE_BACKDROPS.length, files: srcs.length, bad };
+    });
+    assert.ok(result.rooms >= 6, `${result.rooms} rooms`);
+    assert.ok(result.takes >= 12, `${result.takes} takes`);
+    assert.deepEqual(result.bad, [], "every plane loads as a WebP");
+    await context.close();
+  });
+
+  await check("the room is drawn in planes and moves on its own", async () => {
+    const { context, page: p, errors } = await open(browser, "/?ui=next", pinnedScene("glory-a"));
+    await p.waitForSelector('.tab-panel[data-tab="overview"] .v-scene[data-take="glory-a"]');
+    const read = () =>
+      p.evaluate(() => {
+        const root = document.querySelector('.tab-panel[data-tab="overview"] .v-stage-bg');
+        const x = (el) => new DOMMatrix(getComputedStyle(el).transform).m41;
+        const planes = ["base", "mid", "front"].map((name) => {
+          const strip = root.querySelector(`.v-scene-strip--${name}`);
+          const tile = strip && strip.querySelector(".v-scene-plate");
+          return {
+            name,
+            tiles: strip ? strip.querySelectorAll(".v-scene-plate").length : 0,
+            image: tile ? getComputedStyle(tile).backgroundImage : "",
+            height: tile ? Math.round(tile.getBoundingClientRect().height) : 0,
+          };
+        });
+        return {
+          scene: root.dataset.scene,
+          planes,
+          midX: x(root.querySelector(".v-scene-strip--mid")),
+          mistX: x(root.querySelector(".v-scene-mist--near")),
+          motes: root.querySelectorAll(".v-scene-motes i").length,
+          moving: document.getAnimations().filter((a) => a.playState === "running" && /^v-(scene|mote)-/.test(a.animationName || "")).length,
+        };
+      });
+    const first = await read();
+    assert.equal(first.scene, "glory");
+    for (const plane of first.planes) {
+      assert.ok(plane.tiles >= 4, `${plane.name}: ${plane.tiles} copies`);
+      assert.match(plane.image, new RegExp(`/assets/stage/backdrops/glory-a-${plane.name}-v\\d+\\.webp`), `${plane.name} plane's image`);
+      assert.ok(plane.height > 150, `${plane.name}: ${plane.height}px tall`);
+    }
+    assert.ok(first.motes >= 9, `${first.motes} motes in the air`);
+    assert.ok(first.moving >= 3, `${first.moving} scenery animations running`);
+    await p.waitForTimeout(1500);
+    const later = await read();
+    assert.ok(Math.abs(later.midX - first.midX) > 0.5, `the distance drifted (${first.midX} -> ${later.midX})`);
+    assert.ok(Math.abs(later.mistX - first.mistX) > 5, `the mist moved (${first.mistX} -> ${later.mistX})`);
+    assert.deepEqual(errors, []);
+    await context.close();
+  });
+
+  await check("falling water runs down the grotto's falls", async () => {
+    const { context, page: p } = await open(browser, "/?ui=next", pinnedScene("falls-a"));
+    await p.waitForSelector('.tab-panel[data-tab="overview"] .v-scene[data-take="falls-a"]');
+    const water = await p.evaluate(() => {
+      const root = document.querySelector('.tab-panel[data-tab="overview"] .v-stage-bg');
+      const falls = [...root.querySelectorAll(".v-scene-strip--base .v-scene-plate:first-child .v-scene-water")];
+      return {
+        falls: falls.length,
+        running: falls.filter((el) => getComputedStyle(el, "::before").animationName === "v-scene-fall").length,
+        inside: falls.every((el) => el.getBoundingClientRect().height > 20),
+      };
+    });
+    assert.ok(water.falls >= 3, `${water.falls} falls marked`);
+    assert.equal(water.running, water.falls, "each has its streaks running");
+    assert.equal(water.inside, true);
+    await context.close();
+  });
+
+  await check("the header holds still under the pointer", async () => {
+    const { context, page: p } = await open(browser, "/?ui=next", pinnedScene("hive-a"));
+    await p.waitForFunction(() => [...document.querySelectorAll(".v-actor-art")].every((img) => img.complete));
+    await p.waitForTimeout(BUBBLE_SETTLE_MS);
+    const boxes = () =>
+      p.evaluate(() => {
+        const head = document.querySelector('.tab-panel[data-tab="overview"] > .panel-head');
+        const names = { torches: ".v-torches", ledge: ".v-stage-ledge", spire: ".v-spire", climber: ".v-actor--climber", boss: ".v-actor--boss", torchCap: ".v-torches .v-stage-cap", front: ".v-scene-strip--front", base: ".v-scene-strip--base" };
+        const out = { px: head.style.getPropertyValue("--px") };
+        for (const [key, selector] of Object.entries(names)) {
+          const el = head.querySelector(selector);
+          out[key] = el ? Math.round(el.getBoundingClientRect().left * 10) / 10 : null;
+        }
+        return out;
+      });
+    const before = await boxes();
+    const head = await p.evaluate(() => {
+      const r = document.querySelector('.tab-panel[data-tab="overview"] > .panel-head').getBoundingClientRect();
+      return { left: r.left, right: r.right, top: r.top, bottom: r.bottom };
+    });
+    // Along the top edge, then through the middle, end to end.
+    for (const y of [head.top + 6, (head.top + head.bottom) / 2]) {
+      for (const share of [0.05, 0.3, 0.6, 0.95]) {
+        await p.mouse.move(head.left + (head.right - head.left) * share, y, { steps: 4 });
+        await p.waitForTimeout(120);
+      }
+    }
+    await p.waitForTimeout(400);
+    assert.deepEqual(await boxes(), before, "nothing in the header shifted sideways");
+    assert.equal(before.px, "", "no pointer offset is set on the header");
+    await context.close();
+  });
+}
+
+/**
+ * The share dialog: the new look draws the compact 1200 x 630 card; the
+ * classic look keeps its own card and never loads the new one.
+ */
+async function runShare(browser) {
+  /** Opens Recent Runs and the share dialog for its first run. */
+  const openShare = async (p) => {
+    await p.evaluate(() => window.SpireVault.switchTab("runs"));
+    await p.waitForSelector('[data-action="share-run"]');
+    await p.locator('[data-action="share-run"]').first().click();
+    await p.waitForSelector("#share-modal:not([hidden])");
+  };
+  /** The canvas's size, and how many different colours a grid of samples finds. */
+  const cardState = (p) =>
+    p.evaluate(() => {
+      const canvas = document.getElementById("share-canvas");
+      const ctx = canvas.getContext("2d");
+      const colours = new Set();
+      for (let y = 0.05; y < 1; y += 0.05) {
+        for (let x = 0.02; x < 1; x += 0.02) {
+          const [r, g, b] = ctx.getImageData(Math.floor(canvas.width * x), Math.floor(canvas.height * y), 1, 1).data;
+          colours.add(`${r >> 3},${g >> 3},${b >> 3}`);
+        }
+      }
+      const corner = ctx.getImageData(2, 2, 1, 1).data[3];
+      const modal = document.querySelector("#share-modal .modal").getBoundingClientRect();
+      const body = document.querySelector("#share-modal .modal-body");
+      return {
+        size: [canvas.width, canvas.height],
+        colours: colours.size,
+        cornerAlpha: corner,
+        fits: modal.top >= 0 && modal.bottom <= window.innerHeight,
+        scrolls: body.scrollHeight > body.clientHeight + 1,
+      };
+    });
+
+  await check("new look: the share card is the compact card, with the run's art on it", async () => {
+    const { context, page: p, errors, requests } = await open(browser, "/?ui=next");
+    await openShare(p);
+    await p.waitForFunction(() => document.fonts.status === "loaded");
+    await p.waitForTimeout(1500);
+    const card = await cardState(p);
+    assert.deepEqual(card.size, [2400, 1260], "1200 x 630 at 2x");
+    assert.ok(card.colours > 150, `art is on the card (${card.colours} colours sampled)`);
+    assert.equal(card.cornerAlpha, 0, "the corners outside the rounded card are clear");
+    assert.equal(card.fits, true, "the dialog fits a 1440 x 900 window");
+    assert.equal(card.scrolls, false, "nothing in the dialog needs scrolling");
+    assert.ok(requests.some((pathname) => /^\/assets\/stage\/backdrops\/.+\.webp$/.test(pathname)), "a room was loaded for the card");
+    assert.ok(requests.some((pathname) => /^\/assets\/stage\/.+-ink-v\d+\.webp$/.test(pathname)), "the climber's sprite was loaded");
+    const [download] = await Promise.all([p.waitForEvent("download"), p.click("#share-download")]);
+    assert.match(download.suggestedFilename(), /^spirevault-.+\.png$/);
+    assert.deepEqual(errors, []);
+    await context.close();
+  });
+
+  await check("new look on a phone: the share dialog fits and the card keeps its shape", async () => {
+    const { context, page: p, errors } = await open(browser, "/?ui=next", { viewport: PHONE_VIEWPORT });
+    await openShare(p);
+    await p.waitForTimeout(1200);
+    const shape = await p.evaluate(() => {
+      const canvas = document.getElementById("share-canvas").getBoundingClientRect();
+      return { ratio: canvas.width / canvas.height, right: canvas.right, sideways: document.documentElement.scrollWidth > window.innerWidth };
+    });
+    assert.ok(Math.abs(shape.ratio - 1200 / 630) < 0.02, `card ratio ${shape.ratio.toFixed(3)}`);
+    assert.ok(shape.right <= PHONE_VIEWPORT.width, "the card stays inside the screen");
+    assert.equal(shape.sideways, false);
+    assert.deepEqual(errors, []);
+    await context.close();
+  });
+
+  await check("classic keeps its own share card and never loads the new one", async () => {
+    const { context, page: p, errors, requests } = await open(browser, "/");
+    await openShare(p);
+    await p.waitForTimeout(1200);
+    const card = await cardState(p);
+    assert.deepEqual(card.size, [1760, 1240], "the classic 880 x 620 card at 2x");
+    assert.ok(card.colours > 40, "the classic card painted");
+    assert.deepEqual(requests.filter((pathname) => /share-card\.js|\/assets\/stage\/backdrops\//.test(pathname)), []);
+    assert.deepEqual(errors, []);
+    await context.close();
+  });
+}
+
+/**
+ * Card faces come in two sizes: 205x256 for thumbnails, and twice that
+ * wherever the new look shows a card large. The classic look only ever uses
+ * the small ones.
+ */
+async function runCards(browser) {
+  await check("the large card faces are on disk at twice the size", async () => {
+    const { context, page: p } = await open(browser, "/?ui=next");
+    const result = await p.evaluate(async () => {
+      const { CARD_ART_HD, hdCardSrc } = await import("/lib/ui/card-art-hd.js?v=1");
+      const manifest = await (await fetch("/assets/sts2/manifest.json")).json();
+      const withLarge = manifest.cards.filter((slug) => !CARD_ART_HD.missing.has(slug));
+      const bad = [];
+      // Every 20th card, so the check stays quick but covers every pool.
+      for (let i = 0; i < withLarge.length; i += 20) {
+        const src = hdCardSrc(`/assets/sts2/cards/${withLarge[i]}.webp`);
+        const image = new Image();
+        image.src = src;
+        try {
+          await image.decode();
+          if (image.naturalWidth !== CARD_ART_HD.width || image.naturalHeight !== CARD_ART_HD.height) bad.push(`${src} is ${image.naturalWidth}x${image.naturalHeight}`);
+        } catch {
+          bad.push(`${src} did not load`);
+        }
+      }
+      const missing = [...CARD_ART_HD.missing];
+      return {
+        cards: manifest.cards.length,
+        withLarge: withLarge.length,
+        bad,
+        missingKeepsSmall: missing.length === 0 || hdCardSrc(`/assets/sts2/cards/${missing[0]}.webp`) === `/assets/sts2/cards/${missing[0]}.webp`,
+        otherUrlsUntouched: hdCardSrc("/assets/sts2/relics/anchor.webp") === "/assets/sts2/relics/anchor.webp" && hdCardSrc(null) === null,
+        versionedUrlWorks: hdCardSrc(`/assets/sts2/cards/${withLarge[0]}.webp?v=2`) === `${CARD_ART_HD.dir}/${withLarge[0]}.webp`,
+      };
+    });
+    assert.ok(result.withLarge > result.cards * 0.95, `${result.withLarge} of ${result.cards} cards have a large face`);
+    assert.deepEqual(result.bad, []);
+    assert.equal(result.missingKeepsSmall, true, "a card without a large face keeps its small one");
+    assert.equal(result.otherUrlsUntouched, true, "only card image URLs are rewritten");
+    assert.equal(result.versionedUrlWorks, true, "a card URL with its ?v= token maps to the large face");
+    await context.close();
+  });
+
+  await check("new look: the podium shows large faces, and a row's card sharpens on hover", async () => {
+    const { context, page: p, errors } = await open(browser, "/?ui=next", { deviceScaleFactor: 2 });
+    await p.evaluate(() => window.SpireVault.switchTab("cards"));
+    await p.waitForSelector(".v-cd-podium img");
+    await p.waitForFunction(() => [...document.querySelectorAll(".v-cd-podium img")].every((img) => img.complete && img.naturalWidth > 0));
+    const podium = await p.evaluate(() =>
+      [...document.querySelectorAll(".v-cd-podium img")].map((img) => ({
+        natural: img.naturalWidth,
+        needed: Math.ceil(img.getBoundingClientRect().width * window.devicePixelRatio),
+      }))
+    );
+    assert.ok(podium.length >= 1, "the podium has cards");
+    for (const card of podium) {
+      assert.ok(card.natural >= card.needed, `a podium card needs ${card.needed}px and its file has ${card.natural}px`);
+    }
+    const row = p.locator(".v-cd-row", { has: p.locator("img[data-hd]") }).first();
+    const image = await row.locator(".v-cd-thumb img").elementHandle();
+    await row.scrollIntoViewIfNeeded();
+    // Thumbnails load lazily: wait for this one before measuring it.
+    await p.waitForFunction((img) => img.complete && img.naturalWidth > 0, image);
+    assert.equal(await image.evaluate((img) => img.naturalWidth), 205, "a row starts with the small face");
+    await row.hover();
+    await p.waitForFunction((img) => img.naturalWidth === 410, image);
+    assert.equal(await image.evaluate((img) => img.hasAttribute("data-hd")), false, "the swap happens once");
+    assert.deepEqual(errors, []);
+    await context.close();
+  });
+
+  await check("classic never loads the large card faces", async () => {
+    const { context, page: p, errors, requests } = await open(browser, "/", { deviceScaleFactor: 2 });
+    await p.evaluate(() => window.SpireVault.switchTab("cards"));
+    await p.waitForSelector("#cards-body img");
+    await p.waitForTimeout(800);
+    assert.deepEqual(requests.filter((pathname) => /cards-hd|card-art-hd/.test(pathname)), []);
+    assert.deepEqual(errors, []);
+    await context.close();
+  });
+}
+
+// ---- Co-op: one-tap Play ------------------------------------------------------
+
+const COOP_ME = TEST_SESSION.steamID;
+const COOP_MATE = "76561198000000002";
+const COOP_T0 = Date.UTC(2026, 10, 14, 20, 0, 0);
+
+/** Server answers for each state, shaped like Backend/src/coop-play-core.ts viewFor(). */
+function coopView(state, extra = {}) {
+  const base = { ok: true, lookingCount: 0, playingCount: 0, lookingByBranch: { stable: 0, beta: 0 }, pings: { looking: false }, pushOn: false };
+  const members = (youHost) => [
+    { sid: youHost ? COOP_ME : COOP_MATE, name: youHost ? "TestClimber" : "Boble", character: youHost ? "silent" : "ironclad", isHost: true, isYou: youHost, steamAdded: false, status: "joined" },
+    { sid: youHost ? COOP_MATE : COOP_ME, name: youHost ? "Boble" : "TestClimber", character: youHost ? "ironclad" : "silent", isHost: false, isYou: !youHost, steamAdded: false, status: "joined" },
+  ];
+  const match = (youHost, locked = false) => ({
+    matchId: "ab".repeat(16), branch: "stable", createdAt: COOP_T0, youAreHost: youHost, hostSid: youHost ? COOP_ME : COOP_MATE,
+    hostHosting: false, locked, seatsLeft: 2, members: members(youHost),
+  });
+  switch (state) {
+    case "idle": return { ...base, state: "idle", lookingCount: 1, lookingByBranch: { stable: 1, beta: 0 }, ...extra };
+    case "searching": return { ...base, state: "searching", lookingCount: 1, lookingByBranch: { stable: 1, beta: 0 }, ticket: { createdAt: Date.now() - 42000, character: "silent", branch: "stable", push: false }, ...extra };
+    case "host": return { ...base, state: "matched", playingCount: 2, match: match(true), ...extra };
+    case "joiner": return { ...base, state: "matched", playingCount: 2, match: match(false), ...extra };
+    case "in_game": return { ...base, state: "in_game", playingCount: 2, match: match(true, true), ...extra };
+    default: throw new Error(state);
+  }
+}
+
+/** A mock of /api/coop/play whose answer the test can change, recording what was sent. */
+function coopServer(initial) {
+  const server = { view: coopView(initial), posts: [] };
+  server.route = ["**/api/coop/play**", async (route) => {
+    const request = route.request();
+    if (request.method() === "POST") server.posts.push({ path: new URL(request.url()).pathname, body: request.postDataJSON() });
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(server.view) });
+  }];
+  return server;
+}
+
+/** @param {import("playwright").Page} page */
+async function coopCard(page, state) {
+  await page.evaluate(() => window.SpireVault.switchTab("overview"));
+  await page.evaluate(() => window.SpireVault.switchTab("coop"));
+  await page.waitForSelector(`#coop-play-root .cp[data-cp-state="${state}"]`, { timeout: 8000 });
+  return page.evaluate(() => {
+    const shown = (el) => !!el && el.getClientRects().length > 0;
+    const play = document.querySelector(".cp-play");
+    const bar = document.querySelector("[data-v-mnav]");
+    // On phones the new look turns the nav into a bottom tab bar; Play must
+    // clear it. On desktop the same element is the sidebar, so ignore it.
+    const barTop = bar && shown(bar) ? bar.getBoundingClientRect().top : Infinity;
+    const floor = barTop > window.innerHeight / 2 && barTop < window.innerHeight ? barTop : window.innerHeight;
+    return {
+      cards: document.querySelectorAll("#coop-play-root .cp-card").length,
+      title: document.querySelector(".cp-title")?.textContent.trim() ?? "",
+      playOnScreen: play ? play.getBoundingClientRect().bottom <= floor && play.getBoundingClientRect().top >= 0 : null,
+      playAt: play ? `${Math.round(play.getBoundingClientRect().top)}–${Math.round(play.getBoundingClientRect().bottom)} of ${Math.round(floor)}; page scrolled ${Math.round(window.scrollY)}; head ${Math.round(document.querySelector(".tab-panel[data-tab='coop'] .panel-head")?.getBoundingClientRect().height ?? 0)}px` : "",
+      oldPieces: ["#pf-root", ".coop-bar", "#coop-showtime-strip", ".pf-welcome", ".pf-welcome-backdrop", "#pf-intents", ".guest-coop"]
+        .filter((sel) => document.querySelector(sel)).join(", "),
+      sideways: document.documentElement.scrollWidth > window.innerWidth,
+      liveCoopLinks: [...document.querySelectorAll('link[rel="stylesheet"]')]
+        .filter((l) => /\/lib\/coop-play\.css/.test(l.href) && l.media !== "not all").length,
+    };
+  });
+}
+
+async function runCoop(browser) {
+  for (const [label, path] of [["classic", "/"], ["new look", "/?ui=next"]]) {
+    for (const width of [1440, 1024, 390]) {
+      await check(`co-op (${label}, ${width}px): one card, Play on screen, no old lobby pieces`, async () => {
+        const server = coopServer("idle");
+        const { context, page: p, errors, requests } = await open(browser, path, {
+          signedIn: true, routes: [server.route], viewport: { width, height: width < 600 ? 844 : 768 },
+        });
+        const card = await coopCard(p, "idle");
+        assert.equal(card.cards, 1);
+        assert.equal(card.title, "Play co-op");
+        assert.equal(card.playOnScreen, true, `the Play button is visible without scrolling (${card.playAt})`);
+        assert.equal(card.oldPieces, "", "old co-op pieces are still in the page");
+        assert.equal(card.sideways, false, "the page scrolls sideways");
+        if (label === "new look") assert.equal(card.liveCoopLinks, 0, "coop-play.css must sit in the legacy layer in the new look");
+        assert.deepEqual(requests.filter((x) => /party-finder|coop-lobbies|party-room|coop-sandbox/.test(x)), [], "old lobby scripts were requested");
+        assert.deepEqual(errors, []);
+        await context.close();
+      });
+    }
+  }
+
+  await check("co-op: every state is one card with its own title", async () => {
+    const server = coopServer("idle");
+    const { context, page: p, errors } = await open(browser, "/?ui=next", { signedIn: true, routes: [server.route] });
+    const expect = [
+      ["searching", "searching", "Looking for a partner…"],
+      ["host", "matched", "You're in a party"],
+      ["joiner", "matched", "You're in a party"],
+      ["in_game", "in_game", "Have a good climb"],
+    ];
+    for (const [fixture, state, title] of expect) {
+      server.view = coopView(fixture);
+      const card = await coopCard(p, state);
+      assert.equal(card.cards, 1, fixture);
+      assert.equal(card.title, title, fixture);
+    }
+    server.view = coopView("host");
+    await coopCard(p, "matched");
+    const host = await p.evaluate(() => ({
+      add: [...document.querySelectorAll('[data-cp="steam-add"]')].map((b) => b.textContent.trim()),
+      hosting: !!document.querySelector('[data-cp="hosting"]'),
+      launch: document.querySelector('[data-cp="launch"]')?.getAttribute("href"),
+      figures: document.querySelectorAll(".cp-scene .cp-climber").length,
+      seats: document.querySelectorAll(".cp-scene .cp-seat").length,
+      stones: document.querySelectorAll(".cp-scene .cp-stone").length,
+    }));
+    assert.deepEqual(host.add, ["Add Boble"], "the host adds each joiner");
+    assert.equal(host.hosting, true);
+    assert.equal(host.launch, "steam://run/2868840", "Launch opens STS2 (app 2868840)");
+    assert.equal(host.figures, 2);
+    assert.equal(host.seats, 2);
+    assert.equal(host.stones, 2, "seated climbers (Silent, Ironclad) rest on a stone");
+    server.view = coopView("joiner");
+    await coopCard(p, "matched");
+    const joiner = await p.evaluate(() => ({
+      add: [...document.querySelectorAll('[data-cp="steam-add"]')].map((b) => b.textContent.trim()),
+      hosting: !!document.querySelector('[data-cp="hosting"]'),
+    }));
+    assert.deepEqual(joiner.add, ["Add Boble"], "a joiner adds the host only");
+    assert.equal(joiner.hosting, false, "only the host says they're hosting");
+    assert.deepEqual(errors, []);
+    await context.close();
+  });
+
+  await check("co-op: Play sends the chosen climber and game version", async () => {
+    const server = coopServer("idle");
+    const { context, page: p } = await open(browser, "/?ui=next", { signedIn: true, routes: [server.route] });
+    await coopCard(p, "idle");
+    await p.click('[data-cp-branch="beta"]');
+    await p.click('[data-cp-pick="fool"]');
+    server.view = coopView("searching");
+    await p.click('[data-cp="play"]');
+    await p.waitForSelector('.cp[data-cp-state="searching"]');
+    const post = server.posts.find((x) => x.path === "/api/coop/play");
+    assert.deepEqual({ character: post?.body?.character, branch: post?.body?.branch }, { character: "fool", branch: "beta" });
+    const timer = await p.textContent("[data-cp-timer]");
+    assert.match(timer.trim(), /^0:4\d$/, "the wait timer counts from the ticket's start");
+    await context.close();
+  });
+
+  await check("co-op: The Fool is offered only on the beta branch", async () => {
+    const server = coopServer("idle");
+    const { context, page: p } = await open(browser, "/?ui=next", { signedIn: true, routes: [server.route] });
+    await coopCard(p, "idle");
+    assert.equal(await p.$('[data-cp-pick="fool"]'), null);
+    await p.click('[data-cp-branch="beta"]');
+    assert.notEqual(await p.$('[data-cp-pick="fool"]'), null);
+    await context.close();
+  });
+
+  await check("co-op: while you wait, other tabs show a Looking pill that cancels", async () => {
+    const server = coopServer("searching");
+    const { context, page: p } = await open(browser, "/?ui=next", { signedIn: true, routes: [server.route] });
+    await coopCard(p, "searching");
+    await p.evaluate(() => window.SpireVault.switchTab("overview"));
+    await p.waitForSelector(".cp-float-wrap:not([hidden]) .cp-float");
+    assert.match(await p.textContent(".cp-float"), /Looking\s+0:\d\d/);
+    server.view = coopView("idle");
+    await p.click(".cp-float-x");
+    await p.waitForSelector(".cp-float-wrap[hidden]", { state: "attached" });
+    await context.close();
+  });
+}
+
 const GROUPS = Object.freeze({
   core: run,
+  coop: runCoop,
   duel: runDuel,
   brand: runBrand,
   switch: runBetaSwitch,
   lock: runLock,
   parity: runParity,
   news: runNewsPost,
+  scene: runScene,
+  share: runShare,
+  cards: runCards,
 });
 
 /** @returns {string[]} the group names to run */

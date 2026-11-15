@@ -16,7 +16,8 @@ import { esc, fixed, clamp } from "./html.js?v=1";
  * @typedef {Object} PickedCard
  * @property {string} key
  * @property {string} label
- * @property {string|null} src
+ * @property {string|null} src           the 205x256 face (thumbnail size)
+ * @property {string|null} [srcLarge]    the same face at twice the size, when there is one
  * @property {string|null} classKey      ironclad … necrobinder | colorless | curse | status | null
  * @property {number} picks
  * @property {number} wins
@@ -30,6 +31,7 @@ import { esc, fixed, clamp } from "./html.js?v=1";
  * @property {string} key
  * @property {string} label
  * @property {string|null} src
+ * @property {string|null} [srcLarge]
  * @property {string|null} classKey
  * @property {number} offered
  * @property {number} picks
@@ -45,7 +47,7 @@ import { esc, fixed, clamp } from "./html.js?v=1";
  */
 
 const PODIUM_SIZE = 3;
-const CHARACTERS = new Set(["ironclad", "silent", "defect", "regent", "necrobinder"]);
+const CHARACTERS = new Set(["ironclad", "silent", "defect", "regent", "necrobinder", "fool"]);
 
 const CARD_GLYPH =
   '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="3" width="14" height="18" rx="2.5" fill="currentColor"/></svg>';
@@ -92,14 +94,18 @@ function meter(pct, kind) {
 }
 
 /**
- * Card art at row size. The same image grows into a full-size card on hover
- * (CSS transform), so inspecting a card costs no extra request.
- * @param {{ src: string|null }} card
+ * Card art at row size. The image grows into a full-size card on hover (CSS
+ * transform). The small face is enough for the thumbnail but soft at full
+ * size on a 2x screen, so the row names the large face (`data-hd`) and
+ * motion.js swaps it in the first time the row is hovered: one request, only
+ * for a card someone actually inspects.
+ * @param {{ src: string|null, srcLarge?: string|null }} card
  * @param {boolean} [isSkip]
  */
 function thumb(card, isSkip = false) {
+  const large = card.srcLarge && card.srcLarge !== card.src ? ` data-hd="${esc(card.srcLarge)}"` : "";
   const art = card.src
-    ? `<img src="${esc(card.src)}" alt="" loading="lazy" decoding="async" draggable="false">`
+    ? `<img src="${esc(card.src)}"${large} alt="" loading="lazy" decoding="async" draggable="false">`
     : `<span class="v-cd-thumb-glyph">${isSkip ? SKIP_GLYPH : CARD_GLYPH}</span>`;
   return `<span class="v-cd-thumb${card.src ? "" : " is-missing"}" aria-hidden="true">${art}${isSkip ? `<span class="v-cd-skip-badge">${SKIP_GLYPH}</span>` : ""}</span>`;
 }
@@ -132,8 +138,9 @@ function pickedLabel(card, rank, isLow) {
  */
 function podiumItem(card, rank, model) {
   const isLow = card.picks < model.lowSampleRuns;
+  // The podium shows the card large: the large face, when there is one.
   const art = card.src
-    ? `<img src="${esc(card.src)}" alt="" loading="lazy" decoding="async" draggable="false">`
+    ? `<img src="${esc(card.srcLarge || card.src)}" alt="" loading="lazy" decoding="async" draggable="false">`
     : `<span class="v-cd-top-glyph">${CARD_GLYPH}</span>`;
   const rate = card.pickRatePct == null
     ? ""
@@ -183,7 +190,7 @@ function pickedRow(card, rank, model, maxPicks) {
       cell("v-cd-often", "Pick rate", `${fixed(card.pickRatePct ?? 0, 0)}<small>%</small>`, meter(oftenPct(card, maxPicks), "pick"))
     : cell("v-cd-often", "Picked", `${card.picks}<small>×</small>`, meter(oftenPct(card, maxPicks), "pick"));
   return `
-    <li class="v-cd-row${isLow ? " is-low" : ""}" data-tone="${toneKey(card.tone)}">
+    <li class="v-cd-row${isLow ? " is-low" : ""}" data-tone="${toneKey(card.tone)}" data-hd-zoom>
       <span class="v-sr">${esc(pickedLabel(card, rank, isLow))}</span>
       <span class="v-cd-rank" aria-hidden="true">${rank}</span>
       ${thumb(card)}
@@ -205,7 +212,7 @@ function pickedRow(card, rank, model, maxPicks) {
 function skippedRow(card, rank) {
   const label = `Rank ${rank}, ${card.label}: offered ${card.offered} times, picked ${card.picks}. Picked ${fixed(card.pickRatePct)} percent of the time.`;
   return `
-    <li class="v-cd-row v-cd-row--skip">
+    <li class="v-cd-row v-cd-row--skip" data-hd-zoom>
       <span class="v-sr">${esc(label)}</span>
       <span class="v-cd-rank" aria-hidden="true">${rank}</span>
       ${thumb(card, true)}

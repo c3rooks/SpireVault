@@ -23,11 +23,3 @@
     display: flex !important;
   }
 }
-
-/* The co-op scene pins its "Switch to Classic Co-op" link at 11px with an
-   !important (lib/party-finder-scene.css). Important declarations in an
-   earlier layer win, so only this layer can lift it to a readable size. */
-[data-pf-stage-mounted="1"] .coop-beta-switch,
-[data-pf-stage-mounted="1"] .coop-link-btn[data-coop-beta] {
-  font-size: var(--v-text-sm) !important;
-}

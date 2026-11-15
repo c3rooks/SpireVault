@@ -214,4 +214,20 @@ export interface Env {
    * the worker `env`. The token only gates manual operator triggers.
    */
   HOUSE_LOBBY_ADMIN_SECRET?: string;
+
+  /**
+   * The single co-op Play queue (coop-play-do.ts). One global instance;
+   * matching happens inside it, one request at a time.
+   */
+  COOP_PLAY: DurableObjectNamespace<import("./coop-play-do").CoopPlayDO>;
+
+  /** Web Push (coop-play-push.ts). Both unset → "ping me" is unavailable. */
+  VAPID_PUBLIC_KEY?: string;
+  VAPID_PRIVATE_JWK?: string;
+
+  /**
+   * The fake always-on "house" rooms are off. Set to "1" (and restore the
+   * cron in wrangler.toml) only to bring them back.
+   */
+  HOUSE_LOBBIES_ENABLED?: string;
 }

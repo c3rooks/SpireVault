@@ -11,7 +11,8 @@
     "types": "wrangler types",
     "verify": "node scripts/verify-roster.mjs",
     "verify:offline": "node scripts/verify-offline.mjs",
-    "preflight": "tsc --noEmit -p tsconfig.json && node scripts/verify-offline.mjs"
+    "verify:play": "node scripts/verify-coop-play.mjs",
+    "preflight": "tsc --noEmit -p tsconfig.json && node scripts/verify-offline.mjs && node scripts/verify-coop-play.mjs"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20240320.0",

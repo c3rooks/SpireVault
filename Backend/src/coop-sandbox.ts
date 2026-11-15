@@ -1,4 +1,6 @@
 import type { Env } from "./types";
+import { sandboxPlayAct, sandboxPlayPoll, sandboxPlayReset, sandboxPlaySeed } from "./coop-play-routes";
+import { PLAY_ACTIONS, type PlayAction } from "./coop-play-core";
 import {
   COOP_LOBBY_TTL_S,
   COOP_PARTY_TTL_S,
@@ -636,7 +638,44 @@ export async function handleCoopSandboxRoute(
 
   if (method === "POST" && pathname === "/_debug/coop-sandbox/reset") {
     const result = await resetCoopSandbox(env);
+    if (env.COOP_PLAY) await sandboxPlayReset(env);
     return json({ ok: true, ...result });
+  }
+
+  // One-tap Play: put a fake persona in line (or drive its party steps) so a
+  // single browser can see the whole match flow. The seeded ticket lives 10
+  // minutes without polling; a matched persona must be polled ("poll") or it
+  // times out like a real player who walked away.
+  if (method === "POST" && pathname === "/_debug/coop-sandbox/play-seed") {
+    const body = (await req.json().catch(() => null)) as
+      | { persona?: string; branch?: string; character?: string }
+      | null;
+    const persona = personaByName(body?.persona ?? "Boble");
+    if (!persona) return json({ ok: false, error: "unknown_persona" }, { status: 400 });
+    const result = await sandboxPlaySeed(
+      env,
+      { sid: persona.steamId, name: persona.name },
+      body?.branch,
+      body?.character,
+    );
+    return json({ ...result, persona: persona.steamId });
+  }
+
+  if (method === "POST" && pathname === "/_debug/coop-sandbox/play-act") {
+    const body = (await req.json().catch(() => null)) as
+      | { persona?: string; action?: string }
+      | null;
+    const persona = personaByName(body?.persona ?? "Boble");
+    if (!persona) return json({ ok: false, error: "unknown_persona" }, { status: 400 });
+    const action = body?.action ?? "";
+    if (action !== "poll" && !(PLAY_ACTIONS as readonly string[]).includes(action)) {
+      return json({ ok: false, error: "invalid_action" }, { status: 400 });
+    }
+    const result =
+      action === "poll"
+        ? await sandboxPlayPoll(env, persona.steamId)
+        : await sandboxPlayAct(env, persona.steamId, action as PlayAction);
+    return json({ ...result, persona: persona.steamId });
   }
 
   if (method === "POST" && pathname === "/_debug/coop-sandbox/seed") {

@@ -145,10 +145,6 @@ function installFixture({ companion, seed, session }) {
     window.localStorage.setItem("vault.web.companion.v2", companion);
     if (session) {
       window.localStorage.setItem("vault.web.session", JSON.stringify(session));
-      // Co-op greets a new account with a one-time dialog that covers the
-      // page (lib/party-finder-scene.js). Mark it seen: the audit measures
-      // the tabs, not that dialog.
-      window.localStorage.setItem("spirevault.coop.welcome.v1", "1");
     }
   } catch {
     /* storage unavailable: the companion is rolled randomly */

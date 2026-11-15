@@ -225,6 +225,14 @@
 .v-runs-chip[data-char][aria-pressed="true"] {
   background: var(--v-char);
 }
+.v-runs-chip:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.v-runs-chip:disabled:hover {
+  background: transparent;
+  color: var(--v-text-2);
+}
 .v-runs-dot {
   width: 9px;
   height: 9px;
@@ -778,6 +786,7 @@ body:has(#run-compare-modal:not([hidden])) .compare-bar {
 #run-detail-modal:has(.v-rd[data-char="defect"]) { --v-char: var(--v-char-defect); }
 #run-detail-modal:has(.v-rd[data-char="regent"]) { --v-char: var(--v-char-regent); }
 #run-detail-modal:has(.v-rd[data-char="necrobinder"]) { --v-char: var(--v-char-necrobinder); }
+#run-detail-modal:has(.v-rd[data-char="fool"]) { --v-char: var(--v-char-fool); }
 #run-detail-modal:has(.v-rd[data-char=""]) .modal-head { background: var(--v-title); }
 #run-detail-modal .modal-run-detail {
   width: min(940px, calc(100vw - 48px));
@@ -1575,25 +1584,38 @@ body:has(#run-compare-modal:not([hidden])) .compare-bar {
 }
 
 /* ==========================================================================
-   Share modal chrome (the canvas card itself is fixed, see drawShareCard)
+   Share modal. The card is drawn by lib/ui/share-card.js (1200 x 630); this
+   is the chrome around it, kept compact so the card, its three exports and
+   the community share all fit one laptop screen without scrolling.
    ========================================================================== */
 #share-modal .modal-share {
-  width: min(760px, calc(100vw - 48px));
+  width: min(720px, calc(100vw - 48px));
   max-width: none;
 }
 #share-modal .modal-body {
-  padding: var(--v-space-5);
+  padding: var(--v-space-4) var(--v-space-5) var(--v-space-5);
 }
+#share-modal .share-body {
+  gap: var(--v-space-3);
+}
+/* The card carries its own outline and rounded corners (its corners are
+   transparent), so the wrap adds nothing but room for the hard shadow. */
 #share-modal .share-preview-wrap {
   flex: none;
-  border: var(--v-outline);
-  border-radius: var(--v-radius-md);
-  background: var(--v-ink);
-  box-shadow: var(--v-shadow);
+  padding: 0 5px 5px 0;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+}
+#share-modal .share-preview-wrap canvas {
+  aspect-ratio: 1200 / 630;
+  filter: drop-shadow(5px 5px 0 var(--v-ink));
 }
 #share-modal .share-actions {
   gap: var(--v-space-2);
-  padding: var(--v-space-3) 0 var(--v-space-1);
+  padding: var(--v-space-1) 0 0;
   background: var(--v-paper);
 }
 #share-modal .share-actions button {
@@ -1605,6 +1627,7 @@ body:has(#run-compare-modal:not([hidden])) .compare-bar {
   color: var(--v-on-paper);
 }
 #share-modal .share-hint {
+  margin: 0;
   color: var(--v-on-paper-2);
   font-size: var(--v-text-sm);
   font-weight: 600;
@@ -1616,15 +1639,50 @@ body:has(#run-compare-modal:not([hidden])) .compare-bar {
   color: color-mix(in srgb, var(--v-loss) 52%, var(--v-on-paper));
 }
 #share-modal .share-community {
-  margin-top: var(--v-space-3);
-  padding-top: var(--v-space-4);
+  margin-top: var(--v-space-1);
+  padding-top: var(--v-space-3);
   border-top: 2px dashed color-mix(in srgb, var(--v-on-paper) 24%, transparent);
 }
 #share-modal .share-community-head h3 {
+  margin: 0;
   color: var(--v-on-paper);
   font-family: var(--v-font-heading);
-  font-size: var(--v-text-xl);
+  font-size: var(--v-text-lg);
   font-weight: 800;
+}
+#share-modal .share-community-head .muted {
+  margin: 2px 0 0;
+}
+/* The note and its button share a row: one line to write, one tap to send. */
+#share-modal .share-community-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "label label"
+    "note actions"
+    "status status";
+  gap: 6px var(--v-space-2);
+  margin-top: var(--v-space-2);
+}
+#share-modal .share-community-label {
+  grid-area: label;
+}
+#share-modal .share-community-caption {
+  grid-area: note;
+  height: 46px;
+  min-height: 46px;
+  padding: 11px 12px;
+}
+#share-modal .share-community-actions {
+  grid-area: actions;
+  margin: 0;
+}
+#share-modal .share-community-actions .btn-primary {
+  min-height: 46px;
+}
+#share-modal .share-community-status {
+  grid-area: status;
+  margin: 0;
 }
 #share-modal .share-community-head .muted,
 #share-modal .share-community-label,
@@ -1883,6 +1941,14 @@ body:has(#run-compare-modal:not([hidden])) .compare-bar {
   #share-modal .share-actions button {
     flex: 1 1 auto;
     min-height: 44px;
+  }
+  #share-modal .share-community-body {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "label"
+      "note"
+      "actions"
+      "status";
   }
 }
 /* Nothing under 12px on a phone (the phone shell's root size is 15px, so

@@ -46,7 +46,7 @@ import { esc } from "./html.js?v=1";
  * @property {{ outcome: string, ascensionTier: string, character: string, search: string }} filters
  * @property {ReadonlyArray<{ id: string, label: string }>} outcomes
  * @property {ReadonlyArray<{ id: string, label: string }>} tiers
- * @property {ReadonlyArray<{ key: string, label: string }>} characters   played characters only
+ * @property {ReadonlyArray<{ key: string, label: string, disabled?: boolean }>} characters   every climber; unplayed ones disabled
  * @property {number} total          runs before filters
  * @property {number} filteredCount  runs after filters
  * @property {boolean} isFiltered
@@ -177,11 +177,13 @@ function art(item, fallbackClass) {
  * @param {string} label
  * @param {boolean} pressed
  * @param {string} [charKey]
+ * @param {boolean} [disabled]  shown but not clickable (a climber with no runs)
  */
-function chip(kind, value, label, pressed, charKey) {
+function chip(kind, value, label, pressed, charKey, disabled = false) {
   const char = charKey ? ` data-char="${esc(charKey)}"` : "";
   const dot = charKey ? '<i class="v-runs-dot" aria-hidden="true"></i>' : "";
-  return `<button class="v-runs-chip" type="button" data-filter-kind="${esc(kind)}" data-filter-value="${esc(value)}" aria-pressed="${pressed}"${char}>${dot}${esc(label)}</button>`;
+  const off = disabled ? ` disabled title="No runs as ${esc(label)} yet"` : "";
+  return `<button class="v-runs-chip" type="button" data-filter-kind="${esc(kind)}" data-filter-value="${esc(value)}" aria-pressed="${pressed}"${char}${off}>${dot}${esc(label)}</button>`;
 }
 
 /** @param {string} label @param {string} chipsHtml */
@@ -200,7 +202,7 @@ function filtersBar(model) {
   const tiers = model.tiers.map((t) => chip("ascensionTier", t.id, t.label, filters.ascensionTier === t.id)).join("");
   const chars = [
     chip("character", "all", "All", filters.character === "all"),
-    ...model.characters.map((c) => chip("character", c.key, c.label, filters.character === c.key, c.key)),
+    ...model.characters.map((c) => chip("character", c.key, c.label, filters.character === c.key, c.key, c.disabled)),
   ].join("");
   const summary = model.isFiltered
     ? `Showing <b>${model.filteredCount}</b> of <b>${model.total}</b> runs

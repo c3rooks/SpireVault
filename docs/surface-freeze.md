@@ -59,8 +59,12 @@ dormant and not deployed. It stays in the tree for now, unextended.
 
 Work that moves the retention number, or that tells us whether it moved:
 
-- **Scheduled play intents** (`Backend/src/coop-intents.ts`,
-  `Web/lib/party-finder-intents-rt.js`). This is the current bet: at our
+- **Co-op Play** (one-tap queue with push pings, `docs/coop-play.md`). On
+  2026-11-14 it replaced scheduled play intents, whose UI was removed after
+  the saved-window list sat empty. The reasoning below still holds, and the
+  queue attacks it more directly.
+- **Scheduled play intents** (`Backend/src/coop-intents.ts`; UI removed
+  2026-11-14). This was the bet at the time: at our
   concurrency, the binding constraint on co-op is that two interested players
   are rarely online in the same five minutes. Intents are the only surface that
   attacks that directly.

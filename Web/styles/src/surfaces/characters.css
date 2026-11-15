@@ -380,25 +380,10 @@
 }
 
 /* ---- Codex slot ------------------------------------------------------------------- */
-/* Empty until a banner is picked; the hint lives in CSS so the shared
-   handler can clear the slot with innerHTML = "" as it always has. */
+/* Empty (and invisible) until a banner is picked. The banners' own "Codex"
+   line already says what a click does, so there is no hint box here. */
 .v-cx-slot:empty {
-  display: grid;
-  place-items: center;
-  min-height: 112px;
-  margin-top: var(--v-space-5);
-  padding: var(--v-space-4);
-  border: 2px dashed var(--v-line);
-  border-radius: var(--v-radius-lg);
-}
-.v-cx-slot:empty::before {
-  content: "Pick a banner to open its codex page: playstyle, archetypes, core mechanics and climbing tips.";
-  max-width: 46ch;
-  color: var(--v-text-2);
-  font-size: var(--v-text-sm);
-  font-weight: 700;
-  line-height: 1.45;
-  text-align: center;
+  display: none;
 }
 
 /* ---- Codex page ------------------------------------------------------------------- */

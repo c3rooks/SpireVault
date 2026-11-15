@@ -1,5 +1,7 @@
 # Co-op Lobby Beta — local sandbox harness
 
+> **2026-11-14:** the lobby board and its Dev Sandbox panel are gone; co-op is one-tap Play now. For testing Play locally (seeding a waiting player, driving their steps) see `docs/coop-play.md`. The scenario seeds below only feed the old lobby endpoints, which stay in the Worker for one release.
+
 Local-only tooling to seed fake users, lobbies, seat requests, and party rooms for QA. **Never deployed to production UI or production KV.**
 
 ## Enable

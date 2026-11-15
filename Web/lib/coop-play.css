@@ -1,0 +1,920 @@
+/* ==========================================================================
+   Co-op Play — the one card on the Co-op tab (lib/coop-play*.js).
+
+   Structure and the classic look live here. This file is loaded in both
+   looks: as a plain stylesheet in classic, inside the `legacy` cascade layer
+   in the new look, where styles/src/surfaces/coop.css re-points the --cp-*
+   tokens at the Inked Codex palette and adds the inked borders. So both
+   skins always show the same card; only paint differs.
+   ========================================================================== */
+
+.cp-page {
+  padding: 20px clamp(12px, 3vw, 28px) 48px;
+}
+
+.cp {
+  --cp-card: var(--card, #14111e);
+  --cp-raised: var(--card-raised, #1a1626);
+  --cp-line: var(--border-strong, #3a3450);
+  --cp-line-soft: var(--border, #28233a);
+  --cp-text: var(--text, #f4eddc);
+  --cp-text-2: var(--text-2, #b6abc4);
+  --cp-text-3: var(--text-3, #6c647a);
+  --cp-accent: var(--accent, #ff6b1a);
+  --cp-accent-hi: var(--accent-hi, #ffa05c);
+  --cp-on-accent: #1a0d05;
+  --cp-gold: var(--gold, #d4af37);
+  --cp-win: var(--win, #6dd97c);
+  --cp-steam: #1b2838;
+  --cp-steam-hi: #66c0f4;
+  --cp-title-color: var(--cp-text);
+  --cp-radius: var(--radius, 12px);
+  --cp-radius-sm: 8px;
+  --cp-border: 1px;
+  --cp-shadow: 0 18px 40px rgba(0, 0, 0, 0.35);
+  --cp-btn-shadow: 0 6px 16px rgba(0, 0, 0, 0.3);
+  --cp-btn-pressed: 0 2px 6px rgba(0, 0, 0, 0.3);
+  --cp-font: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --cp-font-display: "Cinzel", "Playfair Display", Georgia, serif;
+  --cp-font-heading: "Cinzel", Georgia, serif;
+  --cp-dur: 180ms;
+  --cp-ease: cubic-bezier(0.16, 1, 0.3, 1);
+
+  color: var(--cp-text);
+  font-family: var(--cp-font);
+  max-width: 1480px;
+  margin: 0 auto;
+  container: cp / inline-size;
+}
+
+/* ---- The card --------------------------------------------------------------- */
+.cp-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+  gap: clamp(20px, 3vw, 40px);
+  align-items: start;
+  padding: clamp(18px, 3vw, 36px);
+  background: var(--cp-card);
+  border: var(--cp-border) solid var(--cp-line);
+  border-radius: var(--cp-radius);
+  box-shadow: var(--cp-shadow);
+}
+.cp-card--loading,
+.cp-card--error,
+.cp-card--ended {
+  grid-template-columns: minmax(0, 1fr);
+  max-width: 640px;
+}
+.cp-main {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  min-width: 0;
+}
+.cp-side {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+  position: sticky;
+  top: 16px;
+}
+
+/* ---- Heading ------------------------------------------------------------------ */
+.cp-head {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.cp-eyebrow {
+  margin: 0;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--cp-text-3);
+}
+.cp-title {
+  margin: 0;
+  font-family: var(--cp-font-display);
+  font-size: clamp(2rem, 1.4rem + 2.2vw, 3.1rem);
+  line-height: 1.02;
+  color: var(--cp-title-color);
+}
+.cp-sub,
+.cp-hint {
+  margin: 0;
+  color: var(--cp-text-2);
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+.cp-live {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 4px 0 0;
+  color: var(--cp-text-2);
+  font-size: 1rem;
+  line-height: 1.45;
+}
+.cp-live-dot {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--cp-text-3);
+  transform: translateY(-1px);
+}
+.cp-live--on {
+  color: var(--cp-text);
+}
+.cp-live--on .cp-live-dot,
+.cp-timer .cp-live-dot,
+.cp-float .cp-live-dot {
+  background: var(--cp-win);
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--cp-win) 60%, transparent);
+  animation: cp-beat 1.6s ease-out infinite;
+}
+@keyframes cp-beat {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--cp-win) 55%, transparent); }
+  80%, 100% { box-shadow: 0 0 0 9px transparent; }
+}
+
+.cp-notice {
+  margin: 0;
+  padding: 10px 14px;
+  border-radius: var(--cp-radius-sm);
+  background: color-mix(in srgb, var(--cp-gold) 16%, transparent);
+  border: var(--cp-border) solid color-mix(in srgb, var(--cp-gold) 55%, transparent);
+  color: var(--cp-text);
+  font-size: 0.9rem;
+}
+
+/* ---- Fields --------------------------------------------------------------------- */
+.cp-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.cp-label {
+  margin: 0;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--cp-text-2);
+}
+
+/* Climber picker: the real inked figures, standing. */
+/* One row of climbers (Any + five, or six on the beta branch). */
+.cp-pick {
+  display: grid;
+  grid-template-columns: repeat(var(--cp-pick-n, 6), minmax(0, 1fr));
+  gap: 6px;
+}
+.cp-pick-opt {
+  appearance: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 8px 2px;
+  border: var(--cp-border) solid var(--cp-line-soft);
+  border-radius: var(--cp-radius-sm);
+  background: var(--cp-raised);
+  color: var(--cp-text-2);
+  font: inherit;
+  font-size: 0.74rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform var(--cp-dur) var(--cp-ease), border-color var(--cp-dur), background var(--cp-dur), box-shadow var(--cp-dur);
+}
+.cp-pick-art {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  height: 58px;
+}
+.cp-pick-art .cp-figure-img {
+  height: 100%;
+  width: auto;
+  max-width: 64px;
+  object-fit: contain;
+  object-position: bottom;
+}
+.cp-pick-opt:hover {
+  transform: translateY(-2px);
+  border-color: var(--cp-line);
+  color: var(--cp-text);
+}
+.cp-pick-opt[aria-checked="true"] {
+  border-color: var(--cp-accent);
+  background: color-mix(in srgb, var(--cp-accent) 14%, var(--cp-raised));
+  color: var(--cp-text);
+  box-shadow: inset 0 0 0 1px var(--cp-accent);
+}
+.cp-pick-name {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.1;
+  text-align: center;
+}
+
+.cp-figure-blank {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 52px;
+  border: 2px dashed currentColor;
+  border-radius: 40% 40% 10px 10px;
+  font-family: var(--cp-font-display);
+  font-size: 1.3rem;
+  opacity: 0.75;
+}
+
+/* Game version: a two-way switch. */
+.cp-branch {
+  display: inline-flex;
+  align-self: flex-start;
+  padding: 3px;
+  border: var(--cp-border) solid var(--cp-line-soft);
+  border-radius: 999px;
+  background: var(--cp-raised);
+}
+.cp-branch-opt {
+  appearance: none;
+  min-height: 38px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--cp-text-2);
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.cp-branch-opt[aria-checked="true"] {
+  background: var(--cp-text);
+  color: var(--cp-card);
+}
+
+/* ---- The Play button ---------------------------------------------------------- */
+.cp-play {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  width: 100%;
+  max-width: 460px;
+  min-height: 68px;
+  padding: 0 28px;
+  border: var(--cp-border) solid color-mix(in srgb, var(--cp-accent) 70%, black);
+  border-radius: calc(var(--cp-radius) + 2px);
+  background: linear-gradient(180deg, var(--cp-accent-hi), var(--cp-accent));
+  color: var(--cp-on-accent);
+  font-family: var(--cp-font-display);
+  font-size: 1.7rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  box-shadow: var(--cp-btn-shadow);
+  transition: transform var(--cp-dur) var(--cp-ease), box-shadow var(--cp-dur), filter var(--cp-dur);
+}
+.cp-play:hover {
+  transform: translateY(-2px);
+  filter: brightness(1.05);
+}
+.cp-play:active {
+  transform: translateY(2px);
+  box-shadow: var(--cp-btn-pressed);
+}
+.cp-play:disabled {
+  cursor: progress;
+  filter: saturate(0.6) brightness(0.9);
+  transform: none;
+}
+
+/* ---- Secondary buttons ---------------------------------------------------------- */
+.cp-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+.cp-btn {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 16px;
+  border: var(--cp-border) solid var(--cp-line);
+  border-radius: var(--cp-radius-sm);
+  background: var(--cp-raised);
+  color: var(--cp-text);
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 700;
+  text-decoration: none;
+  cursor: pointer;
+  transition: transform var(--cp-dur) var(--cp-ease), background var(--cp-dur), border-color var(--cp-dur);
+}
+.cp-btn:hover {
+  transform: translateY(-1px);
+  border-color: var(--cp-text-2);
+}
+.cp-btn:active {
+  transform: translateY(1px);
+}
+.cp-btn--primary {
+  background: var(--cp-accent);
+  border-color: color-mix(in srgb, var(--cp-accent) 70%, black);
+  color: var(--cp-on-accent);
+}
+.cp-btn--steam {
+  background: var(--cp-steam);
+  border-color: color-mix(in srgb, var(--cp-steam-hi) 45%, var(--cp-steam));
+  color: #e9f6ff;
+}
+.cp-btn--quiet {
+  background: transparent;
+  border-color: var(--cp-line-soft);
+  color: var(--cp-text-2);
+}
+.cp-btn-done {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--cp-win);
+  color: #08240f;
+}
+
+.cp-play:focus-visible,
+.cp-btn:focus-visible,
+.cp-pick-opt:focus-visible,
+.cp-branch-opt:focus-visible,
+.cp-float:focus-visible,
+.cp-float-x:focus-visible,
+.cp-ping-input:focus-visible + .cp-ping-switch,
+.cp-help summary:focus-visible {
+  outline: 3px solid var(--cp-gold);
+  outline-offset: 2px;
+}
+
+/* ---- Ping toggle ---------------------------------------------------------------- */
+.cp-ping {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0;
+  max-width: 520px;
+  color: var(--cp-text-2);
+  font-size: 0.88rem;
+  line-height: 1.4;
+  cursor: pointer;
+}
+.cp-ping--off {
+  cursor: default;
+  align-items: flex-start;
+}
+.cp-ping--off svg {
+  flex: none;
+  margin-top: 2px;
+}
+.cp-ping-input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+}
+.cp-ping-switch {
+  position: relative;
+  flex: none;
+  width: 44px;
+  height: 26px;
+  border-radius: 999px;
+  background: var(--cp-line-soft);
+  border: var(--cp-border) solid var(--cp-line);
+  transition: background var(--cp-dur);
+}
+.cp-ping-switch::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--cp-text);
+  transition: transform var(--cp-dur) var(--cp-ease);
+}
+.cp-ping-input:checked + .cp-ping-switch {
+  background: var(--cp-win);
+}
+.cp-ping-input:checked + .cp-ping-switch::after {
+  transform: translateX(18px);
+}
+.cp-ping-text {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.cp-ping-text svg {
+  flex: none;
+  margin-top: 2px;
+}
+
+/* ---- The room: your party standing in a real game room ---------------------------- */
+.cp-scene {
+  position: relative;
+  aspect-ratio: 16 / 8;
+  min-height: 220px;
+  overflow: hidden;
+  border: var(--cp-border) solid var(--cp-line);
+  border-radius: var(--cp-radius);
+  background: #120d1c;
+  isolation: isolate;
+}
+.cp-scene-room {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: 50% calc(var(--cp-foot, 0.75) * 100%);
+  z-index: -2;
+}
+.cp-scene-front {
+  z-index: -1;
+}
+.cp-scene-veil {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background:
+    linear-gradient(180deg, rgba(10, 6, 22, 0.15) 0%, rgba(10, 6, 22, 0) 40%, rgba(10, 6, 22, 0.55) 100%);
+  pointer-events: none;
+}
+.cp-scene-floor {
+  position: absolute;
+  z-index: 1;
+  left: 6%;
+  right: 6%;
+  top: 26%;
+  bottom: calc((1 - var(--cp-foot, 0.75)) * 100% - 6%);
+  display: flex;
+  align-items: flex-end;
+  gap: 3%;
+  container-type: size;
+}
+/* Everyone stands at one height: the floor's height, or less when the party
+   is too wide for the room (--cp-sum is set from the figures' proportions). */
+.cp-scene-floor > * {
+  --cp-h: min(100cqh, calc(100cqw / var(--cp-sum, 3)));
+}
+.cp-climber {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  height: var(--cp-h, 100%);
+  margin: 0;
+}
+.cp-climber::after {
+  content: "";
+  position: absolute;
+  left: 8%;
+  right: 8%;
+  bottom: -4%;
+  height: 8%;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(0, 0, 0, 0.55), transparent);
+  z-index: -1;
+}
+.cp-climber-art {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  height: 100%;
+}
+.cp-climber-art .cp-figure-img {
+  position: relative;
+  z-index: 1;
+}
+/* Seated poses rest on a drum of fallen column, as in the header stage. */
+.cp-stone {
+  position: absolute;
+  z-index: 0;
+  border: 2px solid #0a0616;
+  border-radius: 50% / 24%;
+  background: #4a4160;
+  box-shadow: 2px 3px 0 rgba(10, 6, 22, 0.6);
+}
+.cp-stone::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 46%;
+  border-bottom: 2px solid #0a0616;
+  border-radius: 50%;
+  background: #6c6288;
+}
+.cp-climber-art .cp-figure-img {
+  height: 100%;
+  width: auto;
+  max-width: 34vw;
+  object-fit: contain;
+  object-position: bottom;
+  filter: drop-shadow(0 6px 10px rgba(0, 0, 0, 0.45));
+}
+.cp-climber-art .cp-figure-blank {
+  width: auto;
+  height: 86%;
+  aspect-ratio: 0.58;
+  border-style: solid;
+  border-color: var(--cp-gold);
+  color: var(--cp-gold);
+  background: rgba(10, 6, 22, 0.6);
+  opacity: 1;
+  font-size: 1.8rem;
+}
+.cp-climber.is-you .cp-climber-art .cp-figure-img {
+  filter: drop-shadow(0 6px 10px rgba(0, 0, 0, 0.45)) drop-shadow(0 0 1px var(--cp-gold));
+}
+
+/* Name tag on the floor in front of each figure. */
+.cp-tag {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: max(92px, calc(100% + 20px));
+  padding: 3px 9px 3px 3px;
+  border-radius: 999px;
+  background: rgba(10, 6, 22, 0.82);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: #fff1cf;
+  font-size: 0.74rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.cp-climber.is-you .cp-tag {
+  border-color: var(--cp-gold);
+}
+.cp-tag-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cp-tag-badge {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  color: var(--cp-gold);
+}
+.cp-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+.cp-avatar {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+.cp-avatar--initial {
+  display: inline-grid;
+  place-items: center;
+  background: var(--cp-accent);
+  color: var(--cp-on-accent);
+  font-size: 0.7rem;
+}
+
+/* Empty places in the party. */
+.cp-seat {
+  display: grid;
+  place-items: center;
+  flex: none;
+  height: calc(var(--cp-h, 100%) * 0.72);
+  aspect-ratio: 0.58;
+  border: 2px dashed rgba(255, 241, 207, 0.4);
+  border-radius: 42% 42% 12px 12px;
+  background: rgba(10, 6, 22, 0.3);
+  color: rgba(255, 241, 207, 0.7);
+}
+.cp-seat-mark {
+  font-size: 1.4rem;
+  font-weight: 700;
+}
+.cp-scene.is-searching .cp-seat {
+  animation: cp-seat 1.8s ease-in-out infinite;
+}
+.cp-scene.is-searching .cp-seat:nth-child(3) { animation-delay: 0.25s; }
+.cp-scene.is-searching .cp-seat:nth-child(4) { animation-delay: 0.5s; }
+@keyframes cp-seat {
+  0%, 100% { opacity: 0.45; }
+  50% { opacity: 1; }
+}
+
+.cp-howto {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.cp-howto li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: var(--cp-radius-sm);
+  background: var(--cp-raised);
+  border: var(--cp-border) solid var(--cp-line-soft);
+  color: var(--cp-text-2);
+  font-size: 0.82rem;
+  font-weight: 600;
+  line-height: 1.25;
+}
+.cp-howto-n,
+.cp-step-n {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--cp-text);
+  color: var(--cp-card);
+  font-family: var(--cp-font-heading);
+  font-weight: 800;
+  font-size: 0.85rem;
+}
+
+/* ---- Searching ---------------------------------------------------------------------- */
+.cp-timer {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0;
+  font-family: var(--cp-font-heading);
+  font-size: clamp(2.4rem, 1.8rem + 2vw, 3.4rem);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+.cp-timer .cp-live-dot {
+  width: 12px;
+  height: 12px;
+}
+
+/* ---- Party steps ---------------------------------------------------------------------- */
+.cp-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.cp-step {
+  display: flex;
+  gap: 14px;
+  padding: 14px 16px;
+  border-radius: var(--cp-radius-sm);
+  background: var(--cp-raised);
+  border: var(--cp-border) solid var(--cp-line-soft);
+}
+.cp-step.is-done .cp-step-n {
+  background: var(--cp-win);
+  color: #08240f;
+}
+.cp-step-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.cp-step-title {
+  margin: 0;
+  font-family: var(--cp-font-heading);
+  font-size: 1.1rem;
+}
+.cp-step-text {
+  margin: 0;
+  color: var(--cp-text-2);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+.cp-step-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.cp-step-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  color: var(--cp-text-3);
+  font-size: 0.85rem;
+}
+.cp-step-status.is-ready {
+  color: var(--cp-win);
+}
+
+.cp-help {
+  border-radius: var(--cp-radius-sm);
+  border: var(--cp-border) dashed var(--cp-line-soft);
+  padding: 10px 14px;
+  color: var(--cp-text-2);
+  font-size: 0.88rem;
+}
+.cp-help summary {
+  cursor: pointer;
+  font-weight: 700;
+  color: var(--cp-text);
+}
+.cp-help p {
+  margin: 8px 0 0;
+  line-height: 1.5;
+}
+
+/* ---- Pill on other tabs ------------------------------------------------------------- */
+.cp-float-wrap {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 60;
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  font-family: var(--cp-font, "Inter", system-ui, sans-serif);
+}
+.cp-float-wrap[hidden] {
+  display: none;
+}
+.cp-float,
+.cp-float-x {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 0 16px;
+  border: 1px solid var(--border-strong, #3a3450);
+  background: var(--card-raised, #1a1626);
+  color: var(--text, #f4eddc);
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.4);
+}
+.cp-float {
+  border-radius: 999px 0 0 999px;
+}
+.cp-float:only-child {
+  border-radius: 999px;
+}
+.cp-float-x {
+  padding: 0 14px;
+  border-radius: 0 999px 999px 0;
+  font-size: 1.2rem;
+}
+.cp-float .cp-live-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--win, #6dd97c);
+}
+.cp-float--found {
+  background: var(--accent, #ff6b1a);
+  color: #1a0d05;
+  border-color: transparent;
+}
+.cp-float [data-cp-timer] {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- Narrow screens --------------------------------------------------------------- */
+@container cp (max-width: 860px) {
+  .cp-card {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  /* Controls first, so Play is on screen without scrolling; the room
+     follows as the picture of the party you're forming. */
+  .cp-side {
+    position: static;
+  }
+  .cp-scene {
+    aspect-ratio: 16 / 6;
+    min-height: 180px;
+  }
+  .cp-pick-art {
+    height: 50px;
+  }
+  /* A party is the payoff: show who's in it right under the heading, then
+     the steps. .cp-main dissolves so its children can be ordered around
+     the room. */
+  .cp-card--party,
+  .cp-card--ingame {
+    row-gap: 16px;
+  }
+  .cp-card--party > .cp-main,
+  .cp-card--ingame > .cp-main {
+    display: contents;
+  }
+  .cp-card--party > .cp-main > *,
+  .cp-card--ingame > .cp-main > * {
+    order: 2;
+  }
+  .cp-card--party > .cp-main > .cp-notice,
+  .cp-card--party > .cp-main > .cp-head,
+  .cp-card--ingame > .cp-main > .cp-head {
+    order: 0;
+  }
+  .cp-card--party > .cp-side,
+  .cp-card--ingame > .cp-side {
+    order: 1;
+  }
+}
+@media (max-width: 560px) {
+  .cp-page {
+    padding: 12px 12px 96px;
+  }
+}
+@container cp (max-width: 520px) {
+  .cp-card {
+    padding: 16px;
+    gap: 16px;
+  }
+  /* Phones: two even rows (3 + 3), or 4 + 3 on the beta branch. */
+  .cp-pick {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .cp-pick[data-cp-n="7"] {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  .cp-scene {
+    aspect-ratio: 4 / 3;
+  }
+  .cp-scene-floor {
+    left: 3%;
+    right: 3%;
+    gap: 2%;
+  }
+  .cp-tag {
+    max-width: 96px;
+    font-size: 0.68rem;
+    padding: 2px 7px 2px 2px;
+  }
+  .cp-avatar {
+    display: none;
+  }
+  .cp-howto {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .cp-play {
+    max-width: none;
+  }
+}
+@media (max-width: 560px) {
+  .cp-float-wrap {
+    right: 12px;
+    bottom: calc(76px + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cp *,
+  .cp-float-wrap * {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+/* Panel heading kept for assistive tech; the card shows its own title. */
+.cp-sr-only {
+  position: absolute !important;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}

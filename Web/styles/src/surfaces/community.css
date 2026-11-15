@@ -1461,14 +1461,12 @@
   box-shadow: none;
 }
 .beta-card[data-ui-beta-card] { grid-area: look; }
-.beta-card[data-coop-beta-card] { grid-area: coop; }
 .beta-hero { grid-area: hero; }
 .beta-card:has(.beta-form) { grid-area: prov; }
 .beta-card:has([data-rc-action="set-screenshot"]) { grid-area: behav; }
 .beta-card:has(.beta-launch-btn) { grid-area: launch; }
 
 /* Section rules inside a panel, inset from its edges. */
-.beta-card[data-coop-beta-card]::before,
 .beta-card:has([data-rc-action="set-screenshot"])::before,
 .beta-card:has(.beta-launch-btn)::before {
   content: "";

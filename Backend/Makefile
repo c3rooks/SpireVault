@@ -18,6 +18,7 @@ dev:
 preflight:
 	npx tsc --noEmit -p tsconfig.json
 	node scripts/verify-offline.mjs
+	node scripts/verify-coop-play.mjs
 
 # Ship to production.
 deploy: preflight
