@@ -4,9 +4,11 @@
 install:
 	npm install
 
-# Local dev server. http://localhost:8787
+# Local dev server: http://127.0.0.1:8787. The localdev env points Steam
+# sign-in back at this worker; the default env sends it to production, where
+# a local sign-in silently never lands.
 dev:
-	npx wrangler dev
+	npx wrangler dev --env localdev
 
 # Type-check plus the offline logic suite. No network, no deployed Worker.
 #

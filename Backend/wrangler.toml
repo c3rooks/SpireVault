@@ -3,6 +3,13 @@ main = "src/index.ts"
 compatibility_date = "2026-04-01"
 compatibility_flags = ["nodejs_compat"]
 
+# Local dev only (deploys ignore it): listen on 127.0.0.1 alone. The default,
+# "localhost", binds [::1] as well, and a launcher that opens [::1] lands on
+# an address Steam sign-in refuses to return to (src/auth.ts).
+[dev]
+ip = "127.0.0.1"
+port = 8787
+
 # KV namespace stores three short-TTL'd record families — see Backend/README.md
 # for the exact layout. Binding name kept as `LOBBIES` for backward compat
 # with earlier deployments; today it's a generic presence/session store.

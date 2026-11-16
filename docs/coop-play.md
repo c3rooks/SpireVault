@@ -36,7 +36,7 @@ Usage counters (taps, matches, wait times, Steam adds, "we're in") are kept per 
 ## Running it locally
 
 1. Start the `worker-local` (8787) and `web-steam` (8790) launch configs.
-2. Sign in: real Steam on `http://localhost:8790`, or a sandbox persona with `http://localhost:8790/api/_dev-login?as=c3rooks&next=/coop`.
+2. Sign in: real Steam on `http://127.0.0.1:8790`, or a sandbox persona with `http://127.0.0.1:8790/api/_dev-login?as=c3rooks&next=/coop`. Use 127.0.0.1, not localhost: the app sends localhost visits to 127.0.0.1, and a sign-in cookie set on localhost would be left behind.
 3. Put another player in line so Play matches instantly:
    ```bash
    curl -X POST http://127.0.0.1:8787/_debug/coop-sandbox/play-seed -H 'content-type: application/json' -d '{"persona":"Boble","branch":"stable","character":"ironclad"}'

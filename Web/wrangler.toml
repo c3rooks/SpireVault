@@ -7,3 +7,12 @@
 name = "vault-web"
 pages_build_output_dir = "."
 compatibility_date = "2026-04-29"
+
+# Local dev only (`pages deploy` ignores it): one address, one browser origin.
+# Saved runs, the save-folder link and the sign-in cookie are kept per
+# scheme+host+port, and the default "localhost" binds both 127.0.0.1 and
+# [::1], so a launcher could open either and find the other's saves missing.
+# index.html sends localhost and [::1] visits to 127.0.0.1 for the same reason.
+[dev]
+ip = "127.0.0.1"
+port = 8788
