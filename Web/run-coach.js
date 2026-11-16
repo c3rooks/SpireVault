@@ -118,7 +118,7 @@
         <section class="beta-card beta-hero">
           <div class="beta-hero-head">
             <div class="beta-hero-icon" aria-hidden="true">
-              <img src="/assets/vault-mark.svg" alt="" />
+              <img src="/assets/brand/crest-128-v1.webp" alt="" />
             </div>
             <div class="beta-hero-text">
               <div class="beta-hero-kicker">CLOUD OVERLAY · BETA</div>

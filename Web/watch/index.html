@@ -7,11 +7,12 @@
   <title>SpireVault Replays · Recent shared Slay the Spire 2 runs</title>
   <meta name="description" content="Browse the most recent shared Slay the Spire 2 runs. Drop a .run save on spirevault.app to share yours." />
   <meta name="theme-color" content="#0c0a14" />
-  <link rel="icon" type="image/svg+xml" href="/assets/vault-mark.svg" />
+  <link rel="icon" type="image/png" sizes="16x16" href="/assets/brand/crest-favicon-16-v1.png" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/assets/brand/crest-favicon-32-v1.png" />
 
   <meta property="og:title" content="SpireVault Replays · Recent shared STS2 runs" />
   <meta property="og:description" content="Browse the most recent shared Slay the Spire 2 runs. Cards, relics, floor reached, and how it ended." />
-  <meta property="og:image" content="https://app.spirevault.app/assets/og.png?v=1" />
+  <meta property="og:image" content="https://app.spirevault.app/assets/og-v2.png" />
   <meta property="og:type" content="website" />
   <meta name="twitter:card" content="summary_large_image" />
 
@@ -86,7 +87,7 @@
     <div id="state-run" hidden>
       <div class="sv-card" id="run-summary">
         <div class="sv-run-header">
-          <img id="run-avatar" class="sv-run-avatar" src="/assets/vault-mark.svg" alt="" />
+          <img id="run-avatar" class="sv-run-avatar" src="/assets/brand/crest-avatar-128-v1.png" alt="" />
           <div class="sv-run-meta">
             <div id="run-name" class="sv-run-name">—</div>
             <div id="run-line" class="sv-run-line">Pulling run details</div>
@@ -228,7 +229,7 @@
       const featuredPill = featured ? `<span class="sv-pill" style="margin-right:6px">Featured</span>` : "";
       a.innerHTML = `
         <div class="sv-replay-top">
-          <img class="sv-replay-avatar" src="${esc(h.authorAvatar || "/assets/vault-mark.svg")}" alt="" />
+          <img class="sv-replay-avatar" src="${esc(h.authorAvatar || "/assets/brand/crest-avatar-128-v1.png")}" alt="" />
           <div style="min-width:0;flex:1">
             <div class="sv-replay-name">${esc(h.authorPersona || "Steam User")}</div>
             <div class="sv-replay-meta">${fmtCharLine(h.run)} · ${esc(fmtRel(h.run.endedAt) || "recent")}</div>
@@ -355,7 +356,7 @@
       if (IS_OVERLAY) { renderOverlay(snap); return; }
       show("run");
       document.title = `${snap.hostPersonaName} · ${snap.characterId} A${snap.ascension} · SpireVault Replays`;
-      document.getElementById("run-avatar").src = snap.hostAvatarUrl || "/assets/vault-mark.svg";
+      document.getElementById("run-avatar").src = snap.hostAvatarUrl || "/assets/brand/crest-avatar-128-v1.png";
       document.getElementById("run-name").textContent = snap.hostPersonaName;
       document.getElementById("run-line").textContent =
         `${snap.characterId} on Ascension ${snap.ascension} · live · updated ${fmtRel(snap.updatedAt)}`;
@@ -424,7 +425,7 @@
       const run = card.run || {};
       const persona = card.authorPersona || "Steam User";
       document.title = `${persona} · ${run.character || "—"} · SpireVault Replays`;
-      document.getElementById("run-avatar").src = card.authorAvatar || "/assets/vault-mark.svg";
+      document.getElementById("run-avatar").src = card.authorAvatar || "/assets/brand/crest-avatar-128-v1.png";
       document.getElementById("run-name").textContent = persona;
       document.getElementById("run-line").textContent =
         `${cap(run.character)} on Ascension ${run.ascension ?? 0} · ${fmtRel(run.endedAt) || "recent"}`;
@@ -481,7 +482,7 @@
       const host = (card.members || []).find((m) => m.role === "host") || card.members?.[0] || { personaName: "Host" };
       const memberCount = card.members?.length || 0;
       document.title = `${host.personaName}'s party · SpireVault Replays`;
-      document.getElementById("run-avatar").src = "/assets/vault-mark.svg";
+      document.getElementById("run-avatar").src = "/assets/brand/crest-avatar-128-v1.png";
       document.getElementById("run-name").textContent = `${host.personaName}'s party`;
       document.getElementById("run-line").textContent =
         `${memberCount}-player co-op · ${card.dailyDate ? "daily " + card.dailyDate + " · " : ""}${fmtRel(card.endedAt) || "recent"}`;

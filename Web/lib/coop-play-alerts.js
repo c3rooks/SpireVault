@@ -135,7 +135,7 @@ export function notifyMatched(text) {
     const n = new Notification("SpireVault co-op: party found", {
       body: text,
       tag: "coop-play",
-      icon: "/assets/icon-192.png?v=1",
+      icon: "/assets/brand/crest-icon-192-v1.png",
     });
     n.onclick = () => {
       window.focus();

@@ -6,8 +6,10 @@
 // /api/coop/play — with the player's own cookie — what happened, and writes
 // the notification from that answer.
 
-const ICON = "/assets/icon-192.png?v=1";
-const BADGE = "/assets/icon-32.png?v=1";
+// The crest (scripts/build-brand-icons.mjs). Android draws the badge from its
+// alpha alone, so it is a plain white shield.
+const ICON = "/assets/brand/crest-icon-192-v1.png";
+const BADGE = "/assets/brand/crest-badge-96-v1.png";
 
 self.addEventListener("install", () => self.skipWaiting());
 self.addEventListener("activate", (event) => event.waitUntil(self.clients.claim()));

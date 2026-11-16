@@ -7,10 +7,11 @@
   <title>SpireVault Coach · STS2 team-aware AI strategist</title>
   <meta name="description" content="Drop a Slay the Spire 2 screenshot and Coach grades your picks. No install. Works on any browser." />
   <meta name="theme-color" content="#0c0a14" />
-  <link rel="icon" type="image/svg+xml" href="/assets/vault-mark.svg" />
+  <link rel="icon" type="image/png" sizes="16x16" href="/assets/brand/crest-favicon-16-v1.png" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/assets/brand/crest-favicon-32-v1.png" />
   <meta property="og:title" content="SpireVault Coach" />
   <meta property="og:description" content="Team-aware AI strategist for Slay the Spire 2. Screenshot in, recommendation out." />
-  <meta property="og:image" content="https://app.spirevault.app/assets/og.png?v=1" />
+  <meta property="og:image" content="https://app.spirevault.app/assets/og-v2.png" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Playfair+Display:wght@700;900&display=swap" rel="stylesheet" />
@@ -228,7 +229,7 @@
       lastSharedTarget = top;
       target.innerHTML = `
         <div style="display:flex;gap:10px;align-items:center">
-          <img src="${esc(top.authorAvatar || "/assets/vault-mark.svg")}" alt="" style="width:40px;height:40px;border-radius:50%"/>
+          <img src="${esc(top.authorAvatar || "/assets/brand/crest-avatar-128-v1.png")}" alt="" style="width:40px;height:40px;border-radius:50%"/>
           <div style="flex:1;min-width:0">
             <div style="font-weight:700">${esc(top.authorPersona || "you")}</div>
             <div class="sv-race-meta">${esc(cap(top.run.character))} A${top.run.ascension ?? 0} · ${top.run.won ? "victory" : "floor " + (top.run.floorReached ?? 0)} · ${esc(fmtRel(top.run.endedAt) || "recent")}</div>
