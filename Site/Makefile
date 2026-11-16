@@ -4,17 +4,15 @@
 #   make check               → layout, links, wiring, motion, speed and contrast checks
 #   make shots               → review pictures in docs/screenshots/site/
 #   make list                → the files a deploy would publish
-#   make stage DMG=none      → copy those files to a clean folder outside iCloud
-#   make deploy DMG=none     → stage, then deploy that folder to Cloudflare Pages
-#   make deploy DMG=none BRANCH=preview   → the same, to a preview address
+#   make stage               → copy those files to a clean folder outside iCloud
+#   make deploy              → stage, then deploy that folder to Cloudflare Pages
+#   make deploy BRANCH=preview   → the same, to a preview address
 #   make verify              → quick smoke check that the live site responds 200
 #
 # A deploy publishes the staged copy, never this folder: this folder also holds
-# this Makefile, a README, the pictures the GitHub README embeds and a Mac
-# installer. DMG says what to do with the installer and has no default,
-# because the copy here is not the file that is live:
-#   DMG=none   leave it out        DMG=disk   use assets/The.Vault.dmg
-#   DMG=/path/to/The.Vault.dmg     use that file
+# this Makefile, a README, the pictures the GitHub README embeds and an old Mac
+# installer. No installer is published: downloads come from the GitHub release,
+# and the installer's old address redirects there (_redirects).
 
 PROJECT ?= vault-site
 DOMAIN  ?= spirevault.app
@@ -22,7 +20,6 @@ BRANCH  ?= main
 NODE    ?= /opt/homebrew/opt/node@24/bin/node
 PORT    ?= 8791
 STAGE   ?= $(HOME)/Library/Caches/spirevault-site/stage
-DMG     ?=
 # The repo's own wrangler when it is installed (Backend/node_modules), so a
 # deploy does not download and run whatever the newest release happens to be.
 LOCAL_WRANGLER := $(abspath ../Backend/node_modules/.bin/wrangler)
@@ -46,7 +43,7 @@ list:
 	@$(NODE) ../scripts/stage-site.mjs --list
 
 stage:
-	$(NODE) ../scripts/stage-site.mjs --out "$(STAGE)" --dmg "$(DMG)"
+	$(NODE) ../scripts/stage-site.mjs --out "$(STAGE)"
 
 deploy: check-deps stage
 	cd "$(STAGE)" && PATH="$(dir $(NODE)):$$PATH" $(WRANGLER) pages deploy . \

@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-theme="inked" data-room="glory" data-climber="ironclad">
+<html lang="en" data-theme="inked" data-climber="ironclad">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -9,8 +9,8 @@
 
   <meta property="og:title" content="SpireVault: your Slay the Spire 2 stats, and someone to climb with" />
   <meta property="og:description" content="Point it at your save folder once. Win rate, streaks, best floor, every run. Sign in with Steam to find a co-op partner. Free and open source." />
-  <meta property="og:image" content="https://spirevault.app/assets/og-v2.jpg" />
-  <meta property="og:image:alt" content="SpireVault: a climber faces the Architect in a Slay the Spire 2 room, above a fanned hand of six stat cards." />
+  <meta property="og:image" content="https://spirevault.app/assets/og-v3.jpg" />
+  <meta property="og:image:alt" content="SpireVault: a painted Slay the Spire 2 climber card showing a win rate, above a fanned hand of five more climbers." />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
   <meta property="og:type" content="website" />
@@ -19,24 +19,20 @@
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="SpireVault: your Slay the Spire 2 stats, and someone to climb with" />
   <meta name="twitter:description" content="Point it at your save folder once. Win rate, streaks, best floor, every run. Sign in with Steam to find a co-op partner. Free and open source." />
-  <meta name="twitter:image" content="https://spirevault.app/assets/og-v2.jpg" />
-  <meta name="twitter:image:alt" content="SpireVault: a climber faces the Architect in a Slay the Spire 2 room, above a fanned hand of six stat cards." />
+  <meta name="twitter:image" content="https://spirevault.app/assets/og-v3.jpg" />
+  <meta name="twitter:image:alt" content="SpireVault: a painted Slay the Spire 2 climber card showing a win rate, above a fanned hand of five more climbers." />
 
   <link rel="icon" type="image/svg+xml" href="/assets/vault-mark.svg?v=2" />
   <link rel="preload" href="/assets/fonts/grenze-gotisch-latin-var-v1.woff2" as="font" type="font/woff2" crossorigin />
   <link rel="preload" href="/assets/fonts/figtree-latin-var-v1.woff2" as="font" type="font/woff2" crossorigin />
-  <link rel="preload" href="/assets/hero/glory-a-base-v1.webp" as="image" type="image/webp" media="(min-width: 1100px)" fetchpriority="high" />
-  <link rel="preload" href="/assets/hero/glory-a-flat-v1.webp" as="image" type="image/webp" media="(min-width: 700px) and (max-width: 1099px)" fetchpriority="high" />
-  <link rel="preload" href="/assets/hero/glory-a-flat-sm-v1.webp" as="image" type="image/webp" media="(max-width: 699px)" fetchpriority="high" />
 
-  <link rel="stylesheet" href="/css/tokens.css?v=20" />
-  <link rel="stylesheet" href="/css/base.css?v=20" />
-  <link rel="stylesheet" href="/css/components.css?v=20" />
-  <link rel="stylesheet" href="/css/hero.css?v=20" />
-  <link rel="stylesheet" href="/css/hero-small.css?v=20" />
-  <link rel="stylesheet" href="/css/sections.css?v=20" />
-  <link rel="stylesheet" href="/css/sections-lower.css?v=20" />
-  <script src="/boot.js?v=20"></script>
+  <link rel="stylesheet" href="/css/tokens.css?v=21" />
+  <link rel="stylesheet" href="/css/base.css?v=21" />
+  <link rel="stylesheet" href="/css/components.css?v=21" />
+  <link rel="stylesheet" href="/css/hero.css?v=21" />
+  <link rel="stylesheet" href="/css/sections.css?v=21" />
+  <link rel="stylesheet" href="/css/sections-lower.css?v=21" />
+  <script src="/boot.js?v=21"></script>
 </head>
 <body>
   <a class="skip-link" href="#main">Skip to content</a>
@@ -61,16 +57,6 @@
   <main id="main">
     <!-- ================= Hero: the fight screen, your stats as the hand ================= -->
     <section class="hero" aria-labelledby="hero-title">
-      <div class="hero-scene" aria-hidden="true">
-        <div class="scene-plane scene-plane--base"></div>
-        <div class="scene-plane scene-plane--mid"></div>
-        <div class="scene-mist scene-mist--far"></div>
-        <div class="scene-plane scene-plane--front"></div>
-        <div class="scene-mist scene-mist--near"></div>
-        <div class="scene-motes"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
-        <div class="scene-veil"></div>
-      </div>
-
       <div class="wrap hero-inner">
         <div class="hero-copy">
           <ul class="hero-chips" role="list" aria-label="At a glance">
@@ -95,12 +81,11 @@
                 <span class="btn-sub">free · no install · no account</span>
               </span>
             </a>
-            <a class="btn btn--lg" href="https://app.spirevault.app/?ui=next" id="newlook-cta">
+            <a class="btn btn--lg" href="https://app.spirevault.app/?ui=classic" id="classic-cta">
               <span class="btn-stack">
-                <span>Try the new look</span>
-                <span class="btn-sub">the one in these pictures</span>
+                <span>Classic look</span>
+                <span class="btn-sub">the original layout</span>
               </span>
-              <span class="btn-tag">Beta</span>
             </a>
           </div>
           <p class="hero-meta">
@@ -110,57 +95,95 @@
           </p>
         </div>
 
-        <div class="hero-stage">
-          <div class="duel">
-            <div class="actor actor--climber">
-              <p class="balloon" id="hero-balloon">Up we go.</p>
-              <span class="actor-seat" aria-hidden="true"></span>
-              <span class="actor-art" id="hero-climber" role="img" aria-label="A climber from Slay the Spire 2"></span>
-              <span class="actor-shadow" aria-hidden="true"></span>
-            </div>
-            <div class="actor actor--boss">
-              <span class="actor-art" role="img" aria-label="The Architect, a boss from Slay the Spire 2"></span>
-              <span class="actor-shadow" aria-hidden="true"></span>
-            </div>
-          </div>
-
+        <!-- One climber's card and the rest of the hand, on the app's sample data.
+             boot.js rolls which of the five is featured; the Fool is always in the hand. -->
+        <div class="hero-stage" role="group" aria-label="Sample data: win rate by climber">
           <span class="tag hand-tag">Sample data</span>
-          <ul class="hand" role="list" aria-label="Your hand: six headline stats, shown on sample data">
-            <li class="stat-card" data-tone="loss">
-              <span class="stat-orb" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M13 2 4 14h6l-1 8 9-12h-6z"/></svg></span>
-              <span class="stat-band">Recent form</span>
-              <span class="stat-art"><span class="stat-value"><i class="stat-trend" aria-hidden="true"></i>20<small>%</small></span></span>
-              <span class="stat-text"><span>2W–8L · −28 vs. lifetime</span></span>
+          <article class="featured" data-c="ironclad">
+            <div class="featured-art" role="img" aria-label="A painting from Slay the Spire 2: the Ironclad."></div>
+            <div class="featured-facts">
+              <p class="featured-name">Ironclad</p>
+              <p class="featured-kit">Strength · Block · Self-damage</p>
+              <p class="featured-rate"><strong>48.4</strong><small>%</small> <span>win rate</span></p>
+              <span class="meter" aria-hidden="true"><i></i></span>
+              <p class="featured-record">15W · 16L · 31 runs</p>
+              <p class="featured-line">Anger. Steel. Repeat.</p>
+            </div>
+          </article>
+          <article class="featured" data-c="silent">
+            <div class="featured-art" role="img" aria-label="A painting from Slay the Spire 2: the Silent."></div>
+            <div class="featured-facts">
+              <p class="featured-name">Silent</p>
+              <p class="featured-kit">Poison · Shivs · Discard</p>
+              <p class="featured-rate"><strong>53.3</strong><small>%</small> <span>win rate</span></p>
+              <span class="meter" aria-hidden="true"><i></i></span>
+              <p class="featured-record">8W · 7L · 15 runs</p>
+              <p class="featured-line">From the shadows.</p>
+            </div>
+          </article>
+          <article class="featured" data-c="defect">
+            <div class="featured-art" role="img" aria-label="A painting from Slay the Spire 2: the Defect."></div>
+            <div class="featured-facts">
+              <p class="featured-name">Defect</p>
+              <p class="featured-kit">Orbs · Focus · Power scaling</p>
+              <p class="featured-rate"><strong>53.8</strong><small>%</small> <span>win rate</span></p>
+              <span class="meter" aria-hidden="true"><i></i></span>
+              <p class="featured-record">7W · 6L · 13 runs</p>
+              <p class="featured-line">Channel. Defend. Destroy.</p>
+            </div>
+          </article>
+          <article class="featured" data-c="regent">
+            <div class="featured-art" role="img" aria-label="A painting from Slay the Spire 2: the Regent."></div>
+            <div class="featured-facts">
+              <p class="featured-name">Regent</p>
+              <p class="featured-kit">Cosmic · Royal · Banner buffs</p>
+              <p class="featured-rate"><strong>44.4</strong><small>%</small> <span>win rate</span></p>
+              <span class="meter" aria-hidden="true"><i></i></span>
+              <p class="featured-record">4W · 5L · 9 runs</p>
+              <p class="featured-line">Bow to the deck.</p>
+            </div>
+          </article>
+          <article class="featured" data-c="necrobinder">
+            <div class="featured-art" role="img" aria-label="A painting from Slay the Spire 2: the Necrobinder."></div>
+            <div class="featured-facts">
+              <p class="featured-name">Necrobinder</p>
+              <p class="featured-kit">Summon · Sacrifice · Curses</p>
+              <p class="featured-rate"><strong>20.0</strong><small>%</small> <span>win rate</span></p>
+              <span class="meter" aria-hidden="true"><i></i></span>
+              <p class="featured-record">1W · 4L · 5 runs</p>
+              <p class="featured-line">Bones remember.</p>
+            </div>
+          </article>
+          <ul class="hand" role="list">
+            <li class="hand-card" data-c="ironclad">
+              <span class="hand-name">Ironclad</span>
+              <span class="hand-art"></span>
+              <span class="hand-foot"><span class="hand-rate"><strong>48.4</strong><small>%</small></span><span class="hand-runs">31 runs</span></span>
             </li>
-            <li class="stat-card" data-tone="loss">
-              <span class="stat-orb" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2c1 4 5 5 5 10a5 5 0 0 1-10 0c0-2 1-3 2-4 0 2 1 3 2 3 0-3-1-5 1-9z"/></svg></span>
-              <span class="stat-band">Loss streak</span>
-              <span class="stat-art"><span class="stat-value">4</span></span>
-              <span class="stat-text"><span>4 in a row — reset and re-roll</span></span>
+            <li class="hand-card" data-c="silent">
+              <span class="hand-name">Silent</span>
+              <span class="hand-art"></span>
+              <span class="hand-foot"><span class="hand-rate"><strong>53.3</strong><small>%</small></span><span class="hand-runs">15 runs</span></span>
             </li>
-            <li class="stat-card" data-tone="gold">
-              <span class="stat-orb" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor"><path d="m3 8 4 4 5-7 5 7 4-4-2 11H5z"/></svg></span>
-              <span class="stat-band">Best streak</span>
-              <span class="stat-art"><span class="stat-value">6<small>wins</small></span></span>
-              <span class="stat-text"><span>Set on <strong>Silent</strong></span></span>
+            <li class="hand-card" data-c="defect">
+              <span class="hand-name">Defect</span>
+              <span class="hand-art"></span>
+              <span class="hand-foot"><span class="hand-rate"><strong>53.8</strong><small>%</small></span><span class="hand-runs">13 runs</span></span>
             </li>
-            <li class="stat-card" data-tone="violet">
-              <span class="stat-orb" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m3 17 6-6 4 4 8-8"/><path d="M15 7h6v6"/></svg></span>
-              <span class="stat-band">Best floor</span>
-              <span class="stat-art"><span class="stat-value">51</span></span>
-              <span class="stat-text"><span><strong>Ironclad</strong> at A9</span></span>
+            <li class="hand-card" data-c="regent">
+              <span class="hand-name">Regent</span>
+              <span class="hand-art"></span>
+              <span class="hand-foot"><span class="hand-rate"><strong>44.4</strong><small>%</small></span><span class="hand-runs">9 runs</span></span>
             </li>
-            <li class="stat-card" data-tone="info">
-              <span class="stat-orb" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>
-              <span class="stat-band">Fastest win</span>
-              <span class="stat-art"><span class="stat-value is-long">25:01</span></span>
-              <span class="stat-text"><span><strong>Ironclad</strong> at A1</span></span>
+            <li class="hand-card" data-c="necrobinder">
+              <span class="hand-name">Necrobinder</span>
+              <span class="hand-art"></span>
+              <span class="hand-foot"><span class="hand-rate"><strong>20.0</strong><small>%</small></span><span class="hand-runs">5 runs</span></span>
             </li>
-            <li class="stat-card" data-tone="loss">
-              <span class="stat-orb" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M9 3v4M15 3v4"/></svg></span>
-              <span class="stat-band">This week</span>
-              <span class="stat-art"><span class="stat-value">9<small>runs</small></span></span>
-              <span class="stat-text"><span>−7 vs. last week</span></span>
+            <li class="hand-card" data-c="fool">
+              <span class="hand-name">The Fool</span>
+              <span class="hand-art"><span class="hand-new">New</span></span>
+              <span class="hand-foot"><span class="hand-rate hand-rate--none">—</span><span class="hand-runs">No runs yet</span></span>
             </li>
           </ul>
         </div>
@@ -170,49 +193,56 @@
     <!-- ================= Import: the page's first job ================= -->
     <section class="section section--paper import" id="import" aria-labelledby="import-title">
       <div class="wrap">
-        <header class="section-head" data-reveal>
-          <span class="chip chip--gold">One-time setup · no sign-in needed</span>
-          <h2 id="import-title">Find your save folder once. That's the whole setup.</h2>
-          <p>SpireVault reads the <code>.run</code> files the game already writes after every run. It opens on sample data, so you can look around before you link anything.</p>
-        </header>
+        <div class="section-top">
+          <header class="section-head" data-reveal>
+            <span class="chip chip--gold">One-time setup · no sign-in needed</span>
+            <h2 id="import-title">Find your save folder once. That's the whole setup.</h2>
+            <p>SpireVault reads the <code>.run</code> files the game already writes after every run. It opens on sample data, so you can look around before you link anything.</p>
+          </header>
+          <div class="paths" data-reveal>
+            <h3 class="paths-title">Where your saves live</h3>
+            <dl class="paths-list">
+              <div><dt>Windows</dt><dd><code>%APPDATA%\<wbr />SlayTheSpire2</code></dd></div>
+              <div><dt>macOS</dt><dd><code>~/Library/<wbr />Application Support/<wbr />SlayTheSpire2</code></dd></div>
+              <div><dt>Linux</dt><dd><code>~/.local/<wbr />share/<wbr />SlayTheSpire2</code></dd></div>
+            </dl>
+          </div>
+        </div>
 
         <ol class="route" role="list" data-reveal>
           <li class="route-stop">
-            <img class="route-icon" src="/assets/art/map/combat-192-v1.webp" alt="" width="96" height="96" loading="lazy" decoding="async" />
+            <span class="route-badge"><img class="route-icon" src="/assets/art/map/combat-192-v1.webp" alt="" width="64" height="64" loading="lazy" decoding="async" /></span>
             <span class="route-num" aria-hidden="true">1</span>
             <h3>Open SpireVault.</h3>
             <p>Nothing to install, no account.</p>
           </li>
           <li class="route-stop">
-            <img class="route-icon" src="/assets/art/map/chest-192-v1.webp" alt="" width="96" height="96" loading="lazy" decoding="async" />
+            <span class="route-badge"><img class="route-icon" src="/assets/art/map/chest-192-v1.webp" alt="" width="64" height="64" loading="lazy" decoding="async" /></span>
             <span class="route-num" aria-hidden="true">2</span>
             <h3>Click “Find my STS2 saves”.</h3>
             <p>Pick your <code>SlayTheSpire2</code> folder, or drag it onto the page.</p>
           </li>
           <li class="route-stop">
-            <img class="route-icon" src="/assets/art/map/rest-192-v1.webp" alt="" width="96" height="96" loading="lazy" decoding="async" />
+            <span class="route-badge"><img class="route-icon" src="/assets/art/map/rest-192-v1.webp" alt="" width="64" height="64" loading="lazy" decoding="async" /></span>
             <span class="route-num" aria-hidden="true">3</span>
             <h3>Done.</h3>
             <p>Your runs stay saved on this device. Next visit, your dashboard is already there.</p>
           </li>
+          <li class="route-end">
+            <div>
+              <h3>Look around first.</h3>
+              <p>It opens on sample data.</p>
+            </div>
+            <a class="btn btn--primary btn--lg" href="https://app.spirevault.app">Open SpireVault</a>
+          </li>
         </ol>
-
-        <div class="paths" data-reveal>
-          <h3 class="paths-title">Where your saves live</h3>
-          <dl class="paths-list">
-            <div><dt>Windows</dt><dd><code>%APPDATA%\SlayTheSpire2</code></dd></div>
-            <div><dt>macOS</dt><dd><code>~/Library/Application Support/SlayTheSpire2</code></dd></div>
-            <div><dt>Linux</dt><dd><code>~/.local/share/SlayTheSpire2</code></dd></div>
-          </dl>
-          <a class="btn btn--primary btn--lg" href="https://app.spirevault.app">Open SpireVault</a>
-        </div>
       </div>
     </section>
 
     <!-- ================= What you get ================= -->
     <section class="section section--night features" id="features" aria-labelledby="features-title">
       <div class="wrap">
-        <header class="section-head" data-reveal>
+        <header class="section-head section-head--split" data-reveal>
           <span class="chip">What you get</span>
           <h2 id="features-title">Your numbers, drawn like the game.</h2>
           <p>Everything here comes from your own save files. The pictures are the real app on sample data.</p>
@@ -248,22 +278,22 @@
 
           <div class="viewer-frame" id="viewer-panel" role="tabpanel" aria-labelledby="tab-overview">
             <picture class="viewer-picture">
-              <source id="viewer-shot-phone" media="(max-width: 699px)" srcset="/assets/shots/overview-phone-780-v1.webp" width="780" height="1280" />
+              <source id="viewer-shot-phone" media="(max-width: 699px)" srcset="/assets/shots/overview-phone-780-v3.webp 780w, /assets/shots/overview-phone-1170-v3.webp 1170w" sizes="calc(100vw - 36px)" width="780" height="1688" />
               <img
                 class="viewer-shot"
                 id="viewer-shot"
-                src="/assets/shots/overview-1440-v1.webp"
-                srcset="/assets/shots/overview-960-v1.webp 960w, /assets/shots/overview-1440-v1.webp 1440w, /assets/shots/overview-1920-v1.webp 1920w"
-                sizes="(max-width: 1099px) 100vw, 62vw"
+                src="/assets/shots/overview-1440-v3.webp"
+                srcset="/assets/shots/overview-960-v3.webp 960w, /assets/shots/overview-1440-v3.webp 1440w, /assets/shots/overview-1920-v3.webp 1920w, /assets/shots/overview-2880-v3.webp 2880w"
+                sizes="(max-width: 1099px) 100vw, 65vw"
                 alt="SpireVault Overview on sample data: a win-rate ring, run totals, and six stat cards fanned like a hand."
                 width="1440" height="900" loading="lazy" decoding="async" />
             </picture>
             <div class="viewer-cap">
               <p class="viewer-note">
-                <span class="chip chip--violet">New look · beta</span>
-                <span>The app opens in the classic look until you switch.</span>
+                <span class="chip chip--violet">The new look</span>
+                <span>This is how the app opens. Prefer the original? The palette button beside the logo switches looks.</span>
               </p>
-              <a class="btn btn--paper" href="https://app.spirevault.app/?ui=next">Try the new look</a>
+              <a class="btn btn--paper" href="https://app.spirevault.app/?ui=classic">Open the classic look</a>
             </div>
           </div>
         </div>
@@ -272,10 +302,10 @@
           <div class="share-copy">
             <h3>Share it.</h3>
             <p>One click makes a PNG of any run with the real relic icons and card art baked in. Markdown too, and CSV export for the lot.</p>
-            <span class="tag">Sample run</span>
           </div>
-          <a class="share-link" href="/assets/share/share-sample-2400-v1.webp" aria-label="Open the sample share card at full size">
-            <img class="share-card" src="/assets/share/share-sample-1200-v1.webp" alt="Share card for one run: the character in a game room, a result stamp, relics and a fanned hand of cards." width="1200" height="630" loading="lazy" decoding="async" />
+          <a class="share-link" href="/assets/share/share-sample-2400-v3.webp" aria-label="Open the sample share card at full size">
+            <span class="tag share-tag">Sample run</span>
+            <img class="share-card" src="/assets/share/share-sample-1200-v3.webp" srcset="/assets/share/share-sample-1200-v3.webp 1200w, /assets/share/share-sample-2400-v3.webp 2400w" sizes="(max-width: 1099px) 100vw, 58vw" alt="Share card for one run: the character in a game room, a result stamp, relics and a row of eight cards with fourteen more." width="1200" height="630" loading="lazy" decoding="async" />
           </a>
         </div>
       </div>
@@ -284,65 +314,54 @@
     <!-- ================= Co&#8209;op ================= -->
     <section class="section section--paper coop" id="coop" aria-labelledby="coop-title">
       <div class="wrap">
-        <header class="section-head" data-reveal>
+        <header class="section-head section-head--split" data-reveal>
           <span class="chip chip--gold">Co&#8209;op</span>
           <h2 id="coop-title">Find someone to climb with.</h2>
           <p>Slay the Spire 2 co&#8209;op goes through Steam friends, so you have to know someone before you can play with them. SpireVault matches you with whoever else is looking. The game itself still starts through Steam.</p>
         </header>
 
-        <div class="party" data-room="overgrowth" data-lazy-art aria-hidden="true" data-reveal>
-          <div class="duel">
-            <div class="actor actor--climber" data-climber="silent">
-              <span class="actor-seat"></span>
-              <span class="actor-art"></span>
-              <span class="actor-shadow"></span>
-            </div>
-            <div class="actor actor--climber" data-climber="defect">
-              <p class="balloon">Three acts. Easy.</p>
-              <span class="actor-art"></span>
-              <span class="actor-shadow"></span>
-            </div>
-            <div class="actor actor--boss">
-              <span class="actor-art"></span>
-              <span class="actor-shadow"></span>
-            </div>
-          </div>
-        </div>
-
         <div class="coop-grid">
-          <ol class="ledger" role="list" data-reveal>
-            <li>
-              <span class="ledger-num" aria-hidden="true">1</span>
-              <div><h3>Sign in with Steam.</h3><p>Official Steam OpenID. You type your password on Steam's page, never ours.</p></div>
-            </li>
-            <li>
-              <span class="ledger-num" aria-hidden="true">2</span>
-              <div><h3>Tap Play.</h3><p>Pick a climber, or Any, and your game version. If someone on your version is already waiting, you're matched at once.</p></div>
-            </li>
-            <li>
-              <span class="ledger-num" aria-hidden="true">3</span>
-              <div><h3>Nobody around? Get pinged.</h3><p>Turn pings on and you can close the tab. Your browser pings you when a player is looking; tap it to come back and play. If it can't ping, keep the tab open and listen for the chime.</p></div>
-            </li>
-            <li>
-              <span class="ledger-num" aria-hidden="true">4</span>
-              <div><h3>Add each other, then climb.</h3><p>The game only lets Steam friends join, so the party card gives everyone an Add button and a Launch button. Up to four players. Whoever waited longest hosts.</p></div>
-            </li>
-          </ol>
-
-          <aside class="ticket" id="coop-card" aria-label="Live count" data-reveal>
-            <header class="ticket-head">
-              <span class="dot dot--pulse" aria-hidden="true"></span>
-              <span>Live count</span>
-            </header>
-            <p class="ticket-num" id="presence-count">—</p>
-            <p class="ticket-label" id="presence-label">players signed up</p>
-            <dl class="ticket-rows">
-              <div><dt>In Slay the Spire 2 right now</dt><dd id="presence-ingame">—</dd></div>
-              <div><dt>Updates every</dt><dd>30 s</dd></div>
-              <div><dt>Sign-in</dt><dd>Steam OpenID</dd></div>
-            </dl>
-            <a class="btn btn--primary btn--lg ticket-cta" href="https://app.spirevault.app/?tab=coop">Play co&#8209;op</a>
-          </aside>
+          <div class="coop-main">
+            <ol class="ledger" role="list" data-reveal>
+              <li>
+                <span class="ledger-num" aria-hidden="true">1</span>
+                <div><h3>Sign in with Steam.</h3><p>Official Steam OpenID. You type your password on Steam's page, never ours.</p></div>
+              </li>
+              <li>
+                <span class="ledger-num" aria-hidden="true">2</span>
+                <div><h3>Tap Play.</h3><p>Pick a climber, or Any, and your game version. If someone on your version is already waiting, you're matched at once.</p></div>
+              </li>
+              <li>
+                <span class="ledger-num" aria-hidden="true">3</span>
+                <div><h3>Nobody around? Get pinged.</h3><p>Turn pings on and you can close the tab. Your browser pings you when a player is looking; tap it to come back and play. If it can't ping, keep the tab open and listen for the chime.</p></div>
+              </li>
+              <li>
+                <span class="ledger-num" aria-hidden="true">4</span>
+                <div><h3>Add each other, then climb.</h3><p>The game only lets Steam friends join, so the party card gives everyone an Add button and a Launch button. Up to four players. Whoever waited longest hosts.</p></div>
+              </li>
+            </ol>
+            <aside class="ticket" id="coop-card" aria-label="Live count" data-reveal>
+              <header class="ticket-head">
+                <span class="dot dot--pulse" aria-hidden="true"></span>
+                <span>Live count</span>
+              </header>
+              <p class="ticket-num" id="presence-count">—</p>
+              <p class="ticket-label" id="presence-label">players signed up</p>
+              <dl class="ticket-rows">
+                <div><dt>In Slay the Spire 2 right now</dt><dd id="presence-ingame">—</dd></div>
+                <div><dt>Updates every</dt><dd>30 s</dd></div>
+                <div><dt>Sign-in</dt><dd>Steam OpenID</dd></div>
+              </dl>
+              <a class="btn btn--primary btn--lg ticket-cta" href="https://app.spirevault.app/?tab=coop">Play co&#8209;op</a>
+            </aside>
+          </div>
+          <figure class="play-shot" data-reveal>
+            <img src="/assets/shots/coop-party-780-v2.webp" alt="The co-op screen in SpireVault on a phone, just after a match: “You're in a party. The party is full.”, with four climbers gathered in a room from the game, The Fool first." width="780" height="930" loading="lazy" decoding="async" />
+            <figcaption>
+              <span class="chip chip--violet">The real screen</span>
+              <span>A full party, matched. These are test players.</span>
+            </figcaption>
+          </figure>
         </div>
       </div>
     </section>
@@ -350,7 +369,7 @@
     <!-- ================= Your data ================= -->
     <section class="section section--night trust" id="trust" aria-labelledby="trust-title">
       <div class="wrap">
-        <header class="section-head" data-reveal>
+        <header class="section-head section-head--split" data-reveal>
           <span class="chip">Privacy</span>
           <h2 id="trust-title">Your saves stay on your machine.</h2>
           <p>SpireVault only reads the run files the game already wrote. It isn't a mod, and every line of it is on GitHub.</p>
@@ -364,6 +383,10 @@
               <li>Your Steam password. Sign-in happens on Steam's own page.</li>
               <li>Your Steam friends list. SpireVault never reads it.</li>
             </ul>
+            <p class="trust-links">
+              <a class="btn" href="https://github.com/c3rooks/SpireVault" target="_blank" rel="noopener">View the source on GitHub</a>
+              <a class="btn" href="https://github.com/c3rooks/SpireVault/blob/main/SECURITY.md" target="_blank" rel="noopener">Read SECURITY.md</a>
+            </p>
           </article>
           <article class="codex-page">
             <h3>Goes to the server, only after you sign in with Steam</h3>
@@ -376,17 +399,13 @@
           </article>
         </div>
         <p class="trust-note" data-reveal>Signed in or not, the app also sends anonymous usage events (which tab you open, how many files you import, your browser type) to the SpireVault server and to Google Analytics.</p>
-        <p class="trust-links" data-reveal>
-          <a class="btn" href="https://github.com/c3rooks/SpireVault" target="_blank" rel="noopener">View the source on GitHub</a>
-          <a class="btn" href="https://github.com/c3rooks/SpireVault/blob/main/SECURITY.md" target="_blank" rel="noopener">Read SECURITY.md</a>
-        </p>
       </div>
     </section>
 
     <!-- ================= Get it ================= -->
     <section class="section section--paper install" id="install" aria-labelledby="install-title">
       <div class="wrap">
-        <header class="section-head" data-reveal>
+        <header class="section-head section-head--split" data-reveal>
           <span class="chip chip--gold">Download</span>
           <h2 id="install-title">Three ways in. All free.</h2>
           <p>The browser version is the whole app. The desktop apps open that same app in their own window.</p>
@@ -431,9 +450,10 @@
     <!-- ================= Questions ================= -->
     <section class="section section--night faq" id="faq" aria-labelledby="faq-title">
       <div class="wrap">
-        <header class="section-head" data-reveal>
+        <header class="section-head section-head--row" data-reveal>
           <span class="chip">FAQ</span>
           <h2 id="faq-title">Questions.</h2>
+          <p class="section-head-action">Not answered here? <a class="btn" href="https://github.com/c3rooks/SpireVault/issues/new" target="_blank" rel="noopener">Ask on GitHub</a></p>
         </header>
 
         <div class="faq-list" data-reveal>
@@ -494,8 +514,8 @@
             <p>Yes. This site is static files, the web app adds a small Pages proxy, and the server is one Cloudflare Worker with a KV namespace and a Durable Object. The repo's Makefile deploys all three with wrangler. Bring your own Steam Web API key, plus VAPID keys if you want pings.</p>
           </details>
           <details>
-            <summary>What's the new look?</summary>
-            <p>A redesign of the app, in beta and off by default. Open <code>app.spirevault.app/?ui=next</code> to try it and <code>?ui=classic</code> to go back. Same runs, same stats, no re-import.</p>
+            <summary>Can I go back to the classic look?</summary>
+            <p>Yes. The new look is how the app opens now, and a note on your first visit shows where the switch is: tap the palette button beside the logo and choose <strong>Classic</strong>, or open <code>app.spirevault.app/?ui=classic</code>. Your choice is saved on that device, and the same button brings the new look back. Same runs, same stats, no re-import.</p>
           </details>
           <details>
             <summary>Is there a phone version?</summary>
@@ -506,20 +526,18 @@
     </section>
 
     <!-- ================= Closing call ================= -->
-    <section class="closing" data-room="underdocks" aria-labelledby="closing-title">
-      <div class="closing-band" data-lazy-art aria-hidden="true">
-        <div class="duel">
-          <div class="actor actor--climber" data-climber="fool">
-            <p class="balloon">One more floor.</p>
-            <span class="actor-art"></span>
-            <span class="actor-shadow"></span>
-          </div>
-        </div>
-      </div>
+    <section class="closing" aria-labelledby="closing-title">
       <div class="wrap closing-inner">
-        <h2 class="closing-title" id="closing-title">Deal your first hand.</h2>
-        <p>Free, in your browser, on your own save files.</p>
-        <a class="btn btn--primary btn--lg" href="https://app.spirevault.app">Open SpireVault</a>
+        <div class="closing-copy">
+          <h2 class="closing-title" id="closing-title">Deal your first hand.</h2>
+          <p>Free, in your browser, on your own save files.</p>
+          <a class="btn btn--primary btn--lg" href="https://app.spirevault.app">Open SpireVault</a>
+        </div>
+        <div class="closing-art" aria-hidden="true">
+          <img class="closing-card closing-card--left" src="/assets/art/epoch/strike-1x-v1.webp" srcset="/assets/art/epoch/strike-1x-v1.webp 1x, /assets/art/epoch/strike-2x-v1.webp 2x" alt="" width="406" height="250" loading="lazy" decoding="async" />
+          <img class="closing-card closing-card--right" src="/assets/art/epoch/blade-1x-v1.webp" srcset="/assets/art/epoch/blade-1x-v1.webp 1x, /assets/art/epoch/blade-2x-v1.webp 2x" alt="" width="406" height="250" loading="lazy" decoding="async" />
+          <img class="closing-card closing-card--front" src="/assets/art/epoch/spire-1x-v1.webp" srcset="/assets/art/epoch/spire-1x-v1.webp 1x, /assets/art/epoch/spire-2x-v1.webp 2x" alt="" width="418" height="268" loading="lazy" decoding="async" />
+        </div>
       </div>
     </section>
   </main>
@@ -543,6 +561,6 @@
     </div>
   </footer>
 
-  <script src="/script.js?v=20" defer></script>
+  <script src="/script.js?v=21" defer></script>
 </body>
 </html>

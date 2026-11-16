@@ -5,8 +5,8 @@
  * Opens the web app (Web/, new look, Inked theme, sample data, as a guest),
  * and writes what the landing page shows of it:
  *
- *   Site/assets/shots/<tab>-<960|1440|1920>-v<N>.webp   one screen per tab
- *   Site/assets/shots/<tab>-phone-780-v<N>.webp          the same tab on a phone
+ *   Site/assets/shots/<tab>-<960|1440|1920|2880>-v<N>.webp   one screen per tab
+ *   Site/assets/shots/<tab>-phone-<780|1170>-v<N>.webp   the same tab on a phone
  *   Site/assets/share/share-sample-<1200|2400>-v<N>.webp  a real share card
  *   docs/screenshots/site/app-src/*.png                  the PNG sources
  *   docs/screenshots/site/app-src/hand.json              the "Your hand" values
@@ -38,12 +38,13 @@ const CWEBP = "/opt/homebrew/bin/cwebp";
 const OWN_PORT = 8792;
 const VIEWPORT = Object.freeze({ width: 1440, height: 900 });
 const SCALE = 2;
-const SHOT_WIDTHS = Object.freeze([960, 1440, 1920]);
-/** A phone, and how much of its first screen the landing page shows. */
-const PHONE = Object.freeze({ width: 390, height: 844, scale: 3, crop: 640, outWidth: 780 });
+const SHOT_WIDTHS = Object.freeze([960, 1440, 1920, 2880]);
+/** A phone: the landing page shows its whole first screen, down to the app's own tab bar,
+ *  at 780px (2x phones) and 1170px (3x phones) so the app's text stays sharp. */
+const PHONE = Object.freeze({ width: 390, height: 844, scale: 3, crop: 844, outWidths: Object.freeze([780, 1170]) });
 const SHARE_WIDTHS = Object.freeze([1200, 2400]);
 const SHARE_PIXELS = Object.freeze({ width: 2400, height: 1260 });
-const ART_VERSION = 1;
+const ART_VERSION = 3;
 const SETTLE_MS = 2600;
 const TIMEOUT_MS = 180_000;
 const DEFAULT_TABS = "overview,characters,ascensions,relics,cards,runs";
@@ -193,7 +194,7 @@ async function main() {
         await page.evaluate(() => window.scrollTo(0, 0));
         const source = join(SRC_DIR, `${tab}-phone@3x.png`);
         await page.screenshot({ path: source, clip: { x: 0, y: 0, width: PHONE.width, height: PHONE.crop } });
-        written.push(source, ...toWebp(source, SHOTS_DIR, `${tab}-phone`, [PHONE.outWidth], 82));
+        written.push(source, ...toWebp(source, SHOTS_DIR, `${tab}-phone`, PHONE.outWidths, 82));
       }
       await context.close();
     }

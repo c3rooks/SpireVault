@@ -2,3 +2,7 @@
 /download   /#install   302
 /coop       /#coop      302
 /github     https://github.com/c3rooks/SpireVault   302
+# The Mac installer is no longer served from this site: its old address goes
+# to the releases page (without this rule Pages would answer it with the
+# landing page itself).
+/assets/The.Vault.dmg   https://github.com/c3rooks/SpireVault/releases/latest   302

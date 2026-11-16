@@ -41,9 +41,12 @@
 }
 .codex-page ul {
   display: grid;
+  grid-auto-rows: 1fr;
 }
 .codex-page li {
   position: relative;
+  display: flex;
+  align-items: center;
   padding: 11px 0 11px 34px;
   border-bottom: 2px dashed var(--v-paper-3);
   font-size: var(--t-lg);
@@ -56,7 +59,7 @@
 .codex-page li::before {
   content: "";
   position: absolute;
-  top: 17px;
+  top: calc(50% - 8px);
   left: 4px;
   width: 16px;
   height: 9px;
@@ -69,18 +72,26 @@
 @supports (grid-template-rows: subgrid) {
   @media (min-width: 900px) {
     .codex {
-      grid-template-rows: auto 1fr;
+      grid-template-rows: auto 1fr auto;
     }
     .codex-page {
       display: grid;
       grid-template-rows: subgrid;
-      grid-row: span 2;
+      grid-row: span 3;
     }
     .codex-page h3 {
       align-self: end;
     }
     .codex-page ul {
-      align-self: start;
+      align-self: stretch;
+    }
+    /* The shorter page ends with its two links at the foot; the longer list
+       runs the full height beside them. */
+    .codex-page ul:last-child {
+      grid-row: span 2;
+    }
+    .codex-page .trust-links {
+      align-self: end;
     }
   }
 }
@@ -94,7 +105,7 @@
   display: flex;
   flex-wrap: wrap;
   gap: 14px;
-  margin-top: var(--s-6);
+  margin-top: var(--s-5);
 }
 
 /* ---- 6. Get it: three ways in, unequal on purpose ----------------------------- */
@@ -114,6 +125,16 @@
   border-radius: var(--v-radius-lg);
   background: var(--v-paper-2);
   box-shadow: var(--v-shadow-lg);
+}
+/* The two desktop apps are laid out alike, whatever the length of their
+   text: words above, button below. */
+.way:not(.way--web) {
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: flex-start;
+}
+.way:not(.way--web) .way-text {
+  flex: 0 0 auto;
 }
 .way--web {
   --focus: var(--v-title);
@@ -258,61 +279,73 @@
 }
 
 /* ---- 8. Closing call and footer ----------------------------------------------- */
-/* A last room: the call on the left over the room's veil, The Fool on the
-   right. Like the co-op band, it keeps one shape so the floor stays put. */
+/* The call on the left; on the right, three more of the game's paintings,
+   framed and overlapping like cards on a table. Each is drawn at no more
+   than half its pixels. */
 .closing {
   position: relative;
+  /* The tilted cards' corners stay inside the band. */
+  overflow: hidden;
   border-top: 8px solid var(--v-ink);
-  background: var(--room-deep);
+  background: var(--v-bg-deep);
   color: var(--v-text);
 }
-.closing-band {
-  --fig: 52cqh;
-  --ground: 15cqh;
-  position: relative;
-  aspect-ratio: 5.2 / 1;
-  overflow: hidden;
-  container-type: size;
-  /* The slice that shows the vats above and the floor below the wall foot. */
-  background: var(--room-flat) center 40% / cover no-repeat var(--room-deep);
-}
-.closing-band::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  /* A solid veil; browsers with color-mix() get the softer one below. */
-  background: linear-gradient(90deg, var(--room-deep) 0%, var(--room-deep) 20%, transparent 58%);
-}
-@supports (color: color-mix(in srgb, red, blue)) {
-  .closing-band::after {
-    background: linear-gradient(
-      90deg,
-      color-mix(in srgb, var(--room-deep) 92%, transparent) 0%,
-      color-mix(in srgb, var(--room-deep) 70%, transparent) 34%,
-      transparent 62%
-    );
-  }
-}
-.closing-band .duel {
-  left: 58%;
-  z-index: 1;
-}
-.closing-band .balloon {
-  animation: none;
-}
 .closing-inner {
-  position: absolute;
-  inset: 0;
-  z-index: 2;
   display: grid;
-  align-content: center;
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1fr);
+  align-items: center;
+  gap: clamp(24px, 4vw, 72px);
+  padding-block: var(--s-section);
+}
+.closing-copy {
+  display: grid;
   justify-items: start;
   gap: clamp(8px, 1vw, 16px);
 }
-.closing-inner p {
+.closing-copy p {
+  color: var(--v-text-2);
   font-size: var(--t-lg);
   font-weight: 600;
-  text-shadow: 0 1px 0 var(--v-ink);
+}
+.closing-art {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  align-items: center;
+  width: 100%;
+  max-width: 860px;
+  padding-inline: 3%;
+  justify-self: center;
+}
+.closing-card {
+  grid-row: 1;
+  width: 100%;
+  border: var(--v-outline);
+  border-radius: var(--v-radius-lg);
+  background: var(--v-bg);
+  box-shadow: var(--v-shadow-lg);
+}
+.closing-card--left {
+  grid-column: 1 / span 6;
+  max-width: 380px;
+  translate: 0 -10%;
+  rotate: -5deg;
+}
+.closing-card--right {
+  grid-column: 7 / span 6;
+  max-width: 380px;
+  justify-self: end;
+  translate: 0 -6%;
+  rotate: 4deg;
+}
+.closing-card--front {
+  z-index: 1;
+  grid-column: 3 / span 8;
+  max-width: 418px;
+  justify-self: center;
+  translate: 0 14%;
+  rotate: -1deg;
+  box-shadow: 8px 8px 0 var(--v-ink);
 }
 
 .footer {
@@ -356,14 +389,16 @@
   flex: 0 1 auto;
   flex-wrap: wrap;
   justify-content: flex-end;
-  gap: 4px 20px;
+  /* 12px gaps plus 4px of padding either side of each link: every visible gap
+     is 20px, and a short word like "News" is still 44px wide to tap. */
+  gap: 4px 12px;
+  margin-inline: -4px;
 }
 .footer-links a {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  /* A short word like "News" is still a full-size tap target. */
-  min-width: 44px;
+  min-width: 0;
+  padding-inline: 4px;
   min-height: 44px;
   font-weight: 700;
   text-decoration: none;
@@ -405,33 +440,14 @@
   .way .btn {
     width: 100%;
   }
-  /* The band shows the room at full height (so its floor sits lower), with
-     the call above it instead of over it. */
-  .closing {
-    display: flex;
-    flex-direction: column-reverse;
-    /* The call stands on the page's own night colour here, not the room's. */
-    background: var(--v-bg-deep);
-  }
-  .closing-band {
-    --fig: 44cqh;
-    --ground: 30cqh;
-    aspect-ratio: 1.5 / 1;
-    background-position: 70% bottom;
-    border-top: var(--v-outline);
-  }
-  .closing-band::after {
-    display: none;
-  }
-  .closing-band .duel {
-    left: 0;
-  }
   .closing-inner {
-    position: static;
-    padding-block: var(--s-6);
+    grid-template-columns: minmax(0, 1fr);
   }
-  .closing-inner .btn {
+  .closing-copy .btn {
     width: 100%;
+  }
+  .closing-art {
+    margin-bottom: 8%;
   }
 }
 @media (max-width: 399px) {

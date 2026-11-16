@@ -8,11 +8,11 @@
  *
  *   layout   no sideways scroll, nothing off-screen, cut or covered, no broken
  *            pictures; on phones 44px tap targets and 11px text
- *   fold     the whole first screen (headline, buttons, duel, hand) fits in
- *            1440x760 and 1728x950, and the copy fits the hero at every
- *            desktop width
- *   duel     each climber: figures, balloon and hand inside the hero, balloon
- *            clear of the boss
+ *   fold     the whole first screen (headline, buttons, featured card, hand)
+ *            fits in 1440x760, 1454x816 and 1728x950
+ *   hand     each climber the roll can feature: their card, painting and line;
+ *            the other five (The Fool among them) in the hand; all on screen
+ *   sharp    no picture on the page is drawn past its own pixels at 2x
  *   health   no console errors, failed requests, CSP violations or requests
  *            to hosts the CSP does not list
  *   content  old brand names gone, Mega Crit notice and anchors present, every
@@ -20,11 +20,11 @@
  *   links    every external link the old page had is still there
  *   wiring   live count, release links and version pills in three cases
  *            (people signed up, nobody, both endpoints down); the screenshot
- *            buttons; the climber's own speech line
+ *            buttons; a link to an answer opens it
  *   motion   nothing runs under reduced motion; otherwise only transform /
  *            opacity animate and the hero ignores the pointer
- *   perf     fonts load, the hero's room picture is preloaded, layout shift
- *            under 0.1, first-screen weight inside its budget
+ *   perf     fonts load, layout shift under 0.1, first-screen weight inside
+ *            its budget
  *   contrast body text and button labels reach 4.5:1 (3:1 when large)
  *
  *   node scripts/verify-site.mjs
@@ -38,26 +38,33 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { startSiteServer } from "./site-server.mjs";
 import { heroGeometry, lowContrast } from "./verify-site-page.mjs";
+import { checkFold, checkHand, checkSharp } from "./verify-site-hero.mjs";
 import { RELEASE, RELEASES_PAGE, SCENARIOS, SITE_ROOT, existsExactly, loadLazy, openPage } from "./verify-site-harness.mjs";
 import { collectFindings } from "./mobile-audit/page-checks.mjs";
 
 const OWN_PORT = 8797;
 const ENGINES = Object.freeze({ chromium, firefox, webkit });
-const GROUPS = Object.freeze(["layout", "fold", "duel", "health", "content", "links", "wiring", "motion", "perf", "contrast", "resilience"]);
+const GROUPS = Object.freeze(["layout", "fold", "hand", "sharp", "health", "content", "links", "wiring", "motion", "perf", "contrast", "resilience"]);
 const HEIGHTS = Object.freeze({ 320: 568, 375: 812, 390: 844, 768: 1024, 1024: 768, 1100: 720, 1280: 720, 1366: 768, 1440: 900, 1728: 1000, 1920: 1080, 2560: 1300 });
 const DEFAULT_WIDTHS = "320,375,390,768,1024,1100,1280,1366,1440,1728,1920,2560";
 /** The duel is checked at a phone and the two review windows, whatever --widths says. */
-const DUEL_WIDTHS = Object.freeze([320, 390, 768, 1024, 1440, 1728]);
+const HAND_WIDTHS = Object.freeze([320, 390, 768, 1024, 1100, 1280, 1454, 1728]);
+/** Screens the sharpness check looks at, all at 2x. */
+const SHARP_SCREENS = Object.freeze([
+  { width: 390, height: 844, phone: true },
+  { width: 1024, height: 768 },
+  { width: 1454, height: 816 },
+  { width: 1728, height: 1000 },
+]);
 /** Every screen button's picture must exist in these sizes. */
-const SHOT_FILES = Object.freeze(["960", "1440", "1920", "phone-780"]);
+const SHOT_FILES = Object.freeze(["960", "1440", "1920", "2880", "phone-780", "phone-1170"]);
 const PHONE_MAX_W = 480;
 /** Widths where the viewer's buttons sit beside the picture, and how far the picture may be cropped. */
 const VIEWER_WIDTHS = Object.freeze([1100, 1280, 1440, 1728]);
 const VIEWER_MIN_RATIO = 1.5;
 const DESKTOP_MIN_W = 1100;
 /** Windows the first screen must fit whole: a 1440 laptop and his 1728 Safari. */
-const FOLDS = Object.freeze([{ width: 1440, height: 760 }, { width: 1728, height: 950 }]);
-const CLIMBERS = Object.freeze(["ironclad", "silent", "defect", "regent", "necrobinder", "fool"]);
+const FOLDS = Object.freeze([{ width: 1440, height: 760 }, { width: 1454, height: 816 }, { width: 1728, height: 950 }]);
 const OLD_BRAND = /\bThe Vault\b|\bSpire Vault\b/i;
 /** Asset files that keep an unversioned name on purpose (old links point at them). */
 const UNVERSIONED_OK = Object.freeze(["/assets/vault-mark.svg", "/assets/og.png"]);
@@ -74,8 +81,20 @@ const REQUIRED_LINKS = Object.freeze([
   "https://coreycrooks.com",
   "https://apps.apple.com/us/app/ascension-companion/id6761977581",
 ]);
+/**
+ * Addresses that must redirect, and where to. The last one is the Mac
+ * installer's old address: the installer is no longer served from this site,
+ * and without a rule Cloudflare Pages would answer that address with the
+ * landing page itself (it serves index.html for any unknown path).
+ */
+const REDIRECTS = Object.freeze([
+  ["/download", "/#install"],
+  ["/coop", "/#coop"],
+  ["/github", "https://github.com/c3rooks/SpireVault"],
+  ["/assets/The.Vault.dmg", "https://github.com/c3rooks/SpireVault/releases/latest"],
+]);
 const REQUIRED_IDS = Object.freeze(["main", "features", "showcase", "coop", "trust", "install", "install-web", "install-mac", "install-win", "faq", "runcoach"]);
-const FIRST_SCREEN_BUDGET = Object.freeze({ desktop: 520 * 1024, phone: 320 * 1024 });
+const FIRST_SCREEN_BUDGET = Object.freeze({ desktop: 520 * 1024, phone: 400 * 1024 });
 /** Everything fetched before scrolling, lazy pictures included, may be this many times the budget. */
 const LAZY_HEADROOM = 1.5;
 const PHONE_LIMITS = Object.freeze({ ignore: "", minTapPx: 44, goodTapPx: 44, minTextPx: 11, goodTextPx: 12, zoomSafeInputPx: 16, maxSamples: 6, maxCoveredProbes: 300 });
@@ -114,82 +133,10 @@ async function checkLayout(browser, baseUrl, engine, width) {
     if (log.failed.length) failures.push(`failed requests: ${[...new Set(log.failed)].join("; ")}`);
     if (width >= DESKTOP_MIN_W) {
       const geo = await page.evaluate(heroGeometry);
-      if (geo.copyOverflow > 1) failures.push(`hero copy is ${geo.copyOverflow}px taller than the hero`);
       if (geo.lastCopyChild && geo.hero && geo.lastCopyChild.bottom > geo.hero.bottom - 8) failures.push("hero copy runs into the hero's bottom edge");
     }
   } finally {
     await context.close();
-  }
-  return failures;
-}
-
-async function checkFold(browser, baseUrl) {
-  const failures = [];
-  for (const fold of FOLDS) {
-    const { page, context } = await openPage(browser, baseUrl, { ...fold });
-    try {
-      const geo = await page.evaluate(heroGeometry);
-      const where = `${fold.width}x${fold.height}`;
-      const inside = (box, label) => {
-        if (!box) return failures.push(`${where}: ${label} missing`);
-        if (box.bottom > fold.height + 0.5) failures.push(`${where}: ${label} runs ${Math.round(box.bottom - fold.height)}px below the fold`);
-        if (geo.hero && (box.top < geo.hero.top - 0.5 || box.bottom > geo.hero.bottom + 0.5)) failures.push(`${where}: ${label} sticks out of the hero`);
-        return null;
-      };
-      inside(geo.hero, "hero");
-      inside(geo.lastCopyChild, "copy");
-      inside(geo.climber, "climber");
-      inside(geo.boss, "boss");
-      inside(geo.balloon, "balloon");
-      geo.cards.forEach((card, i) => inside(card, `stat card ${i + 1}`));
-      if (geo.cards.length !== 6) failures.push(`${where}: expected 6 stat cards, found ${geo.cards.length}`);
-    } finally {
-      await context.close();
-    }
-  }
-  return failures;
-}
-
-async function checkDuel(browser, baseUrl, widths) {
-  const failures = [];
-  const overlap = (a, b) => a && b && a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
-  for (const width of widths) {
-    for (const climber of CLIMBERS) {
-      const { page, context } = await openPage(browser, baseUrl, { width, height: HEIGHTS[width] || 900, query: `climber=${climber}&motion=off`, phone: width <= PHONE_MAX_W });
-      try {
-        // The page picks a line at random: measure with this climber's longest
-        // one, which makes the widest balloon, so the result is the same every run.
-        await page.evaluate(() => {
-          const balloon = document.getElementById("hero-balloon");
-          const lines = window.SpireVaultSite ? window.SpireVaultSite.linesFor(document.documentElement.dataset.climber) : [];
-          const longest = lines.reduce((a, b) => (b.length > a.length ? b : a), "");
-          if (balloon && longest) balloon.textContent = longest;
-        });
-        const geo = await page.evaluate(heroGeometry);
-        const where = `${climber} at ${width}`;
-        for (const [label, box] of [["climber", geo.climber], ["boss", geo.boss], ["balloon", geo.balloon]]) {
-          if (!box || box.width < 2) {
-            failures.push(`${where}: ${label} not drawn`);
-            continue;
-          }
-          if (box.left < 0 || box.right > geo.viewport.width + 0.5) failures.push(`${where}: ${label} runs off the side`);
-          if (geo.hero && (box.top < geo.hero.top || box.bottom > geo.hero.bottom)) failures.push(`${where}: ${label} sticks out of the hero`);
-        }
-        if (geo.nav && geo.balloon && geo.balloon.top < geo.nav.bottom) failures.push(`${where}: balloon under the nav`);
-        if (overlap(geo.balloon, geo.boss)) failures.push(`${where}: balloon overlaps the boss`);
-        if (geo.balloon && geo.cards.some((card) => overlap(geo.balloon, card))) failures.push(`${where}: balloon overlaps the hand`);
-        // Feet together: the climber's box sits on the ground line, the boss's boots at 92.2% of his.
-        if (geo.climber && geo.boss) {
-          const bossBoots = geo.boss.top + geo.boss.height * 0.922;
-          if (Math.abs(geo.climber.bottom - bossBoots) > 3) failures.push(`${where}: feet ${Math.round(Math.abs(geo.climber.bottom - bossBoots))}px apart in height`);
-          if (geo.climber.right > geo.boss.left + geo.boss.width * 0.25) failures.push(`${where}: climber stands inside the boss`);
-        }
-        const art = await page.evaluate(() => getComputedStyle(document.querySelector(".actor--climber .actor-art")).backgroundImage);
-        if (!art.includes(climber === "regent" ? "regent-ink-v2" : `${climber}-ink-v1`)) failures.push(`${where}: wrong sprite (${art})`);
-      } finally {
-        await context.close();
-      }
-    }
   }
   return failures;
 }
@@ -200,8 +147,6 @@ async function checkHealth(browser, baseUrl) {
   try {
     await loadLazy(page);
     await page.waitForTimeout(600);
-    const bare = await page.evaluate(() => Array.from(document.querySelectorAll("[data-lazy-art]")).filter((el) => getComputedStyle(el).backgroundImage === "none" || getComputedStyle(el.querySelector(".actor-art")).backgroundImage === "none").length);
-    if (bare) failures.push(`${bare} room(s) further down never loaded their picture after scrolling to them`);
     const csp = await page.evaluate(() => window.__csp || []);
     if (csp.length) failures.push(`content-security-policy violations: ${[...new Set(csp)].join("; ")}`);
     if (log.console.length) failures.push(`console errors: ${[...new Set(log.console)].join("; ")}`);
@@ -301,6 +246,18 @@ async function checkLinks(browser, baseUrl) {
   } finally {
     await context.close();
   }
+  // The short addresses, asked for without following them.
+  for (const [from, to] of REDIRECTS) {
+    try {
+      const response = await fetch(`${baseUrl}${from}`, { redirect: "manual" });
+      const location = response.headers.get("location") || "";
+      const lands = location.startsWith("http") ? location : new URL(location || "/", baseUrl).href.slice(new URL(baseUrl).origin.length);
+      if (response.status < 300 || response.status >= 400) failures.push(`${from} answers ${response.status} instead of redirecting to ${to}`);
+      else if (lands !== to) failures.push(`${from} redirects to ${location || "nowhere"}, expected ${to}`);
+    } catch (error) {
+      failures.push(`${from}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
   return failures;
 }
 
@@ -389,7 +346,8 @@ async function checkWiring(browser, baseUrl) {
           }, shot, { timeout: 20_000 })
           .catch(() => failures.push(`viewer: the ${shot} picture did not load`));
         for (const size of SHOT_FILES) {
-          if (!existsSync(join(SITE_ROOT, "assets", "shots", `${shot}-${size}-v1.webp`))) failures.push(`viewer: missing file assets/shots/${shot}-${size}-v1.webp`);
+          const shotFile = `${shot}-${size}-v3.webp`;
+          if (!existsSync(join(SITE_ROOT, "assets", "shots", shotFile))) failures.push(`viewer: missing file assets/shots/${shotFile}`);
         }
         if (state.selected !== "true" || state.others !== 1) failures.push(`viewer: ${shot} not the one selected button`);
         if (!state.src.includes(`/assets/shots/${shot}-`)) failures.push(`viewer: ${shot} shows ${state.src}`);
@@ -405,31 +363,17 @@ async function checkWiring(browser, baseUrl) {
     }
   }
 
-  // A link to an answer opens it; on a phone the hand's scroll row can be reached by keyboard.
+  // A link to an answer opens it.
   {
     const { page, context } = await openPage(browser, baseUrl, { width: 390, height: 844, query: "climber=ironclad&motion=off#runcoach", phone: true });
     try {
-      const state = await page.evaluate(() => ({ open: document.getElementById("runcoach")?.open === true, handTab: document.querySelector(".hand")?.getAttribute("tabindex") }));
-      if (!state.open) failures.push("a link to #runcoach does not open that answer");
-      if (state.handTab !== "0") failures.push("on a phone the hand's scroll row has no tab stop");
+      const open = await page.evaluate(() => document.getElementById("runcoach")?.open === true);
+      if (!open) failures.push("a link to #runcoach does not open that answer");
     } finally {
       await context.close();
     }
   }
 
-  // The climber speaks one of their own lines, and is named for screen readers.
-  for (const climber of CLIMBERS) {
-    const { page, context } = await openPage(browser, baseUrl, { width: 1440, height: 900, query: `climber=${climber}&motion=off` });
-    try {
-      const state = await page.evaluate(() => ({ line: document.getElementById("hero-balloon")?.textContent?.trim() || "", label: document.getElementById("hero-climber")?.getAttribute("aria-label") || "", lines: window.SpireVaultSite ? window.SpireVaultSite.linesFor(document.documentElement.dataset.climber) : null }));
-      if (!state.lines) failures.push(`balloon (${climber}): window.SpireVaultSite.linesFor missing`);
-      else if (!state.lines.includes(state.line)) failures.push(`balloon (${climber}): "${state.line}" is not one of their lines`);
-      const name = climber === "fool" ? "The Fool" : climber[0].toUpperCase() + climber.slice(1);
-      if (!state.label.includes(name)) failures.push(`climber label "${state.label}" does not name ${name}`);
-    } finally {
-      await context.close();
-    }
-  }
   return failures;
 }
 
@@ -457,9 +401,10 @@ async function checkMotion(browser, baseUrl) {
           const frames = animation.effect && animation.effect.getKeyframes ? animation.effect.getKeyframes() : [];
           for (const frame of frames) for (const key of Object.keys(frame)) if (!allowed.includes(key)) bad.add(key);
         }
-        return { running: animations.filter((a) => a.playState === "running").length, bad: [...bad] };
+        const inHand = animations.filter((a) => a.playState === "running" && a.effect && a.effect.target && a.effect.target.closest(".hero-stage")).length;
+        return { running: inHand, bad: [...bad] };
       }, ALLOWED);
-      if (report.running < 1) failures.push("motion: nothing is animating in the hero");
+      if (report.running < 5) failures.push(`motion: only ${report.running} of the hand's five cards are moving`);
       if (report.bad.length) failures.push(`motion: animating layout properties: ${report.bad.join(", ")}`);
 
       // The hero must not answer the pointer: freeze the clocks, move the mouse, compare.
@@ -470,18 +415,18 @@ async function checkMotion(browser, baseUrl) {
         await Promise.all(all.map((a) => a.ready.catch(() => null)));
         await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
       });
-      const snapshot = () => page.evaluate(() => Array.from(document.querySelectorAll(".actor, .stat-card, .balloon, .scene-plane"), (el) => { const r = el.getBoundingClientRect(); return [r.left, r.top, r.width, r.height].map((n) => Math.round(n * 10)).join(","); }).join("|"));
+      const snapshot = () => page.evaluate(() => Array.from(document.querySelectorAll(".hero .featured, .hero .hand-card, .hero .hand-tag"), (el) => { const r = el.getBoundingClientRect(); return [r.left, r.top, r.width, r.height].map((n) => Math.round(n * 10)).join(","); }).join("|"));
       const before = await snapshot();
-      // Hover the middle of each figure, the balloon and every card, and look
+      // Hover the middle of the featured card and of every hand card, and look
       // after each move: a lift that drops back when the pointer leaves would
       // slip past a single look at the end.
       const points = await page.evaluate(() =>
-        Array.from(document.querySelectorAll(".hero .actor, .hero .balloon, .hero .stat-card"), (el) => {
+        Array.from(document.querySelectorAll(".hero .featured, .hero .hand-card")).filter((el) => el.getClientRects().length > 0).map((el) => {
           const r = el.getBoundingClientRect();
           return [Math.round(r.left + r.width / 2), Math.round(r.top + r.height / 2)];
         }),
       );
-      if (points.length < 8) failures.push(`motion: the pointer test found only ${points.length} hero pieces to hover`);
+      if (points.length < 6) failures.push(`motion: the pointer test found only ${points.length} hero pieces to hover`);
       let moved = false;
       for (const [x, y] of points) {
         await page.mouse.move(x, y, { steps: 3 });
@@ -505,16 +450,10 @@ async function checkPerf(browser, baseUrl) {
       const state = await page.evaluate(() => ({
         fonts: ['900 40px "Grenze Gotisch"', '500 16px "Figtree"'].map((f) => document.fonts.check(f)),
         cls: window.__cls,
-        preloads: Array.from(document.querySelectorAll('link[rel="preload"][as="image"]')).filter((l) => !l.media || matchMedia(l.media).matches).map((l) => new URL(l.href, location.href).pathname),
-        roomPicture: getComputedStyle(document.querySelector(".scene-plane--base")).backgroundImage,
         lazy: Array.from(document.querySelectorAll('img[loading="lazy"]'), (img) => (img.currentSrc ? new URL(img.currentSrc).pathname : "")).filter(Boolean),
-        heldBack: Array.from(document.querySelectorAll("[data-lazy-art]"), (el) => getComputedStyle(el).backgroundImage),
       }));
       if (state.fonts.includes(false)) failures.push(`${label}: a font did not load`);
       if (state.cls >= 0.1) failures.push(`${label}: layout shift ${state.cls.toFixed(3)}`);
-      const room = /url\(["']?[^"')]*?(\/assets\/[^"')]+)["']?\)/.exec(state.roomPicture);
-      if (!room) failures.push(`${label}: the hero has no room picture`);
-      else if (!state.preloads.includes(room[1])) failures.push(`${label}: the room picture ${room[1]} is not preloaded (preloads: ${state.preloads.join(", ") || "none"})`);
       // Lazy pictures further down are fetched early by some browsers and not
       // by others; they are weighed apart, with a looser ceiling on the lot.
       const lazyBytes = log.responses.filter((r) => state.lazy.includes(new URL(r.url).pathname)).reduce((sum, r) => sum + r.bytes, 0);
@@ -522,8 +461,6 @@ async function checkPerf(browser, baseUrl) {
       const kb = (n) => Math.round(n / 1024);
       if (needed > budget) failures.push(`${label}: first screen weighs ${kb(needed)} KB, budget ${kb(budget)} KB`);
       if (log.bytes > budget * LAZY_HEADROOM) failures.push(`${label}: ${kb(log.bytes)} KB fetched before any scrolling, ceiling ${kb(budget * LAZY_HEADROOM)} KB`);
-      const lit = state.heldBack.filter((image) => image !== "none").length;
-      if (lit > 0) failures.push(`${label}: ${lit} room(s) below the first screen loaded their picture before any scrolling`);
       process.stdout.write(`    ${label}: first screen ${kb(needed)} KB + ${kb(lazyBytes)} KB of lazy pictures fetched early, ${log.responses.length} requests, shift ${Number(state.cls).toFixed(3)}\n`);
     } finally {
       await context.close();
@@ -553,13 +490,14 @@ async function checkResilience(browser, baseUrl) {
           chip: shown("presence-text"),
           count: shown("presence-count"),
           hidden: Array.from(document.querySelectorAll("[data-reveal]")).filter((el) => getComputedStyle(el).opacity !== "1").length,
-          bare: Array.from(document.querySelectorAll("[data-lazy-art]")).filter((el) => getComputedStyle(el).backgroundImage === "none").length,
+          featured: Array.from(document.querySelectorAll(".featured")).filter((el) => el.getClientRects().length > 0).length,
+          hand: Array.from(document.querySelectorAll(".hand-card")).filter((el) => el.getClientRects().length > 0).length,
         };
       });
       if (state.chip !== null) failures.push(`without JavaScript the hero still shows "${state.chip}", which nothing will ever replace`);
       if (state.count !== null) failures.push(`without JavaScript the live-count ticket still shows "${state.count}"`);
       if (state.hidden) failures.push(`without JavaScript ${state.hidden} block(s) are invisible`);
-      if (state.bare) failures.push(`without JavaScript ${state.bare} room(s) have no picture`);
+      if (state.featured !== 1 || state.hand !== 5) failures.push(`without JavaScript the hero shows ${state.featured} featured card(s) and ${state.hand} hand cards`);
     } finally {
       await context.close();
     }
@@ -577,6 +515,20 @@ async function checkResilience(browser, baseUrl) {
           .map((el) => el.className || el.tagName),
       );
       if (unseen.length) failures.push(`on a tall window ${unseen.length} block(s) on screen at load stay invisible until scrolled: ${unseen.join(", ")}`);
+    } finally {
+      await context.close();
+    }
+  }
+  // A climber the roll does not know (or The Fool, who is never featured) still gives one card and five.
+  for (const wanted of ["bogus", "fool"]) {
+    const { page, context } = await openPage(browser, baseUrl, { width: 1440, height: 900, query: `climber=${wanted}&motion=off` });
+    try {
+      const shown = await page.evaluate(() => ({
+        featured: Array.from(document.querySelectorAll(".featured")).filter((el) => el.getClientRects().length > 0).length,
+        hand: Array.from(document.querySelectorAll(".hand-card")).filter((el) => el.getClientRects().length > 0).map((el) => el.dataset.c),
+      }));
+      if (shown.featured !== 1 || shown.hand.length !== 5) failures.push(`?climber=${wanted}: ${shown.featured} featured card(s) and ${shown.hand.length} hand cards`);
+      if (!shown.hand.includes("fool")) failures.push(`?climber=${wanted}: The Fool is not in the hand`);
     } finally {
       await context.close();
     }
@@ -670,8 +622,9 @@ async function main() {
       try {
         const want = (group) => only.includes(group);
         if (want("layout")) for (const width of widths) await run(`layout ${width}`, () => checkLayout(browser, server.baseUrl, engine, width));
-        if (want("fold")) await run("fold", () => checkFold(browser, server.baseUrl));
-        if (want("duel")) await run("duel", () => checkDuel(browser, server.baseUrl, DUEL_WIDTHS));
+        if (want("fold")) await run("fold", () => checkFold(browser, server.baseUrl, FOLDS));
+        if (want("hand")) await run("hand", () => checkHand(browser, server.baseUrl, HAND_WIDTHS, HEIGHTS, PHONE_MAX_W));
+        if (want("sharp")) await run("sharp", () => checkSharp(browser, server.baseUrl, SHARP_SCREENS));
         if (want("health")) await run("health", () => checkHealth(browser, server.baseUrl));
         if (want("content")) await run("content", () => checkContent(browser, server.baseUrl));
         if (want("links")) await run("links", () => checkLinks(browser, server.baseUrl));

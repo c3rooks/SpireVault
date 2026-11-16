@@ -68,11 +68,11 @@ export async function stubNetwork(page, scenario) {
  * A page on the site with its problems recorded as they happen.
  * @returns {Promise<{ page: import("playwright").Page, context: import("playwright").BrowserContext, log: { console: string[], failed: string[], hosts: string[], bytes: number, responses: Array<{ url: string, status: number, bytes: number }> } }>}
  */
-export async function openPage(browser, baseUrl, { width, height, scenario = SCENARIOS.busy, query = "climber=ironclad&motion=off", reducedMotion, phone = false }) {
+export async function openPage(browser, baseUrl, { width, height, scenario = SCENARIOS.busy, query = "climber=ironclad&motion=off", reducedMotion, phone = false, scale = 1 }) {
   const engine = browser.browserType().name();
   const context = await browser.newContext({
     viewport: { width, height },
-    deviceScaleFactor: 1,
+    deviceScaleFactor: scale,
     ...(reducedMotion ? { reducedMotion } : {}),
     ...(phone && engine !== "firefox" ? { isMobile: true, hasTouch: true } : {}),
   });

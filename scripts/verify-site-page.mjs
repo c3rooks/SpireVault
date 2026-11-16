@@ -4,7 +4,7 @@
  * use nothing from outside its own body.
  */
 
-/** Rectangles of the hero's parts, for the fold and duel checks. */
+/** The first screen's parts, as they are drawn: the copy, the featured card and the hand. */
 export function heroGeometry() {
   const box = (el) => {
     if (!el) return null;
@@ -12,24 +12,83 @@ export function heroGeometry() {
     return { left: r.left, top: r.top, right: r.right, bottom: r.bottom, width: r.width, height: r.height };
   };
   const one = (selector) => box(document.querySelector(selector));
+  const shown = (selector) => Array.from(document.querySelectorAll(selector)).filter((el) => el.getClientRects().length > 0);
+  const text = (el) => (el ? (el.textContent || "").trim() : "");
   const copy = document.querySelector(".hero-copy");
+  const lastShown = copy ? Array.from(copy.children).filter((el) => el.getClientRects().length > 0).pop() : null;
   return {
     viewport: { width: window.innerWidth, height: window.innerHeight },
     nav: one(".nav"),
     hero: one(".hero"),
-    copy: one(".hero-copy"),
-    copyOverflow: copy ? copy.scrollHeight - copy.clientHeight : 0,
-    lastCopyChild: copy && copy.lastElementChild ? box(copy.lastElementChild) : null,
-    climber: one(".actor--climber .actor-art"),
-    boss: one(".actor--boss .actor-art"),
-    balloon: one(".duel .balloon"),
-    hand: one(".hand"),
-    cards: Array.from(document.querySelectorAll(".stat-card"), box),
-    handScrolls: (() => {
-      const hand = document.querySelector(".hand");
-      return hand ? getComputedStyle(hand).overflowX !== "visible" : false;
-    })(),
+    lastCopyChild: box(lastShown),
+    primary: one("#web-cta"),
+    featured: shown(".featured").map((el) => ({
+      climber: el.dataset.c,
+      box: box(el),
+      name: text(el.querySelector(".featured-name")),
+      rate: text(el.querySelector(".featured-rate strong")),
+      line: text(el.querySelector(".featured-line")),
+      art: getComputedStyle(el.querySelector(".featured-art")).backgroundImage,
+    })),
+    cards: shown(".hand-card").map((el) => ({
+      climber: el.dataset.c,
+      box: box(el),
+      name: text(el.querySelector(".hand-name")),
+      art: getComputedStyle(el.querySelector(".hand-art")).backgroundImage,
+    })),
   };
+}
+
+/**
+ * Pictures drawn larger than their own pixels allow on this screen: every
+ * <img>, and every element painted with a picture as its background. A
+ * picture stretched past its pixels is soft; that is what made the first
+ * version's figures look like cut-outs.
+ * @param {number} tolerance how far past 1 device pixel per picture pixel is still fine
+ */
+export async function drawnTooLarge(tolerance) {
+  const dpr = window.devicePixelRatio || 1;
+  const offenders = [];
+  const visible = (el) => {
+    const r = el.getBoundingClientRect();
+    return r.width > 4 && r.height > 4;
+  };
+  const judge = (label, boxW, boxH, natW, natH, fit) => {
+    if (!natW || !natH) return;
+    // How many CSS px one picture px covers, then in device px.
+    const perPixel = fit === "cover" ? Math.max(boxW / natW, boxH / natH) : fit === "contain" ? Math.min(boxW / natW, boxH / natH) : boxW / natW;
+    const stretch = perPixel * dpr;
+    if (stretch > tolerance) offenders.push(`${label}: ${natW}px wide, drawn ${Math.round(natW * perPixel)} CSS px wide (${stretch.toFixed(2)}x its pixels at ${dpr}x)`);
+  };
+  /** The file's own size: an <img> picked from a srcset reports its size divided by the density. */
+  const sizeOf = async (url) => {
+    const probe = new Image();
+    probe.src = url;
+    try {
+      await probe.decode();
+      return { w: probe.naturalWidth, h: probe.naturalHeight };
+    } catch {
+      return null; // a missing picture is reported by the health check
+    }
+  };
+  for (const img of document.images) {
+    if (!visible(img) || !img.complete || !img.naturalWidth) continue;
+    const size = await sizeOf(img.currentSrc || img.src);
+    if (!size) continue;
+    const r = img.getBoundingClientRect();
+    const fit = getComputedStyle(img).objectFit;
+    judge(new URL(img.currentSrc || img.src).pathname, img.clientWidth || r.width, img.clientHeight || r.height, size.w, size.h, fit === "cover" || fit === "contain" ? fit : "fill");
+  }
+  const painted = Array.from(document.querySelectorAll("body *")).filter((el) => visible(el) && /url\(/.test(getComputedStyle(el).backgroundImage) && !/gradient/.test(getComputedStyle(el).backgroundImage));
+  for (const el of painted) {
+    const style = getComputedStyle(el);
+    const url = /url\(["']?([^"')]+)["']?\)/.exec(style.backgroundImage)[1];
+    const size = await sizeOf(url);
+    if (!size) continue;
+    const r = el.getBoundingClientRect();
+    judge(new URL(url, location.href).pathname, el.clientWidth || r.width, el.clientHeight || r.height, size.w, size.h, style.backgroundSize === "contain" ? "contain" : "cover");
+  }
+  return offenders;
 }
 
 /** Text whose colour does not stand out enough from the solid colour behind it. */

@@ -1,11 +1,11 @@
 /* SpireVault landing page.
  *
- *   1. The climber in the hero says one of their own lines
+ *   1. The featured climber's card carries one of their own lines
  *   2. Live "players signed up" count from the matchmaking server
  *   3. Download links and version pills from the latest GitHub release
  *   4. The screenshot buttons under "Your numbers, drawn like the game"
  *   5. Sections rise into place as they scroll in
- *   6. Small keyboard helps: the hand's scroll row, and links that open an answer
+ *   6. A link to an answer opens it
  *
  * The page is complete without any of this: every element below has a
  * sensible server-rendered default, and each feature fails on its own.
@@ -19,8 +19,9 @@
   const GITHUB_REPO = "c3rooks/SpireVault";
   // Matches the app's own poll and the "updates every 30 s" the page claims.
   const PRESENCE_POLL_MS = 30_000;
-  const SHOT_WIDTHS = Object.freeze([960, 1440, 1920]);
+  const SHOT_WIDTHS = Object.freeze([960, 1440, 1920, 2880]);
   const SHOT_DEFAULT_WIDTH = 1440;
+  const PHONE_SHOT_WIDTHS = Object.freeze([780, 1170]);
   // Installers may only be linked from this repository's own release downloads.
   const RELEASE_ASSET_PREFIX = `https://github.com/${GITHUB_REPO}/releases/download/`;
 
@@ -39,29 +40,6 @@
 
   // ---- 1. The climber's line ---------------------------------------------------
   // The same lines the app's header duel uses (Web/script.js CLIMBER_LINES).
-  const CLIMBER_NAMES = Object.freeze({
-    ironclad: "The Ironclad",
-    silent: "The Silent",
-    defect: "The Defect",
-    regent: "The Regent",
-    necrobinder: "The Necrobinder",
-    fool: "The Fool",
-  });
-  const ANY_CLIMBER_LINES = Object.freeze([
-    "Up we go.",
-    "One more floor.",
-    "Bring it.",
-    "I've seen worse.",
-    "I've trained for this.",
-    "Block first. Strike harder.",
-    "Show me the boss.",
-    "Three acts. Easy.",
-    "My deck is ready.",
-    "The Spire bleeds today.",
-    "Heart, I'm coming for you.",
-    "Neow's blessing was enough.",
-    "Ascension 9 or nothing.",
-  ]);
   const OWN_LINES = Object.freeze({
     ironclad: Object.freeze(["Anger. Steel. Repeat.", "Burning Blood keeps me going.", "Strength I trust.", "Bash first. Talk never.", "Block, anger, kill."]),
     silent: Object.freeze(["From the shadows.", "Silent. Deadly. Done.", "Daggers first.", "Poisons stack. So do bodies.", "Catalyst on full poison. Watch."]),
@@ -71,26 +49,25 @@
   });
 
   /**
-   * The lines a climber may say: their own, or the shared ones for a climber
-   * with none of their own yet.
+   * The lines a featured climber may say.
    * @param {string} climber
    * @returns {ReadonlyArray<string>}
    */
   function linesFor(climber) {
-    return OWN_LINES[climber] || ANY_CLIMBER_LINES;
+    return OWN_LINES[climber] || [];
   }
 
   function speak() {
     const climber = root.getAttribute("data-climber") || "";
-    const name = CLIMBER_NAMES[climber];
-    if (!name) return;
+    // The card boot.js chose; each card already carries a line of its own.
+    const line = document.querySelector(`.featured[data-c="${CSS.escape(climber)}"] .featured-line`);
+    if (!line) return;
     const lines = linesFor(climber);
+    if (lines.length === 0) return; // the card keeps the line it was written with
     // ?line=<n> pins the line (the screenshot checks use it).
     const pinned = Number.parseInt(params.get("line") || "", 10);
     const index = Number.isInteger(pinned) ? Math.abs(pinned) % lines.length : Math.floor(Math.random() * lines.length);
-    setText(byId("hero-balloon"), lines[index]);
-    const figure = byId("hero-climber");
-    if (figure) figure.setAttribute("aria-label", `${name}, a climber from Slay the Spire 2`);
+    setText(line, lines[index]);
   }
 
   // ---- 2. Live count -----------------------------------------------------------
@@ -117,14 +94,24 @@
     inGame: "—",
   });
 
-  /** @param {{ line: string, count: string, label: string, inGame: string }} copy @param {boolean} isEmpty */
-  function showPresence(copy, isEmpty) {
+  /**
+   * The live dots (hero chip and co-op ticket) take the state's colour, as
+   * the app's connection line does: gold while checking (no state yet),
+   * green when people are signed up, grey when nobody is, red when the count
+   * cannot be reached.
+   * @param {{ line: string, count: string, label: string, inGame: string }} copy
+   * @param {"live"|"empty"|"down"} state
+   */
+  function showPresence(copy, state) {
     setText(byId("presence-text"), copy.line);
     setText(byId("presence-count"), copy.count);
     setText(byId("presence-label"), copy.label);
     setText(byId("presence-ingame"), copy.inGame);
     const card = byId("coop-card");
-    if (card) card.classList.toggle("is-empty", isEmpty);
+    if (card) card.classList.toggle("is-empty", state !== "live");
+    document.querySelectorAll(".hero-presence, #coop-card").forEach((el) => {
+      el.setAttribute("data-state", state);
+    });
   }
 
   let presenceInFlight = false;
@@ -142,10 +129,10 @@
       const roster = await response.json();
       const people = Array.isArray(roster) ? roster : [];
       const inGame = people.filter((person) => person && person.inSTS2).length;
-      showPresence(presenceCopy(people.length, inGame), people.length === 0);
+      showPresence(presenceCopy(people.length, inGame), people.length === 0 ? "empty" : "live");
     } catch {
       // The count is decoration; say so plainly and try again next tick.
-      showPresence(PRESENCE_DOWN, true);
+      showPresence(PRESENCE_DOWN, "down");
     } finally {
       presenceInFlight = false;
     }
@@ -236,9 +223,9 @@
         other.tabIndex = isOn ? 0 : -1;
       });
       // Phones get the same tab as the app draws it on a phone.
-      if (phoneShot) phoneShot.setAttribute("srcset", `/assets/shots/${name}-phone-780-v1.webp`);
-      shot.setAttribute("srcset", SHOT_WIDTHS.map((w) => `/assets/shots/${name}-${w}-v1.webp ${w}w`).join(", "));
-      shot.setAttribute("src", `/assets/shots/${name}-${SHOT_DEFAULT_WIDTH}-v1.webp`);
+      if (phoneShot) phoneShot.setAttribute("srcset", PHONE_SHOT_WIDTHS.map((w) => `/assets/shots/${name}-phone-${w}-v3.webp ${w}w`).join(", "));
+      shot.setAttribute("srcset", SHOT_WIDTHS.map((w) => `/assets/shots/${name}-${w}-v3.webp ${w}w`).join(", "));
+      shot.setAttribute("src", `/assets/shots/${name}-${SHOT_DEFAULT_WIDTH}-v3.webp`);
       shot.setAttribute("alt", SHOT_ALT[name]);
       panel.setAttribute("aria-labelledby", tab.id);
       if (moveFocus) tab.focus();
@@ -272,7 +259,7 @@
           observer.unobserve(entry.target);
         });
       },
-      { threshold: 0, rootMargin: "0px 0px -10% 0px" },
+      { threshold: 0 },
     );
     // What is already on screen (or above it) stays as it was painted; only
     // what is below the window starts hidden, and the observer shows it.
@@ -286,46 +273,7 @@
     waiting.forEach((target) => observer.observe(target));
   }
 
-  // ---- 5b. Rooms further down load when they come near ---------------------------
-  // boot.js holds their pictures back (html.lazy-art); this lets each one in.
-  const LAZY_ART_MARGIN = "900px 0px";
-  function wireLazyArt() {
-    const bands = Array.from(document.querySelectorAll("[data-lazy-art]"));
-    if (!("IntersectionObserver" in window)) {
-      root.classList.remove("lazy-art");
-      return;
-    }
-    const observer = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((entry) => {
-          if (!entry.isIntersecting) return;
-          entry.target.classList.add("is-near");
-          observer.unobserve(entry.target);
-        });
-      },
-      { rootMargin: LAZY_ART_MARGIN },
-    );
-    bands.forEach((band) => observer.observe(band));
-  }
-
-  // ---- 6. Keyboard helps ---------------------------------------------------------
-  // On small screens the hand is a sideways scroll row with nothing focusable
-  // inside it: give it a tab stop while (and only while) it scrolls.
-  function wireHand() {
-    const hand = document.querySelector(".hand");
-    if (!hand) return;
-    const sync = () => {
-      // A fanned hand's tilted corner also pokes past its box: only a hand
-      // that is a scroll row gets the tab stop.
-      const scrolls = getComputedStyle(hand).overflowX !== "visible" && hand.scrollWidth > hand.clientWidth + 1;
-      if (scrolls) hand.setAttribute("tabindex", "0");
-      else hand.removeAttribute("tabindex");
-    };
-    sync();
-    window.addEventListener("resize", sync, { passive: true });
-  }
-
-  // A link to an answer (#runcoach, or an old link from elsewhere) opens it.
+  // ---- 6. A link to an answer (#runcoach, or an old link from elsewhere) opens it
   function openLinkedAnswer() {
     let id = "";
     try {
@@ -336,6 +284,27 @@
     if (!id) return;
     const target = document.getElementById(id);
     if (target && target.tagName === "DETAILS") target.open = true;
+  }
+
+  // ---- 7. Local testing ---------------------------------------------------------
+  // When this page is served from this machine, ?app=http://localhost:<port>
+  // sends its app links to a local copy of the app, so both looks can be
+  // tried without touching the live app. Ignored anywhere else, and only a
+  // local address is accepted.
+  const LOCAL_HOST = /^(localhost|127\.0\.0\.1)$/;
+  const LIVE_APP = "https://app.spirevault.app";
+  function useLocalApp() {
+    if (!LOCAL_HOST.test(window.location.hostname)) return;
+    let local;
+    try {
+      local = new URL(new URLSearchParams(window.location.search).get("app") || "");
+    } catch {
+      return; // no ?app=, or not an address
+    }
+    if (local.protocol !== "http:" || !LOCAL_HOST.test(local.hostname)) return;
+    document.querySelectorAll(`a[href^="${LIVE_APP}"]`).forEach((link) => {
+      link.setAttribute("href", String(link.getAttribute("href")).replace(LIVE_APP, local.origin));
+    });
   }
 
   /**
@@ -357,11 +326,9 @@
   start(speak);
   start(wireViewer);
   start(wireReveals);
-  // If the rooms further down cannot be watched for, let their art in now.
-  if (!start(wireLazyArt)) root.classList.remove("lazy-art");
-  start(wireHand);
   start(openLinkedAnswer);
-  // boot.js reads this to know script.js ran; the checks ask it for a climber's lines.
+  start(useLocalApp);
+  // The checks ask this for a climber's lines.
   window.SpireVaultSite = Object.freeze({ linesFor });
   window.addEventListener("hashchange", openLinkedAnswer);
   refreshPresence();

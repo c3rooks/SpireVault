@@ -6,7 +6,7 @@
  * in a real browser at each width, and writes PNGs a person can judge the
  * design from:
  *
- *   first-<room>-<climber>-<width>.png   the first screen, exactly the viewport
+ *   first-<climber>-<width>.png          the first screen, exactly the viewport
  *   full-<width>.png                     the whole page
  *   sections/<id>-<width>.png            one picture per section
  *   motion/hero-<width>.webm             a few seconds of the hero moving
@@ -18,7 +18,7 @@
  *
  *   node scripts/snap-site.mjs                         # first screens, 1728/1440/390
  *   node scripts/snap-site.mjs --full --sections       # whole page and per-section
- *   node scripts/snap-site.mjs --rooms glory,overgrowth --climbers ironclad,defect
+ *   node scripts/snap-site.mjs --climbers ironclad,defect   # which climber is featured
  *   node scripts/snap-site.mjs --engines chromium,webkit --widths 320,768,1440
  *   node scripts/snap-site.mjs --clip --widths 1728     # motion clip
  *   node scripts/snap-site.mjs --og                     # Site/assets/og-v<N>.jpg, the link-preview picture
@@ -46,7 +46,7 @@ const SLICE_SETTLE_MS = 150;
 const LIVE_WAIT_MS = 8000;
 const NAV_TIMEOUT_MS = 180_000;
 /** The link-preview picture: size every platform accepts, and its file. */
-const OG = Object.freeze({ width: 1200, height: 630, file: join(REPO_ROOT, "Site", "assets", "og-v2.jpg"), quality: 88 });
+const OG = Object.freeze({ width: 1200, height: 630, file: join(REPO_ROOT, "Site", "assets", "og-v3.jpg"), quality: 88 });
 
 /** @param {string} name @param {string} [fallback] */
 function arg(name, fallback) {
@@ -158,7 +158,6 @@ async function captureWholePage(page, file) {
 async function main() {
   const widths = list("widths", "1728,1440,390").map(Number);
   const engines = list("engines", "chromium");
-  const rooms = list("rooms", "glory");
   const climbers = list("climbers", "ironclad");
   const outRoot = arg("out", join(REPO_ROOT, "docs", "screenshots", "site"));
   const wantFull = flag("full");
@@ -183,7 +182,7 @@ async function main() {
         const page = await context.newPage();
         page.setDefaultTimeout(NAV_TIMEOUT_MS);
         await stubNetwork(page);
-        await page.goto(`${server.baseUrl}/?climber=${climbers[0]}&room=${rooms[0]}&motion=off&line=3&og=1`, { waitUntil: "load" });
+        await page.goto(`${server.baseUrl}/?climber=${climbers[0]}&motion=off&line=3&og=1`, { waitUntil: "load" });
         await settle(page, { live: false });
         await page.screenshot({ path: OG.file, type: "jpeg", quality: OG.quality });
         written.push(OG.file);
@@ -213,12 +212,12 @@ async function main() {
             page.setDefaultTimeout(NAV_TIMEOUT_MS);
             if (!live) await stubNetwork(page);
             let first = true;
-            for (const room of rooms) {
+            {
               for (const climber of climbers) {
-                await page.goto(`${server.baseUrl}/?climber=${climber}&room=${room}&motion=off&line=3`, { waitUntil: "load" });
+                await page.goto(`${server.baseUrl}/?climber=${climber}&motion=off&line=3`, { waitUntil: "load" });
                 await settle(page, { live });
                 if (wantFirst) {
-                  const file = join(outDir, `first-${room}-${climber}-${width}.png`);
+                  const file = join(outDir, `first-${climber}-${width}.png`);
                   await page.screenshot({ path: file });
                   written.push(file);
                 }
@@ -267,12 +266,12 @@ async function main() {
             const page = await context.newPage();
             page.setDefaultTimeout(NAV_TIMEOUT_MS);
             if (!live) await stubNetwork(page);
-            await page.goto(`${server.baseUrl}/?climber=${climbers[0]}&room=${rooms[0]}&line=3`, { waitUntil: "load" });
+            await page.goto(`${server.baseUrl}/?climber=${climbers[0]}&line=3`, { waitUntil: "load" });
             await page.waitForTimeout(Number(arg("clip-ms", "8000")));
             const video = page.video();
             await context.close();
             if (video) {
-              const file = join(outDir, "motion", `hero-${rooms[0]}-${width}.webm`);
+              const file = join(outDir, "motion", `hero-${width}.webm`);
               renameSync(await video.path(), file);
               written.push(file);
             }

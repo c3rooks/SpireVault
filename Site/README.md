@@ -22,24 +22,27 @@ content-security-policy applies locally too) and its `_redirects`.
 | File | Purpose |
 | --- | --- |
 | `index.html` | The page. Semantic HTML, no inline styles or scripts. |
-| `boot.js` | Runs before first paint: rolls the climber in the hero, marks reduced motion. |
-| `script.js` | The climber's line, the live count, download links from the latest GitHub release, the screenshot buttons, scroll reveals. |
-| `css/tokens.css` | Design tokens (copied from the app's `Web/styles/src/tokens/tokens.css`) and one block per game room. |
+| `boot.js` | Runs before first paint: rolls which climber's card is featured in the hero, marks reduced motion. |
+| `script.js` | The featured climber's line, the live count, download links from the latest GitHub release, the screenshot buttons, scroll reveals. |
+| `css/tokens.css` | Design tokens (copied from the app's `Web/styles/src/tokens/tokens.css`). |
 | `css/base.css` | Fonts, reset, focus, reduced motion. |
-| `css/components.css` | Nav, buttons, chips, titles, paper cards, the speech balloon. |
-| `css/hero.css` | The first screen: room, duel, the hand of stat cards. |
-| `css/hero-small.css` | The first screen below 1100px: copy, then the room band, then the hand as a row. |
-| `css/sections.css` | Everything below the first screen, in page order. |
+| `css/components.css` | Nav, buttons, chips, titles, section surfaces and the heading rows. |
+| `css/hero.css` | The first screen: the words, one featured climber card and the hand of the other five. |
+| `css/sections.css` | Setup, what you get, co-op. |
+| `css/sections-lower.css` | Privacy, downloads, questions, the closing call, the footer. |
 | `assets/fonts/` | Self-hosted fonts (OFL), the same three files the app uses. |
-| `assets/hero/` | Game rooms and inked figures. Rooms come from `scripts/build-site-backdrops.mjs`. |
-| `assets/art/` | Emblem and map icons. |
-| `assets/shots/`, `assets/share/` | Pictures of the app and a share card, from `scripts/snap-app-for-site.mjs`. |
+| `assets/art/` | Emblem, map icons, and `epoch/`: paintings from the game (its timeline portraits), at their own size (`-2x`), half size (`-1x`) and 560px for the hand. |
+| `assets/shots/`, `assets/share/` | Pictures of the app and a share card, from `scripts/snap-app-for-site.mjs`; `coop-party-*` is cut from `docs/screenshots/coop-play/`. |
 | `_headers` | Security headers and the content-security-policy. |
-| `_redirects` | `/download`, `/coop`, `/github` shortcuts. |
+| `_redirects` | `/download`, `/coop`, `/github` shortcuts, and the old installer address to the GitHub releases page. |
 
 `/assets/*` is cached for a year, so every asset file carries a version in its
 name (`-v1`). Change the picture, change the name. The CSS and JS links share
 one `?v=` number; bump it when any of them changes.
+
+No picture is drawn larger than half its own pixels, so everything is sharp on
+a 2x screen; `scripts/verify-site.mjs --only sharp` fails if one is. The game's
+character sprites are too small for a landing page and are not used here.
 
 ## What the page does at runtime
 
@@ -49,7 +52,7 @@ one `?v=` number; bump it when any of them changes.
 - **Downloads.** On load it asks GitHub for the latest release, shows its tag,
   and points the download buttons at the installers attached to it. If GitHub
   does not answer, the buttons go to the releases page and no version is shown.
-- **The hero.** A climber is rolled per visit and says one of their own lines.
+- **The hero.** One of five climbers is featured per visit, with one of their own lines; The Fool is always in the hand.
 
 ## Checks and captures
 
@@ -63,17 +66,14 @@ node scripts/snap-site.mjs --full --sections # review pictures in docs/screensho
 Only when the page has been approved. A deploy never uploads this folder: it
 uploads a clean copy of the files the page serves, staged outside iCloud by
 `scripts/stage-site.mjs`. This folder also holds the Makefile, this README, the
-pictures the GitHub README embeds (`assets/screenshots/`) and a Mac installer,
-and none of those are published.
-
-`DMG` says what to do with the Mac installer and has no default, because the
-copy in `assets/` is not the file that is live.
+pictures the GitHub README embeds (`assets/screenshots/`) and an old Mac
+installer, and none of those are published. Downloads come from the GitHub
+release; the installer's old address redirects there.
 
 ```bash
-make list                            # the files a deploy would publish
-make deploy DMG=none BRANCH=preview  # a preview address, without the installer
-make deploy DMG=none                 # production, without the installer
-make deploy DMG=/path/to/The.Vault.dmg   # production, with that installer
+make list                   # the files a deploy would publish
+make deploy BRANCH=preview  # a preview address
+make deploy                 # production
 ```
 
 ## Content-security-policy

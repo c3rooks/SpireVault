@@ -10,16 +10,17 @@
   --route-gap: clamp(20px, 3vw, 56px);
   position: relative;
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr)) minmax(0, 0.9fr);
   gap: var(--route-gap);
 }
-/* The path: a dashed ink line through the three icons, like the map's. It
-   runs from the middle of the first icon to the middle of the last number. */
-.route::before {
+/* The path: a dashed ink line, like the map's. Each stop draws its own
+   stretch, from the middle of its icon to the start of whatever comes next,
+   so the last one leads into the call at the end of the row. */
+.route-stop::before {
   content: "";
   position: absolute;
   top: 47px;
-  right: calc((100% - 2 * var(--route-gap)) / 3 - 136px);
+  right: calc(var(--route-gap) * -1);
   left: 48px;
   border-top: 4px dashed var(--v-on-paper);
   opacity: 0.55;
@@ -33,12 +34,23 @@
   align-items: end;
   row-gap: 10px;
 }
-.route-icon {
+/* Each icon sits in an inked badge, like a node on the game's map: a
+   container of its own, so it never reads as a cut-out on the page. */
+.route-badge {
   position: relative;
+  display: grid;
   grid-column: 1;
+  place-items: center;
   width: 96px;
   height: 96px;
-  filter: drop-shadow(3px 3px 0 var(--v-ink));
+  border: var(--v-outline);
+  border-radius: 50%;
+  background: var(--v-paper-2);
+  box-shadow: var(--v-shadow);
+}
+.route-icon {
+  width: 64px;
+  height: 64px;
 }
 .route-num {
   position: relative;
@@ -70,6 +82,30 @@
   color: var(--v-on-paper-2);
   font-size: var(--t-lg);
 }
+/* Where the path ends: a way in. */
+.route-end {
+  position: relative;
+  display: grid;
+  align-content: center;
+  justify-items: start;
+  gap: 8px;
+  padding: var(--s-5);
+  border: var(--v-outline);
+  border-radius: var(--v-radius-lg);
+  background: var(--v-paper-2);
+  box-shadow: var(--v-shadow-lg);
+}
+.route-end h3 {
+  font-family: var(--v-font-heading);
+  font-size: clamp(1.5rem, 1.1rem + 1vw, 2.125rem);
+  font-weight: 800;
+  line-height: 1.05;
+}
+.route-end p {
+  margin-bottom: 6px;
+  color: var(--v-on-paper-2);
+  font-size: var(--t-lg);
+}
 .route-stop code {
   padding: 1px 6px;
   border: 1.5px solid var(--v-on-paper);
@@ -80,10 +116,7 @@
 
 .paths {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  gap: var(--s-5) var(--s-6);
-  align-items: center;
-  margin-top: var(--s-7);
+  gap: var(--s-4);
   padding: var(--s-5) var(--s-6);
   border: var(--v-outline);
   border-radius: var(--v-radius-lg);
@@ -116,7 +149,7 @@
   min-width: 0;
 }
 .paths-list code {
-  overflow-wrap: anywhere;
+  overflow-wrap: normal;
   font-size: var(--t-sm);
   font-weight: 600;
 }
@@ -159,6 +192,7 @@
   line-height: 1.1;
 }
 .viewer-tab span {
+  text-wrap: balance;
   color: var(--v-text-2);
   font-size: var(--t-sm);
   line-height: 1.4;
@@ -260,11 +294,18 @@
   font-size: var(--t-lg);
 }
 .share-link {
+  position: relative;
   display: block;
   width: 100%;
   max-width: 900px;
   justify-self: center;
   border-radius: 20px;
+}
+.share-tag {
+  position: absolute;
+  top: -12px;
+  left: -8px;
+  z-index: 1;
 }
 .share-card {
   width: 100%;
@@ -274,43 +315,57 @@
   transform: rotate(1.5deg);
 }
 
-/* ---- 4. Co-op: a room band, a ledger of steps and the live ticket ------------- */
-/* Two climbers standing together, facing the Architect. The band keeps one
-   shape (so the room's floor is always where the feet go) and its figures
-   are sized from its own height (cqh). */
-.party {
-  --fig: 50cqh;
-  --ground: 22cqh;
-  --duel-gap: clamp(18px, 3vw, 56px);
-  position: relative;
-  aspect-ratio: 4.2 / 1;
-  margin-bottom: var(--s-7);
-  overflow: hidden;
-  container-type: size;
-  border: var(--v-outline);
-  border-radius: var(--v-radius-lg);
-  background: var(--room-flat) center 60% / cover no-repeat var(--room-deep);
-  box-shadow: var(--v-shadow-lg);
-}
-/* The pair stand shoulder to shoulder. */
-.party .actor--climber + .actor--climber {
-  margin-left: calc(var(--duel-gap) * -0.5);
-}
-.party .balloon {
-  --tail: 50%;
-  left: 60%;
-  transform: translateX(-50%);
-  animation: none;
-}
-
+/* ---- 4. Co-op: the steps, the real Play screen and the live ticket ------------ */
 .coop-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.25fr) minmax(0, 0.75fr);
-  gap: clamp(24px, 4vw, 72px);
-  align-items: center;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 390px);
+  gap: clamp(24px, 4vw, 64px);
+  align-items: start;
 }
+.coop-main {
+  display: grid;
+  gap: var(--s-6);
+  min-width: 0;
+}
+/* A real screenshot of the co-op screen on a phone, at the phone's own size
+   (780px across, shown 390 wide), framed like the app pictures above. */
+.play-shot {
+  width: 100%;
+  max-width: 390px;
+  justify-self: end;
+  overflow: hidden;
+  border: var(--v-outline);
+  border-radius: var(--v-radius-lg);
+  background: var(--v-bg);
+  box-shadow: 8px 8px 0 var(--v-ink);
+}
+/* The ledger's first row opens with 18px of padding: start the phone level
+   with step 1, not above it. */
+@media (min-width: 900px) {
+  .play-shot {
+    margin-top: 18px;
+  }
+}
+.play-shot img {
+  width: 100%;
+}
+.play-shot figcaption {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 12px 16px;
+  border-top: var(--v-outline);
+  background: var(--v-surface-1);
+  color: var(--v-text);
+  font-size: var(--t-sm);
+  font-weight: 600;
+}
+/* The four steps, two by two. */
 .ledger {
   display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: clamp(20px, 3vw, 48px);
 }
 .ledger li {
   display: grid;
@@ -320,7 +375,7 @@
   padding-block: 18px;
   border-bottom: 3px dashed var(--v-on-paper-2);
 }
-.ledger li:last-child {
+.ledger li:nth-last-child(-n + 2) {
   border-bottom: 0;
 }
 .ledger-num {
@@ -350,7 +405,8 @@
   font-size: var(--t-lg);
 }
 
-/* The live count: a night-coloured ticket on the parchment, a touch askew. */
+/* The live count: a night-coloured ticket on the parchment, a touch askew.
+   Under the steps it lies on its side: the number, then the rows. */
 .ticket {
   --focus: var(--v-title);
   display: grid;
@@ -363,7 +419,7 @@
   box-shadow: 8px 8px 0 var(--v-ink);
   color: var(--v-text);
   text-align: center;
-  rotate: 1.5deg;
+  rotate: -0.8deg;
 }
 .ticket-head {
   display: inline-flex;
@@ -419,6 +475,38 @@
 .ticket-cta {
   width: 100%;
 }
+@media (min-width: 700px) {
+  .coop-main .ticket {
+    grid-template-columns: auto minmax(0, 1fr);
+    column-gap: var(--s-6);
+    justify-items: stretch;
+    align-items: center;
+    padding: var(--s-4) var(--s-5) var(--s-5);
+    text-align: left;
+  }
+  .coop-main .ticket-head {
+    grid-column: 1 / -1;
+    justify-self: start;
+  }
+  .coop-main .ticket-num {
+    grid-row: 2;
+    grid-column: 1;
+    font-size: clamp(4.5rem, 2.5rem + 4.5vw, 7.5rem);
+  }
+  .coop-main .ticket-label {
+    grid-row: 3;
+    grid-column: 1;
+  }
+  .coop-main .ticket-rows {
+    grid-row: 2 / span 2;
+    grid-column: 2;
+    margin-block: 0;
+  }
+  .coop-main .ticket-cta {
+    grid-column: 1 / -1;
+    margin-top: var(--s-3);
+  }
+}
 .ticket.is-empty .ticket-num {
   color: var(--v-text-3);
 }
@@ -428,6 +516,30 @@
   .viewer,
   .share {
     grid-template-columns: minmax(0, 1fr);
+  }
+  /* The steps go one under another beside the picture. */
+  .ledger {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .ledger li:nth-last-child(2) {
+    border-bottom: 3px dashed var(--v-on-paper-2);
+  }
+  /* Three stops across, the call on a row of its own: the last stop's path
+     stops at its number instead of running on past the page's edge. */
+  .route {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .route-stop:nth-child(3)::before {
+    right: auto;
+    width: 88px;
+  }
+  /* Across the full row the call lies flat: words on the left, button on the right. */
+  .route-end {
+    display: flex;
+    grid-column: 1 / -1;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s-5);
   }
   /* The screen buttons become a swipe row of names above the picture. The
      padding leaves room for a focus ring inside the scroll box. */
@@ -466,64 +578,53 @@
     display: none;
   }
 }
-/* Very wide: the three save paths sit in one row and fill their box. */
-@media (min-width: 1680px) {
-  .paths-list {
-    grid-template-columns: repeat(3, auto);
-    justify-content: space-evenly;
-    gap: 8px var(--s-6);
-  }
-  .paths-list div {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 2px;
-  }
-}
 @media (max-width: 699px) {
+  /* A whole phone screen, down to the app's own tab bar: nothing to fade out. */
   .viewer-picture {
-    aspect-ratio: 780 / 1280;
+    aspect-ratio: 780 / 1688;
+  }
+  .viewer-picture::after {
+    display: none;
   }
 }
 @media (max-width: 899px) {
-  /* The band shows the room at full height, so the floor sits lower in it. */
-  .party {
-    --fig: 44cqh;
-    --ground: 30cqh;
-    --duel-gap: 14px;
-    aspect-ratio: 1.5 / 1;
-    background-position: center bottom;
+  .coop-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .play-shot {
+    justify-self: center;
   }
   .route {
     grid-template-columns: minmax(0, 1fr);
     gap: var(--s-6);
   }
-  .coop-grid {
-    grid-template-columns: minmax(0, 1fr);
+  .route-end {
+    display: grid;
+    grid-column: auto;
+    justify-content: stretch;
   }
-  .ticket {
-    justify-self: center;
-    width: min(100%, 26rem);
+  .route-end .btn {
+    width: 100%;
   }
   /* The path runs down the page, behind the icons only, from each stop to
-     the next and no further: each stop keeps its icon in a column of its
-     own, with the number and words beside it. */
-  .route::before {
-    display: none;
-  }
-  .route-stop:not(:last-child)::before {
-    content: "";
-    position: absolute;
+     whatever comes next: each stop keeps its icon in a column of its own,
+     with the number and words beside it. */
+  .route-stop::before,
+  .route-stop:nth-child(3)::before {
     top: 48px;
+    right: auto;
     left: 46px;
+    width: auto;
     height: calc(100% + var(--s-6));
+    border-top: 0;
     border-left: 4px dashed var(--v-on-paper);
-    opacity: 0.55;
   }
   .route-stop {
     grid-template-columns: 96px minmax(0, 1fr);
     align-items: start;
     row-gap: 4px;
   }
-  .route-icon {
+  .route-badge {
     grid-row: 1 / span 3;
   }
   .route-num,
@@ -532,17 +633,19 @@
     grid-column: 2;
   }
   .paths {
-    grid-template-columns: minmax(0, 1fr);
     padding: var(--s-5);
   }
   .paths-list div {
     grid-template-columns: minmax(0, 1fr);
     gap: 2px;
   }
-  .paths .btn {
-    width: 100%;
-  }
   .ticket {
     rotate: none;
+  }
+}
+@media (max-width: 699px) {
+  /* 780 pixels fill 270 CSS px on a 3x phone: the app's own text stays sharp. */
+  .play-shot {
+    max-width: 270px;
   }
 }
