@@ -14,7 +14,7 @@
 // =========================================================================
 
 import * as Stats from "/lib/stats-engine.js?v=6";
-import * as HistoryStore from "/lib/history-store.js?v=8";
+import * as HistoryStore from "/lib/history-store.js?v=9";
 import * as InviteAPI from "/lib/invites.js?v=4";
 import * as HighlightsAPI from "/lib/highlights.js?v=1";
 import * as AscInfo from "/lib/ascension-info.js?v=3";
@@ -87,7 +87,7 @@ const STS2_APP_ID = "2868840";
  * on an old client — instruct hard refresh. If it DOES match, the
  * bug is real and we can stop chasing cache ghosts.
  */
-const VAULT_BUILD = "v230-2026-11-15-polish";
+const VAULT_BUILD = "v231-2026-11-15-saves-stay";
 
 /** True on wrangler pages dev / local loopback — not production hostnames. */
 function isLocalDevHost() {
@@ -412,6 +412,11 @@ document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible") void checkForUpdate();
 });
 const STORAGE_SESSION       = "vault.web.session";
+/** The last Steam account signed in on this device. If that sign-in lapses
+ *  (expired session, rejected token), its saved runs stay on screen instead
+ *  of the sample data; a deliberate sign-out removes it, so a shared
+ *  computer shows nobody's runs. */
+const STORAGE_HISTORY_OWNER = "vault.web.history.owner";
 const STORAGE_DRAFT         = "vault.web.presence.draft";
 const STORAGE_LAST_TAB      = "vault.web.last-tab";
 // `.v2` suffix is a deliberate cache-bust of the localStorage key.
@@ -1320,6 +1325,24 @@ function isTabLocked(tab) {
 }
 
 /** "Co-op, Highlights and Beta", from the sidebar's own labels. */
+/**
+ * The note under a guest's "Sign in with Steam" button. Once their own runs
+ * are loaded it says where those runs live (this browser only) and that
+ * signing in backs them up, so a new browser or a wiped one gets them back;
+ * before that it says what signing in unlocks.
+ */
+function guestNoteText() {
+  if (HistoryStore.loadedFromFallback()) return "You were signed out. Sign in again to keep your runs syncing.";
+  if (parsedRuns.length > 0 && !isDemoMode) return "Saved in this browser only. Sign in to back up your runs.";
+  return `Optional. Unlocks ${steamLockedTabNames()}.`;
+}
+
+/** Rewrites the guest note after runs load or an import lands. */
+function refreshGuestNote() {
+  const $note = document.querySelector(".me-pill-guest-note");
+  if ($note) $note.textContent = guestNoteText();
+}
+
 function steamLockedTabNames() {
   const names = STEAM_LOCKED_TABS.map((tab) => {
     const $label = document.querySelector(`.nav-row[data-tab="${tab}"] .nav-label`);
@@ -1421,16 +1444,34 @@ const IS_UI_NEXT = (() => {
 /** Tabs whose header is a Stage (the diorama). */
 const STAGE_TABS = Object.freeze(["overview", "characters", "ascensions", "relics", "cards"]);
 let UI = null;
+/** Set for one page load after the new UI failed to load, so the retry
+ *  below happens once per tab session, never in a loop. */
+const UI_RETRY_KEY = "vault.web.ui.retry";
 const uiReady = IS_UI_NEXT
-  ? import("/lib/ui/index.js?v=6")
+  ? import("/lib/ui/index.js?v=7")
       .then((mod) => {
         mod.bootUI({
           stageTabs: STAGE_TABS,
           track: (name, params) => vaultGtagEvent(name, params),
         });
         UI = mod;
+        try { sessionStorage.removeItem(UI_RETRY_KEY); } catch { /* private mode */ }
       })
       .catch((e) => {
+        // A module fetch cut short poisons this page's module map: Safari
+        // reloaded mid-load (pull to refresh straight after opening) failed
+        // 3 times in 5 and dropped to classic. A fresh page load clears it,
+        // so try once more before falling back.
+        let retried = true;
+        try {
+          retried = sessionStorage.getItem(UI_RETRY_KEY) === "1";
+          sessionStorage.setItem(UI_RETRY_KEY, "1");
+        } catch { /* no session storage: fall back straight away */ }
+        if (!retried) {
+          console.warn("[Vault] new UI failed to load; reloading once", e);
+          window.location.reload();
+          return new Promise(() => {});
+        }
         console.warn("[Vault] new UI failed to load; showing the classic layout for this visit", e);
         const url = new URL(window.location.href);
         url.searchParams.set("ui", "classic-once");
@@ -1742,9 +1783,23 @@ let lastSuccessfulHeartbeatAt = 0;
 // once per id; subsequent polls leave the inbox banner alone.
 const ANNOUNCED_INVITE_IDS = new Set();
 // Brand is ONE word — "SpireVault", never "Spire Vault" (owner call,
-// 2026-08-23). This runtime constant overwrites the static <title> after
-// boot, so it has to carry the brand too.
-const BASE_TAB_TITLE = "SpireVault · Slay the Spire 2";
+// 2026-08-23). After boot the tab reads "<page> · SpireVault", the way
+// a browser tab or window list names an app's page; the static <title>
+// in index.html keeps the longer line for link previews and search.
+const BASE_TAB_TITLE = "SpireVault";
+/** What each tab is called in the browser tab, matching the sidebar. */
+const TAB_TITLES = {
+  overview: "Overview",
+  characters: "Characters",
+  ascensions: "Ascensions",
+  relics: "Top Relics",
+  cards: "Cards",
+  runs: "Recent Runs",
+  coop: "Co-op",
+  highlights: "Highlights",
+  news: "News",
+  beta: "Beta",
+};
 let HAS_PROMPTED_NOTIFICATION = false; // ask permission lazily, once
 
 // 401 tolerance. A single 401 used to vaporize the user's session and reload
@@ -1856,7 +1911,7 @@ function bootShellFirstPaint() {
     if ($shell) $shell.hidden = false;
 
     if (!session) {
-      setStatus("offline", "Browsing as guest");
+      setGuestStatus();
     } else if (isLocalDevHost()) {
       setStatus("online", "Ready (local)");
     }
@@ -1946,14 +2001,14 @@ async function rehydrateSessionFromCookie() {
     if (session) sessionCookieMissing = true;
   }
   if (!session) {
-    try { setStatus("offline", "Browsing as guest"); } catch {}
+    try { setGuestStatus(); } catch {}
   } else if (isLocalDevHost() && sessionCookieVerified) {
     try { setStatus("online", "Ready (local)"); } catch {}
   }
 }
 
 try {
-  if (!session) setStatus("offline", "Browsing as guest");
+  if (!session) setGuestStatus();
   else if (isLocalDevHost()) setStatus("online", "Ready (local)");
 } catch { /* DOM not ready */ }
 
@@ -2321,6 +2376,11 @@ async function loadCommunityPulse() {
   }
   $pulse.textContent = parts.join(" · ");
   $pulse.hidden = false;
+  // The line arrives after the header was laid out, and it makes the title
+  // block taller: lay the stage out again, or on a phone the speech balloon
+  // ends up over the subtitle. (A stage only re-fits on its own when its
+  // width changes.)
+  if (UI) UI.Stage.fitStages();
 }
 
 async function refreshPublicCount() {
@@ -2361,7 +2421,7 @@ async function boot() {
       const $dot = document.getElementById("status-dot");
       if ($dot?.dataset.state !== "connecting") return;
       if (!session) {
-        setStatus("offline", "Browsing as guest — sign in for co-op");
+        setGuestStatus();
         return;
       }
       if (!sessionCookieVerified) {
@@ -2455,7 +2515,7 @@ async function boot() {
           <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2a10 10 0 0 0-9.96 9.04l5.35 2.21a2.83 2.83 0 0 1 1.6-.49l2.39-3.46v-.05a3.78 3.78 0 1 1 3.78 3.78h-.09l-3.4 2.43a2.84 2.84 0 0 1-5.62.6L2.3 14.5A10 10 0 1 0 12 2Zm-4.73 15.17-1.23-.51a2.13 2.13 0 1 0 1.17-2.9l1.27.52a1.57 1.57 0 1 1-1.2 2.9Zm10.04-7.72a2.52 2.52 0 1 0-2.52 2.52 2.52 2.52 0 0 0 2.52-2.52Zm-4.4 0a1.89 1.89 0 1 1 1.89 1.89 1.89 1.89 0 0 1-1.9-1.89Z"/></svg>
           <span>Sign in with Steam</span>
         </button>
-        <p class="me-pill-guest-note">Optional. Unlocks ${esc(steamLockedTabNames())}.</p>
+        <p class="me-pill-guest-note">${esc(guestNoteText())}</p>
         <button class="me-pill-guest-settings" type="button" data-action="open-settings-guest" title="Open Settings">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09a1.65 1.65 0 00-1-1.51 1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 110-4h.09a1.65 1.65 0 001.51-1 1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
           <span>Settings</span>
@@ -2463,7 +2523,7 @@ async function boot() {
     }
     const $mobileSign = document.getElementById("me-pill-name-mobile");
     if ($mobileSign) $mobileSign.textContent = "Guest";
-    setStatus("offline", "Browsing as guest");
+    setGuestStatus();
   }
 
   // Mobile-only account-row action slot. The desktop sidebar footer has
@@ -2811,6 +2871,12 @@ async function boot() {
   // BEFORE the loadHistory() call below so the read picks the right
   // scope from the very first IDB roundtrip.
   HistoryStore.setActiveSteamID(session?.steamID || null);
+  // Signed in: this account is now the device's owner. Signed out: if the
+  // last account's sign-in lapsed, its runs still load (history-store.js).
+  if (session?.steamID) {
+    try { localStorage.setItem(STORAGE_HISTORY_OWNER, session.steamID); } catch { /* private mode */ }
+  }
+  HistoryStore.setFallbackSteamID(session?.steamID ? null : readHistoryOwner());
 
   // Restore the last-known cloud sync timestamp so the toolbar pill
   // can show "Synced N runs · 2m ago" the moment the page renders,
@@ -2908,6 +2974,10 @@ async function boot() {
         isDemoMode = false;
       }
     }
+  }
+  if (!session) {
+    setGuestStatus();
+    refreshGuestNote();
   }
   // Demo data and boot-from-cache never carry a live in-progress
   // record; only a fresh disk read can produce one. Make sure no
@@ -3121,11 +3191,18 @@ async function boot() {
         })
         .finally(finishBootGuards);
     };
-    if (typeof requestIdleCallback === "function") {
-      requestIdleCallback(startSlow, { timeout: 2000 });
-    } else {
-      setTimeout(startSlow, 0);
-    }
+    // Let the shell paint, then load straight away. Waiting for an idle
+    // moment (up to 2s on a busy dev machine) showed "Find my STS2 saves"
+    // over runs that were already saved, which invited a needless re-pick.
+    // The timeout covers a background tab, where frames never come.
+    let slowStarted = false;
+    const startOnce = () => {
+      if (slowStarted) return;
+      slowStarted = true;
+      startSlow();
+    };
+    requestAnimationFrame(() => setTimeout(startOnce, 0));
+    setTimeout(startOnce, 100);
     return;
   }
 
@@ -3225,6 +3302,7 @@ function switchTab(tab) {
   activeTab = tab;
   localStorage.setItem(STORAGE_LAST_TAB, tab);
   syncTabUrl(tab);
+  updateTabTitle();
   // Notify any embedding host (the macOS WKWebView listens for this
   // via window.SpireVault.onTabChange) so its native sidebar can keep
   // its highlight in sync when the user clicks an in-page link.
@@ -3566,7 +3644,10 @@ function renderCompanion() {
         const glyph = opt.isRandom
           ? `<span class="companion-option-glyph" aria-hidden="true">⚂</span>`
           : (src
-              ? `<img src="${esc(src)}" alt="" draggable="false">`
+              // Low priority: the picker is closed at boot, and these must
+              // not hold up the header's painting. They still load (a
+              // Random roll on the next tab stands one of them up).
+              ? `<img src="${esc(src)}" alt="" draggable="false" fetchpriority="low">`
               : `<span class="companion-option-glyph">${esc(opt.label[0])}</span>`);
         return `
           <button class="companion-option${isActive ? " is-active" : ""}" type="button"
@@ -4001,11 +4082,11 @@ function clearConnectingIfStuck(wasConnecting) {
   const $dot = document.getElementById("status-dot");
   if ($dot?.dataset.state !== "connecting") return;
   if (!wasConnecting) {
-    if (!session) setStatus("offline", "Browsing as guest");
+    if (!session) setGuestStatus();
     return;
   }
   if (!session) {
-    setStatus("offline", "Browsing as guest");
+    setGuestStatus();
     return;
   }
   if (!sessionCookieVerified) {
@@ -5150,7 +5231,7 @@ function renderHighlightCard(h) {
       ${heroBlock}
 
       <header class="h-card-head">
-        <img class="h-author-avatar" alt="" src="${esc(h.authorAvatar || "/assets/vault-mark.svg")}" />
+        <img class="h-author-avatar" alt="" src="${esc(h.authorAvatar || "/assets/brand/crest-avatar-128-v1.png")}" />
         <div class="h-author-meta">
           <strong>${esc(h.authorPersona || "Steam User")}</strong>
           <span class="muted small">${esc(ago)}</span>
@@ -5478,7 +5559,7 @@ async function loadCommentsInto(id) {
     const isOwn = me && me === c.authorID;
     return `
       <li class="h-comment">
-        <img class="h-comment-avatar" alt="" src="${esc(c.authorAvatar || "/assets/vault-mark.svg")}" />
+        <img class="h-comment-avatar" alt="" src="${esc(c.authorAvatar || "/assets/brand/crest-avatar-128-v1.png")}" />
         <div class="h-comment-body">
           <div class="h-comment-meta">
             <strong>${esc(c.authorPersona || "Steam User")}</strong>
@@ -5852,13 +5933,15 @@ function setShareCommunityStatus(msg, kind) {
 }
 
 /**
- * Mirror the pending-invite count into the document.title so the user can see
- * "(1) SpireVault · Slay the Spire 2" in the OS tab/window list even when the tab is in
- * the background. Cheap and effective.
+ * Name the browser tab after the page you are on ("Overview · SpireVault"),
+ * with the pending-invite count in front ("(1) Co-op · SpireVault") so it
+ * shows in the OS tab/window list even when the tab is in the background.
  */
 function updateTabTitle() {
   const pending = lastInbox.filter((i) => i.status === "pending").length;
-  document.title = pending > 0 ? `(${pending}) ${BASE_TAB_TITLE}` : BASE_TAB_TITLE;
+  const page = TAB_TITLES[activeTab];
+  const title = page ? `${page} · ${BASE_TAB_TITLE}` : BASE_TAB_TITLE;
+  document.title = pending > 0 ? `(${pending}) ${title}` : title;
 }
 
 /**
@@ -5928,7 +6011,7 @@ function fireOSNotification(invite) {
     const text = InviteAPI.getMessageText(invite.messageId) ?? "Wants to play.";
     new Notification(`${invite.fromPersona || "Someone"} wants to play`, {
       body: text,
-      icon: invite.fromAvatar || "/assets/vault-mark.svg",
+      icon: invite.fromAvatar || "/assets/brand/crest-avatar-128-v1.png",
       tag: `spirevault-invite-${invite.id}`, // coalesces if multiple arrive
     });
   } catch { /* notification API quirks vary; never fail the poll */ }
@@ -6055,6 +6138,10 @@ async function signOut() {
   // sensitive (it points at a folder on this machine), and IDB run data
   // is already scoped per Steam ID for shared-browser privacy.
   HistoryStore.setActiveSteamID(null);
+  // Signing out on purpose forgets this device's owner: the next signed-out
+  // visit shows nobody's runs (a lapsed sign-in keeps them, see boot).
+  try { localStorage.removeItem(STORAGE_HISTORY_OWNER); } catch { /* private mode */ }
+  HistoryStore.setFallbackSteamID(null);
   sendBeacon("signout-clear", "scope=kept-history handles=kept");
 
   clearSessionAndReload();
@@ -6150,7 +6237,7 @@ function renderGlobalInviteBanner(pending) {
         const u = new URL(inv.fromAvatar ?? "");
         if (u.protocol === "https:" || u.protocol === "http:") return u.toString();
       } catch {}
-      return "/assets/vault-mark.svg";
+      return "/assets/brand/crest-avatar-128-v1.png";
     })();
     const messageText = InviteAPI.getMessageText(inv.messageId) ?? "Wants to play.";
     const sid = inv.fromID;
@@ -6726,6 +6813,7 @@ async function scanForHistoryViaDirectoryPicker() {
   // call, queryPermission returns "prompt" forever after a reload.
   try {
     if (typeof dirHandle.requestPermission === "function") {
+      await tipAllowEveryVisit(dirHandle);
       await dirHandle.requestPermission({ mode: "read" });
     }
   } catch (e) {
@@ -6855,6 +6943,7 @@ async function scanForHistoryViaFilePicker() {
     catch (e) { console.warn("saveHandle (early) failed", e); }
     try {
       if (typeof pickedHandles[0].requestPermission === "function") {
+        await tipAllowEveryVisit(pickedHandles[0]);
         await pickedHandles[0].requestPermission({ mode: "read" });
       }
     } catch (e) { console.warn("requestPermission on file failed", e); }
@@ -6926,6 +7015,7 @@ async function autoReloadHistoryFromDirectory(dirHandle, { silent, allowPermissi
       return false;
     }
     try {
+      tipAllowEveryVisit();
       perm = await dirHandle.requestPermission({ mode: "read" });
     } catch (e) {
       console.warn("autoReloadHistoryFromDirectory: requestPermission failed", e);
@@ -7021,6 +7111,7 @@ async function autoReloadHistoryFromFileHandle({ silent, allowPermissionPrompt }
       return false;
     }
     try {
+      tipAllowEveryVisit();
       perm = await handle.requestPermission({ mode: "read" });
     } catch (e) {
       console.warn("autoReloadHistoryFromFileHandle: requestPermission failed", e);
@@ -7111,9 +7202,19 @@ async function reloadSavedHistoryInteractive() {
  * access, so those reads go through a one-time folder pick), and so do
  * Safari and Firefox. Synchronous up to the picker on purpose.
  */
-function repickSaveFolder() {
+/** True where the browser can keep a link to the save folder and re-read
+ *  it by itself: Chromium on Linux and ChromeOS. On a Mac or Windows the
+ *  folder sits under ~/Library or AppData, which Chromium will not hand a
+ *  lasting folder link for, so the app reads it with a one-off folder pick
+ *  and every batch of new runs needs another. Safari and Firefox have no
+ *  folder access at all. */
+function canKeepSaveFolder() {
   const platform = detectPlatform();
-  if (platform !== "mac" && platform !== "windows" && typeof window.showDirectoryPicker === "function") {
+  return platform !== "mac" && platform !== "windows" && typeof window.showDirectoryPicker === "function";
+}
+
+function repickSaveFolder() {
+  if (canKeepSaveFolder()) {
     // Chromium on Linux and ChromeOS keeps a handle: the Import flow links
     // the folder so it refreshes by itself from then on.
     scanForHistory();
@@ -7787,7 +7888,9 @@ async function commitParsedRuns(runs, sourceName, { silent, fileCount = 1 }) {
   // first real ingest doesn't surface "47 new runs!" — we suppress new-
   // count reporting on the demo→real transition.
   const wasDemo = isDemoMode;
-  const previousIds = wasDemo ? new Set() : new Set(parsedRuns.map((r) => r.id));
+  /** The runs loaded before this ingest (none when they were the sample set). */
+  const priorRuns = wasDemo ? [] : parsedRuns;
+  const previousIds = new Set(priorRuns.map((r) => r.id));
   const newCount = runs.filter((r) => !previousIds.has(r.id)).length;
 
   // Schema-bump self-healing: when a fresh re-parse of a run we
@@ -7946,7 +8049,11 @@ async function commitParsedRuns(runs, sourceName, { silent, fileCount = 1 }) {
   } else if (wasDemo) {
     // First real import replaces demo data — this is the one moment to
     // tell the user their data is now permanent on this device.
-    toast(`Loaded ${completedRuns.length} run${completedRuns.length === 1 ? "" : "s"}. You're set — next visit opens straight to your stats.`);
+    toast(session
+      ? `Loaded ${completedRuns.length} run${completedRuns.length === 1 ? "" : "s"}. You're set — next visit opens straight to your stats.`
+      : `Loaded ${completedRuns.length} run${completedRuns.length === 1 ? "" : "s"}. They're saved in this browser; sign in with Steam to back them up.`,
+      { duration: session ? 3000 : 7000 });
+    if (!session) refreshGuestNote();
   } else if (fileCount > 1) {
     toast(`Loaded ${completedRuns.length} run${completedRuns.length === 1 ? "" : "s"} from ${fileCount} files.`);
   } else {
@@ -7973,19 +8080,6 @@ async function commitParsedRuns(runs, sourceName, { silent, fileCount = 1 }) {
   // we now have that run in memory (because it just ingested), open
   // its modal. Idempotent if already open — won't flicker.
   try { openDeepLinkedRunIfPresent(); } catch (e) { console.warn("deeplink open failed", e); }
-  // Milestone notifications. We compare the current parsedRuns set
-  // against locally persisted "what we've already celebrated" data
-  // and surface a celebratory toast for anything new. Suppressed for
-  // demo data so a brand-new visitor doesn't get fake congrats.
-  if (!wasDemo && !silent) {
-    try { evaluateMilestones(); } catch (e) { console.warn("milestones failed", e); }
-  } else if (!wasDemo) {
-    // Silent auto-refresh path — still evaluate, since a new run can
-    // arrive in the background. The toast is the user-facing signal
-    // that something cool happened even when their data view didn't
-    // visibly change.
-    try { evaluateMilestones(); } catch (e) { console.warn("milestones failed", e); }
-  }
   // Victory celebration overlay — fires when 1–3 new wins land (covers a
   // fresh run completing mid-session or a quick back-to-back). Skipped
   // for demo data and bulk first-time imports.
@@ -7997,7 +8091,18 @@ async function commitParsedRuns(runs, sourceName, { silent, fileCount = 1 }) {
   // incremental refresh and we celebrate; if they didn't, we assume the
   // 50-run dump from their save folder is onboarding and stay quiet.
   const hadPriorRuns = parsedRuns.length > newCompletedCount;
-  if (!wasDemo && newWins.length > 0 && newWins.length <= 3 && hadPriorRuns) {
+  const celebratingVictory = !wasDemo && newWins.length > 0 && newWins.length <= 3 && hadPriorRuns;
+  // Milestone notifications: only what this ingest newly reached, and
+  // only when real runs were already loaded. A first import (the sample
+  // set counts as nothing) or a re-import into an empty browser records
+  // them quietly, and so does a win the victory overlay is already
+  // celebrating ("First victory!" over "VICTORY" was one card too many).
+  // Background auto-refreshes count: a run finished while the tab sat
+  // open still deserves its card.
+  try {
+    evaluateMilestones(priorRuns, { celebrate: priorRuns.length > 0 && !celebratingVictory });
+  } catch (e) { console.warn("milestones failed", e); }
+  if (celebratingVictory) {
     const streak = currentStreak(parsedRuns);
     const streakCount = streak.kind === "win" ? streak.count : 1;
     try { showVictoryCelebration(newWins[0], streakCount); } catch (e) { console.warn("victory celebration failed", e); }
@@ -8062,6 +8167,16 @@ function reviveRun(r) {
 async function hydrateFromCloudIfAvailable() {
   try {
     const blob = await CloudRuns.download();
+    // The cloud copy only grows when an import happens while signed in, so
+    // runs imported as a guest (or while sign-in was failing) never reached
+    // it: one owner's copy stopped three months and 140 runs behind the save
+    // folder. Send whatever this device holds that the copy lacks; the
+    // server merges by run id.
+    const localRuns = isDemoMode ? [] : parsedRuns;
+    if (blob && Array.isArray(blob.runs) && localRuns.length > 0) {
+      const inCloud = new Set(blob.runs.map((r) => r && r.id));
+      if (localRuns.some((r) => r?.id && !inCloud.has(r.id))) CloudRuns.upload(localRuns);
+    }
     if (!blob || !Array.isArray(blob.runs) || blob.runs.length === 0) {
       return { changed: false, count: parsedRuns.length };
     }
@@ -9486,6 +9601,7 @@ function renderEmptyStateNext() {
     uid: String(nextEmptyStateSeq),
     platform: platform === "mac" || platform === "windows" || platform === "linux" ? platform : "other",
     hasDirPicker: typeof window.showDirectoryPicker === "function",
+    canKeepFolder: canKeepSaveFolder(),
     signedIn: !!session?.steamID,
     personaName: session?.personaName || "Steam User",
     backupCount,
@@ -9605,7 +9721,7 @@ function renderEmptyState() {
   }
   const headlineHtml = isSignedIn
     ? `<h2>Restore your runs from Steam</h2>
-       <p>You're signed in as <strong>${esc(session?.personaName || "Steam User")}</strong>. If you've already uploaded run history on another device, click <strong>Restore my runs from Steam</strong> below and we'll pull your cloud copy now. If this is your first device, point us at your STS2 save folder once and we'll sync it to your Steam account &mdash; <strong>you only do this once.</strong></p>`
+       <p>You're signed in as <strong>${esc(session?.personaName || "Steam User")}</strong>. If you've already uploaded run history on another device, click <strong>Restore my runs from Steam</strong> below and we'll pull your cloud copy now. If this is your first device, point us at your STS2 save folder and we'll sync it to your Steam account${canKeepSaveFolder() ? " &mdash; <strong>you only do this once.</strong>" : ". New runs come in with <strong>Refresh</strong> and one more pick of the same folder."}</p>`
     : `<h2>See your STS2 stats — no sign-in required</h2>
        <p>Slay the Spire 2 saves one <code>.run</code> file per game. Point us at your STS2 save folder (or drag it in) and we'll read every run on disk to build your stats. Nothing uploads &mdash; everything stays in your browser. <strong>Sign in with Steam once</strong> to keep your history forever and sync it across devices.</p>`;
 
@@ -9636,7 +9752,9 @@ function renderEmptyState() {
           <li><strong>Linux / Steam Deck:</strong> <code>${esc(HISTORY_PATH_LINUX_FULL)}</code></li>
           <li><strong>Steam Cloud fallback (Mac):</strong> if the path above is empty, try <code>~/Library/Application Support/Steam/userdata/&lt;your-id&gt;/2868840/remote/</code>.</li>
           <li>Inside the <code>history/</code> folder you'll see files named like <code>1735689420.run</code> — one per game. Pick the <code>SlayTheSpire2</code> parent and we walk in; or pick the <code>history/</code> folder directly. Either works.</li>
-          <li>On Chrome / Edge / Brave / Arc, picking the folder once enables silent auto-refresh on every later visit. The "Linked: <em>folder</em>" pill in the header confirms it.</li>
+          <li>${canKeepSaveFolder()
+            ? `Picking the folder once enables silent auto-refresh on every later visit. The "Linked: <em>folder</em>" pill in the header confirms it.`
+            : `Your runs stay in this browser. Browsers can't keep access to this folder on ${detectPlatform() === "mac" ? "a Mac" : "Windows"}, so after new runs press <strong>Refresh</strong> and pick it again; the path is copied for you.`}</li>
           <li>Already have a <code>history.json</code> rollup from the macOS Vault CLI? That still works — just drop it in.</li>
         </ul>
       </details>
@@ -10460,10 +10578,37 @@ function buildStageModel(hiLevel) {
     .reverse()
     .map((r) => ({
       won: !!r.won,
+      id: r.id,
       label: `${prettifyCharacterName(r.character || "Unknown")}${runAscText(r) ? ` ${runAscText(r)}` : ""}`,
+      floor: Number.isFinite(r.floorReached) ? r.floorReached : undefined,
+      date: stageRunDate(r.endedAt || r.startedAt),
     }));
   return { hiLevel, recent };
 }
+
+/** "Nov 12": the short date the torches' plate shows for a run. */
+function stageRunDate(when) {
+  const d = when ? new Date(when) : null;
+  return d && Number.isFinite(d.getTime()) ? d.toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "";
+}
+
+// The header's torches (new look): with a precise pointer, a click on a torch
+// opens that run; anywhere else on the row (or a tap on a touch screen, where
+// a torch is too small to aim at) opens the Runs tab.
+document.addEventListener("click", (event) => {
+  const target = event.target instanceof Element ? event.target : null;
+  if (!target?.closest("[data-stage-runs]")) return;
+  const torch = target.closest(".v-torch[data-run-id]");
+  const precise = window.matchMedia("(hover: hover) and (pointer: fine)").matches;
+  if (torch && precise) {
+    const run = parsedRuns.find((r) => String(r.id) === torch.getAttribute("data-run-id"));
+    if (run) {
+      openRunDetailModal(run);
+      return;
+    }
+  }
+  switchTab("runs");
+});
 
 function nextRecentFormCard(runs) {
   const last = runsByDateDesc(runs).slice(0, NEXT_RECENT_FORM_RUNS);
@@ -10889,7 +11034,7 @@ function renderSettingsTab() {
           <h3>Save data</h3>
           <p class="settings-card-sub">
             ${isLinked && isLinkedFolderLive()
-              ? `Linked to <strong>${esc(linkedName)}</strong>. Auto-refreshing every 60s.`
+              ? `Linked to <strong>${esc(linkedName)}</strong>. New runs load by themselves.`
               : isLinked
                 ? `Imported from <strong>${esc(linkedName)}</strong>. To pick up new runs, press Refresh and choose the folder again.`
                 : "Link your STS2 save folder to see your runs."}
@@ -10908,17 +11053,17 @@ function renderSettingsTab() {
               ${lastSyncAt ? `<span class="settings-stat-foot">${esc(lastSyncAt)}</span>` : ""}
             </div>
           ` : ""}
-          ${isLinked ? `
+          ${isLinked && isLinkedFolderLive() ? `
             <div class="settings-status-cell settings-status-cell--ok">
               <span class="settings-stat-label">Auto refresh</span>
               <span class="settings-stat-value">On</span>
-              <span class="settings-stat-foot">Reading folder every 60 seconds</span>
+              <span class="settings-stat-foot">Checks the folder every ${Math.round(HISTORY_REREAD_INTERVAL_MS / 1000)} seconds</span>
             </div>
           ` : `
             <div class="settings-status-cell settings-status-cell--warn">
               <span class="settings-stat-label">Auto refresh</span>
               <span class="settings-stat-value">Off</span>
-              <span class="settings-stat-foot">Link a folder to enable</span>
+              <span class="settings-stat-foot">${canKeepSaveFolder() ? "Link a folder to enable" : "New runs: press Refresh and pick the folder"}</span>
             </div>
           `}
         </div>
@@ -11051,9 +11196,17 @@ function renderSettingsTab() {
     </div>
   `;
 
-  // Wire the settings-only data-actions that don't share handlers with
-  // the legacy toolbar. Refresh / Import / Disconnect already pick up
-  // the global delegated handlers via their data-action attributes.
+  // Wire this card's buttons. Disconnect is delegated at the document
+  // level; Re-pick folder and Refresh now are not (the toolbar's copies
+  // are wired once at boot, before this card exists), so they did nothing
+  // here until wired per render. The desktop host's capture-phase bridge
+  // still intercepts both first.
+  $body.querySelectorAll('[data-action="upload"]').forEach((b) => {
+    b.addEventListener("click", () => void scanForHistory());
+  });
+  $body.querySelectorAll('[data-action="reload-saves"]').forEach((b) => {
+    b.addEventListener("click", () => void reloadSavedHistoryInteractive());
+  });
   $body.querySelectorAll('[data-action="settings-export-json"]').forEach((b) => {
     b.addEventListener("click", () => exportAllRuns("json"));
   });
@@ -11090,7 +11243,7 @@ async function clearLocalCacheConfirmed() {
     "You can re-link the folder anytime to repopulate."
   );
   if (!ok) return;
-  try { await HistoryStore.clearHistory({ allScopes: false }); } catch (e) { console.warn(e); }
+  try { await HistoryStore.clearHistory({ allScopes: false, includeFallback: true }); } catch (e) { console.warn(e); }
   try { await HistoryStore.clearDirectoryHandle(); } catch {}
   try { await HistoryStore.clearHandle(); } catch {}
   try { localStorage.removeItem("vault.web.linkedFolderName"); } catch {}
@@ -11628,10 +11781,10 @@ function renderCharCards(buckets, opts = {}) {
 // Milestone toasts
 //
 // Celebrate meaningful thresholds in a player's run history. Each
-// milestone is keyed; once awarded, it's stored in localStorage so we
+// milestone is keyed; once reached, it's stored in localStorage so we
 // don't repeat it. Designed to be quiet — milestones only fire on
-// commitParsedRuns (a real ingest), never on idle re-renders, and
-// each one fires at most once.
+// commitParsedRuns (a real ingest), never on idle re-renders, each one
+// fires at most once, and one ingest shows one card at most.
 //
 // Catalog: first run, first win, run-count tiers (10/25/50/100/250/500),
 // win-count tiers (5/10/25/50), longest streak (3/5/10), first daily,
@@ -11646,77 +11799,90 @@ function readAwarded() {
 function writeAwarded(set) {
   try { localStorage.setItem(MILESTONES_KEY, JSON.stringify([...set])); } catch {}
 }
-function awardMilestone(key, payload) {
-  const set = readAwarded();
-  if (set.has(key)) return false;
-  set.add(key);
-  writeAwarded(set);
-  showMilestoneToast(payload.title, payload.body, payload.icon);
-  // Fire-and-forget analytics ping so we know which milestones land.
-  try { sendBeacon("milestone", `key=${encodeURIComponent(key)}`); } catch {}
-  vaultGtagEvent("milestone_award", {
-    milestone_key: key,
-    milestone_title: String(payload.title || "").slice(0, 80),
-  });
-  return true;
+/** Every milestone, least to most notable: when one ingest crosses
+ *  several, the card shows the last of them in this list. `reached`
+ *  reads the numbers from milestoneMetrics(). */
+const MILESTONE_CATALOG = [
+  { key: "runs.1",      reached: (m) => m.total >= 1,    title: "First run logged", body: "Welcome to SpireVault. Your run history is now tracked.", icon: "🎉" },
+  { key: "runs.10",     reached: (m) => m.total >= 10,   title: "10 runs",          body: "You're warmed up. Keep climbing.", icon: "📈" },
+  { key: "daily.first", reached: (m) => m.anyDaily,      title: "Daily climber",    body: "First daily run logged. Daily seeds appear with a special badge in Highlights.", icon: "🌅" },
+  { key: "runs.25",     reached: (m) => m.total >= 25,   title: "25 runs logged",   body: "Patterns starting to show. Check the Cards tab.", icon: "🃏" },
+  { key: "runs.50",     reached: (m) => m.total >= 50,   title: "50 runs",          body: "Half a hundred climbs. Your stats are getting trustworthy.", icon: "🏔️" },
+  { key: "char.first-clear", perCharacter: true },
+  { key: "wins.1",      reached: (m) => m.wins >= 1,     title: "First victory!",   body: "You beat the Spire. Open this run from Recent Runs and share it.", icon: "🏆" },
+  { key: "wins.5",      reached: (m) => m.wins >= 5,     title: "5 victories",      body: "Reliable climbing. Higher ascensions await.", icon: "⭐" },
+  { key: "streak.3",    reached: (m) => m.streak >= 3,   title: "3-win streak",     body: "Three in a row. The Spire trembles.", icon: "🔥" },
+  { key: "runs.100",    reached: (m) => m.total >= 100,  title: "100 runs!",        body: "You've officially put time into the Spire.", icon: "💯" },
+  { key: "wins.10",     reached: (m) => m.wins >= 10,    title: "10 victories",     body: "Double-digit wins. Try the Ascensions tab to push harder.", icon: "🌟" },
+  { key: "streak.5",    reached: (m) => m.streak >= 5,   title: "5-win streak",     body: "Five consecutive wins. You found something.", icon: "🔥" },
+  { key: "runs.250",    reached: (m) => m.total >= 250,  title: "250 runs",         body: "Veteran territory. Time to share a Highlight?", icon: "⚔️" },
+  { key: "wins.25",     reached: (m) => m.wins >= 25,    title: "25 victories",     body: "Quarter-century. Your build crafting is on point.", icon: "💎" },
+  { key: "runs.500",    reached: (m) => m.total >= 500,  title: "500 runs",         body: "Five hundred climbs. The Spire knows your name.", icon: "👑" },
+  { key: "streak.10",   reached: (m) => m.streak >= 10,  title: "10-win streak!",   body: "Ten in a row. That's not luck — that's mastery.", icon: "🔥" },
+  { key: "wins.50",     reached: (m) => m.wins >= 50,    title: "50 victories",     body: "Half a hundred wins. Genuinely impressive.", icon: "👑" },
+];
+
+/** The numbers milestones are judged on, for one set of runs. */
+function milestoneMetrics(runs) {
+  const list = Array.isArray(runs) ? runs : [];
+  const clearedCharacters = new Set();
+  for (const r of list) {
+    if (r.won && r.character) clearedCharacters.add(String(r.character).toLowerCase());
+  }
+  return {
+    total: list.length,
+    wins: list.filter((r) => r.won).length,
+    streak: computeLongestWinStreak(list),
+    anyDaily: list.some((r) => String(r.gameMode || "").toLowerCase() === "daily"),
+    clearedCharacters,
+  };
 }
 
-/** Compute and award any milestones the user has crossed. Idempotent
- *  — already-awarded keys are skipped via the awarded-set check inside
- *  `awardMilestone`. Cheap to run on every commitParsedRuns. */
-function evaluateMilestones() {
-  if (!Array.isArray(parsedRuns) || parsedRuns.length === 0) return;
-  const total = parsedRuns.length;
-  const wins = parsedRuns.filter((r) => r.won).length;
-  const longestWinStreak = computeLongestWinStreak(parsedRuns);
-
-  // Run-count tiers
-  if (total >= 1)   awardMilestone("runs.1",   { title: "First run logged",      body: "Welcome to SpireVault. Your run history is now tracked.", icon: "🎉" });
-  if (total >= 10)  awardMilestone("runs.10",  { title: "10 runs",                body: "You're warmed up. Keep climbing.", icon: "📈" });
-  if (total >= 25)  awardMilestone("runs.25",  { title: "25 runs logged",         body: "Patterns starting to show. Check the Cards tab.", icon: "🃏" });
-  if (total >= 50)  awardMilestone("runs.50",  { title: "50 runs",                body: "Half a hundred climbs. Your stats are getting trustworthy.", icon: "🏔️" });
-  if (total >= 100) awardMilestone("runs.100", { title: "100 runs!",              body: "You've officially put time into the Spire.", icon: "💯" });
-  if (total >= 250) awardMilestone("runs.250", { title: "250 runs",               body: "Veteran territory. Time to share a Highlight?", icon: "⚔️" });
-  if (total >= 500) awardMilestone("runs.500", { title: "500 runs",               body: "Five hundred climbs. The Spire knows your name.", icon: "👑" });
-
-  // Win-count tiers
-  if (wins >= 1)  awardMilestone("wins.1",  { title: "First victory!",       body: "You beat the Spire. Open this run from Recent Runs and share it.", icon: "🏆" });
-  if (wins >= 5)  awardMilestone("wins.5",  { title: "5 victories",          body: "Reliable climbing. Higher ascensions await.", icon: "⭐" });
-  if (wins >= 10) awardMilestone("wins.10", { title: "10 victories",         body: "Double-digit wins. Try the Ascensions tab to push harder.", icon: "🌟" });
-  if (wins >= 25) awardMilestone("wins.25", { title: "25 victories",         body: "Quarter-century. Your build crafting is on point.", icon: "💎" });
-  if (wins >= 50) awardMilestone("wins.50", { title: "50 victories",         body: "Half a hundred wins. Genuinely impressive.", icon: "👑" });
-
-  // Streaks
-  if (longestWinStreak >= 3)  awardMilestone("streak.3",  { title: "3-win streak",  body: "Three in a row. The Spire trembles.", icon: "🔥" });
-  if (longestWinStreak >= 5)  awardMilestone("streak.5",  { title: "5-win streak",  body: "Five consecutive wins. You found something.", icon: "🔥" });
-  if (longestWinStreak >= 10) awardMilestone("streak.10", { title: "10-win streak!", body: "Ten in a row. That's not luck — that's mastery.", icon: "🔥" });
-
-  // Per-character first clears
-  const winsByChar = new Map();
-  for (const r of parsedRuns) {
-    if (!r.won || !r.character) continue;
-    const k = String(r.character).toLowerCase();
-    winsByChar.set(k, (winsByChar.get(k) || 0) + 1);
-  }
-  for (const [character, n] of winsByChar) {
-    if (n >= 1) {
-      awardMilestone(`char.first-clear.${character}`, {
-        title: `First ${prettifyCharacterName(character)} clear`,
-        body: `You beat the Spire as ${prettifyCharacterName(character)} for the first time. Every character clear unlocks a new flavor of mastery.`,
+/** Every milestone a set of runs has reached, in catalog order. */
+function reachedMilestones(runs) {
+  const m = milestoneMetrics(runs);
+  const out = [];
+  for (const entry of MILESTONE_CATALOG) {
+    if (!entry.perCharacter) {
+      if (entry.reached(m)) out.push(entry);
+      continue;
+    }
+    for (const character of m.clearedCharacters) {
+      const name = prettifyCharacterName(character);
+      out.push({
+        key: `char.first-clear.${character}`,
+        title: `First ${name} clear`,
+        body: `You beat the Spire as ${name} for the first time. Every character clear unlocks a new flavor of mastery.`,
         icon: "✨",
       });
     }
   }
+  return out;
+}
 
-  // First daily run shared
-  const anyDaily = parsedRuns.some((r) => String(r.gameMode || "").toLowerCase() === "daily");
-  if (anyDaily) {
-    awardMilestone("daily.first", {
-      title: "Daily climber",
-      body: "First daily run logged. Daily seeds appear with a special badge in Highlights.",
-      icon: "🌅",
-    });
-  }
+/** Celebrate what this ingest newly reached: one card at most, the most
+ *  notable. `priorRuns` is the set loaded before the ingest. Without
+ *  `celebrate` (a first import, a re-import into an empty browser) the
+ *  milestones are recorded quietly: a player importing 140 old runs got
+ *  a dozen stacked cards over the whole page, one per milestone they
+ *  passed long ago. Everything reached is recorded either way, so it
+ *  never replays later. */
+function evaluateMilestones(priorRuns, { celebrate = false } = {}) {
+  if (!Array.isArray(parsedRuns) || parsedRuns.length === 0) return;
+  const before = new Set(reachedMilestones(priorRuns).map((m) => m.key));
+  const now = reachedMilestones(parsedRuns);
+  const awarded = readAwarded();
+  const fresh = now.filter((m) => !before.has(m.key) && !awarded.has(m.key));
+  const next = new Set([...awarded, ...now.map((m) => m.key)]);
+  if (next.size !== awarded.size) writeAwarded(next);
+  if (!celebrate || fresh.length === 0) return;
+  const best = fresh[fresh.length - 1];
+  showMilestoneToast(best.title, best.body, best.icon);
+  try { sendBeacon("milestone", `key=${encodeURIComponent(best.key)}`); } catch {}
+  vaultGtagEvent("milestone_award", {
+    milestone_key: best.key,
+    milestone_title: String(best.title || "").slice(0, 80),
+  });
 }
 
 /** Walk runs in chronological order (oldest → newest) and return the
@@ -11750,6 +11916,8 @@ function showMilestoneToast(title, body, icon) {
     $stack.className = "milestone-stack";
     document.body.appendChild($stack);
   }
+  // One card at a time: a newer milestone replaces the one showing.
+  $stack.replaceChildren();
   const $card = document.createElement("div");
   $card.className = "milestone-card";
   $card.setAttribute("role", "status");
@@ -13246,6 +13414,38 @@ function parseAsc(key) {
 // =========================================================================
 // UI helpers
 // =========================================================================
+/** A signed-out visitor's connection line. When the runs on screen belong
+ *  to an account whose sign-in lapsed, it asks them to sign in again (orange,
+ *  the colour of the action) instead of calling them a guest. */
+function setGuestStatus() {
+  if (HistoryStore.loadedFromFallback()) setStatus("expired", "Sign in to keep syncing");
+  else setStatus("offline", "Browsing as guest");
+}
+
+/** @returns {string|null} the last account signed in on this device */
+function readHistoryOwner() {
+  try { return localStorage.getItem(STORAGE_HISTORY_OWNER); } catch { return null; }
+}
+
+/**
+ * Chrome and Edge ask how long the site may read the save folder: "Allow
+ * this time", "Allow on every visit" or "Don't allow". Only "every visit"
+ * lets new runs load by themselves on later visits, so say so while the
+ * question is on screen. Once per page view, and only when a question is
+ * actually coming (callers that already know access lapsed pass no handle).
+ * @param {FileSystemHandle | null} [handle]
+ */
+async function tipAllowEveryVisit(handle = null) {
+  if (tipAllowEveryVisit.shown) return;
+  // Already granted (just after picking, Chrome usually grants this visit
+  // silently): no question is coming, so no tip.
+  try {
+    if (handle && typeof handle.queryPermission === "function" && (await handle.queryPermission({ mode: "read" })) === "granted") return;
+  } catch { /* ask anyway */ }
+  tipAllowEveryVisit.shown = true;
+  toast("Your browser is asking how long SpireVault can read your saves. Choose \u201CAllow on every visit\u201D so new runs load by themselves.", { duration: 9000 });
+}
+
 /** The account card says the session ended instead of "Steam connected". */
 function markSessionExpiredOnCard() {
   const $tier = document.getElementById("me-pill-tier");
@@ -13595,7 +13795,7 @@ function renderProfilePopover() {
     || "Your profile";
   const avatar = meRow?.avatarURL
     || document.getElementById("me-pill-avatar")?.getAttribute("src")
-    || "/assets/vault-mark.svg";
+    || "/assets/brand/crest-avatar-128-v1.png";
   const handle = "Signed in with Steam";
 
   const pair = getMyPairFromFeed();
@@ -13684,7 +13884,7 @@ function renderProfilePopoverPair(pair) {
   const profileHref = `https://steamcommunity.com/profiles/${esc(partner.partnerID)}`;
   return `
     <div class="profile-pop-pair">
-      <img class="profile-pop-pair-avatar" alt="" src="${esc(partner.partnerAvatar || "/assets/vault-mark.svg")}" />
+      <img class="profile-pop-pair-avatar" alt="" src="${esc(partner.partnerAvatar || "/assets/brand/crest-avatar-128-v1.png")}" />
       <div class="profile-pop-pair-meta">
         <strong>${esc(partner.partnerPersona)}</strong>
         <span class="muted">${esc(sinceLabel)}</span>
@@ -13715,7 +13915,7 @@ function renderProfilePopoverInboxRow(invite) {
       const u = new URL(invite.fromAvatar ?? "");
       if (u.protocol === "https:" || u.protocol === "http:") return u.toString();
     } catch {}
-    return "/assets/vault-mark.svg";
+    return "/assets/brand/crest-avatar-128-v1.png";
   })();
   const messageText = InviteAPI.getMessageText(invite.messageId) ?? "Wants to play.";
   const when = invite.createdAt ? formatRelativeActive(invite.createdAt) : "";
@@ -13767,7 +13967,7 @@ function renderProfilePopoverOutboxRow(invite) {
       const u = new URL(invite.toAvatar ?? "");
       if (u.protocol === "https:" || u.protocol === "http:") return u.toString();
     } catch {}
-    return "/assets/vault-mark.svg";
+    return "/assets/brand/crest-avatar-128-v1.png";
   })();
   const messageText = InviteAPI.getMessageText(invite.messageId) ?? "Wants to play.";
   const when = invite.createdAt ? formatRelativeActive(invite.createdAt) : "";

@@ -31,7 +31,7 @@
   --duel-boss-right: calc(var(--stage-gutter) + 26px);
   /* 0.67 (the boss's share of the stage height) x 511/820 (its art). */
   --duel-boss-w: calc(var(--v-stage-h) * 0.4175 * var(--duel-scale));
-  --duel-gap: 44px;
+  --duel-gap: 50px;
   /* Right offset of the climber's right edge. */
   --duel-climber-right: calc(var(--duel-boss-right) + var(--duel-boss-w) + var(--duel-gap));
   /* The climber's drawn width. --climber-h / --climber-aspect are copied up
@@ -43,14 +43,14 @@
   /* The spire stands in the distance behind the climber's back — clear of
      the figure, never behind it: open ground between the tower and the
      fight, so nobody looks perched on it. */
-  --spire-clear: 48px;
+  --spire-clear: 56px;
   --spire-right: calc(var(--duel-climber-right) + var(--duel-climber-w) + var(--spire-clear));
   /* Its top stays below the toolbar row, so no button ever covers it.
      --spire-fit-w is set by Stage.fitStages() when the gap between the
      title and the climber is narrower than the tower. */
   --spire-top: 60px;
   --spire-h: calc(var(--v-stage-h) - var(--spire-top) - var(--v-ledge-h) + 8px);
-  --spire-w: var(--spire-fit-w, calc(var(--spire-h) * 120 / 230));
+  --spire-w: var(--spire-fit-w, calc(var(--spire-h) * var(--spire-aspect, 0.3237)));
 
   justify-content: space-between;
   /* --stage-extra: headroom Stage.fitStages() adds so the speech balloon fits
@@ -60,6 +60,14 @@
   min-height: calc(var(--v-stage-h) + var(--stage-extra, var(--stage-extra-guess)));
   padding-inline: var(--stage-gutter);
   padding-bottom: 0;
+}
+/* At A10 the brazier on the tower's tip burns, and its flame and glow rise
+   above the tower's own box: about 0.18 of the tower's height (the flame is
+   1.3 braziers wide, 65:112, on a 246:760 tower, plus the bright part of its
+   glow). The tower stands that much shorter, so the flame's tip ends where
+   the unlit tower's top would, below the toolbar. */
+.panel-head.v-has-stage:has(.v-spire-beacon) {
+  --spire-h: calc((var(--v-stage-h) - var(--spire-top) - var(--v-ledge-h) + 8px) / 1.18);
 }
 .v-has-stage .panel-head-stage {
   position: static;
@@ -100,7 +108,7 @@
   right: var(--spire-right);
   bottom: calc(var(--v-ledge-h) - 8px);
   width: var(--spire-w);
-  aspect-ratio: 120 / 230;
+  aspect-ratio: var(--spire-aspect, 0.3237);
 }
 /* No room for the tower between the title and the fight on this layout. */
 .v-stage--no-spire .v-spire,
@@ -108,40 +116,89 @@
 .v-stage--no-spire-cap .v-spire-cap {
   display: none;
 }
-.v-spire-svg {
+/* The painted tower (scripts/build-stage-props.mjs). Its door, windows and
+   brazier are placed from fractions of the picture that stage.js passes in
+   as --door-*, --win-* and --brazier-*. */
+.v-spire-art {
   display: block;
   width: 100%;
   height: 100%;
-  overflow: visible;
+  filter: drop-shadow(0 6px 10px rgba(0, 0, 0, 0.45));
 }
-.v-spire-body,
-.v-spire-roof {
-  fill: var(--v-stage-spire);
-  stroke: var(--v-outline-color);
-  stroke-width: 2.5;
-  stroke-linejoin: round;
-}
+/* A lit window: warm light inside the painted arch, and a soft glow on the
+   stone round it. Unlit windows are simply the painting's dark slits. */
 .v-spire-win {
-  fill: var(--v-stage-unlit);
+  position: absolute;
+  left: calc(var(--win-x) - var(--win-w) / 2);
+  width: var(--win-w);
+  height: var(--win-h);
+  border-radius: 50% 50% 2px 2px / 40% 40% 2px 2px;
+  transform: translateY(-50%);
+  pointer-events: none;
 }
 .v-spire-win.is-lit {
-  fill: var(--v-stage-lit);
+  background: radial-gradient(ellipse 70% 80% at 50% 62%, #fff6d2 0%, #ffd56a 45%, #ff9f2e 85%, #e8711d 100%);
+  box-shadow:
+    0 0 4px 1px rgba(255, 196, 92, 0.75),
+    0 0 12px 3px rgba(255, 150, 50, 0.35);
 }
+/* Your highest: the top lit window breathes. */
 .v-spire-win.is-peak {
-  animation: v-glint 2.6s ease-in-out infinite;
+  animation: v-window-breathe 2.8s ease-in-out infinite;
 }
-.v-spire-beacon {
-  fill: var(--v-stage-unlit);
-  stroke: var(--v-outline-color);
-  stroke-width: 2;
-}
-.v-spire-beacon.is-lit {
-  fill: var(--v-stage-sky-3);
-}
-@keyframes v-glint {
+@keyframes v-window-breathe {
   50% {
-    opacity: 0.45;
+    opacity: 0.72;
   }
+}
+/* Any finished run lights the door: firelight in the doorway and a pool of
+   it on the ground in front. */
+.v-spire-door {
+  position: absolute;
+  left: calc(var(--door-x) - var(--door-w) / 2);
+  top: calc(var(--door-y) - var(--door-h) / 2);
+  width: var(--door-w);
+  height: var(--door-h);
+  border-radius: 50% 50% 0 0 / 34% 34% 0 0;
+  background: linear-gradient(0deg, rgba(255, 186, 84, 0.55), rgba(255, 186, 84, 0.12) 70%, transparent);
+  mix-blend-mode: screen;
+  pointer-events: none;
+}
+.v-spire-door::after {
+  content: "";
+  position: absolute;
+  left: -70%;
+  right: -70%;
+  bottom: -18%;
+  height: 36%;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(255, 178, 76, 0.5), transparent);
+}
+/* A10: the brazier on the tip burns. The flame is the same painted flame a
+   won run's torch carries. */
+.v-spire-beacon {
+  position: absolute;
+  left: calc(var(--brazier-x) - var(--brazier-w) * 0.65);
+  bottom: calc(100% - var(--brazier-y));
+  width: calc(var(--brazier-w) * 1.3);
+  pointer-events: none;
+}
+.v-spire-beacon-flame {
+  display: block;
+  width: 100%;
+  height: auto;
+  transform-origin: 50% 100%;
+  animation: v-flicker 1.6s ease-in-out infinite;
+}
+.v-spire-beacon-glow {
+  position: absolute;
+  left: -120%;
+  right: -120%;
+  top: -40%;
+  bottom: -60%;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(255, 196, 92, 0.5), transparent);
+  animation: v-glow-flicker 1.6s ease-in-out infinite;
 }
 
 /* ---- Mid layer: the scenery's set pieces live in components/stage-scenes.css. */
@@ -161,38 +218,174 @@
   stroke-width: 2.5;
   vector-effect: non-scaling-stroke;
 }
+/* Torches: the last ten runs, oldest on the left, each a painted standing
+   torch (scripts/build-stage-props.mjs). A won run burns; a lost one stands
+   cold with a thread of smoke. The row is one button: on a precise pointer
+   each torch names its run on hover and a click opens it; on a touch screen
+   the row opens the Runs tab. */
 .v-torches {
+  --torch-step: 23.2px;
+  /* Sized so the flames end where the old row did: clear of the title
+     block's last line above. */
+  --torch-h: calc(var(--torch-step) * 1.75);
+  /* Each torch stands centred in its step; this is the bare ground beside
+     its post. The row starts that much left of the title's edge, so the
+     first post and the caption under it line up with the text above. */
+  --torch-inset: calc((var(--torch-step) - var(--torch-h) * var(--torch-aspect, 0.233)) / 2);
+  /* Where the posts' feet are, up from the stage's bottom edge: a little
+     under the ledge's edge, on its face, so the row (and its focus ring)
+     stays clear of the title block's last line above. */
+  --torches-bottom: calc(var(--v-ledge-h) - 10px);
   position: absolute;
-  bottom: calc(var(--v-ledge-h) - 10px);
-  left: var(--stage-gutter);
-  width: calc(var(--torch-count, 10) * 23.2px);
+  bottom: var(--torches-bottom);
+  left: calc(var(--stage-gutter) - var(--torch-inset));
+  width: calc(var(--torch-count, 10) * var(--torch-step));
 }
-.v-torches svg {
-  display: block;
+/* Wide headers: the torches march across the open ground toward the tower,
+   larger, the newest nearest it, leading off from it toward the title.
+   Stage.fitStages() measures the ground and sets the step and where the row
+   starts. */
+.v-stage--march .v-torches {
+  --torch-step: var(--torch-step-fit, 23.2px);
+  /* Out on the open ground, feet on the ledge's edge like the tower's. */
+  --torches-bottom: calc(var(--v-ledge-h) - 6px);
+  left: var(--torches-left, var(--stage-gutter));
+}
+.v-torch-row {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
   width: 100%;
-  height: auto;
-  overflow: visible;
+  height: calc(var(--torch-h) * 1.3);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--v-radius-sm);
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
 }
-.v-torch-stick {
-  fill: var(--v-stage-wood);
+.v-torch-row:focus-visible {
+  outline: 3px solid var(--v-title);
+  outline-offset: 4px;
 }
-.v-torch-cup {
-  fill: var(--v-stage-near);
-  stroke: var(--v-stage-wood);
-  stroke-width: 1.5;
+.v-torch {
+  position: relative;
+  display: flex;
+  flex: 0 0 var(--torch-step);
+  align-items: flex-end;
+  justify-content: center;
+  height: 100%;
 }
-.v-torch-ember {
-  fill: var(--v-stage-unlit);
+.v-torch-post {
+  display: block;
+  width: auto;
+  height: var(--torch-h);
+  filter: drop-shadow(0 3px 3px rgba(0, 0, 0, 0.5));
+  transition: filter var(--v-dur-1) ease;
 }
+/* The flame sits on the burnt head (--flame-base: where, down the torch). */
 .v-torch-flame {
-  fill: var(--v-stage-lit);
-  stroke: var(--v-stage-flame);
-  stroke-width: 2;
-  stroke-linejoin: round;
-  transform-box: fill-box;
+  position: absolute;
+  bottom: calc(var(--torch-h) * (1 - var(--flame-base)));
+  left: 50%;
+  width: auto;
+  height: calc(var(--torch-h) * 0.42);
+  translate: -50% 0;
   transform-origin: 50% 100%;
   animation: v-flicker 1.5s ease-in-out infinite;
   animation-delay: calc(var(--d, 0) * -0.21s);
+}
+.v-torch-glow {
+  position: absolute;
+  bottom: calc(var(--torch-h) * (1 - var(--flame-base)) - var(--torch-h) * 0.12);
+  left: 50%;
+  width: calc(var(--torch-h) * 0.95);
+  height: calc(var(--torch-h) * 0.8);
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(255, 190, 88, 0.55), rgba(255, 140, 50, 0.18) 60%, transparent);
+  translate: -50% 0;
+  animation: v-glow-flicker 1.5s ease-in-out infinite;
+  animation-delay: calc(var(--d, 0) * -0.21s);
+  pointer-events: none;
+}
+/* A lost run: cold, with smoke curling up off the burnt head. */
+.v-torch-smoke {
+  position: absolute;
+  bottom: calc(var(--torch-h) * 0.9);
+  left: 50%;
+  width: calc(var(--torch-step) * 0.9);
+  height: calc(var(--torch-h) * 0.4);
+  translate: -50% 0;
+  pointer-events: none;
+}
+/* Each puff is a soft, upright wisp (taller than wide), so a still frame
+   reads as smoke rather than a row of dots. */
+.v-torch-smoke i {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  width: 34%;
+  aspect-ratio: 0.5;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(200, 194, 220, 0.38), rgba(200, 194, 220, 0));
+  opacity: 0;
+  translate: -50% 0;
+  animation: v-smoke 3.6s ease-out infinite;
+  animation-delay: calc(var(--d, 0) * -0.37s);
+}
+.v-torch-smoke i:nth-child(2) {
+  animation-delay: calc(var(--d, 0) * -0.37s - 1.2s);
+}
+.v-torch-smoke i:nth-child(3) {
+  animation-delay: calc(var(--d, 0) * -0.37s - 2.4s);
+}
+@keyframes v-smoke {
+  0% {
+    opacity: 0;
+    transform: translate(0, 0) scale(0.55);
+  }
+  20% {
+    opacity: 0.75;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(30%, -85%) scale(1.6, 1.3);
+  }
+}
+/* Hover (precise pointers only): the torch brightens, and the plate under the
+   row (the "Last 10 runs" caption) is rewritten to name that run, in the
+   same small caps: the result in its colour, the newest marked in gold.
+   Each torch carries its own line; it sits on the caption's spot (shifted
+   back to the row's start by the torch's index, --d). */
+.v-torches .v-torch .v-torch-tip {
+  left: calc(var(--torch-count, 10) * var(--torch-step) / 2 - var(--d, 0) * var(--torch-step));
+  translate: var(--cap-shift) 0;
+  bottom: calc(var(--stage-cap-bottom) - var(--torches-bottom));
+  opacity: 0;
+  transition: opacity var(--v-dur-1) ease;
+  pointer-events: none;
+}
+.v-torches .v-torch .v-torch-tip b.is-lost {
+  color: var(--v-loss);
+}
+.v-torches .v-torch .v-torch-tip .v-torch-new {
+  color: var(--v-title);
+}
+.v-torches > .v-stage-cap {
+  transition: opacity var(--v-dur-1) ease;
+}
+@media (hover: hover) and (pointer: fine) {
+  .v-torch:hover .v-torch-post {
+    filter: drop-shadow(0 3px 3px rgba(0, 0, 0, 0.5)) brightness(1.3);
+  }
+  .v-torch:hover .v-torch-tip {
+    opacity: 1;
+  }
+  .v-torches:has(.v-torch:hover) > .v-stage-cap {
+    opacity: 0;
+  }
 }
 @keyframes v-flicker {
   0%,
@@ -206,6 +399,18 @@
     transform: scale(1.06, 0.92);
   }
 }
+@keyframes v-glow-flicker {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  40% {
+    opacity: 0.7;
+  }
+  70% {
+    opacity: 0.9;
+  }
+}
 /* Markers: what the torches and the spire are counting, engraved on the
    ledge right under each one, like the plate under an exhibit: small caps in
    the theme's quiet text colour, the value in its own colour (wins green,
@@ -213,9 +418,11 @@
    on one shared line in the ledge strip, below the ground the torches and
    the tower stand on, so nothing is pasted over the painted scene. */
 .panel-head.v-has-stage {
-  /* The markers' line, measured up from the stage's bottom edge. */
-  --stage-cap-bottom: 7px;
-  --stage-cap-size: 0.72rem;
+  /* The markers' line, measured up from the stage's bottom edge: low on the
+     ledge, so the torches above it have air. */
+  --stage-cap-bottom: 5px;
+  /* 11px at the app's 15px root: the smallest text the app allows. */
+  --stage-cap-size: 0.74rem;
 }
 .v-stage-cap {
   position: absolute;
@@ -229,6 +436,13 @@
   line-height: 1;
   text-transform: uppercase;
   white-space: nowrap;
+  /* One line, always its full length: placed at left: 50% inside a short
+     row (a phone), the shrink-to-fit width would otherwise be cut to the
+     room right of that point and the words would spill past their box. */
+  width: max-content;
+  /* Letter-spacing also follows the last letter; the same space before the
+     first keeps the words centred on their own ink. */
+  padding-left: 0.1em;
 }
 .v-stage-cap b {
   color: var(--v-title);
@@ -239,11 +453,37 @@
 .v-torches .v-stage-cap b {
   color: var(--v-win);
 }
-/* Torches: under the row, flush with its first torch. The row's own box
-   ends a pixel under the ground line (--v-ledge-h - 10px up). */
+/* ...led by the same painted flame the won torches burn with, so the lit
+   torches read as that number. A flex item of its own (sized like the
+   words), drawn close to the count; its extra height is taken out of the
+   line and it drops a touch below the baseline, so the caption keeps its
+   place on the shared line. */
+.v-stage-cap-flame {
+  flex: none;
+  height: 1.2em;
+  width: auto;
+  margin: -0.4em -0.25em 0 0;
+  position: relative;
+  top: 0.3em;
+  filter: drop-shadow(0 0 3px color-mix(in srgb, #ffb347 75%, transparent));
+}
+/* Torches: on the tower caption's line (measured from the row's feet). The
+   caption, and each torch's hover plate that takes its place, is centred
+   under the row, as the tower's is under the tower (each post stands
+   centred in its step, so the box's centre is the row's). Where it is wider
+   than the row (a short history, a narrow phone, a long plate) it stops
+   flush with the first post, the title's edge, instead of running off the
+   header: the translate never moves its left edge left of that post. */
+.v-torches {
+  --cap-shift: max(-50%, calc(var(--torch-inset) - var(--torch-count, 10) * var(--torch-step) / 2));
+}
 .v-torches .v-stage-cap {
-  left: 2px;
-  bottom: calc(var(--stage-cap-bottom) - (var(--v-ledge-h) - 10px));
+  left: var(--torch-inset);
+  bottom: calc(var(--stage-cap-bottom) - var(--torches-bottom));
+}
+.v-torches > .v-stage-cap {
+  left: 50%;
+  translate: var(--cap-shift) 0;
 }
 /* Spire: centred under the tower's foot. */
 .v-spire-cap {
@@ -499,23 +739,34 @@
   justify-content: flex-start;
 }
 .v-bubble {
+  /* A quieter voice than the buttons above it: the theme's outline at a
+     little over half strength, and a fainter hard shadow. The tail uses the
+     same outline. */
+  --bubble-outline: var(--v-outline-w) solid color-mix(in srgb, var(--v-outline-color) 55%, transparent);
+  --bubble-shadow: 2px 2px 0 color-mix(in srgb, var(--v-ink) 40%, transparent);
   position: relative;
   max-width: 100%;
-  padding: 6px 12px;
-  border: var(--v-outline);
+  padding: 5px 11px;
+  border: var(--bubble-outline);
   border-radius: 16px;
   background: var(--v-paper);
-  box-shadow: var(--v-shadow-sm);
+  box-shadow: var(--bubble-shadow);
   color: var(--v-on-paper);
   font-family: var(--v-font-text);
   font-size: var(--v-text-sm);
-  font-weight: 800;
+  font-weight: 700;
   line-height: 1.3;
   text-align: left;
   pointer-events: auto;
   cursor: pointer;
   transition: transform var(--v-dur-2) var(--v-ease-spring);
   animation: v-pop 360ms var(--v-ease-spring) both;
+}
+/* A theme with its own quiet outline and soft shadow (Ember Vault: a dark
+   balloon whose thin gold edge is what shapes it) keeps them as they are. */
+[data-theme="vault"] .v-bubble {
+  --bubble-outline: var(--v-outline);
+  --bubble-shadow: var(--v-shadow-sm);
 }
 .v-bubble:hover {
   transform: translateY(-2px) rotate(-1deg);
@@ -540,8 +791,8 @@
   bottom: -8px;
   width: 13px;
   height: 13px;
-  border-right: var(--v-outline);
-  border-bottom: var(--v-outline);
+  border-right: var(--bubble-outline);
+  border-bottom: var(--bubble-outline);
   background: var(--v-paper);
   transform: rotate(45deg);
 }
@@ -637,11 +888,11 @@
   .panel-head.v-has-stage {
     --duel-scale: 0.84;
     --duel-boss-right: calc(var(--stage-gutter) + 14px);
-    --duel-gap: 40px;
-    --spire-clear: 40px;
+    --duel-gap: 46px;
+    --spire-clear: 48px;
   }
   .v-bubble {
-    padding: 7px 10px;
+    padding: 6px 10px;
     font-size: var(--v-text-xs);
   }
 }
@@ -649,8 +900,8 @@
   .panel-head.v-has-stage {
     --duel-scale: 0.8;
     --duel-boss-right: calc(var(--stage-gutter) + 6px);
-    --duel-gap: 36px;
-    --spire-clear: 32px;
+    --duel-gap: 42px;
+    --spire-clear: 40px;
   }
 }
 
@@ -673,13 +924,19 @@
   .v-has-stage .panel-head-stage {
     padding-bottom: calc(var(--v-ledge-h) + 44px);
   }
-  /* The ledge is 28px here: a smaller line, nearer the bottom edge. */
+  /* The ledge is 28px here: the line sits nearer the bottom edge, at the
+     same 11px size (nothing in the app reads smaller). */
   .panel-head.v-has-stage {
     --stage-cap-bottom: 4px;
-    --stage-cap-size: 0.64rem;
   }
   .v-torches {
-    width: calc(var(--torch-count, 10) * 15px);
+    --torch-step: 15px;
+    --torches-bottom: calc(var(--v-ledge-h) - 6px);
+  }
+  /* The small row is one button (it opens Runs): a full fingertip tall. It
+     grows upward from its feet; the torches stay on the ground. */
+  .v-torch-row {
+    min-height: 44px;
   }
   .v-bubble {
     padding: 6px 10px;
@@ -724,7 +981,7 @@
     --duel-gap: 18px;
   }
   .v-torches {
-    width: calc(var(--torch-count, 10) * 12px);
+    --torch-step: 12px;
   }
 }
 
@@ -733,7 +990,11 @@
    once that sheet is gone.) */
 @media (prefers-reduced-motion: reduce) {
   .v-spire-win,
+  .v-spire-beacon-flame,
+  .v-spire-beacon-glow,
   .v-torch-flame,
+  .v-torch-glow,
+  .v-torch-smoke i,
   .v-actor-art,
   .v-actor-glows,
   .v-actor-glow,
@@ -743,11 +1004,49 @@
   }
 }
 .prefer-reduced-motion .v-spire-win,
+.prefer-reduced-motion .v-spire-beacon-flame,
+.prefer-reduced-motion .v-spire-beacon-glow,
 .prefer-reduced-motion .v-torch-flame,
+.prefer-reduced-motion .v-torch-glow,
+.prefer-reduced-motion .v-torch-smoke i,
 .prefer-reduced-motion .v-actor-art,
 .prefer-reduced-motion .v-actor-glows,
 .prefer-reduced-motion .v-actor-glow,
 .prefer-reduced-motion .v-actor-shadow,
 .prefer-reduced-motion .v-bubble {
   animation: none;
+}
+/* With the smoke still, one faint wisp stays over each cold torch. */
+@media (prefers-reduced-motion: reduce) {
+  .v-torch-smoke i:first-child {
+    opacity: 0.5;
+    transform: translate(10%, -30%) scale(1.1);
+  }
+}
+.prefer-reduced-motion .v-torch-smoke i:first-child {
+  opacity: 0.5;
+  transform: translate(10%, -30%) scale(1.1);
+}
+
+/* Scrolled out of view, the scene holds still (Stage's off-screen observer
+   adds .v-stage-off). Every running animation costs a style pass on each
+   frame the page draws, so the header's loops slowed the scrolling of the
+   tab below it, long after it had gone off the top of a phone. Paused, not
+   stopped: each loop picks up where it was when the header comes back. */
+.v-stage-off *,
+.v-stage-off *::before,
+.v-stage-off *::after {
+  animation-play-state: paused !important;
+}
+
+/* Headroom a header keeps until its first fit. The five stats headers carry
+   .v-has-stage in the markup, so the page paints with the stage layout before
+   lib/ui has loaded; a guess far from what the fit then settles on moved the
+   whole tab when it did. Measured 2026-11-16 at 320-1728px: every stats tab
+   fits with none, Overview (taller title block) with 5-22px. */
+.tab-panel > .panel-head.v-has-stage {
+  --stage-extra-guess: 0px;
+}
+.tab-panel[data-tab="overview"] > .panel-head.v-has-stage {
+  --stage-extra-guess: 12px;
 }

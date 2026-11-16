@@ -10,8 +10,11 @@
 //
 // The room is alive on its own: the camera eases in and out of the picture,
 // its lights breathe or flicker, shafts of light fade and return, mist
-// crosses the floor and its air drifts. Nothing follows the pointer. How it
-// all sits in the header and moves is components/stage-scenes.css.
+// crosses the floor and its air drifts. Each scene also has its own life
+// (stage-life.js): firelight on the walls, water, drips, drifting clouds,
+// and now and then a crow, a falling star or a flash of lightning. Nothing
+// follows the pointer. How it all sits in the header and moves is
+// components/stage-scenes.css and components/stage-life.css.
 //
 // Only the scenery changes. The spire (ascension progress), the torches
 // (last ten runs), the ledge and the captions are data and look the same in
@@ -22,6 +25,8 @@
 
 import { esc } from "./html.js?v=1";
 import { STAGE_SCENES } from "./stage-scene-list.js?v=1";
+import { lifeHtml, lifeNearHtml } from "./stage-life.js?v=1";
+import { hex, num, pct, round, sequence } from "./stage-num.js?v=1";
 
 /** Every scene id, in list order. */
 export const SCENES = Object.freeze(STAGE_SCENES.map((scene) => scene.id));
@@ -161,33 +166,6 @@ export function preloadScene(id) {
 }
 
 /**
- * A deterministic sequence in [0, 1), so a scene's air is laid out the same
- * every time it is drawn (re-rendering identical markup must not restart
- * the animations).
- * @param {string} key
- */
-function sequence(key) {
-  let state = 2166136261;
-  for (let i = 0; i < key.length; i += 1) state = Math.imul(state ^ key.charCodeAt(i), 16777619) >>> 0;
-  return () => {
-    state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
-    return state / 4294967296;
-  };
-}
-
-/** @param {number} n @param {number} places */
-const round = (n, places = 2) => Math.round(n * 10 ** places) / 10 ** places;
-
-/** @param {number} fraction */
-const pct = (fraction) => `${round(fraction * 100)}%`;
-
-/** A colour from the generated list, refused unless it is a plain hex. */
-const hex = (colour) => (/^#[0-9a-f]{3,8}$/i.test(colour) ? colour : "#ffffff");
-
-/** A number from the generated list, or the fallback when it is not one. */
-const num = (value, fallback = 0) => (Number.isFinite(value) ? value : fallback);
-
-/**
  * The scene's lights: a soft glow on each light source, moving the way that
  * source does (the moon breathes, a candle flickers, a reflection shimmers,
  * an aurora's curtain sways).
@@ -266,6 +244,7 @@ export function sceneFarHtml(id) {
           ${shaftsHtml(scene)}
           ${lightsHtml(scene)}
           ${motesHtml(scene)}
+          ${lifeHtml(scene.id, num(scene.width / scene.height, 3))}
         </span>
         <span class="v-scene-mist v-scene-mist--far"></span>
       </span>
@@ -274,11 +253,11 @@ export function sceneFarHtml(id) {
 
 /**
  * The scene's mid layer, in front of the room and the spire and behind the
- * figures: low mist over the floor.
+ * figures: low mist over the floor, and the scene's near air.
  * @param {string | null} id
  */
 export function sceneMidHtml(id) {
-  return sceneById(id) ? `<span class="v-scene-mist v-scene-mist--near" aria-hidden="true"></span>` : "";
+  return sceneById(id) ? `<span class="v-scene-mist v-scene-mist--near" aria-hidden="true"></span>${lifeNearHtml(id)}` : "";
 }
 
 /**

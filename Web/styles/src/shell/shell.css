@@ -26,6 +26,23 @@
   background: var(--v-bg-deep);
   border-right: var(--v-outline);
 }
+/* Pinned to the window, not the shell. The footer comes after .app-shell, so
+   a sticky rail rode up with the shell's bottom edge as the footer scrolled
+   in, and left an empty column beside it with the corner glow (.bg-glow)
+   showing through. Fixed, the rail stays whole at every scroll position; the
+   grid keeps its first column as the rail's room. (The desktop shells hide
+   the rail and drop the grid, so neither rule reaches them.) */
+@media (min-width: 881px) {
+  .sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: var(--v-rail-w);
+  }
+  .content {
+    grid-column: 2;
+  }
+}
 
 /* The brand row runs the rail's full inner width: the emblem starts on the
    nav rows' left edge and the theme button ends on their right one. */
@@ -34,14 +51,19 @@
   align-items: center;
   gap: 10px;
 }
+/* The crest is a shield with its own ink outline: no frame, only a hard
+   shadow on the shape. Border and filter are set here so the classic
+   sheet's frame and glow (legacy layer) cannot show through. */
 .sidebar-brand img {
   flex: none;
-  width: 40px;
+  /* Sized by height: the file is trimmed to the shield, so its ink starts on
+     the nav rows' left edge. */
+  width: auto;
   height: 40px;
-  object-fit: cover;
-  border-radius: var(--v-radius-sm);
-  border: var(--v-outline);
-  box-shadow: var(--v-shadow-sm);
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  filter: drop-shadow(2px 2px 0 var(--v-ink));
 }
 .sidebar-brand > div {
   display: flex;
@@ -95,6 +117,35 @@
 .sidebar-nav::-webkit-scrollbar {
   display: none;
 }
+/* When the rows do not all fit (a short window), the last one fades out at
+   the scroller's edge instead of being sliced by it, so the cut reads as
+   "more below". Scroll-driven: the fade shrinks away as the list reaches its
+   end, and a list that fits has no scroll timeline, so it gets no fade. */
+@property --v-nav-fade {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+@keyframes v-nav-fade {
+  from {
+    --v-nav-fade: 44px;
+  }
+  to {
+    --v-nav-fade: 0px;
+  }
+}
+/* Skipped under reduced motion: it is an animation, if a scroll-linked one,
+   and those visitors are promised nothing animating (verify-ui-next). The
+   nav's thin scrollbar is their cue instead. */
+@media (min-width: 881px) and (prefers-reduced-motion: no-preference) {
+  @supports (animation-timeline: scroll()) {
+    :root:not(.prefer-reduced-motion) .sidebar-nav {
+      mask-image: linear-gradient(to bottom, #000 calc(100% - var(--v-nav-fade)), transparent);
+      animation: v-nav-fade linear both;
+      animation-timeline: scroll(self);
+    }
+  }
+}
 /* A short laptop window (1366x768, 1280x800): tighter rows so News and Beta
    stay on screen above the account card, and a thin visible scrollbar when
    even that is not enough, instead of rows hiding with no cue. */
@@ -102,7 +153,9 @@
   .sidebar {
     gap: var(--v-space-3);
   }
-  .nav-row {
+  /* Scoped to the nav: the base .nav-row rule comes later in this file and,
+     at equal weight, used to win, so the rows never tightened. */
+  .sidebar-nav .nav-row {
     padding-block: 7px;
   }
   .sidebar-nav {
@@ -116,6 +169,19 @@
   .sidebar-nav::-webkit-scrollbar-thumb {
     border-radius: 3px;
     background: var(--v-line);
+  }
+}
+/* A guest on a short window: the card's note and the "Browsing as guest"
+   line only repeat what the Sign in button says, and they were the height
+   that pushed News and Beta past the nav's edge (12px short at 768px tall,
+   80px at 700px). A lapsed sign-in's orange line still shows. */
+@media (min-width: 881px) and (max-height: 780px) {
+  .sidebar-nav .nav-row {
+    padding-block: 6px;
+  }
+  html[data-steam="out"] .me-pill-guest-note,
+  html[data-steam="out"] .sidebar-status-row:has(.status-dot[data-state="offline"]) {
+    display: none;
   }
 }
 .nav-group {
@@ -558,7 +624,7 @@
     padding: 0;
   }
   .sidebar-brand img {
-    width: 32px;
+    width: auto;
     height: 32px;
   }
   .sidebar-brand > div {
@@ -577,6 +643,11 @@
     align-items: center;
     gap: 8px;
     min-width: 0;
+    /* The height its Sign in / Sign out button gives it (44px tap target),
+       held from the first frame: boot shows one of them a moment after the
+       page first paints, and the bar growing then pushed the whole page
+       down 12px. */
+    min-height: 44px;
     margin-left: auto;
     color: var(--v-text-2);
     font-size: var(--v-text-xs);
@@ -792,6 +863,11 @@
    the 12px floor, and full-height links on phones. */
 .footer-inner p {
   font-size: var(--v-text-xs);
+}
+/* Every tab already ends on .panel-body's bottom padding; the legacy 48px
+   margin on top of it left a 120px hole above the footer. */
+.footer {
+  margin-top: 0;
 }
 /* The footer sits under the content column, not the window: clear of this
    rail (the legacy sheet offsets it by the classic rail's 248px), with the

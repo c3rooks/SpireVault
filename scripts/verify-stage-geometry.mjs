@@ -126,18 +126,34 @@ function measure(tab) {
       bottom: Math.max(...rects.map((r) => r.bottom)),
     };
   };
+  /** The line boxes of the text itself, one rect per line. */
+  const textLines = (selector) => {
+    const lines = [...head.querySelectorAll(selector)]
+      .filter((el) => rect(el))
+      .flatMap((el) => {
+        const range = document.createRange();
+        range.selectNodeContents(el);
+        return [...range.getClientRects()].filter((r) => r.width > 0);
+      })
+      .map((r) => ({ left: r.left, top: r.top, right: r.right, bottom: r.bottom }));
+    return lines.length ? lines : null;
+  };
   const headRect = head.getBoundingClientRect();
   return {
     head: { left: headRect.left, top: headRect.top, right: headRect.right, bottom: headRect.bottom },
-    spire: rect(head.querySelector(".v-spire")),
+    // The A10 beacon's flame rises above the tower's own box; it counts as tower.
+    spire: union(".v-spire, .v-spire-beacon"),
     climber: rect(head.querySelector(".v-actor--climber .v-actor-art")),
     boss: rect(head.querySelector(".v-actor--boss .v-actor-art")),
     bubble: rect(head.querySelector(".v-bubble")),
     tail: rect(head.querySelector(".v-bubble-tail")),
     speaker: head.querySelector(".v-duel--boss-speaks") ? "boss" : "climber",
     title: textRect(".panel-head-stage h1, .panel-head-stage h2, .panel-head-stage .panel-title"),
-    subtitle: textRect(".panel-head-stage p"),
-    torches: union(".v-torches svg, .v-torches .v-stage-cap"),
+    // Line by line: a short line under a long one leaves open ground beside
+    // it, which one box around both would count as text (the late
+    // "climbers active" line is shorter than the subtitle above it).
+    subtitle: textLines(".panel-head-stage p"),
+    torches: union(".v-torch-row, .v-torches > .v-stage-cap"),
     spireCap: rect(head.querySelector(".v-spire-cap")),
     toolbar: union(".app-toolbar button, .app-toolbar a, .app-toolbar .app-toolbar-empty"),
     climberVars: getComputedStyle(head).getPropertyValue("--climber-aspect").trim(),
@@ -146,8 +162,13 @@ function measure(tab) {
   };
 }
 
-/** Horizontal and vertical gap between two rects; negative = overlap. */
+/**
+ * Horizontal and vertical gap between two rects; negative = overlap. Either
+ * side may be a list of rects (text lines): then the nearest one counts.
+ */
 function gap(a, b) {
+  if (Array.isArray(a)) return Math.min(...a.map((part) => gap(part, b)));
+  if (Array.isArray(b)) return Math.min(...b.map((part) => gap(a, part)));
   const dx = Math.max(a.left - b.right, b.left - a.right);
   const dy = Math.max(a.top - b.bottom, b.top - a.bottom);
   return Math.max(dx, dy);

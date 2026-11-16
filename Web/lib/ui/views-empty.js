@@ -19,6 +19,9 @@ import { esc } from "./html.js?v=1";
  * @property {string} uid                 unique per render (ids, radio group name)
  * @property {OsKey|"other"} platform     detected OS
  * @property {boolean} hasDirPicker       Chromium folder picker available
+ * @property {boolean} canKeepFolder      the browser can re-read the folder by itself later
+ *                                        (Chromium on Linux/ChromeOS; on a Mac or Windows the
+ *                                        save folder sits where browsers won't keep access)
  * @property {boolean} signedIn
  * @property {string} personaName
  * @property {number} backupCount         runs this device held before (0 = none)
@@ -149,9 +152,15 @@ function intro(model) {
        ${findBtn("v-empty-alt")}`
     : `${findBtn("v-btn--primary")}${pickFiles}`;
   const title = model.signedIn ? "Restore your runs" : "Bring in your climbs";
+  // "Once" only where it is true: elsewhere the browser can't re-read the
+  // folder by itself, so new runs come in with Refresh and one more pick.
+  const once = model.canKeepFolder ? " once" : "";
   const lede = model.signedIn
-    ? `Signed in as <b>${esc(model.personaName)}</b>. Pull the copy synced to your Steam account, or point us at your save folder once and we'll sync it — you only do this once.`
-    : "Point SpireVault at your Slay the Spire 2 save folder once. We read every run on disk and keep them in this browser — nothing uploads.";
+    ? `Signed in as <b>${esc(model.personaName)}</b>. Pull the copy synced to your Steam account, or point us at your save folder${once} and we'll sync it.`
+    : `Point SpireVault at your Slay the Spire 2 save folder${once}. We read every run on disk and keep them in this browser — nothing uploads.`;
+  const keeps = model.canKeepFolder
+    ? "Runs stay on this device, and new ones load by themselves."
+    : "Runs stay on this device. After new runs, press <b>Refresh</b> and pick the same folder; the path is copied for you.";
   const backup = model.backupCount > 0
     ? `<p class="v-empty-backup" role="note">${icon("cloud")}<span>This device held <b>${model.backupCount}</b> runs before. Restore from Steam or reconnect your save folder — no need to start over.</span></p>`
     : "";
@@ -160,7 +169,7 @@ function intro(model) {
     : `<li>${icon("steam")}<span><button class="v-empty-link" type="button" data-action="signin-cta">Sign in with Steam</button> to keep your history and sync it across devices. Optional.</span></li>`;
   return `
     <div class="v-empty-intro">
-      <p class="v-empty-kicker">${model.signedIn ? "Welcome back" : "One-time setup · no sign-in needed"}</p>
+      <p class="v-empty-kicker">${model.signedIn ? "Welcome back" : model.canKeepFolder ? "One-time setup · no sign-in needed" : "Quick setup · no sign-in needed"}</p>
       <h2 class="v-empty-title" id="v-empty-title-${model.uid}">${title}</h2>
       <p class="v-empty-lede">${lede}</p>
       ${backup}
@@ -169,7 +178,7 @@ function intro(model) {
         <li>${icon("drop")}<span>Or <b>drag the SlayTheSpire2 folder</b> (or any <code>.run</code> files) onto this page — works from any drive.</span></li>
         ${pickFiles && model.signedIn ? `<li>${icon("folder")}<span>${pickFiles} if the folder picker won't open.</span></li>` : ""}
         ${signIn}
-        <li>${icon("lock")}<span>Runs stay on this device. Import once — they're here next visit.</span></li>
+        <li>${icon("lock")}<span>${keeps}</span></li>
       </ul>
     </div>`;
 }

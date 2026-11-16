@@ -238,8 +238,11 @@ async function run(browser) {
       return {
         lit: root.querySelectorAll(".v-spire-win.is-lit").length,
         windows: root.querySelectorAll(".v-spire-win").length,
-        flames: root.querySelectorAll(".v-torch-flame").length,
-        embers: root.querySelectorAll(".v-torch-ember").length,
+        door: !!root.querySelector(".v-spire-door"),
+        beacon: !!root.querySelector(".v-spire-beacon"),
+        flames: root.querySelectorAll(".v-torch.is-won .v-torch-flame").length,
+        cold: root.querySelectorAll(".v-torch.is-lost .v-torch-smoke").length,
+        newest: root.querySelectorAll(".v-torch.is-newest").length,
         spireLabel: root.querySelector(".v-spire").getAttribute("aria-label"),
       };
     });
@@ -248,10 +251,15 @@ async function run(browser) {
       const tenText = document.querySelector(".v-path-head span").textContent;
       return { highest: Number(/A(\d+)/.exec(chips[0])[1]), wins: Number(/(\d+)W/.exec(tenText)[1]), losses: Number(/(\d+)L/.exec(tenText)[1]) };
     });
-    assert.equal(stage.lit, model.highest + 1, "one lit window per ascension reached, A0 included");
-    assert.ok(stage.windows >= 11);
-    assert.equal(stage.flames, model.wins);
-    assert.equal(stage.embers, model.losses);
+    // The painted tower: the door is A0, a window per level A1–A10, the
+    // brazier a beacon at A10.
+    assert.equal(stage.windows, 10, "ten windows");
+    assert.equal(stage.lit, Math.min(model.highest, 10), "one lit window per ascension A1–A10");
+    assert.equal(stage.door, model.highest >= 0, "any finished run lights the door");
+    assert.equal(stage.beacon, model.highest >= 10, "the beacon burns at A10");
+    assert.equal(stage.flames, model.wins, "a won run's torch burns");
+    assert.equal(stage.cold, model.losses, "a lost run's torch stands cold and smoking");
+    assert.equal(stage.newest, 1, "the newest run is marked");
     assert.match(stage.spireLabel, new RegExp(`ascension ${model.highest} `));
   });
 
@@ -662,7 +670,8 @@ async function runBrand(browser) {
     await check(`the brand is one word in the tab title and the page (${label})`, async () => {
       const { context, page: p } = await open(browser, path);
       const title = await p.title();
-      assert.match(title, /^(\(\d+\) )?SpireVault · /, `tab title was "${title}"`);
+      // "<page> · SpireVault", the page named after the sidebar tab.
+      assert.match(title, /^(\(\d+\) )?[A-Z][A-Za-z -]+ · SpireVault$/, `tab title was "${title}"`);
       assert.doesNotMatch(title, OLD_BRAND);
       assert.doesNotMatch(await visibleDocumentText(p), OLD_BRAND);
       await context.close();
@@ -1458,6 +1467,98 @@ async function runShare(browser) {
  * wherever the new look shows a card large. The classic look only ever uses
  * the small ones.
  */
+// ---- Saved runs: importing is a one-time thing ------------------------------
+/** The last signed-in Steam account on this device (Web/script.js). */
+const OWNER_KEY = "vault.web.history.owner";
+/** How many sample runs a seeded save holds: fewer than the 73-run sample set. */
+const SEEDED_RUNS = 12;
+
+/**
+ * Writes runs into this origin's saved-runs store under `key`, the way the
+ * app saves an import ("current" for a guest, "current:<steamID>" for an account).
+ * @param {import("playwright").Page} page @param {string} key
+ */
+async function seedSavedRuns(page, key) {
+  await page.evaluate(async ({ key, count }) => {
+    const { getDemoRuns } = await import("/lib/demo-runs.js?v=2");
+    const runs = getDemoRuns().slice(0, count).map((r) => ({
+      ...r,
+      startedAt: r.startedAt ? r.startedAt.toISOString() : null,
+      endedAt: r.endedAt ? r.endedAt.toISOString() : null,
+    }));
+    const db = await new Promise((resolve, reject) => {
+      const req = indexedDB.open("vault-web", 2);
+      req.onupgradeneeded = () => {
+        for (const name of ["history", "handles"]) if (!req.result.objectStoreNames.contains(name)) req.result.createObjectStore(name);
+      };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction("history", "readwrite");
+      tx.objectStore("history").put({ savedAt: new Date().toISOString(), sourceFilename: "verify", runs }, key);
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+    });
+    db.close();
+  }, { key, count: SEEDED_RUNS });
+}
+
+/** @param {import("playwright").Page} page */
+async function savedRunsState(page) {
+  await page.waitForSelector("#overview-body .v-ov, #overview-body .kpi-strip", { timeout: BOOT_TIMEOUT_MS });
+  return page.evaluate(() => ({
+    sample: !!document.querySelector(".demo-banner"),
+    status: document.getElementById("status-dot")?.dataset.state ?? "",
+    label: document.getElementById("status-label")?.textContent.trim() ?? "",
+    note: document.querySelector(".me-pill-guest-note")?.textContent.trim() ?? "",
+  }));
+}
+
+async function runSaves(browser) {
+  await check("a lapsed sign-in keeps your runs on screen, with a nudge to sign in again", async () => {
+    const { context, page: p, errors } = await open(browser, "/?ui=next");
+    await seedSavedRuns(p, `current:${TEST_SESSION.steamID}`);
+    await p.evaluate(({ key, id }) => localStorage.setItem(key, id), { key: OWNER_KEY, id: TEST_SESSION.steamID });
+    await p.reload({ waitUntil: "domcontentloaded" });
+    const state = await savedRunsState(p);
+    assert.equal(state.sample, false, "your saved runs show, not the sample data");
+    assert.equal(state.status, "expired", "the connection line says the sign-in lapsed");
+    assert.match(state.label, /sign in/i);
+    assert.match(state.note, /signed out.*sign in again/i, "the card says what happened and what to do");
+    assert.deepEqual(errors, []);
+    await context.close();
+  });
+
+  await check("after a deliberate sign-out, a shared computer shows nobody's runs", async () => {
+    const { context, page: p } = await open(browser, "/?ui=next");
+    await seedSavedRuns(p, `current:${TEST_SESSION.steamID}`);
+    await p.reload({ waitUntil: "domcontentloaded" });
+    const state = await savedRunsState(p);
+    assert.equal(state.sample, true, "with no account on record, a signed-out visitor sees the sample data");
+    assert.match(state.note, /^Optional\. Unlocks/, "with only sample data, the card says what signing in unlocks");
+    await context.close();
+  });
+
+  await check("a guest's own import still shows on the next visit", async () => {
+    const { context, page: p } = await open(browser, "/?ui=next");
+    await seedSavedRuns(p, "current");
+    await p.reload({ waitUntil: "domcontentloaded" });
+    const state = await savedRunsState(p);
+    assert.equal(state.sample, false);
+    assert.equal(state.status, "offline", "a guest is a guest, not a lapsed sign-in");
+    assert.match(state.note, /saved in this browser only.*back up/i, "the card says where the runs live and how to keep them");
+    await context.close();
+  });
+
+  await check("signing in records the account as this device's owner", async () => {
+    const { context, page: p } = await open(browser, "/?ui=next", { signedIn: true });
+    const owner = await p.evaluate((key) => localStorage.getItem(key), OWNER_KEY);
+    assert.equal(owner, TEST_SESSION.steamID);
+    await context.close();
+  });
+}
+
 async function runCards(browser) {
   await check("the large card faces are on disk at twice the size", async () => {
     const { context, page: p } = await open(browser, "/?ui=next");
@@ -1760,6 +1861,7 @@ async function runCoop(browser) {
 }
 
 const GROUPS = Object.freeze({
+  saves: runSaves,
   core: run,
   coop: runCoop,
   duel: runDuel,

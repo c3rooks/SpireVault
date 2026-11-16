@@ -8,7 +8,7 @@
 import * as Motion from "./motion.js?v=1";
 import * as Theme from "./theme.js?v=4";
 import * as Tokens from "./tokens.js?v=1";
-import * as Stage from "./stage.js?v=1";
+import * as Stage from "./stage.js?v=2";
 import * as Views from "./views.js?v=1";
 import * as CharactersView from "./views-characters.js?v=1";
 import * as AscensionsView from "./views-ascensions.js?v=1";
@@ -21,7 +21,7 @@ import * as ShareCard from "./share-card.js?v=1";
 import * as CardArt from "./card-art-hd.js?v=1";
 import { initCharts, hideChartTip } from "./charts.js?v=1";
 import { startLegacyLayering } from "./legacy-layer.js?v=1";
-import { mountMobileNav } from "./mobile-nav.js?v=4";
+import { mountMobileNav } from "./mobile-nav.js?v=5";
 import { initLookNotice } from "./look-notice.js?v=3";
 
 export {

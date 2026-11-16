@@ -227,7 +227,7 @@ function accountHtml() {
       <button class="v-btn v-btn--primary v-mnav-signin" type="button" data-action="signin-cta" data-analytics-cta="mnav-signin">
         ${ICONS.steam}<span>Sign in with Steam</span>
       </button>
-      <p class="v-mnav-note">Optional. Unlocks ${esc(steamOnlyTabNames())}.</p>`;
+      <p class="v-mnav-note">${esc(document.querySelector(".me-pill-guest-note")?.textContent.trim() || `Optional. Unlocks ${steamOnlyTabNames()}.`)}</p>`;
   }
   if (account.state === "member") {
     const avatar = account.avatar ? `<img class="v-mnav-avatar" src="${esc(account.avatar)}" alt="" width="36" height="36" />` : "";

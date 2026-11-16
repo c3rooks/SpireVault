@@ -3,6 +3,19 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <script>
+    // Local dev: one address. Saved runs, the save-folder link and the
+    // sign-in cookie are kept per origin, so a visit to localhost or [::1]
+    // would start empty beside the runs saved at 127.0.0.1. Runs before
+    // anything below writes storage. Never applies to the deployed app.
+    (function () {
+      var h = location.hostname;
+      if (location.protocol === "http:" && (h === "localhost" || h === "[::1]")) {
+        location.replace("http://127.0.0.1" + (location.port ? ":" + location.port : "") +
+          location.pathname + location.search + location.hash);
+      }
+    })();
+  </script>
   <!-- Defense-in-depth cache busting. The HTTP `Cache-Control: no-store`
        header in `_headers` is the primary mechanism, but Safari's
        in-tab memory cache and bfcache occasionally serve a stale page
@@ -11,23 +24,23 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
   <meta http-equiv="Pragma" content="no-cache" />
   <meta http-equiv="Expires" content="0" />
-  <title>SpireVault · Slay the Spire 2 stats &amp; co-op (web)</title>
+  <title>SpireVault · Slay the Spire 2 stats and co-op</title>
   <meta name="description" content="See your Slay the Spire 2 stats in your browser. Drop your STS2 save folder (.run files) — nothing uploads, everything stays local. Optional Steam sign-in unlocks the co-op partner feed." />
   <meta name="theme-color" content="#0c0a14" />
-  <!-- Modern browsers prefer the crisp vector mark. The PNG fallbacks below
-       exist because some surfaces (Discord/Slack link unfurls, iOS home
-       screen, older browsers) don't render SVG favicons and would otherwise
-       upscale a tiny fallback into a blurry blob — the exact "blurry orange
-       icon" a beta tester reported. Generated from vault-mark.svg. -->
-  <link rel="icon" type="image/svg+xml" href="/assets/vault-mark.svg" />
-  <link rel="icon" type="image/png" sizes="32x32" href="/assets/icon-32.png?v=1" />
-  <link rel="icon" type="image/png" sizes="192x192" href="/assets/icon-192.png?v=1" />
-  <link rel="apple-touch-icon" sizes="180x180" href="/assets/apple-touch-icon.png?v=1" />
+  <!-- The crest is painted art, so there is no vector icon. The 16 and 32px
+       PNGs are fitted to the pixel grid (hard edge, 1px ink ring) so they stay
+       crisp on dark and light tabs; every larger surface gets its own size.
+       All of them come from scripts/build-brand-icons.mjs, and /favicon.ico
+       carries 16/32/48 for anything that asks for it by that name. -->
+  <link rel="icon" type="image/png" sizes="16x16" href="/assets/brand/crest-favicon-16-v1.png" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/assets/brand/crest-favicon-32-v1.png" />
+  <link rel="icon" type="image/png" sizes="192x192" href="/assets/brand/crest-icon-192-v1.png" />
+  <link rel="apple-touch-icon" sizes="180x180" href="/assets/brand/crest-touch-180-v1.png" />
   <link rel="manifest" href="/manifest.webmanifest" />
 
   <meta property="og:title" content="SpireVault · Slay the Spire 2 stats &amp; co-op (web)" />
   <meta property="og:description" content="Drop your STS2 save folder, see your stats instantly. Nothing uploads. Optional Steam sign-in for the co-op partner feed." />
-  <meta property="og:image" content="https://app.spirevault.app/assets/og.png?v=1" />
+  <meta property="og:image" content="https://app.spirevault.app/assets/og-v2.png" />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
   <meta property="og:url" content="https://app.spirevault.app" />
@@ -36,7 +49,7 @@
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="SpireVault · Slay the Spire 2 stats &amp; co-op (web)" />
   <meta name="twitter:description" content="Drop your STS2 save folder, see your stats instantly. Nothing uploads. Optional Steam sign-in for the co-op partner feed." />
-  <meta name="twitter:image" content="https://app.spirevault.app/assets/og.png?v=1" />
+  <meta name="twitter:image" content="https://app.spirevault.app/assets/og-v2.png" />
   <!-- UI boot. Runs before first paint and before the stylesheets below.
        Decides the layout generation (classic | next) and the theme, and tags
        <html> so CSS responds with no flash. Also sets `is-desktop-host` and
@@ -144,7 +157,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link id="vault-legacy-fonts" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Playfair+Display:wght@700;900&family=Cinzel:wght@700;800;900&display=swap" rel="stylesheet" />
-  <link id="vault-legacy-css" rel="stylesheet" href="/styles.css?v=162" />
+  <link id="vault-legacy-css" rel="stylesheet" href="/styles.css?v=163" />
   <!-- Co-op Play card (structure + classic paint). The new look loads it again
        inside the legacy layer below and repaints it from styles.next.css. -->
   <link id="vault-coop-play-css" rel="stylesheet" href="/lib/coop-play.css?v=1" />
@@ -172,11 +185,29 @@
         '<link rel="preload" as="font" type="font/woff2" crossorigin href="/assets/fonts/grenze-gotisch-latin-var-v1.woff2">' +
         '<style id="vault-legacy-layer">' +
           '@layer v-override, legacy, v-reset, v-tokens, v-base, v-shell, v-components, v-surfaces, v-host, v-util;' +
-          '@import url("/styles.css?v=162") layer(legacy);' +
+          '@import url("/styles.css?v=163") layer(legacy);' +
           '@import url("/styles.mobile.css?v=2") layer(legacy) (max-width: 880px);' +
           '@import url("/lib/coop-play.css?v=1") layer(legacy);' +
         '</style>' +
-        '<link rel="stylesheet" href="/styles.next.css?v=7">'
+        '<link rel="stylesheet" href="/styles.next.css?v=8">' +
+        // The header is drawn by lib/ui, which script.js only imports once it
+        // has itself loaded and run, and whose stage code sits four imports
+        // deep: on a phone network each level was another round trip before
+        // the header could draw. Fetching them now, beside the stylesheets,
+        // flattens that to one. The tokens must match the imports exactly
+        // (check-asset-versions fails the build when one file is referenced
+        // at two tokens).
+        '<link rel="modulepreload" href="/script.js?v=231">' +
+        '<link rel="modulepreload" href="/lib/stats-engine.js?v=6">' +
+        '<link rel="modulepreload" href="/lib/history-store.js?v=9">' +
+        '<link rel="modulepreload" href="/lib/ui/index.js?v=7">' +
+        '<link rel="modulepreload" href="/lib/ui/stage.js?v=2">' +
+        '<link rel="modulepreload" href="/lib/ui/stage-scenes.js?v=1">' +
+        '<link rel="modulepreload" href="/lib/ui/stage-life.js?v=1">' +
+        '<link rel="modulepreload" href="/lib/ui/stage-life-list.js?v=1">' +
+        '<link rel="modulepreload" href="/lib/ui/stage-scene-list.js?v=1">' +
+        '<link rel="modulepreload" href="/lib/ui/html.js?v=1">' +
+        '<link rel="modulepreload" href="/lib/ui/motion.js?v=1">'
       );
     })();
   }
@@ -320,7 +351,7 @@
        `hidden` attribute manually. -->
   <header class="topbar topbar-public" id="topbar-public" hidden>
     <a class="brand" href="/">
-      <img src="/assets/vault-mark.svg" alt="" class="brand-emblem" />
+      <img src="/assets/brand/crest-128-v1.webp" alt="" class="brand-emblem" />
       <span class="brand-mark">SpireVault · Web</span>
     </a>
     <div class="topbar-right">
@@ -386,7 +417,7 @@
   <div id="app-shell" class="app-shell">
     <aside class="sidebar" aria-label="App navigation">
       <div class="sidebar-brand">
-        <img src="/assets/vault-emblem.png" alt="" width="44" height="44" />
+        <img src="/assets/brand/crest-trim-96-v1.webp" alt="" width="37" height="44" />
         <div>
           <span class="sidebar-wordmark">SpireVault</span>
           <span class="sidebar-sub">web · for STS2</span>
@@ -507,7 +538,7 @@
           aria-controls="profile-popover"
           title="Open profile menu"
         >
-          <img class="me-pill-avatar" id="me-pill-avatar" alt="" src="/assets/vault-mark.svg" />
+          <img class="me-pill-avatar" id="me-pill-avatar" alt="" src="/assets/brand/crest-avatar-128-v1.png" />
           <div class="me-pill-meta">
             <strong id="me-pill-name">…</strong>
             <span id="me-pill-tier">Steam connected</span>
@@ -560,7 +591,7 @@
            never show an auth CTA whose click handler isn't wired. -->
       <div class="mobile-account-row" aria-hidden="false">
         <div class="me-pill-mini">
-          <img id="me-pill-avatar-mobile" alt="" src="/assets/vault-mark.svg" />
+          <img id="me-pill-avatar-mobile" alt="" src="/assets/brand/crest-avatar-128-v1.png" />
           <strong id="me-pill-name-mobile">…</strong>
         </div>
         <span class="status-dot" id="status-dot-mobile"></span>
@@ -578,7 +609,7 @@
     <main id="app-content" class="content" role="main">
       <!-- =================== Overview =================== -->
       <article class="tab-panel" data-tab="overview" aria-labelledby="tab-overview-title" hidden>
-        <div class="panel-head">
+        <div class="panel-head v-has-stage">
           <div class="panel-head-toprow app-toolbar" role="toolbar" aria-label="Save data actions">
             <div class="app-toolbar-left">
               <span class="linked-pill" data-linked-pill hidden></span>
@@ -644,7 +675,7 @@
            you open that tab — line + (with Random selected) climber refresh
            on tab change so each header feels alive. -->
       <article class="tab-panel" data-tab="characters" aria-labelledby="tab-characters-title" hidden>
-        <div class="panel-head">
+        <div class="panel-head v-has-stage">
           <div class="panel-head-toprow app-toolbar" role="toolbar" aria-label="Save data actions">
             <div class="app-toolbar-left">
               <span class="linked-pill" data-linked-pill hidden></span>
@@ -695,7 +726,7 @@
 
       <!-- =================== Ascensions =================== -->
       <article class="tab-panel" data-tab="ascensions" aria-labelledby="tab-ascensions-title" hidden>
-        <div class="panel-head">
+        <div class="panel-head v-has-stage">
           <div class="panel-head-toprow app-toolbar" role="toolbar" aria-label="Save data actions">
             <div class="app-toolbar-left">
               <span class="linked-pill" data-linked-pill hidden></span>
@@ -746,7 +777,7 @@
 
       <!-- =================== Relics =================== -->
       <article class="tab-panel" data-tab="relics" aria-labelledby="tab-relics-title" hidden>
-        <div class="panel-head">
+        <div class="panel-head v-has-stage">
           <div class="panel-head-toprow app-toolbar" role="toolbar" aria-label="Save data actions">
             <div class="app-toolbar-left">
               <span class="linked-pill" data-linked-pill hidden></span>
@@ -797,7 +828,7 @@
 
       <!-- =================== Cards =================== -->
       <article class="tab-panel" data-tab="cards" aria-labelledby="tab-cards-title" hidden>
-        <div class="panel-head">
+        <div class="panel-head v-has-stage">
           <div class="panel-head-toprow app-toolbar" role="toolbar" aria-label="Save data actions">
             <div class="app-toolbar-left">
               <span class="linked-pill" data-linked-pill hidden></span>
@@ -1233,7 +1264,7 @@
               <figure class="news-post-banner">
                 <picture>
                   <source media="(max-width: 720px)" srcset="/assets/news/post-013-banner-1x.webp?v=1" />
-                  <img src="/assets/news/post-013-banner.webp?v=1" alt="The new SpireVault Overview. An inked night scene runs across the top: a spire with its windows lit, a row of torches, and the Ironclad seated facing the Architect. Below it, a win-rate ring, five character cards in one row, and a fanned hand of stat cards." decoding="async" />
+                  <img loading="lazy" src="/assets/news/post-013-banner.webp?v=1" alt="The new SpireVault Overview. An inked night scene runs across the top: a spire with its windows lit, a row of torches, and the Ironclad seated facing the Architect. Below it, a win-rate ring, five character cards in one row, and a fanned hand of stat cards." decoding="async" />
                 </picture>
               </figure>
               <header class="news-post-head">
@@ -1386,7 +1417,7 @@
                        trap documented on post-007 below doesn't apply — but if you
                        ever replace the art, bump the query per that note. -->
                   <source media="(max-width: 720px)" srcset="/assets/news/post-011-banner-1x.webp?v=2" />
-                  <img src="/assets/news/post-011-banner.webp?v=2" alt="Painted still-life of an antique desk in an ember-lit vault library: a massive open ledger glowing golden, neat stacks of parchment cards, a brass orrery clock, a teal hourglass and a candle. Through the tall arched window behind the desk, a colossal dark spire rises into a violet-and-ember dusk sky full of drifting sparks." decoding="async" />
+                  <img loading="lazy" src="/assets/news/post-011-banner.webp?v=2" alt="Painted still-life of an antique desk in an ember-lit vault library: a massive open ledger glowing golden, neat stacks of parchment cards, a brass orrery clock, a teal hourglass and a candle. Through the tall arched window behind the desk, a colossal dark spire rises into a violet-and-ember dusk sky full of drifting sparks." decoding="async" />
                 </picture>
               </figure>
               <header class="news-post-head">
@@ -1598,7 +1629,7 @@
                        key and forces a fresh origin fetch where the file now
                        exists. If you replace the asset later, bump to ?v=3. -->
                   <source media="(max-width: 720px)" srcset="/assets/news/post-007-banner-1x.webp?v=3" />
-                  <img src="/assets/news/post-007-banner.webp?v=3" alt="Painted illustration of a glowing campfire on a high stone outpost, with four hooded travelers seated around it. In the foreground a wooden notice board pinned with parchment scraps that read like handwritten lobby listings, and a small brass hourglass on a stand beside it. Behind, a vast dark spire rises against a violet-and-ember dusk sky." decoding="async" />
+                  <img loading="lazy" src="/assets/news/post-007-banner.webp?v=3" alt="Painted illustration of a glowing campfire on a high stone outpost, with four hooded travelers seated around it. In the foreground a wooden notice board pinned with parchment scraps that read like handwritten lobby listings, and a small brass hourglass on a stand beside it. Behind, a vast dark spire rises against a violet-and-ember dusk sky." decoding="async" />
                 </picture>
               </figure>
               <header class="news-post-head">
@@ -1866,7 +1897,7 @@
               <figure class="news-post-banner">
                 <picture>
                   <source media="(max-width: 720px)" srcset="/assets/news/post-003-banner-r4-1x.webp" />
-                  <img src="/assets/news/post-003-banner-r4.webp" alt="Painted still-life illustration of an open glowing bestiary tome resting on a stone altar in a candlelit gothic spire chamber. The tome's pages display painted miniature portraits of monsters. A flickering pumpkin candle, a brass fishing rod, a kaleidoscope refracting a small rainbow, a coil of silken golden hair, and a half-open chest of glowing red-and-gold cards rest on the altar around the tome. A tall stained-glass window behind the altar holds the prominent angular crystalline hourglass silhouette of Aeonglass." decoding="async" /></picture>
+                  <img loading="lazy" src="/assets/news/post-003-banner-r4.webp" alt="Painted still-life illustration of an open glowing bestiary tome resting on a stone altar in a candlelit gothic spire chamber. The tome's pages display painted miniature portraits of monsters. A flickering pumpkin candle, a brass fishing rod, a kaleidoscope refracting a small rainbow, a coil of silken golden hair, and a half-open chest of glowing red-and-gold cards rest on the altar around the tome. A tall stained-glass window behind the altar holds the prominent angular crystalline hourglass silhouette of Aeonglass." decoding="async" /></picture>
               </figure>
               <header class="news-post-head">
                 <span class="news-post-eyebrow">Patch · May 9, 2026</span>
@@ -1935,7 +1966,7 @@
               <figure class="news-post-banner">
                 <picture>
                   <source media="(max-width: 720px)" srcset="/assets/news/post-002-banner-1x.webp?v=1" />
-                  <img src="/assets/news/post-002-banner.webp?v=1" alt="Painted illustration of the Ironclad charging the Architect across a crumbling spire chamber — broadsword raised, fire and stone-construct magic colliding mid-air." decoding="async" />
+                  <img loading="lazy" src="/assets/news/post-002-banner.webp?v=1" alt="Painted illustration of the Ironclad charging the Architect across a crumbling spire chamber — broadsword raised, fire and stone-construct magic colliding mid-air." decoding="async" />
                 </picture>
               </figure>
               <header class="news-post-head">
@@ -2105,7 +2136,7 @@
               <figure class="news-post-banner">
                 <picture>
                   <source media="(max-width: 720px)" srcset="/assets/news/post-001-banner-1x.webp?v=2" />
-                  <img src="/assets/news/post-001-banner.webp?v=2" alt="The Regent, the Defect, the Silent, and the Necrobinder gathered around a glowing brazier in a candlelit spire — painted illustration matching the in-game art style." decoding="async" />
+                  <img loading="lazy" src="/assets/news/post-001-banner.webp?v=2" alt="The Regent, the Defect, the Silent, and the Necrobinder gathered around a glowing brazier in a candlelit spire — painted illustration matching the in-game art style." decoding="async" />
                 </picture>
               </figure>
               <header class="news-post-head">
@@ -2528,6 +2559,6 @@
   })();
   </script>
   <script src="/run-coach.js?v=3" defer></script>
-  <script src="/script.js?v=230" type="module"></script>
+  <script src="/script.js?v=231" type="module"></script>
 </body>
 </html>

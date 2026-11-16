@@ -1,0 +1,446 @@
+/* ==========================================================================
+   Stage life: events and near air. What happens now and then in a painted
+   scene (a crow crossing, a leaf falling, a star, lightning, a draught, a
+   fire flaring) and the soft motes in front of the room. The running life
+   and the conventions (plate units, screen for light, multiply for shadow)
+   are in components/stage-life.css; lib/ui/stage-life.js writes both and
+   plays the events.
+   ========================================================================== */
+
+/* ---- Events --------------------------------------------------------------------- */
+/* Hidden until played. Each runs once from the moment .is-on is added. */
+.v-life-ev {
+  position: absolute;
+  visibility: hidden;
+  pointer-events: none;
+}
+.v-life-ev.is-on {
+  visibility: visible;
+}
+/* Nothing happens in a room whose painting has not arrived. */
+.v-scene-img:not(.is-in) ~ .v-life .v-life-ev {
+  visibility: hidden;
+}
+.v-life-flyer,
+.v-life-fall,
+.v-life-meteor,
+.v-life-flash,
+.v-life-dim {
+  inset: 0;
+}
+.v-life-ev.v-life-sweep i {
+  animation: none;
+  opacity: 0;
+}
+.v-life-ev.v-life-sweep.is-on i {
+  opacity: 1;
+  animation: v-sweep var(--dur) ease-in-out 1 both;
+}
+
+/* Something crossing: along its path in a gentle arc, fading in and out at
+   the ends. A flock's members ride a little off the path, each a little
+   late; wings beat, or a wisp weaves. */
+.v-life-fly-mv {
+  position: absolute;
+  left: var(--x);
+  top: var(--y);
+  width: calc(var(--plate-w) * var(--s) * var(--life-scale, 1));
+  translate: calc(-50% + var(--ox) * 100%) calc(-50% + var(--oy) * 100%);
+  opacity: 0;
+}
+.v-life-flyer.is-on .v-life-fly-mv {
+  animation: v-fly var(--dur) linear var(--del) 1 both;
+}
+.v-life-flyer[data-flip] .v-life-fly-body {
+  scale: -1 1;
+}
+.v-life-flyer[data-motion="flap"].is-on .v-life-sprite {
+  animation: v-flap var(--fl) ease-in-out infinite alternate;
+}
+.v-life-flyer[data-motion="wave"].is-on .v-life-fly-body {
+  animation: v-wave 1.7s ease-in-out infinite alternate;
+}
+@keyframes v-fly {
+  0% {
+    opacity: 0;
+    transform: translate(0, 0);
+  }
+  8% {
+    opacity: 1;
+  }
+  50% {
+    transform: translate(
+      calc(var(--plate-w) * var(--dx) * 0.5),
+      calc(var(--plate-h) * var(--dy) * 0.5 - var(--plate-h) * 0.015)
+    );
+  }
+  92% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(calc(var(--plate-w) * var(--dx)), calc(var(--plate-h) * var(--dy)));
+  }
+}
+@keyframes v-flap {
+  from {
+    transform: scaleY(1);
+  }
+  to {
+    transform: translateY(10%) scaleY(0.3);
+  }
+}
+@keyframes v-wave {
+  from {
+    transform: translateX(-35%) rotate(-6deg);
+  }
+  to {
+    transform: translateX(35%) rotate(6deg);
+  }
+}
+
+/* Leaves coming down, swaying and turning as they fall. */
+.v-life-fall-mv {
+  position: absolute;
+  left: var(--x);
+  top: var(--y);
+  width: calc(var(--plate-w) * var(--s) * var(--life-scale, 1));
+  translate: -50% -50%;
+  opacity: 0;
+}
+.v-life-fall.is-on .v-life-fall-mv {
+  animation: v-fall var(--dur) cubic-bezier(0.3, 0.1, 0.6, 1) var(--del) 1 both;
+}
+.v-life-fall.is-on .v-life-fall-sway {
+  animation: v-leaf-sway var(--sd) ease-in-out infinite alternate;
+}
+@keyframes v-fall {
+  0% {
+    opacity: 0;
+    transform: translate(0, 0);
+  }
+  10% {
+    opacity: 1;
+  }
+  85% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(calc(var(--plate-w) * var(--dx)), calc(var(--plate-h) * var(--dy)));
+  }
+}
+@keyframes v-leaf-sway {
+  from {
+    transform: translateX(-120%) rotate(-50deg);
+  }
+  to {
+    transform: translateX(120%) rotate(40deg);
+  }
+}
+
+/* A falling star: the streak's head leads, its tail trails back along the
+   path. */
+.v-life-meteor-mv {
+  position: absolute;
+  left: var(--x);
+  top: var(--y);
+  width: 0;
+  height: 0;
+  opacity: 0;
+}
+.v-life-meteor-mv i {
+  position: absolute;
+  right: 0;
+  top: 0;
+  width: calc(var(--plate-w) * 0.07 * var(--life-scale, 1));
+  height: 2px;
+  translate: 0 -50%;
+  transform-origin: 100% 50%;
+  rotate: var(--a);
+  border-radius: 2px;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--c) 60%, transparent) 70%, #fff);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--c) 70%, transparent);
+}
+.v-life-meteor.is-on .v-life-meteor-mv {
+  animation: v-meteor var(--dur) cubic-bezier(0.3, 0.6, 0.6, 1) 1 both;
+}
+@keyframes v-meteor {
+  0% {
+    opacity: 0;
+    transform: translate(0, 0);
+  }
+  12% {
+    opacity: 1;
+  }
+  70% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(calc(var(--plate-w) * var(--dx)), calc(var(--plate-h) * var(--dy)));
+  }
+}
+
+/* Lightning: the sky flares twice and the bolt shows with it. */
+.v-life-flash-sky {
+  position: absolute;
+  inset: 0;
+  /* Brightest round the bolt, and a wash over the whole room: lightning
+     lights everything for a moment. */
+  background:
+    radial-gradient(
+      ellipse 70% 110% at var(--x) var(--gy, var(--y)),
+      color-mix(in srgb, var(--c) 90%, transparent),
+      color-mix(in srgb, var(--c) 40%, transparent) 40%,
+      transparent 80%
+    ),
+    linear-gradient(color-mix(in srgb, var(--c) 34%, transparent), color-mix(in srgb, var(--c) 22%, transparent));
+  mix-blend-mode: screen;
+  opacity: 0;
+}
+.v-life-flash.is-on .v-life-flash-sky {
+  animation: v-flash 2s linear 1 both;
+}
+.v-life-bolt {
+  position: absolute;
+  left: var(--x);
+  top: var(--y);
+  height: calc(var(--plate-h) * var(--bh));
+  width: calc(var(--plate-h) * var(--bh) / var(--ba));
+  translate: -50% 0;
+  opacity: 0;
+  filter: drop-shadow(0 0 3px #fff) drop-shadow(0 0 10px var(--c));
+}
+.v-life-bolt .v-life-sprite {
+  height: 100%;
+}
+.v-life-flash.is-on .v-life-bolt {
+  animation: v-bolt 2s linear 1 both;
+}
+@keyframes v-flash {
+  0% {
+    opacity: 0;
+  }
+  3% {
+    opacity: var(--k);
+  }
+  7% {
+    opacity: 0.15;
+  }
+  11% {
+    opacity: calc(var(--k) * 0.85);
+  }
+  22% {
+    opacity: 0.1;
+  }
+  40%,
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes v-bolt {
+  0%,
+  2% {
+    opacity: 0;
+  }
+  3% {
+    opacity: 1;
+  }
+  7% {
+    opacity: 0.2;
+  }
+  10% {
+    opacity: 1;
+  }
+  16%,
+  100% {
+    opacity: 0;
+  }
+}
+
+/* A draught: the light round the flames dips, catches, dips, and returns. */
+.v-life-dim i {
+  position: absolute;
+  left: var(--x);
+  top: var(--y);
+  width: var(--cw);
+  height: var(--ch);
+  translate: -50% -50%;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, var(--c), color-mix(in srgb, var(--c) 60%, transparent) 50%, transparent);
+  mix-blend-mode: multiply;
+  opacity: 0;
+}
+.v-life-dim.is-on i {
+  animation: v-dim 3s ease-in-out 1 both;
+}
+@keyframes v-dim {
+  0% {
+    opacity: 0;
+  }
+  12% {
+    opacity: var(--k);
+  }
+  24% {
+    opacity: calc(var(--k) * 0.35);
+  }
+  36% {
+    opacity: calc(var(--k) * 0.85);
+  }
+  60% {
+    opacity: calc(var(--k) * 0.4);
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+/* A flare: the fire's light swells over the walls and settles, while sparks
+   fly up and out from the fire and burn out. */
+.v-life-flare {
+  inset: 0;
+}
+.v-life-flare-glow {
+  position: absolute;
+  left: var(--x);
+  top: var(--y);
+  width: var(--cw);
+  height: var(--ch);
+  translate: -50% -50%;
+  border-radius: 50%;
+  background: radial-gradient(
+    closest-side,
+    color-mix(in srgb, var(--c) 70%, transparent),
+    color-mix(in srgb, var(--c) 28%, transparent) 50%,
+    transparent
+  );
+  mix-blend-mode: screen;
+  opacity: 0;
+}
+.v-life-flare.is-on .v-life-flare-glow {
+  animation: v-flare 2.2s ease-out 1 both;
+}
+.v-life-flare-sparks {
+  position: absolute;
+  left: var(--x);
+  top: var(--y);
+}
+.v-life-flare-sparks i {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: #fff3c4;
+  box-shadow: 0 0 5px 1px color-mix(in srgb, var(--c) 80%, transparent);
+  opacity: 0;
+}
+.v-life-flare.is-on .v-life-flare-sparks i {
+  animation: v-spark var(--sd) cubic-bezier(0.2, 0.7, 0.4, 1) var(--late) 1 both;
+}
+@keyframes v-flare {
+  0% {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+  14% {
+    opacity: var(--k);
+    transform: scale(1.08);
+  }
+  40% {
+    opacity: calc(var(--k) * 0.55);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1);
+  }
+}
+@keyframes v-spark {
+  0% {
+    opacity: 0;
+    transform: translate(0, 0) scale(1.2);
+  }
+  10% {
+    opacity: 1;
+  }
+  75% {
+    opacity: 0.8;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(calc(var(--plate-w) * var(--dx)), calc(var(--plate-h) * var(--dy))) scale(0.4);
+  }
+}
+
+/* ---- Near air ------------------------------------------------------------------- */
+/* Big soft motes out of focus, in front of the spire and behind the
+   figures. The layer eases in a little more than the room does, so the
+   room has depth when the camera moves. */
+.v-life-near {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  mix-blend-mode: screen;
+  transform-origin: 88% 100%;
+  animation: v-life-near-camera var(--camera-time, 46s) ease-in-out calc(var(--camera-time, 46s) / -3) infinite alternate;
+}
+.v-life-near i {
+  position: absolute;
+  left: var(--mx);
+  top: var(--my);
+  width: var(--s);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--c) 36%, transparent),
+    color-mix(in srgb, var(--c) 12%, transparent) 45%,
+    transparent 70%
+  );
+  opacity: 0;
+  animation: v-bokeh var(--dur) ease-in-out var(--del) infinite;
+}
+@keyframes v-life-near-camera {
+  from {
+    transform: scale(1);
+  }
+  to {
+    transform: scale(calc(var(--camera-zoom, 1.06) * 1.05));
+  }
+}
+@keyframes v-bokeh {
+  0%,
+  100% {
+    opacity: 0;
+    transform: translate(0, 0);
+  }
+  30% {
+    opacity: 0.6;
+  }
+  60% {
+    opacity: 0.35;
+    transform: translate(40px, -16px);
+  }
+  85% {
+    opacity: 0.5;
+  }
+  99% {
+    transform: translate(64px, -6px);
+  }
+}
+
+/* ---- Reduced motion ------------------------------------------------------------- */
+/* No events and no near air: they only exist as motion. */
+@media (prefers-reduced-motion: reduce) {
+  .v-life-ev,
+  .v-life-near {
+    display: none;
+  }
+}
+.prefer-reduced-motion .v-life-ev,
+.prefer-reduced-motion .v-life-near {
+  display: none;
+}

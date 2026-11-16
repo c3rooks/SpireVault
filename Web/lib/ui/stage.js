@@ -1,8 +1,16 @@
 // The Stage: the header diorama, drawn as layered, themeable scenery that
 // doubles as a data display. Styles: styles/src/components/stage.css.
 //
-//   spire windows  → lit up to the highest ascension reached
-//   torches        → the last ten runs, oldest on the left (lit = victory)
+//   the tower      → a painted spire: its door lights once you have finished a
+//                    run, a window per ascension up to your highest (A1–A10),
+//                    and the brazier on its tip becomes a beacon at A10
+//   torches        → the last ten runs, oldest on the left: a won run burns,
+//                    a lost one stands cold with a thread of smoke. Where the
+//                    header has open ground they march across it toward the
+//                    tower, the newest nearest it, leading off from the title
+//                    so the row joins the two; otherwise they stand under the
+//                    title. Hover names the run and a click opens
+//                    it; on a touch screen the row opens the Runs tab
 //   the duel       → the climber and the boss, squared off on the ledge
 //
 // The duel reuses renderCompanion()'s state (which climber, which boss, which
@@ -11,71 +19,67 @@
 
 import { esc } from "./html.js?v=1";
 import { STAGE_ACTOR_ART } from "./stage-actors.js?v=1";
+import { STAGE_PROPS } from "./stage-props.js?v=1";
 import { dealScene, peekScene, preloadScene, sceneFarHtml, sceneMidHtml, sceneTints } from "./stage-scenes.js?v=1";
 
 const DEFAULT_ASCENSION_CAP = 10;
-/** Hard ceiling on windows drawn. A corrupt save must not be able to ask
- *  for a billion DOM nodes. */
+/** Hard ceiling on the ascension cap a save can claim, so a corrupt save
+ *  cannot stretch the tower's levels into nonsense. */
 const MAX_ASCENSION_CAP = 20;
 const MAX_TORCHES = 10;
-const TORCH_SPACING = 22;
-const TORCH_VIEW_H = 46;
 
 /** @type {WeakMap<Element, string>} markup last written to each backdrop */
 const painted = new WeakMap();
 
-/**
- * Window positions for the standard A0–A10 spire: [y, width] per level,
- * following the three tiers of the tower. Other caps fall back to an even
- * spread (see windowGeometry).
- */
-const STANDARD_WINDOWS = Object.freeze([
-  [214, 11], [199, 11], [184, 10], [169, 10],
-  [134, 9], [122, 9], [110, 8], [98, 8],
-  [72, 6], [61, 6], [50, 5],
-]);
+/** @param {number} n  a fraction @returns {string} the same as a CSS percentage */
+const pct = (n) => `${(n * 100).toFixed(2)}%`;
 
 /**
- * @param {number} level
+ * The ascension each of the tower's ten windows stands for, bottom to top:
+ * A1–A10 on the standard cap of 10; on a larger cap the windows share the
+ * levels out evenly, so the top window is always the cap.
+ * @param {number} index  0 = the lowest window
  * @param {number} cap
- * @returns {{ y: number, width: number }}
  */
-function windowGeometry(level, cap) {
-  if (cap === DEFAULT_ASCENSION_CAP) {
-    const [y, width] = STANDARD_WINDOWS[level];
-    return { y, width };
-  }
-  const t = cap === 0 ? 0 : level / cap;
-  return { y: 214 - t * 164, width: 11 - t * 6 };
+function windowLevel(index, cap) {
+  return Math.max(1, Math.round(((index + 1) * cap) / STAGE_PROPS.tower.windows.length));
 }
 
 /**
  * @param {number} hiLevel  highest ascension reached, -1 when none
- * @param {number} cap      top ascension level drawn
+ * @param {number} cap      top ascension level
  * @returns {string}
  */
 function spireHtml(hiLevel, cap) {
-  const windows = Array.from({ length: cap + 1 }, (_, level) => {
-    const { y, width } = windowGeometry(level, cap);
-    const classes = ["v-spire-win", level <= hiLevel ? "is-lit" : "", level === hiLevel ? "is-peak" : ""]
-      .filter(Boolean)
-      .join(" ");
-    return `<rect class="${classes}" x="${(60 - width / 2).toFixed(1)}" y="${y.toFixed(1)}" width="${width.toFixed(1)}" height="7" rx="2.5"/>`;
-  }).join("");
+  const tower = STAGE_PROPS.tower;
+  const flame = STAGE_PROPS.flame;
+  const count = tower.windows.length;
+  const lit = tower.windows.map((_, i) => hiLevel >= windowLevel(i, cap));
+  const peak = lit.lastIndexOf(true);
+  const windows = tower.windows
+    .map((y, i) => `<span class="v-spire-win${lit[i] ? " is-lit" : ""}${i === peak ? " is-peak" : ""}" style="top:${pct(y)}"></span>`)
+    .join("");
+  const door = hiLevel >= 0 ? `<span class="v-spire-door"></span>` : "";
+  const beacon =
+    hiLevel >= cap
+      ? `<span class="v-spire-beacon"><span class="v-spire-beacon-glow"></span><img class="v-spire-beacon-flame" src="${flame.src}" width="${flame.width}" height="${flame.height}" alt="" decoding="async"></span>`
+      : "";
   const label =
-    hiLevel >= 0
-      ? `The spire is lit to ascension ${hiLevel} of ${cap}, your highest reached.`
-      : "The spire is dark. Finish a run to light the first window.";
+    hiLevel >= cap
+      ? `The tower is lit to its beacon: ascension ${hiLevel} of ${cap}, your highest reached.`
+      : hiLevel >= 0
+        ? `The tower is lit to ascension ${hiLevel} of ${cap}, your highest reached.`
+        : "The tower is dark. Finish a run to light its door.";
+  const geometry = [
+    `--spire-aspect:${(tower.width / tower.height).toFixed(4)}`,
+    `--door-x:${pct(tower.door.x)}`, `--door-y:${pct(tower.door.y)}`, `--door-w:${pct(tower.door.w)}`, `--door-h:${pct(tower.door.h)}`,
+    `--win-x:${pct(tower.window.x)}`, `--win-w:${pct(tower.window.w)}`, `--win-h:${pct(tower.window.h)}`,
+    `--brazier-x:${pct(tower.brazier.x)}`, `--brazier-y:${pct(tower.brazier.y)}`, `--brazier-w:${pct(tower.brazier.w)}`,
+  ].join(";");
   return `
-    <div class="v-spire" role="img" aria-label="${esc(label)}" title="${esc(label)}">
-      <svg class="v-spire-svg" viewBox="0 0 120 230" aria-hidden="true">
-        <path class="v-spire-body" d="M30 230 L37 158 L32 158 L32 150 L88 150 L88 158 L83 158 L90 230 Z"/>
-        <path class="v-spire-body" d="M40 150 L45 92 L41 92 L41 85 L79 85 L79 92 L75 92 L80 150 Z"/>
-        <path class="v-spire-body" d="M48 85 L52 44 L49 44 L49 38 L71 38 L71 44 L68 44 L72 85 Z"/>
-        <path class="v-spire-roof" d="M50 38 L60 8 L70 38 Z"/>
-        <circle class="v-spire-beacon${hiLevel >= cap ? " is-lit" : ""}" cx="60" cy="8" r="4.5"/>
-        ${windows}
-      </svg>
+    <div class="v-spire" role="img" aria-label="${esc(label)}" title="${esc(label)}" style="${geometry}" data-windows="${count}">
+      <img class="v-spire-art" src="${tower.src}" width="${tower.width}" height="${tower.height}" alt="" decoding="async">
+      ${door}${windows}${beacon}
     </div>`;
 }
 
@@ -92,47 +96,64 @@ function spireCaptionHtml(hiLevel) {
 }
 
 /**
- * The torches' marker, a caption under the row: how many runs it covers and
- * how many were won.
+ * The torches' marker, a caption centred under the row: how many runs it
+ * covers and how many were won. The won count carries the same painted flame
+ * the won runs' torches burn with, so the lit torches read as that number.
  * @param {number} runCount  torches drawn, at least 1
  * @param {number} wins
  * @returns {string}
  */
 function torchCaptionHtml(runCount, wins) {
-  const text = runCount === 1 ? `Last run <b>${wins === 1 ? "won" : "lost"}</b>` : `Last ${runCount} runs <b>${wins} won</b>`;
+  const flame = STAGE_PROPS.flame;
+  const mark = wins > 0 ? `<img class="v-stage-cap-flame" src="${flame.src}" width="${flame.width}" height="${flame.height}" alt="" decoding="async">` : "";
+  const text = runCount === 1 ? `Last run ${mark}<b>${wins === 1 ? "won" : "lost"}</b>` : `Last ${runCount} runs ${mark}<b>${wins} won</b>`;
   return `<span class="v-stage-cap" aria-hidden="true">${text}</span>`;
 }
 
 /**
- * @param {ReadonlyArray<{ won: boolean, label?: string }>} recent  oldest → newest
+ * @typedef {{ won: boolean, id?: string | number, label?: string, floor?: number, date?: string }} StageRun
+ */
+
+/**
+ * One torch: a painted standing torch, burning when the run was won, cold and
+ * smoking when it was lost. Hovering it rewrites the plate under the row (the
+ * "Last 10 runs" caption) to name that run; a click opens it.
+ * @param {StageRun} run @param {number} index @param {boolean} newest
+ */
+function torchHtml(run, index, newest) {
+  const torch = STAGE_PROPS.torch;
+  const flame = STAGE_PROPS.flame;
+  const where = [Number.isFinite(run.floor) ? `floor ${run.floor}` : "", run.date || ""].filter(Boolean).join(" · ");
+  const plate = [
+    newest ? "<b class=\"v-torch-new\">Newest</b>" : "",
+    esc(run.label || `Run ${index + 1}`),
+    `<b class="${run.won ? "is-won" : "is-lost"}">${run.won ? "Victory" : "Defeat"}</b>`,
+    where ? esc(where) : "",
+  ].filter(Boolean).join(" ");
+  const top = run.won
+    ? `<span class="v-torch-glow"></span><img class="v-torch-flame" src="${flame.src}" width="${flame.width}" height="${flame.height}" alt="" decoding="async">`
+    : `<span class="v-torch-smoke" aria-hidden="true"><i></i><i></i><i></i></span>`;
+  const id = run.id !== undefined && run.id !== null && run.id !== "" ? ` data-run-id="${esc(String(run.id))}"` : "";
+  return `
+        <span class="v-torch ${run.won ? "is-won" : "is-lost"}${newest ? " is-newest" : ""}" style="--d:${index}"${id}>
+          ${top}<img class="v-torch-post" src="${torch.src}" width="${torch.width}" height="${torch.height}" alt="" decoding="async">
+          <span class="v-stage-cap v-torch-tip">${plate}</span>
+        </span>`;
+}
+
+/**
+ * @param {ReadonlyArray<StageRun>} recent  oldest → newest
  * @returns {string}
  */
 function torchesHtml(recent) {
   const runs = recent.slice(-MAX_TORCHES);
   if (runs.length === 0) return "";
   const wins = runs.filter((run) => run.won).length;
-  const width = runs.length * TORCH_SPACING;
-  const torches = runs
-    .map((run, index) => {
-      const x = TORCH_SPACING / 2 + index * TORCH_SPACING;
-      const title = `${run.label || `Run ${index + 1}`}: ${run.won ? "victory" : "defeat"}`;
-      const top = run.won
-        ? `<path class="v-torch-flame" style="--d:${index}" d="M${x} 3q8.5 10 0 19q-8.5 -9 0 -19z"/>`
-        : `<circle class="v-torch-ember" cx="${x}" cy="19" r="2.5"/>`;
-      return `
-        <g>
-          <title>${esc(title)}</title>
-          <rect class="v-torch-stick" x="${x - 1.5}" y="24" width="3" height="20" rx="1"/>
-          <path class="v-torch-cup" d="M${x - 5.5} 22h11l-2.5 5h-6z"/>
-          ${top}
-        </g>`;
-    })
-    .join("");
   const noun = runs.length === 1 ? "run" : "runs";
-  const label = `Last ${runs.length} ${noun}: ${wins} won, ${runs.length - wins} lost.`;
+  const label = `Last ${runs.length} ${noun}: ${wins} won, ${runs.length - wins} lost. Open your runs.`;
   return `
-    <div class="v-torches" role="img" aria-label="${esc(label)}" style="--torch-count:${runs.length}">
-      <svg viewBox="0 0 ${width} ${TORCH_VIEW_H}" aria-hidden="true">${torches}</svg>
+    <div class="v-torches" style="--torch-count:${runs.length};--flame-base:${STAGE_PROPS.torch.flameBase};--torch-aspect:${(STAGE_PROPS.torch.width / STAGE_PROPS.torch.height).toFixed(4)}">
+      <button class="v-torch-row" type="button" data-stage-runs aria-label="${esc(label)}">${runs.map((run, i) => torchHtml(run, i, i === runs.length - 1)).join("")}</button>
       ${torchCaptionHtml(runs.length, wins)}
     </div>`;
 }
@@ -266,7 +287,8 @@ function climberSizing(id) {
   const art = actorArt(id);
   const staging = Object.prototype.hasOwnProperty.call(ACTOR_STAGING, id) ? ACTOR_STAGING[id] : FALLBACK_STAGING.climber;
   const aspect = art ? art.width / art.height : FALLBACK_ASPECT;
-  return { height: String(staging.height), aspect: aspect.toFixed(4) };
+  const headX = typeof staging.headX === "number" ? staging.headX : 0.5;
+  return { height: String(staging.height), aspect: aspect.toFixed(4), headX: headX.toFixed(2) };
 }
 
 /**
@@ -402,8 +424,22 @@ export function syncDuelGeometry(root = document) {
 
 /** Open ground kept between the scenery, the title text and the balloon. */
 const AIR_PX = 10;
-/** Below this the tower stops reading as a tower; leave it out instead. */
-const SPIRE_MIN_W_PX = 46;
+/**
+ * Below this the tower stops reading as a tower; leave it out instead.
+ * Wider layouts set it as a height (the old vector tower's 46px width at its
+ * 120:230 shape), turned into a width through the painting's own, slimmer
+ * proportions: the same tower is narrower, not smaller. Phones keep the old
+ * 46px: squeezed narrower there, the slim tower stays tall enough to change
+ * where the speech balloon fits from one line to the next, and a re-roll
+ * must never change the header's height.
+ */
+const SPIRE_MIN_H_PX = 88;
+const SPIRE_MIN_W_PHONE_PX = 46;
+function spireMinWidth() {
+  return window.matchMedia(PHONE_LAYOUT).matches
+    ? SPIRE_MIN_W_PHONE_PX
+    : Math.round((SPIRE_MIN_H_PX * STAGE_PROPS.tower.width) / STAGE_PROPS.tower.height);
+}
 /** Narrowest balloon worth drawing; the longest line wraps to three lines. */
 const BUBBLE_MIN_W_PX = 120;
 const TITLE_TEXT = ".panel-head-stage h2, .panel-head-stage p";
@@ -453,14 +489,14 @@ function fitSpire(head) {
   if (!tower) return;
   const blockers = [
     ...textRects(head, TITLE_TEXT),
-    ...[...head.querySelectorAll(".v-torches svg, .v-torches .v-stage-cap")].map(drawnRect).filter(Boolean),
+    ...[...head.querySelectorAll(".v-torch-row, .v-torches > .v-stage-cap")].map(drawnRect).filter(Boolean),
   ];
   const leftLimit = blockers
     .filter((r) => r.bottom > tower.top && r.top < tower.bottom)
     .reduce((limit, r) => Math.max(limit, r.right + AIR_PX), -Infinity);
   if (leftLimit <= tower.left) return;
   const room = tower.right - leftLimit;
-  if (room < SPIRE_MIN_W_PX) {
+  if (room < spireMinWidth()) {
     head.classList.add("v-stage--no-spire");
     return;
   }
@@ -535,8 +571,14 @@ function openSpan(x, blockers, minLeft, maxRight) {
 }
 
 /**
- * The lowest point the toolbar row reaches: the balloon stays under it.
- * Tabs that draw no toolbar here use the header's own top edge.
+ * Air kept between the toolbar row and the balloon's top: enough that the
+ * balloon reads as the fight's, not as one more control beside Import.
+ */
+const CEILING_AIR_PX = 9;
+
+/**
+ * The lowest point the toolbar row reaches, plus that air: the balloon stays
+ * under it. Tabs that draw no toolbar here use the header's own top edge.
  * @param {HTMLElement} head
  */
 function ceilingOf(head) {
@@ -544,7 +586,63 @@ function ceilingOf(head) {
     .map(drawnRect)
     .filter(Boolean);
   const top = head.getBoundingClientRect().top;
-  return row.reduce((low, r) => Math.max(low, r.bottom), top) + AIR_PX / 2;
+  return row.reduce((low, r) => Math.max(low, r.bottom), top) + CEILING_AIR_PX;
+}
+
+/** @type {Map<string, number>} steadyExtra() answers, by what they depend on */
+const steadyKept = new Map();
+const STEADY_KEPT_MAX = 64;
+/** Header properties a fit writes that steadyExtra() does not read. */
+const STEADY_IGNORED_PROPS = new Set(["--bubble-left", "--bubble-w", "--bubble-bottom", "--tail-x", "--stage-extra", ...DUEL_SIZE_PROPS]);
+
+/**
+ * Everything steadyExtra() reads, as one string: the header's width and the
+ * window's, the look, theme and fonts, the header's classes and inline
+ * properties as the fit has set them so far (spire width, torch march), the
+ * toolbar, the title block, the tower and torches, the line it reserves
+ * for, the climbers it sizes and the boss. Not the climber standing there
+ * now (each one in the pool is sized in turn) nor the line said now.
+ * @param {HTMLElement} head
+ * @param {HTMLElement} duel
+ * @param {HTMLElement} climberEl
+ * @param {HTMLElement} bossEl
+ * @param {number} width
+ * @returns {string}
+ */
+function steadyInputs(head, duel, climberEl, bossEl, width) {
+  const root = document.documentElement;
+  const props = [];
+  for (let i = 0; i < head.style.length; i += 1) {
+    const prop = head.style[i];
+    if (!STEADY_IGNORED_PROPS.has(prop)) props.push(`${prop}:${head.style.getPropertyValue(prop)}`);
+  }
+  const stage = head.querySelector(".panel-head-stage");
+  const slot = head.querySelector(".companion-slot");
+  const parts = [
+    Math.round(width),
+    window.innerWidth,
+    window.innerHeight,
+    root.className,
+    root.getAttribute("data-ui"),
+    root.getAttribute("data-theme"),
+    root.getAttribute("data-steam"),
+    document.fonts ? document.fonts.status : "",
+    [...head.classList].filter((name) => name !== "v-stage--bubble-fit" && name !== "v-stage-off").join(" "),
+    props.sort().join(";"),
+    duel.dataset.longestLine || "",
+    duel.dataset.climberPool || "",
+    ["--boss-h", "--boss-aspect", "--boss-foot"].map((prop) => duel.style.getPropertyValue(prop)).join(","),
+    // A rolled climber is sized from the pool, head and all; a chosen one
+    // stands as it is.
+    duel.dataset.climberPool ? "" : climberEl.dataset.headX || "",
+    bossEl.dataset.headX || "",
+    stage && slot ? stage.outerHTML.replace(slot.outerHTML, "") : stage ? stage.outerHTML : "",
+  ];
+  head.querySelectorAll(":scope > :not(.v-stage-bg):not(.panel-head-stage)").forEach((el) => parts.push(el.outerHTML));
+  head.querySelectorAll(".v-stage-bg .v-spire, .v-stage-bg .v-spire-beacon, .v-stage-bg .v-spire-cap, .v-stage-bg .v-torches").forEach((el) => {
+    parts.push(el.outerHTML);
+  });
+  return parts.join("\n");
 }
 
 /**
@@ -562,8 +660,9 @@ function ceilingOf(head) {
  * carries it as data-longest-line), whoever says it, so the header is one
  * height at a given width: tapping for a new line never makes the page jump.
  *
- * Writes --bubble-left / --bubble-w / --bubble-bottom / --tail-x and
- * --stage-extra; components/stage.css lays the balloon out from them.
+ * Writes --bubble-left / --bubble-w / --bubble-bottom / --tail-x on the
+ * balloon's slot (.v-duel-gap) and --stage-extra on the header;
+ * components/stage.css lays the balloon out from them.
  * @param {HTMLElement} head
  * @returns {{ left: number, right: number, top: number, bottom: number } | null}
  *   where the balloon now is, for the final tower check
@@ -585,18 +684,31 @@ function fitBalloon(head) {
   const maxRight = headBox.right - parseFloat(pad.paddingRight);
   const cap = Math.min(BUBBLE_MAX_PX, (maxRight - minLeft) * BUBBLE_MAX_SHARE);
   const ceiling = ceilingOf(head);
+  // --stage-extra raises the header's min-height, but a title block taller
+  // than that minimum (a long subtitle, the "climbers active" line on a
+  // phone) already holds the header open: the first `slack` pixels of extra
+  // would grow nothing, and the balloon would sit that much higher than
+  // planned, into the toolbar or over the subtitle. Measured with the extra
+  // at zero (fitStage sets it), and added to whatever growth the balloon
+  // asks for.
+  const slack = Math.max(0, headBox.height - (parseFloat(pad.minHeight) || 0));
   const scenery = () => [
     ...textRects(head, TITLE_TEXT),
-    ...[...head.querySelectorAll(".v-torches svg, .v-torches .v-stage-cap, .v-spire, .v-spire-cap")]
+    ...[...head.querySelectorAll(".v-torch-row, .v-torches > .v-stage-cap, .v-spire, .v-spire-beacon, .v-spire-cap")]
       .map(drawnRect)
       .filter(Boolean),
   ];
 
   head.classList.add("v-stage--bubble-fit");
+  // Each trial below writes the balloon's slot and reads the balloon back.
+  // The slot's own inline properties re-style only the slot and the balloon;
+  // the same write on the header would re-style every element in it (the
+  // scene, its life, the figures) before each read, which made a fit cost a
+  // fifth of a second on a laptop and over a second on a phone.
   /** @param {number} left @param {number} width */
   const lay = (left, width) => {
-    head.style.setProperty("--bubble-left", `${(left - headBox.left).toFixed(1)}px`);
-    head.style.setProperty("--bubble-w", `${Math.ceil(width)}px`);
+    slotEl.style.setProperty("--bubble-left", `${(left - headBox.left).toFixed(1)}px`);
+    slotEl.style.setProperty("--bubble-w", `${Math.ceil(width)}px`);
   };
 
   /**
@@ -651,6 +763,7 @@ function fitBalloon(head) {
     const pool = (duel.dataset.climberPool || "").split(" ").filter(Boolean);
     const saved = DUEL_SIZE_PROPS.map((prop) => [prop, duel.style.getPropertyValue(prop), head.style.getPropertyValue(prop)]);
     const actual = textEl.textContent;
+    const actualHeadX = climberEl.dataset.headX;
     textEl.textContent = longest;
     let worst = 0;
     for (const id of pool.length ? pool : [null]) {
@@ -660,6 +773,8 @@ function fitBalloon(head) {
           duel.style.setProperty(prop, value);
           head.style.setProperty(prop, value);
         });
+        // Each climber's own head, where the balloon's tail would point.
+        climberEl.dataset.headX = size.headX;
       }
       for (const bossSpeaks of [false, true]) {
         const option = placeFor(bossSpeaks, 0);
@@ -667,6 +782,8 @@ function fitBalloon(head) {
       }
     }
     textEl.textContent = actual;
+    if (actualHeadX === undefined) delete climberEl.dataset.headX;
+    else climberEl.dataset.headX = actualHeadX;
     saved.forEach(([prop, onDuel, onHead]) => {
       if (onDuel) duel.style.setProperty(prop, onDuel);
       else duel.style.removeProperty(prop);
@@ -675,9 +792,25 @@ function fitBalloon(head) {
     });
     return worst;
   };
+  /**
+   * steadyExtra() with its answer kept: it sizes every climber the roll can
+   * pick, and each one re-styles the whole header, so it is the bulk of a
+   * fit. Its answer does not depend on who stands there now or on the line
+   * now in the balloon, so a re-roll, a new line or a tab opened again at
+   * the same width reuses it.
+   */
+  const steadyExtraKept = () => {
+    const key = steadyInputs(head, duel, climberEl, bossEl, headBox.width);
+    const kept = steadyKept.get(key);
+    if (kept !== undefined) return kept;
+    const worst = steadyExtra();
+    steadyKept.set(key, worst);
+    if (steadyKept.size > STEADY_KEPT_MAX) steadyKept.delete(steadyKept.keys().next().value);
+    return worst;
+  };
 
   const bossSpeaks = duel.classList.contains("v-duel--boss-speaks");
-  let reserved = steadyExtra();
+  let reserved = steadyExtraKept();
   let best = placeFor(bossSpeaks, reserved);
   if ((!best || best.extra > reserved) && drawnRect(head.querySelector(".v-spire"))) {
     // The spire shows the player's ascension progress, so it gives way only
@@ -685,7 +818,7 @@ function fitBalloon(head) {
     // header markedly taller (a phone, where the height is the page).
     const grownWith = best ? Math.max(best.extra, reserved) : Infinity;
     head.classList.add("v-stage--no-spire");
-    const reservedWithout = steadyExtra();
+    const reservedWithout = steadyExtraKept();
     const without = placeFor(bossSpeaks, reservedWithout);
     const grownWithout = without ? Math.max(without.extra, reservedWithout) : Infinity;
     const worth = window.matchMedia(PHONE_LAYOUT).matches ? SPIRE_WORTH_PX : Infinity;
@@ -703,10 +836,72 @@ function fitBalloon(head) {
     return null;
   }
   lay(best.left, best.width);
-  head.style.setProperty("--bubble-bottom", `${(headBox.bottom - best.bottom).toFixed(1)}px`);
-  head.style.setProperty("--tail-x", `${best.tail.toFixed(1)}px`);
-  head.style.setProperty("--stage-extra", `${Math.ceil(Math.max(best.extra, reserved))}px`);
+  slotEl.style.setProperty("--bubble-bottom", `${(headBox.bottom - best.bottom).toFixed(1)}px`);
+  slotEl.style.setProperty("--tail-x", `${best.tail.toFixed(1)}px`);
+  const growth = Math.max(best.extra, reserved);
+  head.style.setProperty("--stage-extra", `${growth > 0 ? Math.ceil(growth + slack) : 0}px`);
   return balloonBox(bubble, slotEl);
+}
+
+/** What a fit writes: inline properties (header or balloon slot) and classes. */
+const FIT_OUTPUT_PROPS = Object.freeze([
+  "--spire-fit-w", "--torch-step-fit", "--torches-left", "--bubble-left", "--bubble-w", "--bubble-bottom", "--tail-x",
+]);
+const FIT_OUTPUT_CLASSES = Object.freeze(["v-stage--no-spire", "v-stage--no-spire-cap", "v-stage--bubble-fit", "v-stage--march"]);
+const FIT_IGNORED_PROPS = new Set([...FIT_OUTPUT_PROPS, "--stage-extra"]);
+/** @type {WeakMap<HTMLElement, string>} what each header looked like at its last fit */
+const fitInputsOf = new WeakMap();
+
+/**
+ * An element's inline style without what the fit itself writes, in a fixed
+ * order (a fit removes and restores properties, which can reorder them).
+ * @param {HTMLElement} el
+ */
+function inlineInputs(el) {
+  const out = [];
+  for (let i = 0; i < el.style.length; i += 1) {
+    const prop = el.style[i];
+    if (!FIT_IGNORED_PROPS.has(prop)) out.push(`${prop}:${el.style.getPropertyValue(prop)}`);
+  }
+  return out.sort().join(";");
+}
+
+/**
+ * Everything a fit of this header reads, as one string: its width and the
+ * window's, the look, theme and fonts, and the markup of what stands in it
+ * (toolbar, title block, figures, balloon text, tower, torches) minus what
+ * the last fit wrote. The scene and its life are left out: they never block
+ * anything, and a new scene is dealt each time a tab opens.
+ * @param {HTMLElement} head
+ * @param {number} width
+ * @returns {string}
+ */
+function fitInputs(head, width) {
+  const root = document.documentElement;
+  const slot = head.querySelector(".v-duel-gap");
+  const slotStyle = slot ? slot.getAttribute("style") : null;
+  const parts = [
+    Math.round(width),
+    window.innerWidth,
+    window.innerHeight,
+    root.className,
+    root.getAttribute("data-ui"),
+    root.getAttribute("data-theme"),
+    root.getAttribute("data-steam"),
+    document.fonts ? document.fonts.status : "",
+    // .v-stage-off only pauses the scene while it is scrolled away.
+    [...head.classList].filter((name) => !FIT_OUTPUT_CLASSES.includes(name) && name !== "v-stage-off").join(" "),
+    inlineInputs(head),
+  ];
+  head.querySelectorAll(":scope > :not(.v-stage-bg)").forEach((el) => {
+    let html = el.outerHTML;
+    if (slotStyle) html = html.replace(` style="${slotStyle.replace(/&/g, "&amp;").replace(/"/g, "&quot;")}"`, "");
+    parts.push(html);
+  });
+  head.querySelectorAll(".v-stage-bg .v-spire, .v-stage-bg .v-spire-beacon, .v-stage-bg .v-spire-cap, .v-stage-bg .v-torches").forEach((el) => {
+    parts.push(el.outerHTML);
+  });
+  return parts.join("\n");
 }
 
 /**
@@ -714,28 +909,105 @@ function fitBalloon(head) {
  * actually on it: this width, this climber, this tab's subtitle, this line.
  * Measured, not guessed, so it holds for every combination;
  * scripts/verify-stage-geometry.mjs checks the result.
+ *
+ * A fit measures the header dozens of times, so it is skipped when nothing
+ * it depends on has changed since the last one (fitInputs): the page asks
+ * for a fit several times while it boots, and again each time a tab is
+ * shown, usually with the header exactly as it was.
  * @param {HTMLElement} head
  */
 function fitStage(head) {
-  ["--spire-fit-w", "--bubble-left", "--bubble-w", "--bubble-bottom", "--tail-x"].forEach((prop) =>
-    head.style.removeProperty(prop)
-  );
+  // A hidden tab has no layout. Its last fit stays as it was; the resize
+  // observer fits it again when it is shown, if anything changed meanwhile.
+  const width = head.getBoundingClientRect().width;
+  if (width === 0) return;
+  const inputs = fitInputs(head, width);
+  if (fitInputsOf.get(head) === inputs) return;
+  const slot = head.querySelector(".v-duel-gap");
+  FIT_OUTPUT_PROPS.forEach((prop) => {
+    head.style.removeProperty(prop);
+    if (slot instanceof HTMLElement) slot.style.removeProperty(prop);
+  });
   // Explicitly none (not removed): stage.css reserves a typical amount until
   // the first fit, and the fit must measure from zero.
   head.style.setProperty("--stage-extra", "0px");
-  head.classList.remove("v-stage--no-spire", "v-stage--no-spire-cap", "v-stage--bubble-fit");
-  // A hidden tab has no layout; it is fitted when it is shown.
-  if (head.getBoundingClientRect().width === 0) return;
+  head.classList.remove(...FIT_OUTPUT_CLASSES);
   fitSpire(head);
+  fitTorches(head);
   const line = fitBalloon(head);
-  // Last word: the balloon and the tower never touch.
-  const tower = drawnRect(head.querySelector(".v-spire"));
-  if (tower && line && crowds(line, tower)) head.classList.add("v-stage--no-spire");
+  // Last word: the balloon and the tower (with its A10 beacon) never touch.
+  const tower = [head.querySelector(".v-spire"), head.querySelector(".v-spire-beacon")].map(drawnRect).filter(Boolean);
+  if (line && tower.some((part) => crowds(line, part))) head.classList.add("v-stage--no-spire");
   fitSpireCaption(head);
+  fitInputsOf.set(head, inputs);
 }
 
 /** Air kept between the tower's caption and the torches' row and caption. */
 const SPIRE_CAP_AIR_PX = 8;
+
+/**
+ * The marching row's spacing (one torch per step; stage.css draws a torch
+ * 1.75 steps tall). Below the least there is not room to march and the
+ * torches stay under the title; above the most they would outgrow the
+ * figures.
+ */
+const MARCH_STEP_MIN_PX = 28;
+const MARCH_STEP_MAX_PX = 40;
+/** How far above the ground a torch reaches, flame included, in steps. */
+const TORCH_REACH_STEPS = 2.3;
+/** Ground kept between the row and the tower's foot, and after the title text. */
+const MARCH_TOWER_GAP_PX = 28;
+const MARCH_TEXT_GAP_PX = 40;
+/**
+ * The least extra ground the marching row leaves before the tower (on top
+ * of MARCH_TOWER_GAP_PX) when the title side is short, so it still reads as
+ * leading off toward the title rather than huddling at the tower's door.
+ * Never more than the ground there is: the title keeps its own gap.
+ */
+const MARCH_LEAD_MIN_PX = 26;
+
+/**
+ * On a wide header the torches leave the title block and march across the
+ * open ground toward the tower (or, when the tower is left out, the
+ * climber), the newest nearest it, as large as the ground allows. The row
+ * stands centred in that ground, so the header balances: hugging the tower,
+ * it left the title's side bare and piled everything on the right. Where
+ * they would not fit at a readable size, they stay under the title. Run
+ * after fitSpire, so the row is measured from where the tower now stands.
+ * Writes --torch-step-fit and --torches-left; components/stage.css lays the
+ * row out from them.
+ * @param {HTMLElement} head
+ */
+function fitTorches(head) {
+  const torches = head.querySelector(".v-torches");
+  const row = drawnRect(head.querySelector(".v-torch-row"));
+  if (!(torches instanceof HTMLElement) || !row || window.matchMedia(PHONE_LAYOUT).matches) return;
+  const frame = torches.offsetParent;
+  const stop = drawnRect(head.querySelector(".v-spire")) || drawnRect(head.querySelector(".v-actor--climber .v-actor-art"));
+  if (!(frame instanceof HTMLElement) || !stop) return;
+  const count = Math.max(1, Number(torches.style.getPropertyValue("--torch-count")) || MAX_TORCHES);
+  const ground = row.bottom;
+  const reachTop = ground - MARCH_STEP_MAX_PX * TORCH_REACH_STEPS;
+  const headBox = head.getBoundingClientRect();
+  const start = textRects(head, TITLE_TEXT)
+    .filter((r) => r.bottom > reachTop && r.top < ground)
+    .reduce((edge, r) => Math.max(edge, r.right + MARCH_TEXT_GAP_PX), headBox.left + parseFloat(getComputedStyle(head).paddingLeft));
+  // The tower's caption is centred under it and can reach further left than
+  // its foot; the row's own caption must not run into it.
+  const spireCap = drawnRect(head.querySelector(".v-spire-cap"));
+  const end = Math.min(stop.left - MARCH_TOWER_GAP_PX, spireCap ? spireCap.left - SPIRE_CAP_AIR_PX * 2 : Infinity);
+  const step = Math.min(MARCH_STEP_MAX_PX, Math.floor((end - start) / count));
+  if (step < MARCH_STEP_MIN_PX) return;
+  // Centred between the title text and the tower: the ground left over is
+  // shared so the bare ground on both sides matches (start and end already
+  // keep different minimum gaps, so half their difference moves it back).
+  const spare = Math.max(0, end - start - step * count);
+  const centred = (spare + MARCH_TEXT_GAP_PX - MARCH_TOWER_GAP_PX) / 2;
+  const lead = Math.min(spare, Math.max(MARCH_LEAD_MIN_PX, centred));
+  head.classList.add("v-stage--march");
+  head.style.setProperty("--torch-step-fit", `${step}px`);
+  head.style.setProperty("--torches-left", `${(end - step * count - lead - frame.getBoundingClientRect().left).toFixed(1)}px`);
+}
 
 /**
  * The tower's caption sits centred under it, on the same line as the
@@ -747,18 +1019,35 @@ const SPIRE_CAP_AIR_PX = 8;
 function fitSpireCaption(head) {
   const caption = drawnRect(head.querySelector(".v-spire-cap"));
   if (!caption) return;
-  const torches = [...head.querySelectorAll(".v-torches svg, .v-torches .v-stage-cap")].map(drawnRect).filter(Boolean);
+  const torches = [...head.querySelectorAll(".v-torch-row, .v-torches > .v-stage-cap")].map(drawnRect).filter(Boolean);
   const left = torches.reduce((edge, r) => Math.max(edge, r.right), -Infinity);
   if (caption.left < left + SPIRE_CAP_AIR_PX) head.classList.add("v-stage--no-spire-cap");
 }
 
+/** @type {Set<HTMLElement> | null} headers waiting for the fit at the end of this task */
+let fitsDue = null;
+
 /**
- * Re-fits every visible stage header.
+ * Re-fits every visible stage header, once, at the end of the current task.
+ * Opening a tab paints its stage and then redraws its duel, and each asks
+ * for a fit: fitting at the first ask measured the header around the old
+ * climber, only to do it all again a moment later. A microtask still runs
+ * before the browser draws, so the header is never seen unfitted.
  * @param {ParentNode} [root]
  */
 export function fitStages(root = document) {
+  if (!fitsDue) {
+    fitsDue = new Set();
+    queueMicrotask(() => {
+      const heads = fitsDue;
+      fitsDue = null;
+      heads.forEach((head) => {
+        if (head.isConnected) fitStage(head);
+      });
+    });
+  }
   root.querySelectorAll(".panel-head.v-has-stage").forEach((head) => {
-    if (head instanceof HTMLElement) fitStage(head);
+    if (head instanceof HTMLElement) fitsDue.add(head);
   });
 }
 
@@ -859,7 +1148,26 @@ const stageResizeObserver =
           const width = Math.round(box ? box.inlineSize : head.getBoundingClientRect().width);
           if (fittedWidth.get(head) === width) return;
           fittedWidth.set(head, width);
-          fitStage(head);
+          // Hidden (0) fits nothing; shown again, fitStage re-fits only if
+          // something the fit reads changed while the tab was away.
+          if (width > 0) fitStage(head);
+        });
+      })
+    : null;
+
+/**
+ * Pauses a header's scene while it is scrolled out of view (.v-stage-off;
+ * components/stage.css). A running animation costs a style pass on every
+ * frame the page draws, so on a phone the header's hundred-odd loops made
+ * every frame of scrolling the tab below it slow, long after the header
+ * itself had gone off the top.
+ */
+const stageOffscreenObserver =
+  typeof IntersectionObserver === "function"
+    ? new IntersectionObserver((entries) => {
+        entries.forEach((entry) => {
+          // A hidden tab reports no intersection too; it never draws anyway.
+          entry.target.classList.toggle("v-stage-off", !entry.isIntersecting && entry.boundingClientRect.height > 0);
         });
       })
     : null;
@@ -875,9 +1183,12 @@ export function ensureStageMounts(tabs) {
     if (!head || head.querySelector(":scope > .v-stage-bg")) return;
     const backdrop = document.createElement("div");
     backdrop.className = "v-stage-bg";
+    // The stats tabs' markup already carries the class (index.html), so the
+    // page paints with the stage's layout before this module arrives.
     head.classList.add("v-has-stage");
     head.prepend(backdrop);
     if (stageResizeObserver) stageResizeObserver.observe(head, { box: "border-box" });
+    if (stageOffscreenObserver) stageOffscreenObserver.observe(head);
   });
   // The display face changes the title's width once it arrives.
   if (document.fonts && document.fonts.ready) {
@@ -901,6 +1212,9 @@ export function renderStage(model) {
       if (panel.dataset.tab) openTab = panel.dataset.tab;
     }
     paintBackdrop(backdrop, model);
+    // The tower's width follows its painting's proportions; the header sizes
+    // the tower (and centres its caption) from this.
+    backdrop.closest(".panel-head")?.style.setProperty("--spire-aspect", (STAGE_PROPS.tower.width / STAGE_PROPS.tower.height).toFixed(4));
   });
   fitStages();
 }

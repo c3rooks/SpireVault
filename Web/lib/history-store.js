@@ -35,11 +35,30 @@ const HANDLE_KEY = "history-file";
 const HANDLE_KEY_DIR = "history-directory";
 
 let activeSteamID = null;
+/** The account whose runs a signed-out visitor still sees on this device
+ *  after a sign-in lapsed (an expired session, a rejected token): the last
+ *  account signed in here. script.js sets it from localStorage and clears
+ *  it on a deliberate sign-out, which is what keeps a shared computer
+ *  private. Never used while someone is signed in. */
+let fallbackSteamID = null;
+/** True when the last loadHistory() answered from the fallback account. */
+let servedFallback = false;
 
 /** Set the Steam ID used to scope history reads/writes. Call after
  *  successful sign-in (or with `null` on sign-out). Idempotent. */
 export function setActiveSteamID(steamID) {
   activeSteamID = steamID && /^\d{17}$/.test(steamID) ? steamID : null;
+}
+
+/** Set (or clear with `null`) the lapsed account whose runs a signed-out
+ *  visitor still sees. Idempotent. */
+export function setFallbackSteamID(steamID) {
+  fallbackSteamID = steamID && /^\d{17}$/.test(steamID) ? steamID : null;
+}
+
+/** Whether the last loadHistory() returned the lapsed account's runs. */
+export function loadedFromFallback() {
+  return servedFallback;
 }
 
 /** Resolve the IDB key for the active scope. */
@@ -82,7 +101,25 @@ export async function saveHistory(record) {
   db.close();
 }
 
+/** @param {any} record @returns {number} */
+function runCount(record) {
+  return Array.isArray(record?.runs) ? record.runs.length : 0;
+}
+
+/** Reads one history record; null when absent or unreadable. */
+function readRecord(key) {
+  return new Promise((res) => {
+    open().then((db) => {
+      const tx = db.transaction(STORE, "readonly");
+      const req = tx.objectStore(STORE).get(key);
+      req.onsuccess = () => { res(req.result ?? null); db.close(); };
+      req.onerror = () => { res(null); try { db.close(); } catch {} };
+    }).catch(() => res(null));
+  });
+}
+
 export async function loadHistory() {
+  servedFallback = false;
   const key = activeHistoryKey();
   const db = await open();
   const value = await new Promise((res, rej) => {
@@ -92,7 +129,17 @@ export async function loadHistory() {
     req.onerror = () => rej(req.error);
   });
   db.close();
-  if (!activeSteamID) return value;
+  if (!activeSteamID) {
+    // Signed out. A lapsed sign-in must not hide runs this device saved
+    // under that account: show whichever holds more, theirs or the guest's.
+    if (!fallbackSteamID) return value;
+    const lapsed = await readRecord(`${LEGACY_KEY}:${fallbackSteamID}`);
+    if (runCount(lapsed) > runCount(value)) {
+      servedFallback = true;
+      return lapsed;
+    }
+    return value;
+  }
   // Signed-in path: prefer the richer record across scoped+legacy. This
   // fixes the "stuck at 1 run" class where an old scoped snapshot exists
   // but the user later imported a much larger set under legacy scope.
@@ -116,7 +163,8 @@ export async function loadHistory() {
  *  the active scope (Steam-keyed when signed in, legacy otherwise).
  *  Pass `{ allScopes: true }` to wipe every history record (used on
  *  sign-out so a shared browser cannot leak one user's runs to the
- *  next signed-in user). */
+ *  next signed-in user), or `{ includeFallback: true }` to also clear a
+ *  lapsed account's runs shown to a signed-out visitor. */
 export async function clearHistory(opts = {}) {
   const db = await open();
   await new Promise((res, rej) => {
@@ -133,6 +181,9 @@ export async function clearHistory(opts = {}) {
       req.onerror = () => rej(req.error);
     } else {
       store.delete(activeHistoryKey());
+      // "Clear my runs" while signed out also clears the lapsed account's
+      // runs being shown, or they would come straight back on reload.
+      if (opts.includeFallback && !activeSteamID && fallbackSteamID) store.delete(`${LEGACY_KEY}:${fallbackSteamID}`);
     }
     tx.oncomplete = res;
     tx.onerror = () => rej(tx.error);

@@ -202,8 +202,8 @@ input[type="text"]:focus { outline: none; border-color: var(--gold); box-shadow:
 .brand-emblem {
   width: 32px;
   height: 32px;
-  border-radius: 7px;
-  border: 1px solid rgba(212,175,55,0.4);
+  /* The crest is a shield with its own outline: no frame, a warm glow. */
+  filter: drop-shadow(0 1px 6px rgba(255, 107, 26, 0.28));
 }
 .brand-mark {
   font-family: 'Playfair Display', serif;
@@ -802,8 +802,7 @@ main.main-public,
   width: 64px;
   height: 64px;
   margin: 0 auto 16px;
-  border-radius: 14px;
-  border: 1px solid rgba(212,175,55,0.45);
+  filter: drop-shadow(0 2px 10px rgba(255, 107, 26, 0.3));
 }
 .auth-callback h1 {
   font-family: 'Playfair Display', serif;
@@ -890,10 +889,9 @@ main.main-public,
   padding: 22px 18px 14px;
 }
 .sidebar-brand img {
-  width: 44px; height: 44px;
-  border-radius: 10px;
-  border: 1px solid rgba(212,175,55,0.45);
-  box-shadow: 0 2px 14px rgba(255, 107, 26, 0.22);
+  width: auto; height: 44px;
+  /* The crest is a shield with its own outline: no frame, a warm glow. */
+  filter: drop-shadow(0 2px 10px rgba(255, 107, 26, 0.3));
 }
 .sidebar-brand > div { display: flex; flex-direction: column; gap: 2px; }
 .sidebar-wordmark {
@@ -1906,6 +1904,8 @@ html:not([data-ui="next"]) .tab-lock-note {
 .status-dot[data-state="online"]    { background: var(--win); box-shadow: 0 0 8px rgba(109,217,124,0.5); }
 .status-dot[data-state="connecting"]{ background: var(--gold); animation: pulse 2s infinite; }
 .status-dot[data-state="trouble"]   { background: var(--loss); }
+/* A lapsed sign-in: orange, the colour of the sign-in it asks for. */
+.status-dot[data-state="expired"]   { background: var(--accent); box-shadow: 0 0 8px rgba(255, 107, 26, 0.45); }
 
 .status-signout {
   margin-left: auto;

@@ -46,6 +46,11 @@
   --veil-all: var(--scene-veil, 14%);
   --veil-title: 80%;
   --veil-top: 44%;
+  /* A soft pool of the same dark right behind the title block, so the title
+     stands apart from the art without dimming the rest of the room. */
+  --veil-pool: 30%;
+  --veil-pool-size: 30% 44%;
+  --veil-pool-at: 13% 60%;
   /* One slow push in and out of the picture. */
   --camera-zoom: 1.06;
   --camera-time: 46s;
@@ -74,6 +79,8 @@
    floor hangs below, cropped). Anchored bottom right, where the duel is. */
 .v-scene-plate {
   --plate-w: max(100cqw, calc(100cqh * var(--plate-ratio) / var(--focus)));
+  /* The picture's height, for the life on it (components/stage-life.css). */
+  --plate-h: calc(var(--plate-w) / var(--plate-ratio));
   position: absolute;
   right: 0;
   bottom: calc(var(--plate-w) / var(--plate-ratio) * (var(--focus) - 1));
@@ -445,6 +452,13 @@
   inset: 0;
   pointer-events: none;
   background:
+    /* a soft pool right behind the title block */
+    radial-gradient(
+      ellipse var(--veil-pool-size) at var(--veil-pool-at),
+      color-mix(in srgb, var(--scene-sky-1) var(--veil-pool), transparent) 0%,
+      color-mix(in srgb, var(--scene-sky-1) calc(var(--veil-pool) * 0.5), transparent) 55%,
+      transparent 100%
+    ),
     /* behind the title, the torches and their chip */
     linear-gradient(
       90deg,
@@ -465,6 +479,10 @@
   .v-stage-bg {
     --veil-all: max(var(--scene-veil, 14%), 34%);
     --veil-title: 54%;
+    /* The title runs across half the header here. */
+    --veil-pool: 28%;
+    --veil-pool-size: 52% 46%;
+    --veil-pool-at: 28% 54%;
     --camera-zoom: 1.04;
   }
 }

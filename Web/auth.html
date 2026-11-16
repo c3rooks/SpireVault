@@ -4,9 +4,10 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Signing in… · SpireVault</title>
-  <link rel="icon" type="image/svg+xml" href="/assets/vault-mark.svg" />
+  <link rel="icon" type="image/png" sizes="16x16" href="/assets/brand/crest-favicon-16-v1.png" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/assets/brand/crest-favicon-32-v1.png" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/styles.css?v=162" />
+  <link rel="stylesheet" href="/styles.css?v=163" />
 
   <!-- Google tag (gtag.js) — same stream as the main app. We track the
        Steam OpenID return as its own page_view so the funnel tab in
@@ -25,7 +26,7 @@
 <body>
   <div class="bg-glow" aria-hidden="true"></div>
   <main class="auth-callback">
-    <img src="/assets/vault-mark.svg" alt="" class="auth-emblem" />
+    <img src="/assets/brand/crest-128-v1.webp" alt="" class="auth-emblem" />
     <h1>Finishing sign-in…</h1>
     <p class="muted" id="auth-status">Verifying your Steam session.</p>
     <p class="muted small" id="auth-detail" hidden></p>
@@ -148,7 +149,9 @@
       // because the cookie is set by a *server* on the same host as the
       // page. Retried with backoff — mobile networks sometimes drop the
       // first POST during the redirect storm right after Steam returns.
+      // Returns the last HTTP status (0 when every attempt failed to send).
       async function stampSessionCookie(token) {
+        let status = 0;
         for (let attempt = 0; attempt < 3; attempt++) {
           try {
             const r = await fetch("/api/_session", {
@@ -157,7 +160,11 @@
               headers: { "content-type": "application/json" },
               body: JSON.stringify({ token }),
             });
-            if (r.ok) return;
+            status = r.status;
+            if (r.ok) return status;
+            // 401: this server doesn't know the token. Ask once more in case
+            // the brand-new session hadn't reached it yet, then stop.
+            if (r.status === 401 && attempt >= 1) return status;
           } catch (err) {
             if (attempt === 2) {
               beacon("cookie-set-failed", String((err && err.message) || err).slice(0, 120));
@@ -165,40 +172,54 @@
           }
           await new Promise((res) => setTimeout(res, 350 * (attempt + 1)));
         }
+        return status;
       }
-      await stampSessionCookie(session);
-      // Success beacon too, so the funnel can show "client confirmed
-      // landing" vs "server thinks they auth'd but they never made it".
-      beacon("client-landed", `persona=${persona.slice(0,32)}`);
-      // Native host hand-off. The macOS desktop app loads this page
-      // inside a WKWebView during the OpenID round-trip; once we've
-      // verified the nonce + session here, post the credentials
-      // straight to native code so SteamAuth.acceptWebSession() can
-      // light up the sidebar pill, Co-op presence, and every native
-      // API call simultaneously. Without this hand-off, the embedded
-      // page would be signed in but the surrounding native chrome
-      // would still render the guest pill — the worst kind of bug
-      // because users blame the web part for working.
-      try {
-        const isDesktopHost =
-          (typeof window !== "undefined" && window.__VAULT_DESKTOP__ === true) ||
-          (typeof navigator !== "undefined" &&
-            /Spire-Vault-macOS\//.test(navigator.userAgent || ""));
-        if (isDesktopHost &&
-            window.webkit &&
-            window.webkit.messageHandlers &&
-            window.webkit.messageHandlers.vaultHost) {
-          window.webkit.messageHandlers.vaultHost.postMessage({
-            kind: "auth",
-            steamid: steamid,
-            persona: persona,
-            avatar: avatar || "",
-            session: session,
-          });
-        }
-      } catch { /* host not present — web path keeps working */ }
-      status.textContent = "Welcome, " + persona + ".";
-      setTimeout(() => { window.location.replace("/"); }, 350);
+      const stamped = await stampSessionCookie(session);
+      if (stamped === 401) {
+        // The server refused the session (locally: Steam handed it to a
+        // different backend than the one this page talks to). Saying
+        // "Welcome" here sent people back to the app signed out, with no
+        // word of why; the next boot dropped the session anyway.
+        localStorage.removeItem("vault.web.session");
+        fail(
+          "cookie-rejected",
+          "Steam signed you in, but this server didn't accept the session, so you aren't signed in here. Please try again.",
+          "post-session=401"
+        );
+      } else {
+        // Success beacon too, so the funnel can show "client confirmed
+        // landing" vs "server thinks they auth'd but they never made it".
+        beacon("client-landed", `persona=${persona.slice(0,32)}`);
+        // Native host hand-off. The macOS desktop app loads this page
+        // inside a WKWebView during the OpenID round-trip; once we've
+        // verified the nonce + session here, post the credentials
+        // straight to native code so SteamAuth.acceptWebSession() can
+        // light up the sidebar pill, Co-op presence, and every native
+        // API call simultaneously. Without this hand-off, the embedded
+        // page would be signed in but the surrounding native chrome
+        // would still render the guest pill — the worst kind of bug
+        // because users blame the web part for working.
+        try {
+          const isDesktopHost =
+            (typeof window !== "undefined" && window.__VAULT_DESKTOP__ === true) ||
+            (typeof navigator !== "undefined" &&
+              /Spire-Vault-macOS\//.test(navigator.userAgent || ""));
+          if (isDesktopHost &&
+              window.webkit &&
+              window.webkit.messageHandlers &&
+              window.webkit.messageHandlers.vaultHost) {
+            window.webkit.messageHandlers.vaultHost.postMessage({
+              kind: "auth",
+              steamid: steamid,
+              persona: persona,
+              avatar: avatar || "",
+              session: session,
+            });
+          }
+        } catch { /* host not present — web path keeps working */ }
+        status.textContent = "Welcome, " + persona + ".";
+        setTimeout(() => { window.location.replace("/"); }, 350);
+      }
     }
   </script>
 </body>

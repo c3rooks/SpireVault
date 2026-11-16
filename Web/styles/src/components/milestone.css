@@ -1,0 +1,126 @@
+/* ==========================================================================
+   Milestone card: "First victory!", "100 runs!" and the like.
+
+   Built by showMilestoneToast() in script.js: a #milestone-stack holding one
+   .milestone-card (icon, title, body, close). One card at a time: a newer
+   milestone replaces the one showing, and a first import records milestones
+   without showing any. In the new look it is a parchment card in the same
+   family as the first-visit notice, top right on a laptop and across the top
+   on a phone, clear of the top bar.
+   ========================================================================== */
+
+.milestone-stack {
+  position: fixed;
+  top: var(--v-space-4);
+  right: var(--v-space-4);
+  left: auto;
+  z-index: 150;
+  width: min(360px, calc(100vw - 24px));
+  max-width: none;
+  pointer-events: none;
+}
+@media (max-width: 880px) {
+  .milestone-stack {
+    top: calc(64px + 12px + env(safe-area-inset-top));
+    right: 12px;
+    left: 12px;
+    width: auto;
+  }
+}
+
+.milestone-card {
+  pointer-events: auto;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: var(--v-space-3);
+  padding: var(--v-space-3) var(--v-space-2) var(--v-space-3) var(--v-space-3);
+  border: var(--v-outline);
+  border-radius: var(--v-radius-lg);
+  background: var(--v-paper);
+  box-shadow: var(--v-shadow-lg);
+  color: var(--v-on-paper);
+  animation: v-milestone-in 360ms var(--v-ease-spring) both;
+}
+.milestone-card.is-leaving {
+  animation: v-milestone-out 240ms ease-in both;
+}
+@keyframes v-milestone-in {
+  from {
+    opacity: 0;
+    transform: translateY(-10px) scale(0.96);
+  }
+}
+@keyframes v-milestone-out {
+  to {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.96);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .milestone-card,
+  .milestone-card.is-leaving {
+    animation: none;
+  }
+}
+
+/* The emoji sits in a gold medallion so it reads as a seal on the paper. */
+.milestone-icon {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: var(--v-outline);
+  border-radius: 50%;
+  background: var(--v-gold);
+  box-shadow: var(--v-shadow-sm);
+  font-size: 22px;
+  line-height: 1;
+  filter: none;
+}
+.milestone-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.milestone-title {
+  font-family: var(--v-font-heading);
+  font-size: var(--v-text-lg);
+  font-weight: 800;
+  line-height: 1.15;
+  letter-spacing: 0;
+  color: var(--v-on-paper);
+}
+.milestone-body {
+  font-size: var(--v-text-sm);
+  line-height: 1.4;
+  color: var(--v-on-paper-2);
+}
+.milestone-close {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--v-on-paper-2);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+}
+.milestone-close:hover {
+  background: rgba(10, 6, 22, 0.08);
+  color: var(--v-on-paper);
+}
+.milestone-close:focus-visible {
+  outline-color: var(--v-on-paper);
+}
+@media (hover: none), (max-width: 880px) {
+  .milestone-close {
+    width: 44px;
+    height: 44px;
+  }
+}
