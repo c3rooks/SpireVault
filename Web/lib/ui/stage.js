@@ -723,7 +723,7 @@ function fitStage(head) {
   // Explicitly none (not removed): stage.css reserves a typical amount until
   // the first fit, and the fit must measure from zero.
   head.style.setProperty("--stage-extra", "0px");
-  head.classList.remove("v-stage--no-spire", "v-stage--bubble-fit");
+  head.classList.remove("v-stage--no-spire", "v-stage--no-spire-cap", "v-stage--bubble-fit");
   // A hidden tab has no layout; it is fitted when it is shown.
   if (head.getBoundingClientRect().width === 0) return;
   fitSpire(head);
@@ -731,6 +731,25 @@ function fitStage(head) {
   // Last word: the balloon and the tower never touch.
   const tower = drawnRect(head.querySelector(".v-spire"));
   if (tower && line && crowds(line, tower)) head.classList.add("v-stage--no-spire");
+  fitSpireCaption(head);
+}
+
+/** Air kept between the tower's caption and the torches' row and caption. */
+const SPIRE_CAP_AIR_PX = 8;
+
+/**
+ * The tower's caption sits centred under it, on the same line as the
+ * torches' caption. Where the tower stands close to the torches (a phone),
+ * the caption would run into them: then only the caption goes, the tower
+ * stays.
+ * @param {HTMLElement} head
+ */
+function fitSpireCaption(head) {
+  const caption = drawnRect(head.querySelector(".v-spire-cap"));
+  if (!caption) return;
+  const torches = [...head.querySelectorAll(".v-torches svg, .v-torches .v-stage-cap")].map(drawnRect).filter(Boolean);
+  const left = torches.reduce((edge, r) => Math.max(edge, r.right), -Infinity);
+  if (caption.left < left + SPIRE_CAP_AIR_PX) head.classList.add("v-stage--no-spire-cap");
 }
 
 /**

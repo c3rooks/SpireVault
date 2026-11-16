@@ -2494,7 +2494,8 @@
     aspect-ratio: 120 / 230;
   }
   .v-stage--no-spire .v-spire,
-  .v-stage--no-spire .v-spire-cap {
+  .v-stage--no-spire .v-spire-cap,
+  .v-stage--no-spire-cap .v-spire-cap {
     display: none;
   }
   .v-spire-svg {

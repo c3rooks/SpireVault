@@ -104,7 +104,8 @@
 }
 /* No room for the tower between the title and the fight on this layout. */
 .v-stage--no-spire .v-spire,
-.v-stage--no-spire .v-spire-cap {
+.v-stage--no-spire .v-spire-cap,
+.v-stage--no-spire-cap .v-spire-cap {
   display: none;
 }
 .v-spire-svg {
