@@ -109,6 +109,8 @@ html[data-steam="out"] .nav-row[data-steam-lock] .nav-lock {
   font-size: 1rem;
   font-weight: 600;
   line-height: 1.5;
+  /* No one-word last line ("players.", "signing in."). */
+  text-wrap: pretty;
 }
 .tab-lock-cta {
   display: inline-flex;
@@ -126,6 +128,12 @@ html[data-steam="out"] .nav-row[data-steam-lock] .nav-lock {
   font-size: var(--v-text-sm);
   font-weight: 500;
   line-height: 1.45;
+  text-wrap: pretty;
+}
+/* The card is paper: the global gold focus ring vanishes there; the paper's
+   own text colour reads in every theme. */
+.tab-lock :focus-visible {
+  outline-color: var(--v-on-paper);
 }
 
 /* ---- Phones ------------------------------------------------------------------- */

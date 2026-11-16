@@ -65,6 +65,7 @@ const MANIFEST = [
   ["v-components", "components/cards.css"],
   ["v-components", "components/charts.css"],
   ["v-components", "components/theme-picker.css"],
+  ["v-components", "components/look-switch.css"],
   ["v-components", "components/tab-lock.css"],
   ["v-surfaces", "surfaces/overview.css"],
   ["v-surfaces", "surfaces/empty.css"],

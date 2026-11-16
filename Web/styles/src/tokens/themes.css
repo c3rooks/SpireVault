@@ -8,7 +8,7 @@
    that tokens cannot reach.
    ========================================================================== */
 
-/* ---- Classic Vault: today's ember-and-gold palette on the new layout ---- */
+/* ---- Ember Vault (id "vault"): the classic look's ember-and-gold palette on the new layout ---- */
 [data-theme="vault"] {
   --v-ink: #06040a;
   --v-bg: #0c0a14;

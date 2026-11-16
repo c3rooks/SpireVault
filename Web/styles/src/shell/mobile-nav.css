@@ -250,7 +250,8 @@
     align-items: center;
     justify-content: space-between;
     gap: var(--v-space-3);
-    padding: var(--v-space-3) var(--v-space-3) var(--v-space-2) var(--v-space-4);
+    /* 16px each side, the same inset as everything below it in the sheet. */
+    padding: var(--v-space-3) var(--v-space-4) var(--v-space-2);
   }
   .v-mnav-title {
     margin: 0;
@@ -788,3 +789,18 @@
 }
 .prefer-reduced-motion .v-mnav-sheet[open] :is(.v-mnav-panel, .v-mnav-scrim) { animation: none; }
 .prefer-reduced-motion :is(.sidebar-nav[data-v-mnav] :is(.nav-row, .nav-icon), [class*="v-mnav-"]) { transition: none; }
+
+/* The account row in the More sheet carries the live connection line. */
+.v-mnav-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+.v-mnav-status[data-state="trouble"] {
+  color: color-mix(in oklab, var(--v-loss) 78%, var(--v-text));
+  font-weight: 700;
+}
+.v-mnav-status[data-state="expired"] {
+  color: color-mix(in oklab, var(--v-accent) 78%, var(--v-text));
+  font-weight: 700;
+}

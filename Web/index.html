@@ -49,15 +49,20 @@
        DEFAULT_UI_* constants → a capability gate (no cascade layers or
        color-mix means classic). `?ui=classic-once` is the load-failure
        fallback from script.js: classic for this page view, not persisted.
+       `?ui=fresh` forgets the stored look and the answered first-visit
+       notice, so anyone can replay what a new visitor sees.
 
-       Rolling the new look out, or back, is a one-line change to
-       DEFAULT_UI_WEB / DEFAULT_UI_DESKTOP in this no-store HTML file.
+       The new look is the default (2026-11-15). Rolling it back is a one-line
+       change to DEFAULT_UI_WEB / DEFAULT_UI_DESKTOP in this no-store HTML file.
+       window.__VAULT_UI_SOURCE__ records why the layout was picked ("link",
+       "stored", "default" or "forced"); lib/ui/look-notice.js shows its
+       one-time "how to switch back" card only for "default".
 
        Storage keys and the theme list must match lib/ui/theme.js. -->
   <script>
   (function () {
-    var DEFAULT_UI_WEB = "classic";
-    var DEFAULT_UI_DESKTOP = "classic";
+    var DEFAULT_UI_WEB = "next";
+    var DEFAULT_UI_DESKTOP = "next";
     var THEMES = ["inked", "vault", "auto", "ironclad", "silent", "defect", "regent", "necrobinder"];
     var root = document.documentElement;
 
@@ -75,15 +80,23 @@
     root.setAttribute("data-host", isDesktop ? "desktop" : "web");
 
     var ui = param("ui");
-    if (ui === "classic-once") ui = "classic";
+    var source = "link";
+    // ?ui=fresh replays a first visit: forget the chosen look and the
+    // answered notice, then fall through to the default like a new visitor.
+    if (ui === "fresh") {
+      try { window.localStorage.removeItem("vault.web.ui"); window.localStorage.removeItem("vault.web.ui.notice"); } catch (e) { /* private mode */ }
+    }
+    if (ui === "fresh") { ui = null; }
+    else if (ui === "classic-once") { ui = "classic"; source = "forced"; }
     else if (ui === "next" || ui === "classic") write("vault.web.ui", ui);
-    else ui = read("vault.web.ui");
-    if (ui !== "next" && ui !== "classic") ui = isDesktop ? DEFAULT_UI_DESKTOP : DEFAULT_UI_WEB;
+    else { ui = read("vault.web.ui"); source = "stored"; }
+    if (ui !== "next" && ui !== "classic") { ui = isDesktop ? DEFAULT_UI_DESKTOP : DEFAULT_UI_WEB; source = "default"; }
     var capable = typeof CSSLayerBlockRule !== "undefined" &&
       !!(window.CSS && CSS.supports && CSS.supports("color", "color-mix(in srgb, red, blue)"));
-    if (isOverlay || !capable) ui = "classic";
+    if ((isOverlay || !capable) && ui !== "classic") { ui = "classic"; source = "forced"; }
     root.setAttribute("data-ui", ui);
     window.__VAULT_UI__ = ui;
+    window.__VAULT_UI_SOURCE__ = source;
     // Co-op, Highlights and Beta need a Steam account. Tag <html> from the
     // stored session before first paint so their locks never flash on or
     // off; script.js (syncSteamLock) confirms it once the session is checked.
@@ -131,7 +144,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link id="vault-legacy-fonts" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Playfair+Display:wght@700;900&family=Cinzel:wght@700;800;900&display=swap" rel="stylesheet" />
-  <link id="vault-legacy-css" rel="stylesheet" href="/styles.css?v=161" />
+  <link id="vault-legacy-css" rel="stylesheet" href="/styles.css?v=162" />
   <!-- Co-op Play card (structure + classic paint). The new look loads it again
        inside the legacy layer below and repaints it from styles.next.css. -->
   <link id="vault-coop-play-css" rel="stylesheet" href="/lib/coop-play.css?v=1" />
@@ -159,11 +172,11 @@
         '<link rel="preload" as="font" type="font/woff2" crossorigin href="/assets/fonts/grenze-gotisch-latin-var-v1.woff2">' +
         '<style id="vault-legacy-layer">' +
           '@layer v-override, legacy, v-reset, v-tokens, v-base, v-shell, v-components, v-surfaces, v-host, v-util;' +
-          '@import url("/styles.css?v=161") layer(legacy);' +
+          '@import url("/styles.css?v=162") layer(legacy);' +
           '@import url("/styles.mobile.css?v=2") layer(legacy) (max-width: 880px);' +
           '@import url("/lib/coop-play.css?v=1") layer(legacy);' +
         '</style>' +
-        '<link rel="stylesheet" href="/styles.next.css?v=4">'
+        '<link rel="stylesheet" href="/styles.next.css?v=7">'
       );
     })();
   }
@@ -327,7 +340,7 @@
       </p>
       <div class="cta-row">
         <button class="btn-primary" id="signin-btn">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M3 5l8-1.1V11H3V5zm0 7h8v7.1L3 18V12zm9 7.2V12h9v8L12 19.2zM12 11V3.9L21 3v8h-9z"/></svg>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 0 0-9.96 9.04l5.35 2.21a2.83 2.83 0 0 1 1.6-.49l2.39-3.46v-.05a3.78 3.78 0 1 1 3.78 3.78h-.09l-3.4 2.43a2.84 2.84 0 0 1-5.62.6L2.3 14.5A10 10 0 1 0 12 2Zm-4.73 15.17-1.23-.51a2.13 2.13 0 1 0 1.17-2.9l1.27.52a1.57 1.57 0 1 1-1.2 2.9Zm10.04-7.72a2.52 2.52 0 1 0-2.52 2.52 2.52 2.52 0 0 0 2.52-2.52Zm-4.4 0a1.89 1.89 0 1 1 1.89 1.89 1.89 1.89 0 0 1-1.9-1.89Z"/></svg>
           Sign in with Steam
         </button>
         <a class="btn-ghost" href="https://spirevault.app">macOS app →</a>
@@ -384,7 +397,7 @@
              can run. Its phone twin is the last chip in the tab strip below. -->
         <button class="skin-switch skin-switch--brand" type="button" hidden
                 data-action="ui-set" data-ui="next" data-source="sidebar" data-ui-chrome-switch
-                data-tip="Try the new look" aria-label="Try the new look (beta)">
+                data-tip="Switch to the new look" aria-label="Switch to the new look">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a9 9 0 1 0 0 18c1.2 0 2-.9 2-2 0-.5-.2-1-.5-1.4-.3-.4-.5-.8-.5-1.3 0-1.1.9-2 2-2h2.3A3.7 3.7 0 0 0 21 10.6C21 6.4 17 3 12 3z"/><circle cx="7.5" cy="11.5" r="1"/><circle cx="10" cy="7.5" r="1"/><circle cx="15" cy="7.5" r="1"/></svg>
         </button>
       </div>
@@ -411,11 +424,11 @@
             <span class="nav-label">Top Relics</span>
           </button>
           <button class="nav-row" data-tab="cards">
-            <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M5 3h10a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2zm12 4h2a2 2 0 012 2v10a2 2 0 01-2 2h-2z"/></svg></span>
+            <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M4 3h9a2 2 0 012 2v14a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2zm13 3h3a2 2 0 012 2v10a2 2 0 01-2 2h-3z"/></svg></span>
             <span class="nav-label">Cards</span>
           </button>
           <button class="nav-row" data-tab="runs">
-            <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 100 20 10 10 0 000-20zm.5 5h-1.5v6.4l5.4 3.2.8-1.3-4.7-2.8z"/></svg></span>
+            <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor" fill-rule="evenodd"><path d="M12 2a10 10 0 100 20 10 10 0 000-20zm.5 5h-1.5v6.4l5.4 3.2.8-1.3-4.7-2.8z"/></svg></span>
             <span class="nav-label">Recent Runs</span>
             <!-- Red unseen-dot. Lights up when refreshRunsBadge() detects
                  a run with `endedAt` newer than the user's stored
@@ -475,9 +488,10 @@
         <!-- Phone twin of the switch beside the logo (that row is hidden on a
              phone). Not a tab: no data-tab, and CSS hides it above 880px. -->
         <button class="skin-switch skin-switch--strip" type="button" hidden
-                data-action="ui-set" data-ui="next" data-source="tab-strip" data-ui-chrome-switch>
+                data-action="ui-set" data-ui="next" data-source="tab-strip" data-ui-chrome-switch
+                aria-label="Switch to the new look">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a9 9 0 1 0 0 18c1.2 0 2-.9 2-2 0-.5-.2-1-.5-1.4-.3-.4-.5-.8-.5-1.3 0-1.1.9-2 2-2h2.3A3.7 3.7 0 0 0 21 10.6C21 6.4 17 3 12 3z"/><circle cx="7.5" cy="11.5" r="1"/><circle cx="10" cy="7.5" r="1"/><circle cx="15" cy="7.5" r="1"/></svg>
-          <span>Try the new look</span>
+          <span>New look</span>
         </button>
       </nav>
 
@@ -554,7 +568,7 @@
         <div class="mobile-account-action" id="mobile-account-action">
           <button class="status-signout" id="signout-btn-mobile" title="Sign out" hidden>Sign out</button>
           <button class="mobile-signin-cta" id="signin-btn-mobile" type="button" data-action="signin-cta" hidden>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3 5l8-1.1V11H3V5zm0 7h8v7.1L3 18V12zm9 7.2V12h9v8L12 19.2zM12 11V3.9L21 3v8h-9z"/></svg>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2a10 10 0 0 0-9.96 9.04l5.35 2.21a2.83 2.83 0 0 1 1.6-.49l2.39-3.46v-.05a3.78 3.78 0 1 1 3.78 3.78h-.09l-3.4 2.43a2.84 2.84 0 0 1-5.62.6L2.3 14.5A10 10 0 1 0 12 2Zm-4.73 15.17-1.23-.51a2.13 2.13 0 1 0 1.17-2.9l1.27.52a1.57 1.57 0 1 1-1.2 2.9Zm10.04-7.72a2.52 2.52 0 1 0-2.52 2.52 2.52 2.52 0 0 0 2.52-2.52Zm-4.4 0a1.89 1.89 0 1 1 1.89 1.89 1.89 1.89 0 0 1-1.9-1.89Z"/></svg>
             <span>Sign in with Steam</span>
           </button>
         </div>
@@ -892,9 +906,9 @@
           <span class="tab-lock-badge" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M17 9V7a5 5 0 00-10 0v2H5v12h14V9h-2zm-8-2a3 3 0 016 0v2H9V7zm3 10.5a2 2 0 110-4 2 2 0 010 4z"/></svg></span>
           <p class="tab-lock-eyebrow">Co-op &middot; signed-in players</p>
           <h2 class="tab-lock-title" id="tab-lock-coop-title">Sign in to play co-op</h2>
-          <p class="tab-lock-text">Tap Play and get matched with another player for a co-op run. Add each other on Steam and climb together.</p>
+          <p class="tab-lock-text">Tap Play and get matched with another player for a <span style="white-space: nowrap">co-op</span> run. Add each other on Steam and climb together.</p>
           <button class="btn-primary tab-lock-cta" type="button" data-action="signin-cta" data-analytics-cta="tab-lock-coop">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3 5l8-1.1V11H3V5zm0 7h8v7.1L3 18V12zm9 7.2V12h9v8L12 19.2zM12 11V3.9L21 3v8h-9z"/></svg>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2a10 10 0 0 0-9.96 9.04l5.35 2.21a2.83 2.83 0 0 1 1.6-.49l2.39-3.46v-.05a3.78 3.78 0 1 1 3.78 3.78h-.09l-3.4 2.43a2.84 2.84 0 0 1-5.62.6L2.3 14.5A10 10 0 1 0 12 2Zm-4.73 15.17-1.23-.51a2.13 2.13 0 1 0 1.17-2.9l1.27.52a1.57 1.57 0 1 1-1.2 2.9Zm10.04-7.72a2.52 2.52 0 1 0-2.52 2.52 2.52 2.52 0 0 0 2.52-2.52Zm-4.4 0a1.89 1.89 0 1 1 1.89 1.89 1.89 1.89 0 0 1-1.9-1.89Z"/></svg>
             <span>Sign in with Steam</span>
           </button>
           <p class="tab-lock-note">Free. Steam confirms who you are and never shares your password. Your stats, runs and News stay open without signing in.</p>
@@ -962,7 +976,7 @@
           <h2 class="tab-lock-title" id="tab-lock-highlights-title">Sign in to see community highlights</h2>
           <p class="tab-lock-text">Runs other players chose to share. React, leave a comment, or post one of your own.</p>
           <button class="btn-primary tab-lock-cta" type="button" data-action="signin-cta" data-analytics-cta="tab-lock-highlights">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3 5l8-1.1V11H3V5zm0 7h8v7.1L3 18V12zm9 7.2V12h9v8L12 19.2zM12 11V3.9L21 3v8h-9z"/></svg>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2a10 10 0 0 0-9.96 9.04l5.35 2.21a2.83 2.83 0 0 1 1.6-.49l2.39-3.46v-.05a3.78 3.78 0 1 1 3.78 3.78h-.09l-3.4 2.43a2.84 2.84 0 0 1-5.62.6L2.3 14.5A10 10 0 1 0 12 2Zm-4.73 15.17-1.23-.51a2.13 2.13 0 1 0 1.17-2.9l1.27.52a1.57 1.57 0 1 1-1.2 2.9Zm10.04-7.72a2.52 2.52 0 1 0-2.52 2.52 2.52 2.52 0 0 0 2.52-2.52Zm-4.4 0a1.89 1.89 0 1 1 1.89 1.89 1.89 1.89 0 0 1-1.9-1.89Z"/></svg>
             <span>Sign in with Steam</span>
           </button>
           <p class="tab-lock-note">Free. Steam confirms who you are and never shares your password. Your stats, runs and News stay open without signing in.</p>
@@ -1233,6 +1247,10 @@
               </header>
 
               <div class="news-post-body">
+                <div class="news-feature-block news-post-replaced">
+                  <h5><span class="news-feature-tag">Update</span> The new look is now the default</h5>
+                  <p>Since November 15 everyone starts on the new look. Prefer the classic look? Tap the palette button beside the logo and choose <strong>Classic</strong>, or use the button further down this post. Your choice is saved on that device, and you can switch back the same way.</p>
+                </div>
                 <p class="news-lede">
                   SpireVault is being redrawn. Not replaced &mdash; every number you rely on is still here &mdash; but the app finally looks like it belongs next to the game: inked outlines, bold colour, and a header that actually tells you something. It&rsquo;s a beta, it&rsquo;s <strong>off by default</strong>, and nothing changes for you unless you flip the switch below. There are 117 of you now. I&rsquo;m not rearranging your furniture without asking.
                 </p>
@@ -1259,7 +1277,7 @@
                   <strong>A header that keeps score.</strong> The spire&rsquo;s windows light up to your highest ascension. The row of torches is your last ten runs &mdash; a lit one is a win. Your climber squares off against the Architect, both re-inked to match the rest of the app. Click the climber to swap characters; click the speech bubble for a new line.
                 </p>
                 <p>
-                  <strong>Themes, instantly.</strong> Eight of them: Inked Codex (the default), Classic Vault if you want today&rsquo;s ember-and-gold on the new layout, one for each character, and Auto, which follows whoever you play most. Hit the palette button next to the logo or press <kbd>T</kbd>. No reload.
+                  <strong>Themes, instantly.</strong> Eight of them: Inked Codex (the default), Ember Vault if you want the classic ember-and-gold on the new layout, one for each character, and Auto, which follows whoever you play most. Hit the palette button next to the logo or press <kbd>T</kbd>. No reload.
                 </p>
                 <p>
                   <strong>The small stuff.</strong> The sidebar stays put while you scroll. On a phone, Overview, Characters, Runs and Co-op sit in a bar at the bottom of the screen, where your thumb already is, and everything else is one tap away under More.
@@ -2255,9 +2273,9 @@
           <span class="tab-lock-badge" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M17 9V7a5 5 0 00-10 0v2H5v12h14V9h-2zm-8-2a3 3 0 016 0v2H9V7zm3 10.5a2 2 0 110-4 2 2 0 010 4z"/></svg></span>
           <p class="tab-lock-eyebrow">Beta &middot; signed-in players</p>
           <h2 class="tab-lock-title" id="tab-lock-beta-title">Sign in to try beta features</h2>
-          <p class="tab-lock-text">Run Coach and the Co-op Lobby beta are for signed-in players.</p>
+          <p class="tab-lock-text">Run Coach and other early features are for signed-in players.</p>
           <button class="btn-primary tab-lock-cta" type="button" data-action="signin-cta" data-analytics-cta="tab-lock-beta">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3 5l8-1.1V11H3V5zm0 7h8v7.1L3 18V12zm9 7.2V12h9v8L12 19.2zM12 11V3.9L21 3v8h-9z"/></svg>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2a10 10 0 0 0-9.96 9.04l5.35 2.21a2.83 2.83 0 0 1 1.6-.49l2.39-3.46v-.05a3.78 3.78 0 1 1 3.78 3.78h-.09l-3.4 2.43a2.84 2.84 0 0 1-5.62.6L2.3 14.5A10 10 0 1 0 12 2Zm-4.73 15.17-1.23-.51a2.13 2.13 0 1 0 1.17-2.9l1.27.52a1.57 1.57 0 1 1-1.2 2.9Zm10.04-7.72a2.52 2.52 0 1 0-2.52 2.52 2.52 2.52 0 0 0 2.52-2.52Zm-4.4 0a1.89 1.89 0 1 1 1.89 1.89 1.89 1.89 0 0 1-1.9-1.89Z"/></svg>
             <span>Sign in with Steam</span>
           </button>
           <p class="tab-lock-note">Free. Steam confirms who you are and never shares your password. Your stats, runs and News stay open without signing in.</p>
@@ -2510,6 +2528,6 @@
   })();
   </script>
   <script src="/run-coach.js?v=3" defer></script>
-  <script src="/script.js?v=227" type="module"></script>
+  <script src="/script.js?v=230" type="module"></script>
 </body>
 </html>

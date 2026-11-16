@@ -14,7 +14,7 @@
 
 import { esc } from "./html.js?v=1";
 import { reduced } from "./motion.js?v=1";
-import { THEMES, getTheme, getThemePreference, onThemeChange, setTheme, themeSwatchesHtml } from "./theme.js?v=1";
+import { THEMES, getTheme, getThemePreference, lookSwitchHtml, onThemeChange, setTheme, themeSwatchesHtml } from "./theme.js?v=4";
 
 const PHONE_QUERY = "(max-width: 880px)";
 const SHEET_ID = "v-mnav-sheet";
@@ -44,7 +44,7 @@ const ICONS = Object.freeze({
   settings: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>',
   palette: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a9 9 0 1 0 0 18c1.2 0 2-.9 2-2 0-.5-.2-1-.5-1.4-.3-.4-.5-.8-.5-1.3 0-1.1.9-2 2-2h2.3A3.7 3.7 0 0 0 21 10.6C21 6.4 17 3 12 3z"/><circle cx="7.5" cy="11.5" r="1"/><circle cx="10" cy="7.5" r="1"/><circle cx="15" cy="7.5" r="1"/></svg>',
   chevron: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>',
-  steam: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3 5l8-1.1V11H3V5zm0 7h8v7.1L3 18V12zm9 7.2V12h9v8L12 19.2zM12 11V3.9L21 3v8h-9z"/></svg>',
+  steam: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2a10 10 0 0 0-9.96 9.04l5.35 2.21a2.83 2.83 0 0 1 1.6-.49l2.39-3.46v-.05a3.78 3.78 0 1 1 3.78 3.78h-.09l-3.4 2.43a2.84 2.84 0 0 1-5.62.6L2.3 14.5A10 10 0 1 0 12 2Zm-4.73 15.17-1.23-.51a2.13 2.13 0 1 0 1.17-2.9l1.27.52a1.57 1.57 0 1 1-1.2 2.9Zm10.04-7.72a2.52 2.52 0 1 0-2.52 2.52 2.52 2.52 0 0 0 2.52-2.52Zm-4.4 0a1.89 1.89 0 1 1 1.89 1.89 1.89 1.89 0 0 1-1.9-1.89Z"/></svg>',
 });
 
 /** @type {{ nav: HTMLElement, more: HTMLButtonElement, sheet: HTMLDialogElement, phone: MediaQueryList } | null} */
@@ -162,7 +162,7 @@ function themeRowHtml() {
     <li>
       <button class="v-mnav-row" type="button" data-mnav-action="themes" aria-expanded="false" aria-controls="v-mnav-themes">
         <span class="v-mnav-row-icon">${ICONS.palette}</span>
-        <span class="v-mnav-row-text"><strong>Theme</strong><small data-mnav-theme-name></small></span>
+        <span class="v-mnav-row-text"><strong>Look &amp; theme</strong><small data-mnav-theme-name></small></span>
         <span class="v-mnav-theme-chip" data-mnav-theme-chip aria-hidden="true"><i></i></span>
         <span class="v-mnav-row-chev">${ICONS.chevron}</span>
       </button>
@@ -231,10 +231,17 @@ function accountHtml() {
   }
   if (account.state === "member") {
     const avatar = account.avatar ? `<img class="v-mnav-avatar" src="${esc(account.avatar)}" alt="" width="36" height="36" />` : "";
+    // The live connection line, in words and colour, as the laptop rail shows
+    // it (the sheet is rebuilt every time it opens, so it is always current).
+    const state = document.getElementById("status-dot-mobile")?.dataset.state || "";
+    const label = (document.getElementById("status-label-mobile")?.textContent || "").trim();
+    const status = label
+      ? `<small class="v-mnav-status" data-state="${esc(state)}"><span class="status-dot" data-state="${esc(state)}" aria-hidden="true"></span>${esc(label)}</small>`
+      : "<small>Profile, status &amp; invites</small>";
     return `
       <button class="v-mnav-row v-mnav-profile" type="button" data-mnav-action="profile">
         ${avatar}
-        <span class="v-mnav-row-text"><strong>${esc(account.name)}</strong><small>Profile, status &amp; invites</small></span>
+        <span class="v-mnav-row-text"><strong>${esc(account.name)}</strong>${status}</span>
         <span class="v-mnav-row-chev">${ICONS.chevron}</span>
       </button>`;
   }
@@ -390,9 +397,8 @@ function setThemesOpen(expanded) {
   if (!toggle || !region) return;
   toggle.setAttribute("aria-expanded", String(expanded));
   if (expanded) {
-    region.innerHTML = `${swatchesHtml()}
-      <p class="v-mnav-themes-foot"><span>Switches instantly. Saved on this device.</span>
-        <button class="v-mnav-link" type="button" data-action="ui-set" data-ui="classic" data-source="mobile-nav">Back to the classic look</button></p>`;
+    region.innerHTML = `${lookSwitchHtml("mobile-nav")}${swatchesHtml()}
+      <p class="v-mnav-themes-foot"><span>Themes change instantly; switching looks reloads the page once. Both are saved on this device.</span></p>`;
   }
   region.hidden = !expanded;
   if (expanded) region.scrollIntoView({ block: "nearest", behavior: reduced() ? "auto" : "smooth" });

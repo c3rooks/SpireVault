@@ -205,26 +205,28 @@
     transform: scale(1.06, 0.92);
   }
 }
-/* Markers: what the torches and the spire are counting, said in the app's
-   own chip (label, then the value in the title colour — the same voice as
-   "Highest A9" on Overview) with a nub pointing at the thing it reads. Both
-   stand in the scene on one line just above the ground, beside their object.
-   Never in the ledge strip: that is the top edge of the page, and a caption
-   there belongs to neither. */
+/* Markers: what the torches and the spire are counting, engraved on the
+   ledge right under each one, like the plate under an exhibit: small caps in
+   the theme's quiet text colour, the value in its own colour (wins green,
+   the ascension gold, the same voice as "Highest A9" on Overview). Both sit
+   on one shared line in the ledge strip, below the ground the torches and
+   the tower stand on, so nothing is pasted over the painted scene. */
+.panel-head.v-has-stage {
+  /* The markers' line, measured up from the stage's bottom edge. */
+  --stage-cap-bottom: 7px;
+  --stage-cap-size: 0.72rem;
+}
 .v-stage-cap {
   position: absolute;
   display: inline-flex;
   align-items: baseline;
-  gap: 5px;
-  padding: 3px 10px;
-  border: var(--v-outline);
-  border-radius: var(--v-radius-pill);
-  background: var(--v-bg-deep);
-  box-shadow: var(--v-shadow-sm);
-  color: var(--v-text);
-  font-size: var(--v-text-xs);
-  font-weight: 700;
-  line-height: 1.4;
+  gap: 0.55em;
+  color: var(--v-text-2);
+  font-size: var(--stage-cap-size);
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  line-height: 1;
+  text-transform: uppercase;
   white-space: nowrap;
 }
 .v-stage-cap b {
@@ -236,53 +238,17 @@
 .v-torches .v-stage-cap b {
   color: var(--v-win);
 }
-/* The nub: a corner of the chip pulled out toward the object. */
-.v-stage-cap::before {
-  content: "";
-  position: absolute;
-  top: 50%;
-  box-sizing: border-box;
-  width: 9px;
-  height: 9px;
-  background: var(--v-bg-deep);
-  translate: 0 -50%;
-  rotate: 45deg;
-}
-/* Torches: past the last torch, pointing back along the row. The row's own
-   box ends a pixel under the ground line, so 10px up is 9px of air. */
+/* Torches: under the row, flush with its first torch. The row's own box
+   ends a pixel under the ground line (--v-ledge-h - 10px up). */
 .v-torches .v-stage-cap {
-  bottom: 10px;
-  left: calc(100% + 14px);
+  left: 2px;
+  bottom: calc(var(--stage-cap-bottom) - (var(--v-ledge-h) - 10px));
 }
-.v-torches .v-stage-cap::before {
-  left: -5.5px;
-  border-bottom: var(--v-outline);
-  border-left: var(--v-outline);
-}
-/* Spire: beside the tower's foot, pointing at it. The tower's base starts a
-   quarter of the way across its box; the gap leaves room for the parallax
-   (this is the near layer, the tower the far one: they drift ±11px). */
+/* Spire: centred under the tower's foot. */
 .v-spire-cap {
-  right: calc(var(--spire-right) + var(--spire-w) * 0.78 + 16px);
-  bottom: var(--v-ledge-h);
-}
-.v-spire-cap::before {
-  right: -5.5px;
-  border-top: var(--v-outline);
-  border-right: var(--v-outline);
-}
-/* The spire's marker needs open ground between the torches and the tower;
-   below this width there is none. The torches' marker goes next, before it
-   would squeeze the tower. (Phones drop both: see Small screens.) */
-@media (max-width: 1180px) {
-  .v-spire-cap {
-    display: none;
-  }
-}
-@media (max-width: 1020px) {
-  .v-stage-cap {
-    display: none;
-  }
+  right: calc(var(--spire-right) + var(--spire-w) / 2);
+  bottom: var(--stage-cap-bottom);
+  translate: 50% 0;
 }
 
 /* ---- The duel ------------------------------------------------------------------ */
@@ -685,9 +651,6 @@
     --duel-gap: 36px;
     --spire-clear: 32px;
   }
-  .v-spire-cap {
-    display: none;
-  }
 }
 
 /* ---- Small screens ------------------------------------------------------------ */
@@ -709,8 +672,10 @@
   .v-has-stage .panel-head-stage {
     padding-bottom: calc(var(--v-ledge-h) + 44px);
   }
-  .v-stage-cap {
-    display: none;
+  /* The ledge is 28px here: a smaller line, nearer the bottom edge. */
+  .panel-head.v-has-stage {
+    --stage-cap-bottom: 4px;
+    --stage-cap-size: 0.64rem;
   }
   .v-torches {
     width: calc(var(--torch-count, 10) * 15px);
@@ -748,7 +713,8 @@
 }
 /* The narrowest phones: the title needs the room the spire would take. */
 @media (max-width: 360px) {
-  .v-spire {
+  .v-spire,
+  .v-spire-cap {
     display: none;
   }
   .panel-head.v-has-stage {

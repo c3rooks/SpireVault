@@ -546,37 +546,46 @@
   filter: drop-shadow(0 6px 10px rgba(0, 0, 0, 0.45)) drop-shadow(0 0 1px var(--cp-gold));
 }
 
-/* Name tag on the floor in front of each figure. */
+/* Name tag above each figure. fitPartyTags() (coop-play-view.js) gives the
+   whole party one width so the tags line up with even gaps between them and
+   to the frame; the name and avatar sit centred in it, and a long name
+   truncates. The host's crown rides on the tag's top edge. */
 .cp-tag {
   position: absolute;
-  bottom: calc(100% + 6px);
+  bottom: calc(100% + 10px);
   left: 50%;
   transform: translateX(-50%);
+  box-sizing: border-box;
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
-  max-width: max(92px, calc(100% + 20px));
-  padding: 3px 9px 3px 3px;
+  padding: 3px 10px 3px 3px;
   border-radius: 999px;
   background: rgba(10, 6, 22, 0.82);
   border: 1px solid rgba(255, 255, 255, 0.14);
   color: #fff1cf;
-  font-size: 0.74rem;
+  font-size: 0.75rem;
   font-weight: 700;
+  line-height: 1.25;
   white-space: nowrap;
 }
 .cp-climber.is-you .cp-tag {
   border-color: var(--cp-gold);
 }
 .cp-tag-name {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .cp-tag-badge {
+  position: absolute;
+  top: -12px;
+  left: 50%;
   display: inline-flex;
-  align-items: center;
-  flex: none;
   color: var(--cp-gold);
+  filter: drop-shadow(0 1px 0 #0a0616) drop-shadow(0 0 2px rgba(10, 6, 22, 0.8));
+  transform: translateX(-50%);
 }
 .cp-sr {
   position: absolute;
@@ -876,10 +885,9 @@
     right: 3%;
     gap: 2%;
   }
+  /* No avatar here, so the padding is even on both sides. */
   .cp-tag {
-    max-width: 96px;
-    font-size: 0.68rem;
-    padding: 2px 7px 2px 2px;
+    padding: 3px 8px;
   }
   .cp-avatar {
     display: none;

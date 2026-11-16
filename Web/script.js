@@ -64,6 +64,12 @@ function loadCoopPlay() {
 //                 token (HttpOnly).
 const SERVER_URL  = "https://vault-coop.coreycrooks.workers.dev";
 const API_BASE    = "/api";
+/** Connection line under the account card when the server cannot be reached.
+ *  The rail is short, so the "it keeps retrying" detail lives in the tooltip. */
+const STATUS_TROUBLE_REACHING = Object.freeze([
+  "Trouble reaching server",
+  "Retrying on its own. Stats from your saves keep working; co-op needs the server.",
+]);
 const RETURN_URL  = `${window.location.origin}/auth.html`;
 const STS2_APP_ID = "2868840";
 
@@ -81,7 +87,7 @@ const STS2_APP_ID = "2868840";
  * on an old client — instruct hard refresh. If it DOES match, the
  * bug is real and we can stop chasing cache ghosts.
  */
-const VAULT_BUILD = "v227-2026-11-15-runs-status";
+const VAULT_BUILD = "v230-2026-11-15-polish";
 
 /** True on wrangler pages dev / local loopback — not production hostnames. */
 function isLocalDevHost() {
@@ -1416,7 +1422,7 @@ const IS_UI_NEXT = (() => {
 const STAGE_TABS = Object.freeze(["overview", "characters", "ascensions", "relics", "cards"]);
 let UI = null;
 const uiReady = IS_UI_NEXT
-  ? import("/lib/ui/index.js?v=3")
+  ? import("/lib/ui/index.js?v=6")
       .then((mod) => {
         mod.bootUI({
           stageTabs: STAGE_TABS,
@@ -1446,24 +1452,26 @@ function deferUntilUIReady(rerender) {
 }
 
 // =========================================================================
-// "New look" beta switch
+// Look switch: the new look or the classic layout
 // -------------------------------------------------------------------------
-// The redesign ships opt-in: the classic layout is the default for everyone
-// (DEFAULT_UI_* in index.html), and a person switches this device to the new
-// look, or back, from Settings, the Beta tab, or the news post. The choice
-// is stored under the key the boot script in index.html reads before first
-// paint, so the page reloads straight into the chosen layout.
+// The new look is the default for everyone (DEFAULT_UI_* in index.html, since
+// 2026-11-15). A person switches this device to the classic layout, or back,
+// from the palette button beside the logo (or in the desktop apps' toolbar),
+// the phone's More sheet, Settings, the Beta tab or the news post; a one-time
+// notice (lib/ui/look-notice.js) points first-time visitors at the palette
+// button. The choice is stored under the key the boot script reads before
+// first paint, and the page reloads once, on the same tab, into that layout.
 // =========================================================================
 /** Must match the boot script in index.html. */
 const STORAGE_UI_VARIANT = "vault.web.ui";
 /** The news post that explains the beta; "What's new" links open it. */
 const UI_BETA_NEWS_POST_ID = "013";
 const UI_BETA_PITCH =
-  "SpireVault, redrawn: every tab, a header that shows your climb, and themes that switch instantly. " +
-  "Your runs, stats and co-op are untouched, and you can switch back any time.";
+  "SpireVault's new look: every tab redrawn, a header that shows your climb, and themes that switch instantly. " +
+  "Your runs, stats and co-op are the same in both looks, and you can switch any time.";
 const UI_BETA_ON_NOTE =
-  "You're on the new look. Every tab is redrawn; if something looks off, tell me. " +
-  "Switching back takes one click.";
+  "You're on the new look. If something looks off, tell me. " +
+  "The classic look is one click away, and so is coming back.";
 const UI_BETA_DEVICE_NOTE = "Only changes this device. The page reloads once.";
 const UI_BETA_UNSUPPORTED = "This browser is too old for the new look. Update it and this switch will work.";
 const UI_BETA_OVERLAY_NOTE = "The overlay window always uses the classic look. Switch from the main SpireVault window.";
@@ -1487,8 +1495,8 @@ function isOverlayWindow() {
 
 /**
  * Switches this device between the classic layout ("classic") and the new
- * look ("next"), then reloads into it. Opting in lands on Overview, the
- * screen the redesign starts with; opting out keeps the current tab.
+ * look ("next"), then reloads into it on the same tab, so the switch feels
+ * like the page changing its clothes rather than going somewhere else.
  * @param {string} variant
  * @param {string} source  where the request came from, for analytics
  * @returns {boolean} false when the request cannot be honoured
@@ -1510,11 +1518,7 @@ function setUiVariant(variant, source) {
   try { localStorage.setItem(STORAGE_UI_VARIANT, want); } catch { /* private mode: ?ui= below still applies */ }
   const url = new URL(window.location.href);
   url.searchParams.set("ui", want);
-  if (want === "next") {
-    url.searchParams.delete("tab");
-    url.hash = "";
-    if (url.pathname === "/overlay") url.pathname = "/";
-  }
+  if (want === "next" && url.pathname === "/overlay") url.pathname = "/";
   window.location.replace(url.toString());
   return true;
 }
@@ -1527,12 +1531,12 @@ function renderUiBetaSettingsCard() {
   return `
       <section class="settings-card" data-ui-beta-card>
         <header class="settings-card-head">
-          <h3>New look <span class="muted small">&middot; beta</span></h3>
+          <h3>New look</h3>
           <p class="settings-card-sub">${esc(UI_BETA_PITCH)}</p>
         </header>
         <div class="settings-action-row">
           <button class="btn-primary" type="button" data-action="ui-set" data-ui="next" data-source="settings"${isCapable ? "" : " disabled"}>
-            <span>Try the new look</span>
+            <span>Switch to the new look</span>
           </button>
           <button class="btn-ghost" type="button" data-action="ui-open-news">
             <span>What's new</span>
@@ -1546,13 +1550,13 @@ function renderUiBetaSettingsCard() {
 function renderUiBetaTabCard() {
   const isCapable = canRunNextUI();
   const action = IS_UI_NEXT
-    ? `<button class="btn-ghost" type="button" data-action="ui-set" data-ui="classic" data-source="beta-tab">Back to the classic look</button>`
-    : `<button class="btn-primary" type="button" data-action="ui-set" data-ui="next" data-source="beta-tab"${isCapable ? "" : " disabled"}>Try the new look</button>`;
+    ? `<button class="btn-ghost" type="button" data-action="ui-set" data-ui="classic" data-source="beta-tab">Switch to the classic look</button>`
+    : `<button class="btn-primary" type="button" data-action="ui-set" data-ui="next" data-source="beta-tab"${isCapable ? "" : " disabled"}>Switch to the new look</button>`;
   const note = IS_UI_NEXT ? "" : `<p class="beta-hint">${esc(isCapable ? UI_BETA_DEVICE_NOTE : UI_BETA_UNSUPPORTED)}</p>`;
   return `
         <section class="beta-card" data-ui-beta-card style="grid-column: 1 / -1">
           <header class="beta-card-head">
-            <h4>${IS_UI_NEXT ? "New look: on" : "New look"}</h4>
+            <h4>${IS_UI_NEXT ? "Look: new" : "Look: classic"}</h4>
             <p class="beta-card-sub">${esc(IS_UI_NEXT ? UI_BETA_ON_NOTE : UI_BETA_PITCH)}</p>
           </header>
           <div class="beta-launch">
@@ -1616,6 +1620,19 @@ function revealChromeUiSwitches() {
   if (IS_UI_NEXT || !canRunNextUI() || isOverlayWindow()) return;
   document.querySelectorAll("[data-ui-chrome-switch]").forEach(($btn) => {
     $btn.hidden = false;
+  });
+  // The desktop apps hide this sidebar (and with it the switch beside the
+  // logo) under their own native one, so the panel toolbars carry the switch.
+  if (!document.documentElement.classList.contains("is-desktop-host")) return;
+  document.querySelectorAll(".app-toolbar-right").forEach(($toolbar) => {
+    if ($toolbar.querySelector("[data-ui-toolbar-switch]")) return;
+    $toolbar.insertAdjacentHTML(
+      "afterbegin",
+      `<button class="btn-ghost btn-icon-text" type="button" data-action="ui-set" data-ui="next" data-source="desktop-toolbar" data-ui-toolbar-switch title="Switch to the new look">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="13.5" cy="6.5" r="1.5"/><circle cx="17.5" cy="10.5" r="1.5"/><circle cx="8.5" cy="7.5" r="1.5"/><circle cx="6.5" cy="12.5" r="1.5"/><path d="M12 3a9 9 0 1 0 0 18c1.1 0 2-.9 2-2 0-.5-.2-1-.5-1.3-.3-.4-.5-.8-.5-1.3 0-1.1.9-2 2-2h2.3A5.2 5.2 0 0 0 21 9.2C21 5.7 17 3 12 3z"/></svg>
+        <span>New look</span>
+      </button>`,
+    );
   });
 }
 
@@ -1844,10 +1861,15 @@ function bootShellFirstPaint() {
       setStatus("online", "Ready (local)");
     }
 
+    // A ?tab= deep link wins (switching looks reloads with it), so this early
+    // paint does not wipe it from the URL before boot reads it.
     let tab = "overview";
     try {
+      const known = new Set(KNOWN_TABS);
+      const linked = new URLSearchParams(window.location.search).get("tab");
       const last = localStorage.getItem(STORAGE_LAST_TAB);
-      if (session && last && new Set(KNOWN_TABS).has(last)) tab = last;
+      if (linked && known.has(linked)) tab = linked;
+      else if (session && last && known.has(last)) tab = last;
     } catch { /* private mode */ }
     switchTab(tab);
     paintInitialTabShell();
@@ -2288,14 +2310,16 @@ async function loadCommunityPulse() {
   // Need at least a couple of climbers for the line to feel true and
   // warm rather than sad. Below that, stay hidden.
   if (week < 2 && total < 2) return;
+  // Plain words, no trailing full stop (no other header line has one) and no
+  // ⚔ glyph: Figtree has none, and the fallback drew a thin stray "x".
   const parts = [];
   if (week >= 2) {
-    parts.push(`${week} active this week`);
+    parts.push(`${week} climbers active this week`);
   }
   if (total >= 2) {
-    parts.push(`${total} climbers signed up`);
+    parts.push(week >= 2 ? `${total} signed up` : `${total} climbers signed up`);
   }
-  $pulse.textContent = `⚔ ${parts.join(" · ")}.`;
+  $pulse.textContent = parts.join(" · ");
   $pulse.hidden = false;
 }
 
@@ -2344,7 +2368,8 @@ async function boot() {
         session = null;
         syncSteamLock();
         try { localStorage.removeItem(STORAGE_SESSION); } catch {}
-        setStatus("offline", "Sign in to continue");
+        setStatus("expired", "Sign in to continue");
+        markSessionExpiredOnCard();
         return;
       }
       clearConnectingIfStuck(true);
@@ -2410,6 +2435,14 @@ async function boot() {
     const $mePill = document.getElementById("me-pill");
     if ($mePill) {
       $mePill.classList.add("me-pill-guest");
+      // For a guest the card is only a holder for its own buttons: no
+      // "Open profile menu" tooltip over Sign in, no menu semantics, and no
+      // extra Tab stop that does nothing.
+      $mePill.removeAttribute("title");
+      ["aria-haspopup", "aria-expanded", "aria-controls"].forEach((name) => $mePill.removeAttribute(name));
+      $mePill.tabIndex = -1;
+      $mePill.setAttribute("role", "group");
+      $mePill.setAttribute("aria-label", "Sign in");
       // Guests still need Settings (folder linking, import/export, prefs)
       // even without Steam — when we removed the standalone sidebar row
       // in v0.9 we replaced it with a footer Settings link inside the
@@ -2419,7 +2452,7 @@ async function boot() {
       // hidden behind auth.
       $mePill.innerHTML = `
         <button class="btn-primary me-pill-signin" type="button" data-action="signin-cta">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3 5l8-1.1V11H3V5zm0 7h8v7.1L3 18V12zm9 7.2V12h9v8L12 19.2zM12 11V3.9L21 3v8h-9z"/></svg>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2a10 10 0 0 0-9.96 9.04l5.35 2.21a2.83 2.83 0 0 1 1.6-.49l2.39-3.46v-.05a3.78 3.78 0 1 1 3.78 3.78h-.09l-3.4 2.43a2.84 2.84 0 0 1-5.62.6L2.3 14.5A10 10 0 1 0 12 2Zm-4.73 15.17-1.23-.51a2.13 2.13 0 1 0 1.17-2.9l1.27.52a1.57 1.57 0 1 1-1.2 2.9Zm10.04-7.72a2.52 2.52 0 1 0-2.52 2.52 2.52 2.52 0 0 0 2.52-2.52Zm-4.4 0a1.89 1.89 0 1 1 1.89 1.89 1.89 1.89 0 0 1-1.9-1.89Z"/></svg>
           <span>Sign in with Steam</span>
         </button>
         <p class="me-pill-guest-note">Optional. Unlocks ${esc(steamLockedTabNames())}.</p>
@@ -3976,10 +4009,11 @@ function clearConnectingIfStuck(wasConnecting) {
     return;
   }
   if (!sessionCookieVerified) {
-    setStatus("offline", "Sign in to continue");
+    setStatus("expired", "Sign in to continue");
+    markSessionExpiredOnCard();
     return;
   }
-  setStatus("trouble", "Trouble reaching server, retrying…");
+  setStatus("trouble", ...STATUS_TROUBLE_REACHING);
 }
 
 /** Paint stats/co-op shells before IDB + cloud hydrate finish so
@@ -4003,7 +4037,7 @@ async function bootPullInitial() {
     );
   } catch (e) {
     console.warn("initial feed/inbox pull timed out or failed", e);
-    setStatus("trouble", "Trouble reaching server, retrying…");
+    setStatus("trouble", ...STATUS_TROUBLE_REACHING);
   }
 }
 
@@ -4074,18 +4108,19 @@ async function pushNow(silent) {
         return;
       }
       console.warn(`presence 401 (${consecutiveAuthFails}/${AUTH_FAIL_THRESHOLD}), keeping session`);
-      setStatus("trouble", "Trouble reaching server, retrying…");
+      setStatus("trouble", ...STATUS_TROUBLE_REACHING);
       return;
     }
     if (resp.ok) {
       resetAuthFailures();
       lastSuccessfulHeartbeatAt = Date.now();
     }
-    setStatus(resp.ok ? "online" : "trouble", resp.ok ? "Live on the feed" : "Trouble reaching server");
+    if (resp.ok) setStatus("online", "Live on the feed");
+    else setStatus("trouble", ...STATUS_TROUBLE_REACHING);
   } catch (e) {
     const timedOut = e?.name === "AbortError";
     console.warn(timedOut ? "presence push timed out" : "presence push error", e);
-    setStatus("trouble", timedOut ? "Trouble reaching server, retrying…" : "Trouble reaching server");
+    setStatus("trouble", ...STATUS_TROUBLE_REACHING);
   } finally {
     if (!silent) setTimeout(() => showPushingPill(false), 400);
   }
@@ -9582,7 +9617,7 @@ function renderEmptyState() {
       <div class="empty-state-actions">
         ${cloudRestoreCTA}
         ${primaryCTA}
-        ${!isSignedIn ? '<button class="btn-ghost" type="button" data-action="signin-cta"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="margin-right:6px"><path d="M3 5l8-1.1V11H3V5zm0 7h8v7.1L3 18V12zm9 7.2V12h9v8L12 19.2zM12 11V3.9L21 3v8h-9z"/></svg>Sign in with Steam</button>' : ""}
+        ${!isSignedIn ? '<button class="btn-ghost" type="button" data-action="signin-cta"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="margin-right:6px"><path d="M12 2a10 10 0 0 0-9.96 9.04l5.35 2.21a2.83 2.83 0 0 1 1.6-.49l2.39-3.46v-.05a3.78 3.78 0 1 1 3.78 3.78h-.09l-3.4 2.43a2.84 2.84 0 0 1-5.62.6L2.3 14.5A10 10 0 1 0 12 2Zm-4.73 15.17-1.23-.51a2.13 2.13 0 1 0 1.17-2.9l1.27.52a1.57 1.57 0 1 1-1.2 2.9Zm10.04-7.72a2.52 2.52 0 1 0-2.52 2.52 2.52 2.52 0 0 0 2.52-2.52Zm-4.4 0a1.89 1.89 0 1 1 1.89 1.89 1.89 1.89 0 0 1-1.9-1.89Z"/></svg>Sign in with Steam</button>' : ""}
       </div>
       <p class="empty-state-tip">
         Or drag your STS2 <strong>save folder</strong> (or any <code>.run</code> files) anywhere on this page to load them now.
@@ -10817,14 +10852,14 @@ function renderAppearanceCard() {
       <section class="settings-card v-appearance">
         <header class="settings-card-head">
           <h3>Appearance</h3>
-          <p class="settings-card-sub">Pick a theme. It switches instantly and is saved on this device.</p>
+          <p class="settings-card-sub">Pick the look and a theme. Both are saved on this device.</p>
         </header>
+        ${UI.Theme.lookSwitchHtml("settings")}
         ${UI.Theme.themeSwatchesHtml()}
         <div class="v-appearance-foot">
           <span>Press <kbd>T</kbd> anywhere to cycle themes.</span>
           <span class="v-appearance-links">
-            <button class="v-link" type="button" data-action="ui-open-news">What's new in the beta</button>
-            <button class="v-link" type="button" data-action="ui-set" data-ui="classic" data-source="settings">Back to the classic look</button>
+            <button class="v-link" type="button" data-action="ui-open-news">What's new</button>
           </span>
         </div>
       </section>`;
@@ -13211,17 +13246,34 @@ function parseAsc(key) {
 // =========================================================================
 // UI helpers
 // =========================================================================
-function setStatus(state, label) {
+/** The account card says the session ended instead of "Steam connected". */
+function markSessionExpiredOnCard() {
+  const $tier = document.getElementById("me-pill-tier");
+  if ($tier) $tier.textContent = "Session expired";
+}
+
+/**
+ * @param {"online"|"live"|"connecting"|"trouble"|"offline"|"expired"} state
+ * @param {string} label  the short line under the account card
+ * @param {string} [hint] longer explanation, shown as the tooltip
+ */
+function setStatus(state, label, hint = "") {
   const $dot = document.getElementById("status-dot");
   const $lbl = document.getElementById("status-label");
   if ($dot) $dot.dataset.state = state;
-  if ($lbl) $lbl.textContent = label;
+  if ($lbl) { $lbl.textContent = label; $lbl.title = hint; }
   // Mirror to the mobile-only account row so phone users see the same
   // connection status indicator the desktop sidebar shows.
   const $dotM = document.getElementById("status-dot-mobile");
   const $lblM = document.getElementById("status-label-mobile");
-  if ($dotM) $dotM.dataset.state = state;
-  if ($lblM) $lblM.textContent = label;
+  if ($dotM) {
+    // On phones the dot is a badge with no words beside it: give it a name.
+    $dotM.dataset.state = state;
+    $dotM.setAttribute("role", "img");
+    $dotM.setAttribute("aria-label", label);
+    $dotM.title = hint || label;
+  }
+  if ($lblM) { $lblM.textContent = label; $lblM.title = hint; }
 }
 
 /** Sync the sidebar profile dock (status pill + invite count badge).
@@ -13544,7 +13596,7 @@ function renderProfilePopover() {
   const avatar = meRow?.avatarURL
     || document.getElementById("me-pill-avatar")?.getAttribute("src")
     || "/assets/vault-mark.svg";
-  const handle = `Steam · ${persona}`;
+  const handle = "Signed in with Steam";
 
   const pair = getMyPairFromFeed();
   const inbox = (lastInbox || []).slice().sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));

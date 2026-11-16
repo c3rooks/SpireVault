@@ -194,6 +194,7 @@ function render() {
       : null;
     ctx.root.innerHTML = html;
     lastHtml = html;
+    View.fitPartyTags(ctx.root);
     if (focusKey !== null) {
       const again = ctx.root.querySelector(`[data-cp="${CSS.escape(focusKey)}"], [data-cp-pick="${CSS.escape(focusKey)}"]`);
       if (again instanceof HTMLElement) again.focus({ preventScroll: true });
@@ -404,6 +405,10 @@ export function mountCoopPlay(root, deps) {
   ctx = { root, float, deps: { ...deps } };
   const support = Alerts.pushSupport();
   push = { supported: support.supported, on: false, reason: support.reason };
+  // Name tags are sized to the room they stand in: fit them again when the
+  // tab shows (a hidden tab measures 0), the window resizes or fonts land.
+  if (typeof ResizeObserver === "function") new ResizeObserver(() => View.fitPartyTags(root)).observe(root);
+  document.fonts?.ready?.then(() => View.fitPartyTags(root));
   root.addEventListener("click", onClick);
   root.addEventListener("change", onChange);
   float.addEventListener("click", onClick);

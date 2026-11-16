@@ -5974,10 +5974,12 @@ select#me-note option { background: var(--bg-deep); color: var(--text); }
   .nav-icon svg { width: 16px; height: 16px; }
   .nav-label { flex: 0 0 auto; }
 
-  /* The switch to the new look, as the last chip in the strip (the logo row
-     that carries it on desktop is hidden here). Same size as a tab chip;
-     gilded and dashed so it does not read as an eleventh tab. */
+  /* The switch to the new look, as the FIRST chip in the strip (the logo row
+     that carries it on desktop is hidden here), so someone who just chose
+     classic sees the way back without scrolling. Same size as a tab chip;
+     gilded and dashed so it does not read as another tab. */
   .skin-switch--strip {
+    order: -1;
     display: inline-flex;
     flex: 0 0 auto;
     gap: 8px;

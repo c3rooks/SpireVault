@@ -87,6 +87,7 @@ function countUp(el, start) {
  */
 export function afterRender(root) {
   if (!root) return;
+  watchZoomRows(root);
   const now = performance.now();
   const continuing =
     !armed && enterRoot === root && root.hasAttribute(ENTER_ATTR) && now - enterStart < ENTER_WINDOW_MS;
@@ -121,10 +122,66 @@ function clearTilt(el) {
   /** @type {HTMLElement} */ (el).style.removeProperty("--ry");
 }
 
+/** How far off screen a zoomable row starts fetching its large face. */
+const ZOOM_PREFETCH_MARGIN = "300px 0px";
+/** @type {IntersectionObserver | null} */
+let nearObserver = null;
+/** @type {Set<Element>} rows being watched, so re-rendered-away ones can be let go */
+const watchedRows = new Set();
+
+/** Whether rows grow on hover here (cards.css): a hovering pointer, motion allowed. */
+function rowsZoom() {
+  if (reduced()) return false;
+  try {
+    return window.matchMedia("(hover: hover)").matches;
+  } catch {
+    return false;
+  }
+}
+
 /**
- * A thumbnail that grows on hover names its large image in `data-hd`. The
- * first time its row (`[data-hd-zoom]`) is hovered, load that image and put
- * it in; the attribute is removed straight away, so it happens once.
+ * Large faces arrive before anyone hovers. A row's card grows to full size
+ * the moment the pointer reaches it, so fetching the large face on that
+ * first hover showed the small one blown up, blurry, until the large one
+ * landed a beat later. Instead each zoomable row starts its fetch as it
+ * comes near the screen (rows in a hidden tab never do): about 30 KB per row
+ * someone could actually see. Hovering still sharpens a row the watcher has
+ * not reached (handlePointer).
+ * @param {Element} root
+ */
+function watchZoomRows(root) {
+  if (typeof IntersectionObserver !== "function" || !rowsZoom()) return;
+  if (!nearObserver) {
+    nearObserver = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (!entry.isIntersecting || !nearObserver) return;
+          nearObserver.unobserve(entry.target);
+          watchedRows.delete(entry.target);
+          sharpenArt(entry.target);
+        });
+      },
+      { rootMargin: ZOOM_PREFETCH_MARGIN }
+    );
+  }
+  // The app re-renders with innerHTML: drop rows that are gone.
+  watchedRows.forEach((row) => {
+    if (row.isConnected) return;
+    nearObserver?.unobserve(row);
+    watchedRows.delete(row);
+  });
+  root.querySelectorAll("[data-hd-zoom]").forEach((row) => {
+    if (watchedRows.has(row) || !row.querySelector("img[data-hd]")) return;
+    watchedRows.add(row);
+    nearObserver?.observe(row);
+  });
+}
+
+/**
+ * A thumbnail that grows on hover names its large image in `data-hd`. Load
+ * that image and put it in, once its row (`[data-hd-zoom]`) nears the screen
+ * or is hovered, whichever comes first; the attribute is removed straight
+ * away, so it happens once.
  * @param {Element} host
  */
 function sharpenArt(host) {

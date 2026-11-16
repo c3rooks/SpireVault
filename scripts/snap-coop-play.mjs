@@ -70,7 +70,8 @@ const SHOTS = [
   ["in-game", "in_game", "/coop"],
   ["ended", "idle", "/party/" + "f".repeat(32)],
 ];
-const LOOKS = [["classic", ""], ["new", "?ui=next"]];
+// "/" opens the new look since 2026-11-15: classic has to be asked for.
+const LOOKS = [["classic", "?ui=classic"], ["new", "?ui=next"]];
 const SIZES = [["desktop", { width: 1440, height: 900 }], ["phone", { width: 390, height: 844 }]];
 
 function startServer() {
@@ -114,6 +115,21 @@ async function main() {
           // The static server has no sign-in backend, so the app shows its
           // "session expired" notice and a server warning. Not part of co-op.
           await page.addStyleTag({ content: ".session-expired-notice{display:none!important}" });
+          // For the same reason the connection line would read red ("Trouble
+          // reaching server") and the card "Session expired". Show what a
+          // signed-in player on a working server sees.
+          await page.evaluate(() => {
+            for (const id of ["status-dot", "status-dot-mobile"]) {
+              const dot = document.getElementById(id);
+              if (dot) dot.dataset.state = "online";
+            }
+            for (const id of ["status-label", "status-label-mobile"]) {
+              const label = document.getElementById(id);
+              if (label) label.textContent = "Live on the feed";
+            }
+            const tier = document.getElementById("me-pill-tier");
+            if (tier) tier.textContent = "Steam connected";
+          });
           await page.waitForTimeout(400);
           const file = join(OUT, `${look}-${sizeName}-${fixture}.png`);
           await page.screenshot({ path: file, fullPage: sizeName === "phone" });

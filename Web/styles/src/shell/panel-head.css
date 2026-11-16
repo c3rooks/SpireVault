@@ -164,6 +164,15 @@
   gap: 6px;
   min-width: 0;
 }
+/* Heads with actions (Highlights, News, Settings, Beta) stack the title and
+   subtitle in a plain div: give it the title-wrap's 6px so every tab's
+   subtitle sits the same distance under its title. */
+.panel-head-coop-row > div:first-child {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
 .panel-head-title-wrap h2,
 .panel-head-coop-row h2 {
   margin: 0;

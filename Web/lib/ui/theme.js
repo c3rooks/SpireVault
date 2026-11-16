@@ -30,8 +30,8 @@ const POPOVER_GAP_PX = 10;
 /** @type {ReadonlyArray<ThemeDef>} */
 export const THEMES = Object.freeze([
   { id: "inked", label: "Inked Codex", note: "The default" },
-  { id: "vault", label: "Classic Vault", note: "Ember and gold" },
-  { id: "auto", label: "Auto", note: "Your most-played hero" },
+  { id: "vault", label: "Ember Vault", note: "The classic palette" },
+  { id: "auto", label: "Auto", note: "Your main" },
   { id: "ironclad", label: "Ironclad", note: "Crimson dusk" },
   { id: "silent", label: "Silent", note: "Emerald mist" },
   { id: "defect", label: "Defect", note: "Azure storm" },
@@ -43,6 +43,26 @@ const THEME_IDS = Object.freeze(THEMES.map((theme) => theme.id));
 
 const PALETTE_ICON =
   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a9 9 0 1 0 0 18c1.2 0 2-.9 2-2 0-.5-.2-1-.5-1.4-.3-.4-.5-.8-.5-1.3 0-1.1.9-2 2-2h2.3A3.7 3.7 0 0 0 21 10.6C21 6.4 17 3 12 3z"/><circle cx="7.5" cy="11.5" r="1"/><circle cx="10" cy="7.5" r="1"/><circle cx="15" cy="7.5" r="1"/></svg>';
+
+/**
+ * The look switch: the new look (this layout) or the classic layout. Choosing
+ * Classic is a plain data-action="ui-set" button, handled by setUiVariant in
+ * script.js, so it works the same from every place this switch appears (the
+ * palette menu, the phone's More sheet, Settings).
+ * @param {string} source  where the switch is shown, for analytics
+ * @returns {string}
+ */
+export function lookSwitchHtml(source) {
+  const id = `v-look-label-${esc(source)}`;
+  return `
+    <div class="v-look" role="group" aria-labelledby="${id}">
+      <span class="v-look-label" id="${id}">Look</span>
+      <span class="v-look-seg">
+        <button class="v-look-opt" type="button" aria-pressed="true" aria-label="New look (showing now)">New</button>
+        <button class="v-look-opt" type="button" aria-pressed="false" data-action="ui-set" data-ui="classic" data-source="${esc(source)}" aria-label="Switch to the classic look">Classic</button>
+      </span>
+    </div>`;
+}
 
 /** @type {{ preference: string, autoCharacter: string|null }} */
 let state = Object.freeze({ preference: DEFAULT_THEME, autoCharacter: null });
@@ -260,16 +280,16 @@ export function openThemePicker(anchor) {
   popover.id = POPOVER_ID;
   popover.className = "v-theme-pop";
   popover.setAttribute("role", "dialog");
-  popover.setAttribute("aria-label", "Choose a theme");
+  popover.setAttribute("aria-label", "Look and theme");
   popover.innerHTML = `
+    ${lookSwitchHtml("theme-picker")}
     <div class="v-theme-pop-head">
-      <h3>Themes</h3>
+      <h3>Theme</h3>
       <span>Press <kbd>T</kbd> to cycle</span>
     </div>
     ${themeSwatchesHtml()}
     <div class="v-theme-foot">
-      <span>Switches instantly. Saved on this device.</span>
-      <button class="v-link" type="button" data-action="ui-set" data-ui="classic" data-source="theme-picker">Back to the classic look</button>
+      <span>Themes change instantly; switching looks reloads the page once. Both are saved on this device.</span>
     </div>`;
   document.body.appendChild(popover);
 
@@ -301,8 +321,8 @@ function createTriggerButton(extraClass) {
   button.type = "button";
   button.className = `v-icon-btn v-theme-btn ${extraClass}`.trim();
   button.dataset.action = "v-theme-open";
-  button.title = "Themes (T)";
-  button.setAttribute("aria-label", "Choose a theme");
+  button.title = "Look and theme";
+  button.setAttribute("aria-label", "Look and theme: switch between the new and classic look, or pick a theme");
   button.setAttribute("aria-haspopup", "dialog");
   button.setAttribute("aria-expanded", "false");
   button.innerHTML = PALETTE_ICON;

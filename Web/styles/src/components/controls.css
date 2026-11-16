@@ -96,6 +96,23 @@
   box-shadow: var(--v-shadow-pressed);
   color: var(--v-title);
 }
+.v-icon-btn:active {
+  transform: translate(calc(var(--v-press) + 1px), calc(var(--v-press) + 1px));
+  box-shadow: none;
+}
+/* A button whose menu is open stays pressed in until the menu closes
+   (the palette and Export menus), not only while the pointer is over it. */
+.v-icon-btn[aria-expanded="true"],
+.btn-ghost[aria-expanded="true"] {
+  transform: translate(var(--v-press), var(--v-press));
+  box-shadow: var(--v-shadow-pressed);
+}
+.v-icon-btn[aria-expanded="true"] {
+  color: var(--v-title);
+}
+.btn-ghost[aria-expanded="true"] {
+  background: var(--v-surface-2);
+}
 .v-icon-btn svg {
   width: 18px;
   height: 18px;

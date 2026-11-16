@@ -1,0 +1,234 @@
+/* ==========================================================================
+   The look switch and the first-visit notice.
+
+   .v-look           "Look: New | Classic", a two-way switch at the top of the
+                     palette menu, in the phone's More sheet and in Settings.
+                     Built by lookSwitchHtml() in lib/ui/theme.js.
+   .v-look-notice    The one-time card that points a first-time visitor at the
+                     palette button. Built by lib/ui/look-notice.js, which sets
+                     its left/top and the tail's position (--tail-x).
+   .v-look-hint      A ring on the palette button while the notice points at it.
+   ========================================================================== */
+
+/* ---- The switch ---------------------------------------------------------- */
+.v-look {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--v-space-3);
+  margin-bottom: var(--v-space-3);
+  padding-bottom: var(--v-space-3);
+  border-bottom: 2px dashed var(--v-line);
+}
+.v-look-label {
+  font-family: var(--v-font-heading);
+  font-size: var(--v-text-xl);
+  font-weight: 800;
+  line-height: 1;
+  color: var(--v-title);
+  text-shadow: 2px 2px 0 var(--v-ink);
+}
+.v-look-seg {
+  display: inline-flex;
+  padding: 3px;
+  border: var(--v-outline);
+  border-radius: var(--v-radius-pill);
+  background: var(--v-bg-deep);
+  box-shadow: var(--v-shadow-sm);
+}
+.v-look-opt {
+  min-width: 84px;
+  min-height: 36px;
+  padding: 0 var(--v-space-4);
+  border: 0;
+  border-radius: var(--v-radius-pill);
+  background: none;
+  color: var(--v-text-2);
+  font-family: var(--v-font-text);
+  font-size: var(--v-text-sm);
+  font-weight: 800;
+  cursor: pointer;
+  transition: transform var(--v-dur-1) ease, background-color var(--v-dur-1) ease, color var(--v-dur-1) ease;
+}
+.v-look-opt:hover {
+  color: var(--v-text);
+  background: var(--v-surface-2);
+}
+.v-look-opt:active {
+  transform: translateY(1px);
+}
+/* The look you are on: lit, and not a button that does anything. */
+.v-look-opt[aria-pressed="true"] {
+  background: var(--v-title);
+  color: var(--v-ink);
+  cursor: default;
+}
+.v-look-opt[aria-pressed="true"]:hover {
+  background: var(--v-title);
+  color: var(--v-ink);
+}
+.v-look-opt:focus-visible {
+  outline: 3px solid var(--v-title);
+  outline-offset: 2px;
+}
+/* In the More sheet and in Settings the switch sits in a padded box. */
+.v-mnav-themes .v-look,
+.v-appearance .v-look {
+  margin-bottom: var(--v-space-4);
+}
+/* Touch screens: a full-size target. */
+@media (hover: none), (max-width: 880px) {
+  .v-look-opt {
+    min-height: 44px;
+  }
+}
+
+/* ---- The notice ------------------------------------------------------------ */
+.v-look-notice {
+  position: fixed;
+  z-index: 140;
+  width: min(352px, calc(100vw - 24px));
+  padding: var(--v-space-4);
+  border: var(--v-outline);
+  border-radius: var(--v-radius-lg);
+  background: var(--v-paper);
+  box-shadow: var(--v-shadow-lg);
+  color: var(--v-on-paper);
+  animation: v-look-in 320ms var(--v-ease-spring) both;
+}
+/* On a phone the card spans the width with the top bar's 12px gutters, so it
+   is centred; at 352px it sat 26px from the left and 12px from the right. */
+@media (max-width: 480px) {
+  .v-look-notice:not(.is-docked) {
+    width: calc(100vw - 24px);
+  }
+}
+.v-look-notice.is-still {
+  animation: none;
+}
+@keyframes v-look-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.96);
+  }
+}
+/* The tail points up at the palette button (down when the card sits above).
+   --tail-x is measured from the card's outer edge; an absolute child is placed
+   from inside the border, so take the border back off to land dead centre. */
+.v-look-notice-tail {
+  position: absolute;
+  top: -9px;
+  left: calc(var(--tail-x, 32px) - var(--v-outline-w));
+  width: 16px;
+  height: 16px;
+  margin-left: -8px;
+  border-top: var(--v-outline);
+  border-left: var(--v-outline);
+  background: var(--v-paper);
+  transform: rotate(45deg);
+}
+.v-look-notice.is-above .v-look-notice-tail {
+  top: auto;
+  bottom: -9px;
+  border: 0;
+  border-right: var(--v-outline);
+  border-bottom: var(--v-outline);
+}
+.v-look-notice-title {
+  margin: 0 0 var(--v-space-2);
+  font-family: var(--v-font-heading);
+  font-size: var(--v-text-lg);
+  font-weight: 800;
+  line-height: 1.15;
+  color: var(--v-on-paper);
+}
+.v-look-notice-body {
+  margin: 0 0 var(--v-space-3);
+  font-size: var(--v-text-md);
+  line-height: 1.45;
+  color: var(--v-on-paper-2);
+}
+/* Two wordings: "here" when the card points at the button, "there" when it
+   is parked at the bottom because no palette button is on screen. */
+.v-look-notice-there,
+.v-look-notice.is-docked .v-look-notice-here {
+  display: none;
+}
+.v-look-notice.is-docked .v-look-notice-there {
+  display: inline;
+}
+.v-look-notice-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--v-space-2);
+}
+/* Equal widths side by side; each still wraps to a full row on a narrow phone. */
+.v-look-notice-actions .v-btn {
+  flex: 1 1 0;
+  min-width: max-content;
+  justify-content: center;
+  min-height: 44px;
+}
+/* The global gold focus ring vanishes on paper: the paper's own text colour
+   reads there in every theme (Ember Vault's paper is dark). */
+.v-look-notice :focus-visible {
+  outline-color: var(--v-on-paper);
+}
+/* Parked: no palette button on screen. Bottom of the window, above the phone
+   tab bar when there is one. */
+.v-look-notice.is-docked {
+  top: auto;
+  right: var(--v-space-4);
+  bottom: calc(var(--v-space-4) + env(safe-area-inset-bottom));
+  left: auto;
+}
+.v-look-notice.is-docked .v-look-notice-tail {
+  display: none;
+}
+@media (max-width: 880px) {
+  .v-look-notice.is-docked {
+    right: 12px;
+    bottom: calc(var(--v-tabbar-h, 64px) + 12px + env(safe-area-inset-bottom));
+    left: 12px;
+    width: auto;
+  }
+}
+
+/* ---- The palette button, while the notice points at it ----------------------- */
+.v-look-hint {
+  position: relative;
+  z-index: 141;
+}
+.v-look-hint::after {
+  content: "";
+  position: absolute;
+  inset: -5px;
+  border: 3px solid var(--v-title);
+  /* Concentric with the button: inset is measured inside its outline, so the
+     ring's radius is the button's plus the 5px stand-off, less the outline. */
+  border-radius: calc(var(--v-radius-sm) + 5px - var(--v-outline-w));
+  pointer-events: none;
+  animation: v-look-ring 1.6s ease-out infinite;
+}
+@keyframes v-look-ring {
+  from {
+    opacity: 1;
+    transform: scale(0.9);
+  }
+  to {
+    opacity: 0;
+    transform: scale(1.35);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .v-look-notice {
+    animation: none;
+  }
+  .v-look-hint::after {
+    animation: none;
+  }
+}
+.prefer-reduced-motion .v-look-notice,
+.prefer-reduced-motion .v-look-hint::after {
+  animation: none;
+}

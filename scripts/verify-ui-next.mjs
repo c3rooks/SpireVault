@@ -31,6 +31,10 @@ const BASE = `http://127.0.0.1:${PORT}`;
 const BOOT_TIMEOUT_MS = 20000;
 const WIDTHS = [320, 375, 768, 1024, 1440, 1920];
 const PHONE_VIEWPORT = { width: 375, height: 812 };
+/** "/" opens the new look (the default since 2026-11-15); classic checks ask for it. */
+const CLASSIC_PATH = "/?ui=classic";
+/** Set by lib/ui/look-notice.js once the first-visit notice is answered. */
+const NOTICE_KEY = "vault.web.ui.notice";
 /** Tabs that need a Steam account (STEAM_LOCKED_TABS in Web/script.js). */
 const STEAM_LOCKED_TABS = ["coop", "highlights", "beta"];
 /** A signed-in visitor, as script.js stores one (`open(..., { signedIn: true })`). */
@@ -104,12 +108,20 @@ function startServer() {
  * @param {string} path
  * @param {import("playwright").BrowserContextOptions & { abort?: string, signedIn?: boolean, routes?: Array<[string, (route: import("playwright").Route) => unknown]> }} [options]
  *   signedIn: start with a stored Steam session (the Steam-only tabs open)
+ *   freshVisitor: do not pre-answer the first-visit look notice (every other
+ *             check starts as a returning visitor, so the notice never sits
+ *             over what it clicks)
  *   routes:   request mocks installed before the page boots (the static
  *             server has no /api)
  */
 async function open(browser, path, options = {}) {
-  const { abort, signedIn, routes = [], ...contextOptions } = options;
+  const { abort, signedIn, freshVisitor, routes = [], ...contextOptions } = options;
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, ...contextOptions });
+  if (!freshVisitor) {
+    await context.addInitScript((key) => {
+      try { window.localStorage.setItem(key, "seen"); } catch { /* storage blocked */ }
+    }, NOTICE_KEY);
+  }
   if (signedIn) {
     await context.addInitScript((value) => {
       try { window.localStorage.setItem("vault.web.session", value); } catch { /* storage blocked */ }
@@ -156,9 +168,22 @@ function htmlState(page) {
 }
 
 async function run(browser) {
-  // ---- Classic is the default and loads none of the new UI ----------------
-  await check("classic is the default; no new-UI assets are requested", async () => {
-    const { context, page, requests, errors } = await open(browser, "/");
+  // ---- The new look is the default; classic loads none of it ---------------
+  await check("a new visitor gets the new look by default, without anything stored", async () => {
+    const { context, page: p, errors } = await open(browser, "/");
+    const state = await p.evaluate(() => ({
+      ui: document.documentElement.dataset.ui,
+      source: window.__VAULT_UI_SOURCE__,
+      stored: localStorage.getItem("vault.web.ui"),
+    }));
+    assert.deepEqual(state, { ui: "next", source: "default", stored: null });
+    assert.ok(await p.$("#overview-body .v-ov"), "the new Overview renders");
+    assert.deepEqual(errors, []);
+    await context.close();
+  });
+
+  await check("the classic look, once chosen, loads none of the new UI", async () => {
+    const { context, page, requests, errors } = await open(browser, CLASSIC_PATH);
     const state = await htmlState(page);
     assert.equal(state.ui, "classic");
     assert.equal(state.theme, null);
@@ -609,7 +634,7 @@ async function runDuel(browser) {
   });
 
   await check("the classic header keeps the game's original sprites", async () => {
-    const { context, page: p, requests } = await open(browser, "/");
+    const { context, page: p, requests } = await open(browser, CLASSIC_PATH);
     assert.equal(await p.locator(".v-duel, .v-actor").count(), 0);
     assert.ok(await p.$('.tab-panel[data-tab="overview"] .scene-figure-climber'), "classic diorama markup");
     assert.deepEqual(requests.filter((path) => path.startsWith("/assets/stage/")), []);
@@ -633,7 +658,7 @@ function visibleDocumentText(page) {
 }
 
 async function runBrand(browser) {
-  for (const [label, path] of [["classic", "/"], ["new look", "/?ui=next"]]) {
+  for (const [label, path] of [["classic", CLASSIC_PATH], ["new look", "/?ui=next"]]) {
     await check(`the brand is one word in the tab title and the page (${label})`, async () => {
       const { context, page: p } = await open(browser, path);
       const title = await p.title();
@@ -664,15 +689,126 @@ async function switchLayout(page, selector, variant) {
     variant,
     { timeout: BOOT_TIMEOUT_MS }
   );
-  await page.waitForSelector(variant === "next" ? "#overview-body .v-ov" : "#overview-body .kpi-strip", {
-    timeout: BOOT_TIMEOUT_MS,
-  });
+  // Switching keeps the tab, so wait for whichever tab is open to be drawn.
+  await page.waitForSelector(".tab-panel[data-tab]:not([hidden]) > *", { timeout: BOOT_TIMEOUT_MS });
+  if (await page.$('.tab-panel[data-tab="overview"]:not([hidden])')) {
+    await page.waitForSelector(variant === "next" ? "#overview-body .v-ov" : "#overview-body .kpi-strip", {
+      timeout: BOOT_TIMEOUT_MS,
+    });
+  }
 }
 
 async function runBetaSwitch(browser) {
-  await check("the desktop shells default to classic as well", async () => {
+  await check("the desktop shells default to the new look as well", async () => {
     const { context, page: p } = await open(browser, "/?desktop=1");
-    assert.equal((await htmlState(p)).ui, "classic");
+    assert.equal((await htmlState(p)).ui, "next");
+    assert.equal(await p.evaluate(() => window.__VAULT_UI_SOURCE__), "default");
+    await context.close();
+  });
+
+  for (const [label, viewport] of [["laptop", { width: 1440, height: 900 }], ["phone", PHONE_VIEWPORT], ["small phone", { width: 320, height: 640 }]]) {
+    await check(`first visit (${label}): a notice points at the palette button; "Keep" closes it for good`, async () => {
+      const { context, page: p, errors } = await open(browser, "/", { freshVisitor: true, viewport });
+      await p.waitForSelector("#v-look-notice", { timeout: BOOT_TIMEOUT_MS });
+      const state = await p.evaluate(() => {
+        const notice = document.getElementById("v-look-notice").getBoundingClientRect();
+        const hint = document.querySelector(".v-look-hint");
+        const button = hint ? hint.getBoundingClientRect() : null;
+        return {
+          docked: document.getElementById("v-look-notice").classList.contains("is-docked"),
+          onScreen: notice.left >= 0 && notice.right <= innerWidth && notice.top >= 0 && notice.bottom <= innerHeight,
+          pointsAtPalette: !!hint && hint.matches('[data-action="v-theme-open"]'),
+          belowButton: !!button && notice.top >= button.bottom,
+          sideways: document.documentElement.scrollWidth > innerWidth,
+        };
+      });
+      assert.deepEqual(state, { docked: false, onScreen: true, pointsAtPalette: true, belowButton: true, sideways: false });
+      // Layout height, not the bounding box: the card scales in from 96%, so a
+      // box read during that entrance makes a 44px button measure 42px.
+      for (const name of ["Keep the new look", "Switch to classic"]) {
+        const height = await p.getByRole("button", { name }).evaluate((el) => el.offsetHeight);
+        assert.ok(height >= 44, `"${name}" is a full-size tap target (${height}px)`);
+      }
+      await p.getByRole("button", { name: "Keep the new look" }).click();
+      await p.waitForSelector("#v-look-notice", { state: "detached" });
+      assert.equal(await p.locator(".v-look-hint").count(), 0, "the ring on the palette button goes too");
+      assert.equal(await p.evaluate((key) => localStorage.getItem(key), NOTICE_KEY), "keep");
+      await p.reload({ waitUntil: "domcontentloaded" });
+      await p.waitForSelector("#overview-body .v-ov", { timeout: BOOT_TIMEOUT_MS });
+      await p.waitForTimeout(1500);
+      assert.equal(await p.locator("#v-look-notice").count(), 0, "answered once, never again");
+      assert.deepEqual(errors, []);
+      await context.close();
+    });
+  }
+
+  await check('the notice\'s "Switch to classic" switches, and the notice never comes back', async () => {
+    const { context, page: p, errors } = await open(browser, "/", { freshVisitor: true });
+    await p.waitForSelector("#v-look-notice", { timeout: BOOT_TIMEOUT_MS });
+    await switchLayout(p, '#v-look-notice [data-ui="classic"]', "classic");
+    assert.equal(await p.evaluate(() => localStorage.getItem("vault.web.ui")), "classic");
+    await switchLayout(p, ".sidebar-brand .skin-switch--brand", "next");
+    await p.waitForTimeout(1500);
+    assert.equal(await p.locator("#v-look-notice").count(), 0);
+    assert.deepEqual(errors, []);
+    await context.close();
+  });
+
+  await check("a visitor who chose a look never sees the notice", async () => {
+    for (const path of ["/?ui=next", CLASSIC_PATH]) {
+      const { context, page: p } = await open(browser, path, { freshVisitor: true });
+      await p.waitForTimeout(1800);
+      assert.equal(await p.locator("#v-look-notice").count(), 0, path);
+      await context.close();
+    }
+  });
+
+  await check("Escape closes the notice, and opening the palette menu does too", async () => {
+    for (const how of ["escape", "palette"]) {
+      const { context, page: p } = await open(browser, "/", { freshVisitor: true });
+      await p.waitForSelector("#v-look-notice", { timeout: BOOT_TIMEOUT_MS });
+      if (how === "escape") await p.keyboard.press("Escape");
+      else await p.click(".sidebar-brand .v-theme-btn");
+      await p.waitForSelector("#v-look-notice", { state: "detached" });
+      if (how === "palette") assert.ok(await p.$("#v-theme-pop .v-look"), "the menu opens on the look switch");
+      await context.close();
+    }
+  });
+
+  await check("switching looks keeps the tab you are on, both ways", async () => {
+    const { context, page: p, errors } = await open(browser, "/");
+    await p.evaluate(() => window.SpireVault.switchTab("runs"));
+    await p.click(".sidebar-brand .v-theme-btn");
+    await p.click('#v-theme-pop [data-ui="classic"]');
+    await p.waitForFunction(() => document.documentElement.dataset.ui === "classic" && window.SpireVault && !window.SpireVault.__isStub, null, { timeout: BOOT_TIMEOUT_MS });
+    await p.waitForSelector('.tab-panel[data-tab="runs"]:not([hidden])', { timeout: BOOT_TIMEOUT_MS });
+    await p.click(".sidebar-brand .skin-switch--brand");
+    await p.waitForFunction(() => document.documentElement.dataset.ui === "next" && window.SpireVault && !window.SpireVault.__isStub, null, { timeout: BOOT_TIMEOUT_MS });
+    await p.waitForSelector('.tab-panel[data-tab="runs"]:not([hidden])', { timeout: BOOT_TIMEOUT_MS });
+    assert.deepEqual(errors, []);
+    await context.close();
+  });
+
+  await check("the desktop apps on the classic look: each stats toolbar carries the switch back", async () => {
+    const { context, page: p, errors } = await open(browser, `${CLASSIC_PATH}&desktop=1`);
+    const button = '.tab-panel[data-tab="overview"] [data-ui-toolbar-switch]';
+    await p.waitForSelector(button, { state: "visible" });
+    assert.equal(await p.locator("[data-ui-toolbar-switch]").count(), await p.locator(".app-toolbar-right").count());
+    await switchLayout(p, button, "next");
+    assert.deepEqual(errors, []);
+    await context.close();
+  });
+
+  await check("the look and theme menu fits a small phone", async () => {
+    const { context, page: p } = await open(browser, "/", { viewport: { width: 320, height: 568 } });
+    await p.click('[data-action="v-theme-open"]:visible');
+    await p.waitForSelector("#v-theme-pop .v-look");
+    await p.waitForTimeout(400);
+    const fits = await p.evaluate(() => {
+      const box = document.getElementById("v-theme-pop").getBoundingClientRect();
+      return box.left >= 0 && box.right <= innerWidth && box.top >= 0 && box.bottom <= innerHeight;
+    });
+    assert.ok(fits, "the menu stays on screen (it scrolls inside itself)");
     await context.close();
   });
 
@@ -691,14 +827,15 @@ async function runBetaSwitch(browser) {
   });
 
   await check("Settings: opt in to the new look, then back, one click each way", async () => {
-    const { context, page: p, errors } = await open(browser, "/");
+    const { context, page: p, errors } = await open(browser, CLASSIC_PATH);
     await p.evaluate(() => window.SpireVault.switchTab("settings"));
     const optIn = '#settings-body [data-ui-beta-card] [data-action="ui-set"][data-ui="next"]';
     await p.waitForSelector(optIn);
     await switchLayout(p, optIn, "next");
-    assert.deepEqual(await htmlState(p), { ui: "next", theme: "inked", search: "" });
+    // ?ui= is stripped; the tab stays in the address, so the switch keeps it.
+    assert.deepEqual(await htmlState(p), { ui: "next", theme: "inked", search: "?tab=settings" });
     assert.equal(await p.evaluate(() => localStorage.getItem("vault.web.ui")), "next");
-    assert.ok(await p.$('.tab-panel[data-tab="overview"]:not([hidden])'), "opting in lands on Overview");
+    assert.ok(await p.$('.tab-panel[data-tab="settings"]:not([hidden])'), "switching keeps you on Settings");
 
     await p.evaluate(() => window.SpireVault.switchTab("settings"));
     const optOut = '#settings-body .v-appearance [data-action="ui-set"][data-ui="classic"]';
@@ -712,7 +849,7 @@ async function runBetaSwitch(browser) {
   });
 
   await check("the theme picker and the host bridge can both switch layouts", async () => {
-    const { context, page: p } = await open(browser, "/");
+    const { context, page: p } = await open(browser, CLASSIC_PATH);
     await p.evaluate(() => window.SpireVault.setUI("next"));
     await p.waitForSelector("#overview-body .v-ov", { timeout: BOOT_TIMEOUT_MS });
     assert.equal(await p.evaluate(() => window.SpireVault.setUI("sideways")), false);
@@ -723,7 +860,7 @@ async function runBetaSwitch(browser) {
   });
 
   await check("classic sidebar: the button beside the logo turns the new look on in one click", async () => {
-    const { context, page: p, errors } = await open(browser, "/");
+    const { context, page: p, errors } = await open(browser, CLASSIC_PATH);
     const button = ".sidebar-brand .skin-switch--brand";
     await p.waitForSelector(button, { state: "visible" });
     const fit = await p.evaluate((selector) => {
@@ -739,7 +876,7 @@ async function runBetaSwitch(browser) {
     assert.deepEqual(fit, { clearOfWordmark: true, insideRail: true, named: true, stripChipShown: false });
     await switchLayout(p, button, "next");
     assert.equal(await p.evaluate(() => localStorage.getItem("vault.web.ui")), "next");
-    assert.ok(await p.$('.tab-panel[data-tab="overview"]:not([hidden])'), "switching lands on Overview");
+    assert.ok(await p.$('.tab-panel[data-tab="overview"]:not([hidden])'), "switching keeps you on Overview");
     // The new look keeps its own control in the same spot; the classic ones stay out of it.
     await p.waitForSelector(".sidebar-brand .v-theme-btn", { state: "visible" });
     assert.equal(await p.locator(".skin-switch:visible").count(), 0);
@@ -748,7 +885,7 @@ async function runBetaSwitch(browser) {
   });
 
   await check("classic on a phone: the tab strip ends with the same switch", async () => {
-    const { context, page: p, errors } = await open(browser, "/", { viewport: PHONE_VIEWPORT });
+    const { context, page: p, errors } = await open(browser, CLASSIC_PATH, { viewport: PHONE_VIEWPORT });
     const chip = ".sidebar-nav .skin-switch--strip";
     await p.waitForSelector(chip, { state: "attached" });
     const state = await p.evaluate((selector) => {
@@ -787,7 +924,7 @@ async function runBetaSwitch(browser) {
     await context.close();
   });
 
-  for (const [label, path, target] of [["classic", "/", "next"], ["new look", "/?ui=next", "classic"]]) {
+  for (const [label, path, target] of [["classic", CLASSIC_PATH, "next"], ["new look", "/", "classic"]]) {
     await check(`the Beta tab carries the switch and keeps it through re-renders (${label})`, async () => {
       // Beta is a Steam-only tab: signed out it shows the sign-in screen.
       const { context, page: p } = await open(browser, path, { signedIn: true });
@@ -828,7 +965,7 @@ function overviewNumbers(page) {
  * same numbers, in the same order, on the other side.
  */
 async function runParity(browser) {
-  const classic = await open(browser, "/");
+  const classic = await open(browser, CLASSIC_PATH);
   const next = await open(browser, "/?ui=next");
   // The new look counts its headline numbers up from zero; read them once
   // every counter has landed on its value.
@@ -902,7 +1039,7 @@ async function runNewsPost(browser) {
   // is no longer the one that opens by default; it only has to be listed,
   // open from the list, and have working switches.
   await check("the beta news post is listed, News is flagged NEW, and the post's switches work", async () => {
-    const { context, page: p, errors } = await open(browser, "/");
+    const { context, page: p, errors } = await open(browser, CLASSIC_PATH);
     assert.equal(await p.locator("#nav-news-count").isHidden(), false, "the News tab should show the NEW pill");
     await p.evaluate(() => window.SpireVault.switchTab("news"));
     await p.waitForSelector("#news-list .news-list-item");
@@ -936,7 +1073,7 @@ async function runNewsPost(browser) {
   });
 
   await check("\"What's new\" opens the beta post from Settings", async () => {
-    const { context, page: p } = await open(browser, "/");
+    const { context, page: p } = await open(browser, CLASSIC_PATH);
     await p.evaluate(() => window.SpireVault.switchTab("settings"));
     await p.click('#settings-body [data-action="ui-open-news"]');
     await p.waitForSelector(`#news-${BETA_NEWS_ID}`);
@@ -984,7 +1121,7 @@ async function lockState(page, tab) {
  * is locked.
  */
 async function runLock(browser) {
-  for (const [look, path] of [["classic", "/"], ["new look", "/?ui=next"]]) {
+  for (const [look, path] of [["classic", CLASSIC_PATH], ["new look", "/?ui=next"]]) {
     await check(`signed out: Co-op, Highlights and Beta are locked, the rest is open (${look})`, async () => {
       const { context, page: p, errors, requests } = await open(browser, path);
       for (const tab of STEAM_LOCKED_TABS) {
@@ -1057,7 +1194,7 @@ async function runLock(browser) {
   });
 
   await check("classic on a phone: locked chips in the tab strip, sign-in screen fits", async () => {
-    const { context, page: p, errors } = await open(browser, "/", { viewport: PHONE_VIEWPORT });
+    const { context, page: p, errors } = await open(browser, CLASSIC_PATH, { viewport: PHONE_VIEWPORT });
     for (const tab of STEAM_LOCKED_TABS) {
       const state = await lockState(p, tab);
       assert.deepEqual(state.lockedRows, STEAM_LOCKED_TABS, `${tab}: chips showing a lock`);
@@ -1304,7 +1441,7 @@ async function runShare(browser) {
   });
 
   await check("classic keeps its own share card and never loads the new one", async () => {
-    const { context, page: p, errors, requests } = await open(browser, "/");
+    const { context, page: p, errors, requests } = await open(browser, CLASSIC_PATH);
     await openShare(p);
     await p.waitForTimeout(1200);
     const card = await cardState(p);
@@ -1359,8 +1496,9 @@ async function runCards(browser) {
     await context.close();
   });
 
-  await check("new look: the podium shows large faces, and a row's card sharpens on hover", async () => {
-    const { context, page: p, errors } = await open(browser, "/?ui=next", { deviceScaleFactor: 2 });
+  await check("new look: the podium shows large faces, and a row's card is sharp before it is hovered", async () => {
+    // A short window, so some rows start well below the fold.
+    const { context, page: p, errors } = await open(browser, "/?ui=next", { deviceScaleFactor: 2, viewport: { width: 1440, height: 640 } });
     await p.evaluate(() => window.SpireVault.switchTab("cards"));
     await p.waitForSelector(".v-cd-podium img");
     await p.waitForFunction(() => [...document.querySelectorAll(".v-cd-podium img")].every((img) => img.complete && img.naturalWidth > 0));
@@ -1374,21 +1512,23 @@ async function runCards(browser) {
     for (const card of podium) {
       assert.ok(card.natural >= card.needed, `a podium card needs ${card.needed}px and its file has ${card.natural}px`);
     }
-    const row = p.locator(".v-cd-row", { has: p.locator("img[data-hd]") }).first();
+    // A row far down the page keeps its small face (no fetch for a card no
+    // one can see) until it nears the screen; then its large face arrives
+    // without any hover, so the card never grows blurry first.
+    const row = p.locator(".v-cd-row").last();
     const image = await row.locator(".v-cd-thumb img").elementHandle();
+    assert.equal(await image.evaluate((img) => img.hasAttribute("data-hd")), true, "a far row has not fetched its large face");
     await row.scrollIntoViewIfNeeded();
-    // Thumbnails load lazily: wait for this one before measuring it.
-    await p.waitForFunction((img) => img.complete && img.naturalWidth > 0, image);
-    assert.equal(await image.evaluate((img) => img.naturalWidth), 205, "a row starts with the small face");
-    await row.hover();
-    await p.waitForFunction((img) => img.naturalWidth === 410, image);
+    await p.waitForFunction((img) => img.complete && img.naturalWidth === 410, image);
     assert.equal(await image.evaluate((img) => img.hasAttribute("data-hd")), false, "the swap happens once");
+    await row.hover();
+    assert.equal(await image.evaluate((img) => img.naturalWidth), 410, "hovered, it is already the large face");
     assert.deepEqual(errors, []);
     await context.close();
   });
 
   await check("classic never loads the large card faces", async () => {
-    const { context, page: p, errors, requests } = await open(browser, "/", { deviceScaleFactor: 2 });
+    const { context, page: p, errors, requests } = await open(browser, CLASSIC_PATH, { deviceScaleFactor: 2 });
     await p.evaluate(() => window.SpireVault.switchTab("cards"));
     await p.waitForSelector("#cards-body img");
     await p.waitForTimeout(800);
@@ -1464,7 +1604,7 @@ async function coopCard(page, state) {
 }
 
 async function runCoop(browser) {
-  for (const [label, path] of [["classic", "/"], ["new look", "/?ui=next"]]) {
+  for (const [label, path] of [["classic", CLASSIC_PATH], ["new look", "/?ui=next"]]) {
     for (const width of [1440, 1024, 390]) {
       await check(`co-op (${label}, ${width}px): one card, Play on screen, no old lobby pieces`, async () => {
         const server = coopServer("idle");
@@ -1479,6 +1619,57 @@ async function runCoop(browser) {
         assert.equal(card.sideways, false, "the page scrolls sideways");
         if (label === "new look") assert.equal(card.liveCoopLinks, 0, "coop-play.css must sit in the legacy layer in the new look");
         assert.deepEqual(requests.filter((x) => /party-finder|coop-lobbies|party-room|coop-sandbox/.test(x)), [], "old lobby scripts were requested");
+        assert.deepEqual(errors, []);
+        await context.close();
+      });
+    }
+  }
+
+  // A full party of four, one with a long Steam name: the name tags above the
+  // climbers must keep an even gap, stay inside the room and never cut a
+  // short name, from a laptop down to a 320px phone (where they step into two
+  // rows), in both looks.
+  const fullParty = () => {
+    const view = coopView("host");
+    const people = [
+      { sid: COOP_ME, name: "c3rooks", character: "fool", isYou: true },
+      { sid: COOP_MATE, name: "Boble", character: "ironclad" },
+      { sid: "76561198000000003", name: "Mako", character: "defect" },
+      { sid: "76561198000000004", name: "IAmWeirdAndLong", character: "necrobinder" },
+    ];
+    view.match.members = people.map((m, i) => ({ isYou: false, ...m, isHost: i === 0, steamAdded: false, status: "joined" }));
+    view.match.seatsLeft = 0;
+    return view;
+  };
+  for (const [label, path] of [["new look", "/?ui=next"], ["classic", CLASSIC_PATH]]) {
+    for (const width of [1440, 390, 360, 320]) {
+      await check(`co-op (${label}, ${width}px): a full party's name tags are evenly spaced, inside the room, short names whole`, async () => {
+        const server = coopServer("idle");
+        server.view = fullParty();
+        const { context, page: p, errors } = await open(browser, path, {
+          signedIn: true, routes: [server.route], viewport: { width, height: width < 600 ? 844 : 900 },
+        });
+        await coopCard(p, "matched");
+        await p.waitForTimeout(300);
+        const tags = await p.evaluate(() => {
+          const scene = document.querySelector('.cp[data-cp-state="matched"] .cp-scene');
+          const frame = scene.getBoundingClientRect();
+          return [...scene.querySelectorAll(".cp-climber > .cp-tag")].map((tag) => {
+            const r = tag.getBoundingClientRect();
+            const name = tag.querySelector(".cp-tag-name");
+            return { name: name.textContent, left: r.left - frame.left, right: r.right - frame.left, top: Math.round(r.top), width: Math.round(r.width), frame: frame.width, cut: name.scrollWidth > name.clientWidth + 1 };
+          });
+        });
+        assert.equal(tags.length, 4);
+        assert.equal(new Set(tags.map((t) => t.width)).size, 1, `one shared width (${tags.map((t) => t.width).join(", ")})`);
+        for (const t of tags) {
+          assert.ok(t.left >= 7.5 && t.frame - t.right >= 7.5, `${t.name} stays 8px inside the room (${Math.round(t.left)} / ${Math.round(t.frame - t.right)})`);
+        }
+        for (const [i, t] of tags.entries()) {
+          const next = tags.slice(i + 1).find((u) => Math.abs(u.top - t.top) < 3);
+          if (next) assert.ok(next.left - t.right >= 7.5, `${t.name} and ${next.name} keep an 8px gap (${Math.round(next.left - t.right)})`);
+        }
+        assert.deepEqual(tags.filter((t) => t.cut && t.name !== "IAmWeirdAndLong").map((t) => t.name), [], "short names are never cut");
         assert.deepEqual(errors, []);
         await context.close();
       });

@@ -1193,6 +1193,10 @@
     gap: 10px;
     padding: 14px 64px 14px 14px;
   }
+  /* The × lines up with the buttons' right edge, mirroring the 14px inset. */
+  .demo-banner .demo-banner-dismiss {
+    right: 14px;
+  }
   .demo-banner .demo-strip-eyebrow {
     justify-self: start;
   }

@@ -7,6 +7,12 @@
   position: fixed;
   z-index: 150;
   width: min(348px, calc(100vw - 24px));
+  /* A short phone cannot fit the look switch and all eight themes: the menu
+     scrolls inside itself instead of running off the screen. */
+  max-height: calc(100vh - 20px);
+  max-height: calc(100dvh - 20px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding: var(--v-space-3);
   border: var(--v-outline);
   border-radius: var(--v-radius-lg);

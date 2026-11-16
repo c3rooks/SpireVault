@@ -80,9 +80,9 @@ function spireHtml(hiLevel, cap) {
 }
 
 /**
- * The spire's marker: a chip beside the tower's foot that says what the lit
- * windows count, in the words Overview uses for the same number. It lives in
- * the near layer, so the figures in front of the tower never cover it.
+ * The spire's marker: a caption under the tower's foot, on the ledge, that
+ * says what the lit windows count, in the words Overview uses for the same
+ * number. It lives in the near layer, so the figures never cover it.
  * @param {number} hiLevel
  * @returns {string}
  */
@@ -92,7 +92,8 @@ function spireCaptionHtml(hiLevel) {
 }
 
 /**
- * The torches' marker: how many runs the row covers and how many were won.
+ * The torches' marker, a caption under the row: how many runs it covers and
+ * how many were won.
  * @param {number} runCount  torches drawn, at least 1
  * @param {number} wins
  * @returns {string}

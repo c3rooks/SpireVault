@@ -282,6 +282,89 @@ function sceneHtml(m) {
     </div>`;
 }
 
+// MARK: - Name tags
+
+/** Space between neighbouring name tags, and from a tag to the room's frame (CSS px). */
+const TAG_GAP_PX = 8;
+const TAG_EDGE_PX = 8;
+/** The narrowest a tag gets in the tightest room; the name truncates inside it. */
+const TAG_MIN_PX = 40;
+/** Gap from the figure's head to its tag, and between a raised tag and the row below (CSS px). */
+const TAG_LIFT_PX = 10;
+const TAG_ROW_GAP_PX = 6;
+
+/**
+ * Sizes the name tags in every party room under `root`. The whole party
+ * shares one width (the longest name, or less when the room is tight). Each
+ * tag sits centred over its climber, sliding inward only as far as it must to
+ * stay inside the frame, and neighbours always keep the same gap, so tags
+ * never touch, overlap or leave the room. One long name just truncates; but
+ * when your own name or most of the names would be cut (a full party on a
+ * narrow phone), every second tag steps up one row, which doubles the room
+ * each name has. Runs after every render and whenever the room changes size.
+ * @param {ParentNode} root
+ */
+export function fitPartyTags(root) {
+  for (const scene of root.querySelectorAll(".cp-scene")) fitSceneTags(/** @type {HTMLElement} */ (scene));
+}
+
+/**
+ * Where each tag's left edge goes at width `width`: centred on its climber,
+ * clamped inside the frame. Null when two tags in the same row (`step`
+ * apart) would come closer than the gap.
+ * @param {number[]} centres @param {number} frameWidth @param {number} width @param {number} step
+ * @returns {number[] | null}
+ */
+function placeTags(centres, frameWidth, width, step) {
+  const max = frameWidth - TAG_EDGE_PX - width;
+  if (max < TAG_EDGE_PX) return null;
+  const lefts = centres.map((centre) => Math.min(max, Math.max(TAG_EDGE_PX, centre - width / 2)));
+  for (let i = 0; i + step < lefts.length; i += 1) {
+    if (lefts[i + step] - (lefts[i] + width) < TAG_GAP_PX) return null;
+  }
+  return lefts;
+}
+
+/** The widest a shared tag width can be, up to `natural`, with `step` apart neighbours. */
+function widestFit(centres, frameWidth, natural, step) {
+  for (let width = Math.floor(natural); width > TAG_MIN_PX; width -= 1) {
+    const lefts = placeTags(centres, frameWidth, width, step);
+    if (lefts) return { width, lefts };
+  }
+  return { width: TAG_MIN_PX, lefts: centres.map((centre) => centre - TAG_MIN_PX / 2) };
+}
+
+/** @param {HTMLElement} scene */
+function fitSceneTags(scene) {
+  const tags = /** @type {HTMLElement[]} */ ([...scene.querySelectorAll(".cp-climber > .cp-tag")]);
+  if (!tags.length) return;
+  const frame = scene.getBoundingClientRect();
+  if (frame.width === 0) return; // a hidden tab: fitted again when it shows
+  for (const tag of tags) {
+    tag.style.width = "max-content";
+    tag.style.bottom = "";
+    tag.style.transform = "";
+  }
+  const naturals = tags.map((tag) => tag.offsetWidth);
+  const natural = Math.max(...naturals);
+  const centres = tags.map((tag) => {
+    const box = /** @type {HTMLElement} */ (tag.parentElement).getBoundingClientRect();
+    return box.left + box.width / 2 - frame.left;
+  });
+  let fit = widestFit(centres, frame.width, natural, 1);
+  const you = tags.findIndex((tag) => tag.parentElement?.classList.contains("is-you"));
+  const cut = naturals.filter((w) => w > fit.width).length;
+  const staggered = tags.length >= 3 && ((you >= 0 && naturals[you] > fit.width) || cut * 2 > tags.length);
+  if (staggered) fit = widestFit(centres, frame.width, natural, 2);
+  const lift = TAG_LIFT_PX + tags[0].offsetHeight + TAG_ROW_GAP_PX;
+  tags.forEach((tag, i) => {
+    tag.style.width = `${fit.width}px`;
+    const shift = Math.round(fit.lefts[i] - (centres[i] - fit.width / 2));
+    if (shift) tag.style.transform = `translateX(calc(-50% + ${shift}px))`;
+    if (staggered && i % 2 === 1) tag.style.bottom = `calc(100% + ${lift}px)`;
+  });
+}
+
 /** You, alone, before a match. */
 function soloScene(me, character, searching) {
   return sceneHtml({

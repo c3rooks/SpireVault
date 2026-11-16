@@ -6,7 +6,13 @@
    which still wins. Its normal-priority rules do NOT survive the new base
    layer, so the ones that matter are re-declared here.
    ========================================================================== */
-html.is-desktop-host,
+/* The page paints its own night background, as classic does: the macOS web
+   view draws no background of its own (WebHostView.swift) and WebView2 on
+   Windows fills a dark page with #121212, so a transparent <html> showed a
+   flat neutral black under the indigo panels. */
+html.is-desktop-host {
+  background: var(--v-bg);
+}
 html.is-desktop-host body {
   background: transparent;
 }
@@ -21,4 +27,9 @@ html.is-desktop-host body {
    button is the way to themes there. */
 html:not(.is-desktop-host) .v-theme-btn--toolbar {
   display: none;
+}
+/* Same height as the toolbar buttons beside it (Export, Refresh, Import). */
+html.is-desktop-host .v-theme-btn--toolbar {
+  width: 32px;
+  height: 32px;
 }

@@ -85,21 +85,48 @@
   flex-direction: column;
   gap: var(--v-space-4);
   min-height: 0;
-  margin-right: calc(-1 * var(--v-space-3));
-  padding: 4px var(--v-space-3) 4px 0;
+  /* Room on every side for the 3px keyboard focus ring (it was clipped on
+     the left) as well as the active row's shadow; the rows stay put. */
+  margin-inline: calc(-1 * var(--v-space-3));
+  padding: 6px var(--v-space-3);
   overflow-y: auto;
   scrollbar-width: none;
 }
 .sidebar-nav::-webkit-scrollbar {
   display: none;
 }
+/* A short laptop window (1366x768, 1280x800): tighter rows so News and Beta
+   stay on screen above the account card, and a thin visible scrollbar when
+   even that is not enough, instead of rows hiding with no cue. */
+@media (min-width: 881px) and (max-height: 820px) {
+  .sidebar {
+    gap: var(--v-space-3);
+  }
+  .nav-row {
+    padding-block: 7px;
+  }
+  .sidebar-nav {
+    scrollbar-width: thin;
+    scrollbar-color: var(--v-line) transparent;
+  }
+  .sidebar-nav::-webkit-scrollbar {
+    display: block;
+    width: 6px;
+  }
+  .sidebar-nav::-webkit-scrollbar-thumb {
+    border-radius: 3px;
+    background: var(--v-line);
+  }
+}
 .nav-group {
   display: flex;
   flex-direction: column;
   gap: 4px;
 }
+/* Starts on the icon glyph: the row's 2px border, its 10px padding, and the
+   1px the 18px icon sits inside its 20px box. */
 .nav-group-label {
-  padding: 0 10px 2px;
+  padding: 0 13px 2px;
   font-size: var(--v-text-xs);
   font-weight: 800;
   letter-spacing: 0.14em;
@@ -125,6 +152,14 @@
     background-color var(--v-dur-1) ease,
     color var(--v-dur-1) ease,
     transform var(--v-dur-2) var(--v-ease-spring);
+}
+/* A lock or a NEW/count badge is taller than the 20px icon and grew its row
+   by 2px; let it overhang the row's padding so every row keeps one height. */
+@media (min-width: 881px) {
+  .nav-row > .nav-badge:not(.nav-badge--dot),
+  .nav-row > .nav-lock {
+    margin-block: -1px;
+  }
 }
 .nav-row:hover {
   background: var(--v-surface-1);
@@ -212,6 +247,19 @@
   transform: translate(var(--v-press), var(--v-press));
   box-shadow: var(--v-shadow-pressed);
 }
+/* While its menu is open the card stays pressed in and the caret turns to
+   point up at the menu, which opens above it. */
+.me-pill[aria-expanded="true"]:not(.me-pill-guest) {
+  transform: translate(var(--v-press), var(--v-press));
+  box-shadow: var(--v-shadow-pressed);
+  background: var(--v-surface-2);
+}
+.me-pill-caret svg {
+  transition: transform var(--v-dur-2) var(--v-ease-out);
+}
+.me-pill[aria-expanded="true"] .me-pill-caret svg {
+  transform: rotate(180deg);
+}
 .me-pill-avatar {
   flex: none;
   width: 32px;
@@ -288,33 +336,98 @@
 .me-pill-guest-settings:hover {
   color: var(--v-title);
 }
+/* The connection line sits centred under the account card, on the card's
+   own centre line. The dot and the words take the state's colour: green
+   when live, gold while connecting, red when the server cannot be
+   reached, grey for a guest. */
 .sidebar-status-row {
   display: flex;
   align-items: center;
-  gap: 6px;
-  min-height: 20px;
+  justify-content: center;
+  gap: 7px;
+  min-height: 22px;
   padding: 0 4px;
   color: var(--v-text-2);
   font-size: var(--v-text-xs);
   font-weight: 600;
+  line-height: 1.2;
+  text-align: center;
 }
+.sidebar-status-row:has(.status-dot[data-state="trouble"]) {
+  color: color-mix(in oklab, var(--v-loss) 78%, var(--v-text));
+  font-weight: 700;
+}
+.sidebar-status-row:has(.status-dot[data-state="expired"]) {
+  color: color-mix(in oklab, var(--v-accent) 78%, var(--v-text));
+  font-weight: 700;
+}
+/* A long message wraps onto a second, balanced line rather than losing its
+   end to an ellipsis: "Trouble starting — try refreshing" must be read whole. */
+.sidebar-status-label {
+  min-width: 0;
+  text-wrap: balance;
+}
+/* Each dot carries its own tone, so the rail's dot and the phone top bar's
+   dot (#status-dot-mobile, outside any status row) colour the same way. */
 .status-dot {
+  --status-tone: var(--v-text-3);
+  position: relative;
   flex: none;
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: var(--v-text-3);
+  background: var(--status-tone);
 }
 .status-dot[data-state="online"],
 .status-dot[data-state="live"] {
-  background: var(--v-win);
+  --status-tone: var(--v-win);
 }
 .status-dot[data-state="connecting"] {
-  background: var(--v-gold);
+  --status-tone: var(--v-gold);
+}
+.status-dot[data-state="trouble"] {
+  --status-tone: var(--v-loss);
+}
+/* The session ended: orange, the colour of the sign-in action it asks for. */
+.status-dot[data-state="expired"] {
+  --status-tone: var(--v-accent);
+}
+/* A coloured state gets a soft halo; a guest's grey dot stays plain. */
+.status-dot:is([data-state="online"], [data-state="live"], [data-state="connecting"], [data-state="trouble"], [data-state="expired"]) {
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--status-tone) 24%, transparent);
+}
+/* Something is wrong or still settling: a soft ring breathes out of the
+   dot so the eye finds it. Live and guest stay still. */
+.status-dot[data-state="trouble"]::after,
+.status-dot[data-state="connecting"]::after {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  border: 2px solid var(--status-tone);
+  border-radius: 50%;
+  opacity: 0;
+  animation: v-status-ring 1.8s var(--v-ease-out, ease-out) infinite;
+}
+@keyframes v-status-ring {
+  0% {
+    opacity: 0.7;
+    transform: scale(0.6);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.5);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .status-dot::after {
+    animation: none;
+    opacity: 0.45;
+    transform: none;
+  }
 }
 .me-pill-status-pill,
 .me-pill-invites {
-  margin-left: auto;
+  margin-left: 4px;
   padding: 1px 8px;
   border: var(--v-outline);
   border-radius: var(--v-radius-pill);
@@ -332,6 +445,79 @@
 }
 .mobile-account-row {
   display: none;
+}
+
+/* The profile menu (portaled to <body>, so outside the rail's reset) in the
+   new look's frame: inked outline, hard shadow, theme surfaces, and Sign out
+   in the loss colour, matching the Export and theme menus beside it. */
+.profile-popover {
+  border: var(--v-outline);
+  border-radius: var(--v-radius-md);
+  background: var(--v-surface-1);
+  box-shadow: var(--v-shadow);
+  color: var(--v-text);
+}
+.profile-pop-head,
+.profile-pop-section {
+  border-bottom-color: var(--v-line);
+}
+.profile-pop-foot {
+  border-top-color: var(--v-line);
+  background: none;
+}
+.profile-pop-link:hover,
+.profile-pop-close:hover {
+  background: var(--v-surface-2);
+  color: var(--v-text);
+}
+.profile-pop-link--danger,
+.profile-pop-link--danger:hover {
+  color: var(--v-loss);
+}
+
+/* "Session expired — sign in again" (and the private-window notice, which
+   shares the frame): a trouble strip in the new look's inks, the sign-in
+   action on its own line under the message, and an inked close button. */
+.session-expired-notice {
+  gap: var(--v-space-3);
+  padding: var(--v-space-3) var(--v-gutter);
+  border-bottom: var(--v-outline-w) solid color-mix(in oklab, var(--v-loss) 60%, var(--v-ink));
+  background: color-mix(in oklab, var(--v-loss) 14%, var(--v-bg-deep));
+  color: var(--v-text);
+  font-family: var(--v-font-text);
+  font-size: var(--v-text-sm);
+}
+.session-expired-notice .private-mode-icon {
+  color: var(--v-loss);
+}
+.session-expired-notice .session-expired-link {
+  display: flex;
+  align-items: center;
+  width: fit-content;
+  min-height: 36px;
+  margin: var(--v-space-2) 0 0;
+  padding: 0 var(--v-space-3);
+  border: var(--v-outline);
+  border-radius: var(--v-radius-sm);
+  background: var(--v-accent);
+  box-shadow: var(--v-shadow-sm);
+  color: var(--v-on-accent);
+  font-weight: 800;
+  text-decoration: none;
+}
+.private-mode-close {
+  display: grid;
+  place-items: center;
+  border: var(--v-outline);
+  border-radius: var(--v-radius-sm);
+  background: var(--v-surface-2);
+  box-shadow: var(--v-shadow-sm);
+  color: var(--v-text);
+}
+@media (max-width: 880px) {
+  .session-expired-notice .session-expired-link {
+    min-height: 44px;
+  }
 }
 
 /* ---- Content column ------------------------------------------------------- */
@@ -409,14 +595,47 @@
     border-radius: 50%;
   }
   .me-pill-mini strong {
-    max-width: 9ch;
+    max-width: 12ch;
     overflow: hidden;
     color: var(--v-text);
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+  /* The connection dot sits on the avatar as a presence badge (the avatar is
+     the row's first 24px), ringed in the bar's own colour. Off the text line,
+     it gives the name room: "Steam User" no longer cuts to "Steam …". */
+  .mobile-account-row {
+    position: relative;
+  }
+  .mobile-account-row > .status-dot {
+    position: absolute;
+    top: calc(50% + 3px);
+    left: 15px;
+    width: 10px;
+    height: 10px;
+    box-shadow: 0 0 0 2px var(--v-bg-deep);
+  }
+  .mobile-account-row > .status-dot::after {
+    inset: -3px;
+  }
   .muted-status {
     display: none;
+  }
+  /* A tablet-wide bar has room for the words too (from 700px, measured with
+     the longest message signed in); trouble reads red, as in the rail. */
+  @media (min-width: 700px) {
+    .mobile-account-row .muted-status {
+      display: inline;
+      white-space: nowrap;
+    }
+  }
+  /* A guest's bar already says "Guest" beside Sign in: no "Browsing as guest". */
+  .mobile-account-row:has(.mobile-signin-cta:not([hidden])) .muted-status {
+    display: none;
+  }
+  .mobile-account-row:has(.status-dot[data-state="trouble"]) .muted-status {
+    color: color-mix(in oklab, var(--v-loss) 78%, var(--v-text));
+    font-weight: 700;
   }
   .mobile-account-action {
     display: flex;
@@ -459,6 +678,26 @@
   .mobile-account-row .status-signout {
     background: var(--v-surface-1);
     color: var(--v-text);
+  }
+  /* The bar's buttons press into their shadow like every other inked button. */
+  .mobile-signin-cta,
+  .mobile-account-row .status-signout {
+    transition: transform var(--v-dur-1) ease, box-shadow var(--v-dur-1) ease;
+  }
+  .mobile-signin-cta:active,
+  .mobile-account-row .status-signout:active {
+    transform: translate(var(--v-press), var(--v-press));
+    box-shadow: var(--v-shadow-pressed);
+  }
+  @media (hover: hover) {
+    .mobile-signin-cta:hover,
+    .mobile-account-row .status-signout:hover {
+      transform: translate(var(--v-press), var(--v-press));
+      box-shadow: var(--v-shadow-pressed);
+    }
+    .mobile-signin-cta:hover {
+      background: var(--v-accent-hi);
+    }
   }
 
   .sidebar-nav {
@@ -588,6 +827,14 @@
    stays on screen (it ran 37px past the edge at 320px). */
 @media (max-width: 350px) {
   .sidebar-brand > div {
+    display: none;
+  }
+}
+/* Signed in on a 351–380px phone: the wordmark gives way to your name, the
+   same trade the narrowest phones make for the sign-in button. With both,
+   "Steam User" was cut to "Stea…" at 360px. */
+@media (max-width: 380px) {
+  html[data-steam="in"] .sidebar-brand > div {
     display: none;
   }
 }
