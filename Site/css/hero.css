@@ -13,10 +13,13 @@
   display: grid;
   overflow: hidden;
   isolation: isolate;
-  /* Fills the window under the nav on a laptop, without growing past what
-     the content can fill. svh where the browser has it. */
-  min-height: clamp(600px, calc(100vh - var(--nav-h) - var(--v-outline-w)), 860px);
-  min-height: clamp(600px, calc(100svh - var(--nav-h) - var(--v-outline-w)), 860px);
+  /* Fills most of the window under the nav on a laptop. On taller windows it
+     stops short (by up to 72px, starting at 760px tall) so the words never
+     float in a wide band of empty night and the next section's edge shows.
+     svh where the browser has it. */
+  --hero-trim: clamp(0px, (100vh - 760px) * 0.45, 72px);
+  min-height: clamp(600px, calc(100vh - var(--nav-h) - var(--v-outline-w) - var(--hero-trim)), 820px);
+  min-height: clamp(600px, calc(100svh - var(--nav-h) - var(--v-outline-w) - var(--hero-trim)), 820px);
   border-bottom: 8px solid var(--v-ink);
   background: var(--v-bg-deep);
 }

@@ -26,11 +26,13 @@
   text-decoration: none;
 }
 .brand-emblem {
-  width: 40px;
+  /* Sized by height: the file is trimmed to the shield, so its ink starts on
+     the page edge. */
+  width: auto;
   height: 40px;
-  border: var(--v-outline);
-  border-radius: var(--v-radius-sm);
-  box-shadow: 2px 2px 0 var(--v-ink);
+  /* The crest is a shield with its own ink outline: no frame, only a hard
+     shadow on the shape. */
+  filter: drop-shadow(2px 2px 0 var(--v-ink));
 }
 .brand-name {
   color: var(--v-title);

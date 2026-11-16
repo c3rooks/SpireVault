@@ -8,6 +8,9 @@
 /* ---- 2. Import: the game's map, three stops on one path ----------------------- */
 .route {
   --route-gap: clamp(20px, 3vw, 56px);
+  /* The game's map symbols are small (their ink is 60-90px of a 128px
+     picture), so the badge is sized to them, not the other way round. */
+  --route-badge: 76px;
   position: relative;
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr)) minmax(0, 0.9fr);
@@ -19,9 +22,9 @@
 .route-stop::before {
   content: "";
   position: absolute;
-  top: 47px;
+  top: calc(var(--route-badge) / 2 - 2px);
   right: calc(var(--route-gap) * -1);
-  left: 48px;
+  left: calc(var(--route-badge) / 2);
   border-top: 4px dashed var(--v-on-paper);
   opacity: 0.55;
 }
@@ -41,8 +44,8 @@
   display: grid;
   grid-column: 1;
   place-items: center;
-  width: 96px;
-  height: 96px;
+  width: var(--route-badge);
+  height: var(--route-badge);
   border: var(--v-outline);
   border-radius: 50%;
   background: var(--v-paper-2);
@@ -231,13 +234,13 @@
   align-items: center;
   gap: 8px 12px;
 }
-/* The picture takes whatever height the buttons beside it need, so both
-   columns end on one line. It is never squashed: if the frame is taller than
-   the picture's own shape it is cropped from the right. It fades out at the
-   bottom, so the cut reads as "more below". */
-.viewer-picture {
+/* The screen takes whatever height the buttons beside it need, so both
+   columns end on one line. Its picture is never squashed: if the frame is
+   taller than the picture's own shape it is cropped from the right. It fades
+   out at the bottom, so the cut reads as "more below". */
+.viewer-screen {
+  --look-swap: 640ms;
   position: relative;
-  display: block;
   flex: 1 1 auto;
   min-height: 0;
   overflow: hidden;
@@ -245,14 +248,57 @@
   border-radius: calc(var(--v-radius-lg) - var(--v-outline-w)) calc(var(--v-radius-lg) - var(--v-outline-w)) 0 0;
   background: var(--v-bg);
 }
-.viewer-picture::after {
+.viewer-screen::after {
   content: "";
   position: absolute;
   inset: auto 0 0;
+  z-index: 3;
   height: 48px;
   background: linear-gradient(transparent, var(--v-ink));
   opacity: 0.85;
   pointer-events: none;
+}
+.viewer-picture {
+  position: absolute;
+  inset: 0;
+  display: block;
+}
+/* "Try me": the classic look lies on top, cut away to nothing at the left
+   edge, and wipes across the new look (and back) behind an inked seam. */
+.viewer-picture--classic {
+  z-index: 1;
+  clip-path: inset(0 100% 0 0);
+  transition: clip-path var(--look-swap) var(--ease-out);
+}
+.viewer-screen[data-look="classic"] .viewer-picture--classic {
+  clip-path: inset(0 0 0 0);
+}
+/* The seam rides the wipe's edge: the layer is the screen's own width, so
+   moving it by 100% carries the bar from the left edge to the right. */
+.viewer-seam {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    transform var(--look-swap) var(--ease-out),
+    opacity var(--dur-2) ease;
+}
+.viewer-seam::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 -5px;
+  width: 10px;
+  border-inline: var(--v-outline);
+  background: var(--v-gold);
+  box-shadow: 0 0 24px 6px rgb(255 210 74 / 0.45);
+}
+.viewer-screen[data-look="classic"] .viewer-seam {
+  transform: translateX(100%);
+}
+.viewer-screen.is-swapping .viewer-seam {
+  opacity: 1;
 }
 .viewer-shot {
   position: absolute;
@@ -275,6 +321,41 @@
   color: var(--v-text);
   font-size: var(--t-sm);
   font-weight: 600;
+}
+.viewer-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 14px;
+}
+/* Gold like the classic look it opens, tilted like the app's tags; it
+   straightens as you reach for it. Once the classic look shows, it turns the
+   new look's violet and offers the way back. */
+.btn--try {
+  background: var(--v-gold);
+  color: var(--v-ink);
+  font-family: var(--v-font-heading);
+  font-size: var(--t-lg);
+  letter-spacing: 0.01em;
+  transform: rotate(-3deg);
+}
+.btn--try:hover {
+  background: var(--v-gold);
+  filter: brightness(1.06);
+  transform: translate(var(--v-press), var(--v-press));
+}
+.btn--try:active {
+  transform: translate(calc(var(--v-press) + 1px), calc(var(--v-press) + 1px));
+}
+.btn--try.is-on {
+  background: var(--v-violet);
+  transform: none;
+}
+.btn--try.is-on:hover {
+  transform: translate(var(--v-press), var(--v-press));
+}
+.btn--try[aria-busy="true"] {
+  cursor: progress;
 }
 
 .share {
@@ -580,10 +661,10 @@
 }
 @media (max-width: 699px) {
   /* A whole phone screen, down to the app's own tab bar: nothing to fade out. */
-  .viewer-picture {
+  .viewer-screen {
     aspect-ratio: 780 / 1688;
   }
-  .viewer-picture::after {
+  .viewer-screen::after {
     display: none;
   }
 }
@@ -611,16 +692,16 @@
      with the number and words beside it. */
   .route-stop::before,
   .route-stop:nth-child(3)::before {
-    top: 48px;
+    top: calc(var(--route-badge) / 2);
     right: auto;
-    left: 46px;
+    left: calc(var(--route-badge) / 2 - 2px);
     width: auto;
     height: calc(100% + var(--s-6));
     border-top: 0;
     border-left: 4px dashed var(--v-on-paper);
   }
   .route-stop {
-    grid-template-columns: 96px minmax(0, 1fr);
+    grid-template-columns: var(--route-badge) minmax(0, 1fr);
     align-items: start;
     row-gap: 4px;
   }

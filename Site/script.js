@@ -205,6 +205,159 @@
     cards: "Cards tab on sample data: the three most-picked cards on a podium, shown as real game cards, with pick counts and win rates.",
     runs: "Recent Runs tab on sample data: filter chips for outcome, ascension and character above a list of runs, each with its floor, time and a Victory or Defeat stamp.",
   });
+  const SHOT_LABEL = Object.freeze({ overview: "Overview", characters: "Characters", ascensions: "Ascensions", relics: "Top Relics", cards: "Cards", runs: "Recent Runs" });
+  /** Built by scripts/snap-app-for-site.mjs; /assets is cached immutable, so new pictures get a new number. */
+  const SHOT_VERSION = 3;
+  /** What the caption under the picture says for each look. */
+  const LOOK_CAPTION = Object.freeze({
+    next: {
+      chip: "The new look",
+      text: "This is how the app opens. Prefer the original? The palette button beside the logo switches looks.",
+      button: "Try me",
+    },
+    classic: {
+      chip: "The classic look",
+      text: "The original layout: same runs, same stats. In the app it is one tap away, on the palette button beside the logo.",
+      button: "Back to the new look",
+    },
+  });
+  /** --look-swap in sections.css, plus a little: when the seam is put away. */
+  const LOOK_SWAP_MS = 700;
+  /** On a slow line the wipe still happens; it just stops waiting for the picture. */
+  const LOOK_LOAD_WAIT_MS = 4000;
+
+  /** @param {string} name a screen, e.g. "overview" @param {"next"|"classic"} look */
+  const shotFiles = (name, look) => {
+    const base = look === "classic" ? `${name}-classic` : name;
+    const file = (kind, width) => `/assets/shots/${base}${kind}-${width}-v${SHOT_VERSION}.webp`;
+    return {
+      src: file("", SHOT_DEFAULT_WIDTH),
+      srcset: SHOT_WIDTHS.map((w) => `${file("", w)} ${w}w`).join(", "),
+      phoneSrcset: PHONE_SHOT_WIDTHS.map((w) => `${file("-phone", w)} ${w}w`).join(", "),
+    };
+  };
+
+  /**
+   * "Try me" beside "Open the classic look": lays the classic look of the
+   * same screen over the picture with a wipe, and back, without leaving the
+   * page. The classic pictures load only once someone reaches for the button,
+   * and the chosen look stays while they switch screens.
+   * @param {HTMLImageElement} shot the new look's picture
+   * @returns {{ showScreen: (name: string) => void } | null}
+   */
+  function wireLookSwap(shot) {
+    const screen = byId("viewer-screen");
+    const button = byId("viewer-try");
+    const chip = byId("viewer-look-chip");
+    const text = byId("viewer-look-text");
+    const newPicture = shot.closest("picture");
+    if (!screen || !button || !chip || !text || !newPicture) return null;
+
+    let screenName = "overview";
+    /** @type {"next"|"classic"} */
+    let look = "next";
+    /** @type {{ picture: HTMLElement, source: HTMLSourceElement, img: HTMLImageElement } | null} */
+    let layer = null;
+    let swapTimer = 0;
+    let isBusy = false;
+
+    const buildLayer = () => {
+      const picture = document.createElement("picture");
+      picture.className = "viewer-picture viewer-picture--classic";
+      picture.setAttribute("aria-hidden", "true");
+      const source = document.createElement("source");
+      source.media = "(max-width: 699px)";
+      source.sizes = "calc(100vw - 36px)";
+      source.setAttribute("width", "780");
+      source.setAttribute("height", "1688");
+      const img = document.createElement("img");
+      img.className = "viewer-shot";
+      img.id = "viewer-shot-classic";
+      img.sizes = shot.sizes;
+      img.width = 1440;
+      img.height = 900;
+      img.decoding = "async";
+      picture.append(source, img);
+      newPicture.after(picture);
+      return { picture, source, img };
+    };
+
+    /** Points the classic layer at the screen on show, which starts its download. */
+    const loadClassic = () => {
+      if (!layer) layer = buildLayer();
+      if (layer.img.dataset.screen === screenName) return layer;
+      const files = shotFiles(screenName, "classic");
+      layer.source.setAttribute("srcset", files.phoneSrcset);
+      layer.img.setAttribute("srcset", files.srcset);
+      layer.img.setAttribute("src", files.src);
+      layer.img.alt = `The same ${SHOT_LABEL[screenName]} screen in SpireVault's classic look, on sample data.`;
+      layer.img.dataset.screen = screenName;
+      return layer;
+    };
+
+    /** @param {HTMLImageElement} img */
+    const whenDrawable = (img) =>
+      Promise.race([img.decode().catch(() => undefined), new Promise((resolve) => window.setTimeout(resolve, LOOK_LOAD_WAIT_MS))]);
+
+    const paintCaption = () => {
+      const words = LOOK_CAPTION[look];
+      const isClassic = look === "classic";
+      chip.classList.toggle("chip--violet", !isClassic);
+      chip.classList.toggle("chip--gold", isClassic);
+      setText(chip, words.chip);
+      setText(text, words.text);
+      setText(button, words.button);
+      button.classList.toggle("is-on", isClassic);
+    };
+
+    /** @param {"next"|"classic"} wanted */
+    const setLook = async (wanted) => {
+      if (isBusy || wanted === look) return;
+      isBusy = true;
+      try {
+        if (wanted === "classic") {
+          const { img, picture } = loadClassic();
+          button.setAttribute("aria-busy", "true");
+          await whenDrawable(img);
+          // The layer must be drawn cut away before it is uncut, or it jumps in.
+          void picture.offsetWidth;
+        }
+        look = wanted;
+        const isClassic = look === "classic";
+        if (!root.classList.contains("reduce-motion")) {
+          screen.classList.add("is-swapping");
+          window.clearTimeout(swapTimer);
+          swapTimer = window.setTimeout(() => screen.classList.remove("is-swapping"), LOOK_SWAP_MS);
+        }
+        screen.dataset.look = look;
+        // Only the look on show is read out.
+        if (isClassic) newPicture.setAttribute("aria-hidden", "true");
+        else newPicture.removeAttribute("aria-hidden");
+        if (layer) {
+          if (isClassic) layer.picture.removeAttribute("aria-hidden");
+          else layer.picture.setAttribute("aria-hidden", "true");
+        }
+        paintCaption();
+      } finally {
+        button.removeAttribute("aria-busy");
+        isBusy = false;
+      }
+    };
+
+    // Reaching for the button starts the download, so the wipe rarely waits.
+    ["pointerenter", "focus", "touchstart"].forEach((type) => button.addEventListener(type, () => loadClassic(), { passive: true }));
+    button.addEventListener("click", () => {
+      setLook(look === "classic" ? "next" : "classic");
+    });
+    button.hidden = false;
+
+    return {
+      showScreen(name) {
+        screenName = name;
+        if (look === "classic") loadClassic();
+      },
+    };
+  }
 
   function wireViewer() {
     const tabs = Array.from(document.querySelectorAll(".viewer-tab"));
@@ -212,6 +365,7 @@
     const phoneShot = byId("viewer-shot-phone");
     const panel = byId("viewer-panel");
     if (tabs.length === 0 || !shot || !panel) return;
+    const lookSwap = wireLookSwap(shot);
 
     /** @param {HTMLElement} tab @param {boolean} moveFocus */
     const select = (tab, moveFocus) => {
@@ -224,10 +378,12 @@
         other.tabIndex = isOn ? 0 : -1;
       });
       // Phones get the same tab as the app draws it on a phone.
-      if (phoneShot) phoneShot.setAttribute("srcset", PHONE_SHOT_WIDTHS.map((w) => `/assets/shots/${name}-phone-${w}-v3.webp ${w}w`).join(", "));
-      shot.setAttribute("srcset", SHOT_WIDTHS.map((w) => `/assets/shots/${name}-${w}-v3.webp ${w}w`).join(", "));
-      shot.setAttribute("src", `/assets/shots/${name}-${SHOT_DEFAULT_WIDTH}-v3.webp`);
+      const files = shotFiles(name, "next");
+      if (phoneShot) phoneShot.setAttribute("srcset", files.phoneSrcset);
+      shot.setAttribute("srcset", files.srcset);
+      shot.setAttribute("src", files.src);
       shot.setAttribute("alt", SHOT_ALT[name]);
+      if (lookSwap) lookSwap.showScreen(name);
       panel.setAttribute("aria-labelledby", tab.id);
       if (moveFocus) tab.focus();
     };

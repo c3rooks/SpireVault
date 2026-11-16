@@ -347,8 +347,9 @@ async function checkWiring(browser, baseUrl) {
           }, shot, { timeout: 20_000 })
           .catch(() => failures.push(`viewer: the ${shot} picture did not load`));
         for (const size of SHOT_FILES) {
-          const shotFile = `${shot}-${size}-v3.webp`;
-          if (!existsSync(join(SITE_ROOT, "assets", "shots", shotFile))) failures.push(`viewer: missing file assets/shots/${shotFile}`);
+          for (const shotFile of [`${shot}-${size}-v3.webp`, `${shot}-classic-${size}-v3.webp`]) {
+            if (!existsSync(join(SITE_ROOT, "assets", "shots", shotFile))) failures.push(`viewer: missing file assets/shots/${shotFile}`);
+          }
         }
         if (state.selected !== "true" || state.others !== 1) failures.push(`viewer: ${shot} not the one selected button`);
         if (!state.src.includes(`/assets/shots/${shot}-`)) failures.push(`viewer: ${shot} shows ${state.src}`);
@@ -359,6 +360,46 @@ async function checkWiring(browser, baseUrl) {
       await page.keyboard.press("ArrowDown");
       const moved = await page.evaluate(() => document.activeElement?.dataset?.shot || "");
       if (moved !== tabs[1]) failures.push(`viewer: ArrowDown from the first button lands on "${moved}"`);
+
+      // "Try me" lays the classic look of the same screen over the picture, keeps it
+      // across screens, and takes it away again, all without leaving the page.
+      const lookState = () =>
+        page.evaluate(() => {
+          const classic = document.getElementById("viewer-shot-classic");
+          return {
+            look: document.getElementById("viewer-screen")?.dataset.look || "",
+            chip: (document.getElementById("viewer-look-chip")?.textContent || "").trim(),
+            button: (document.getElementById("viewer-try")?.textContent || "").trim(),
+            classicSrc: classic ? classic.currentSrc : "",
+            url: window.location.href,
+          };
+        });
+      const tryButton = page.locator("#viewer-try");
+      if (!(await tryButton.isVisible())) failures.push("viewer: the Try me button is not showing");
+      else {
+        const before = await lookState();
+        await tryButton.click();
+        await page
+          .waitForFunction(() => document.getElementById("viewer-screen")?.dataset.look === "classic", null, { timeout: 15_000 })
+          .catch(() => failures.push("viewer: Try me did not switch the picture to the classic look"));
+        await page
+          .waitForFunction((name) => {
+            const img = document.getElementById("viewer-shot-classic");
+            return img && img.complete && img.naturalWidth > 0 && img.currentSrc.includes(`/assets/shots/${name}-classic-`);
+          }, tabs[1], { timeout: 20_000 })
+          .catch(() => failures.push(`viewer: the classic ${tabs[1]} picture did not load`));
+        const classic = await lookState();
+        if (classic.url !== before.url) failures.push(`viewer: Try me left the page (${classic.url})`);
+        if (!/classic/i.test(classic.chip)) failures.push(`viewer: with the classic look on, the caption still says "${classic.chip}"`);
+        if (!/new look/i.test(classic.button)) failures.push(`viewer: with the classic look on, the button says "${classic.button}"`);
+        await page.click(`.viewer-tab[data-shot="${tabs[0]}"]`);
+        await page
+          .waitForFunction((name) => document.getElementById("viewer-shot-classic")?.currentSrc.includes(`/assets/shots/${name}-classic-`), tabs[0], { timeout: 20_000 })
+          .catch(() => failures.push("viewer: switching screens with the classic look on did not show that screen's classic picture"));
+        await tryButton.click();
+        const back = await lookState();
+        if (back.look !== "next" || back.button !== before.button) failures.push(`viewer: the second Try me press left look "${back.look}", button "${back.button}"`);
+      }
     } finally {
       await context.close();
     }

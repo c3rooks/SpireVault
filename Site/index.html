@@ -22,7 +22,9 @@
   <meta name="twitter:image" content="https://spirevault.app/assets/og-v3.jpg" />
   <meta name="twitter:image:alt" content="SpireVault: a painted Slay the Spire 2 climber card showing a win rate, above a fanned hand of five more climbers." />
 
-  <link rel="icon" type="image/svg+xml" href="/assets/vault-mark.svg?v=2" />
+  <link rel="icon" type="image/png" sizes="16x16" href="/assets/art/crest-favicon-16-v1.png" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/assets/art/crest-favicon-32-v1.png" />
+  <link rel="apple-touch-icon" sizes="180x180" href="/assets/art/crest-touch-180-v1.png" />
   <link rel="preload" href="/assets/fonts/grenze-gotisch-latin-var-v1.woff2" as="font" type="font/woff2" crossorigin />
   <link rel="preload" href="/assets/fonts/figtree-latin-var-v1.woff2" as="font" type="font/woff2" crossorigin />
 
@@ -42,7 +44,7 @@
   <header class="nav">
     <div class="wrap nav-inner">
       <a class="brand" href="/" aria-label="SpireVault home">
-        <img class="brand-emblem" src="/assets/art/emblem-96-v1.webp" alt="" width="40" height="40" />
+        <img class="brand-emblem" src="/assets/art/crest-trim-96-v1.webp" alt="" width="34" height="40" />
         <span class="brand-name">SpireVault</span>
       </a>
       <nav class="nav-links" aria-label="Sections">
@@ -184,19 +186,19 @@
 
         <ol class="route" role="list" data-reveal>
           <li class="route-stop">
-            <span class="route-badge"><img class="route-icon" src="/assets/art/map/combat-192-v1.webp" alt="" width="64" height="64" loading="lazy" decoding="async" /></span>
+            <span class="route-badge"><img class="route-icon" src="/assets/art/map/monster-128-v1.webp" alt="" width="64" height="64" loading="lazy" decoding="async" /></span>
             <span class="route-num" aria-hidden="true">1</span>
             <h3>Open SpireVault.</h3>
             <p>Nothing to install, no account.</p>
           </li>
           <li class="route-stop">
-            <span class="route-badge"><img class="route-icon" src="/assets/art/map/chest-192-v1.webp" alt="" width="64" height="64" loading="lazy" decoding="async" /></span>
+            <span class="route-badge"><img class="route-icon" src="/assets/art/map/chest-128-v1.webp" alt="" width="64" height="64" loading="lazy" decoding="async" /></span>
             <span class="route-num" aria-hidden="true">2</span>
             <h3>Click “Find my STS2 saves”.</h3>
             <p>Pick your <code>SlayTheSpire2</code> folder, or drag it onto the page.</p>
           </li>
           <li class="route-stop">
-            <span class="route-badge"><img class="route-icon" src="/assets/art/map/rest-192-v1.webp" alt="" width="64" height="64" loading="lazy" decoding="async" /></span>
+            <span class="route-badge"><img class="route-icon" src="/assets/art/map/rest-128-v1.webp" alt="" width="64" height="64" loading="lazy" decoding="async" /></span>
             <span class="route-num" aria-hidden="true">3</span>
             <h3>Done.</h3>
             <p>Your runs stay saved on this device. Next visit, your dashboard is already there.</p>
@@ -250,23 +252,30 @@
           </div>
 
           <div class="viewer-frame" id="viewer-panel" role="tabpanel" aria-labelledby="tab-overview">
-            <picture class="viewer-picture">
-              <source id="viewer-shot-phone" media="(max-width: 699px)" srcset="/assets/shots/overview-phone-780-v3.webp 780w, /assets/shots/overview-phone-1170-v3.webp 1170w" sizes="calc(100vw - 36px)" width="780" height="1688" />
-              <img
-                class="viewer-shot"
-                id="viewer-shot"
-                src="/assets/shots/overview-1440-v3.webp"
-                srcset="/assets/shots/overview-960-v3.webp 960w, /assets/shots/overview-1440-v3.webp 1440w, /assets/shots/overview-1920-v3.webp 1920w, /assets/shots/overview-2880-v3.webp 2880w"
-                sizes="(max-width: 1099px) 100vw, 65vw"
-                alt="SpireVault Overview on sample data: a win-rate ring, run totals, and six stat cards fanned like a hand."
-                width="1440" height="900" loading="lazy" decoding="async" />
-            </picture>
+            <!-- "Try me" lays the classic look over this picture (script.js adds it on first use). -->
+            <div class="viewer-screen" id="viewer-screen" data-look="next">
+              <picture class="viewer-picture">
+                <source id="viewer-shot-phone" media="(max-width: 699px)" srcset="/assets/shots/overview-phone-780-v3.webp 780w, /assets/shots/overview-phone-1170-v3.webp 1170w" sizes="calc(100vw - 36px)" width="780" height="1688" />
+                <img
+                  class="viewer-shot"
+                  id="viewer-shot"
+                  src="/assets/shots/overview-1440-v3.webp"
+                  srcset="/assets/shots/overview-960-v3.webp 960w, /assets/shots/overview-1440-v3.webp 1440w, /assets/shots/overview-1920-v3.webp 1920w, /assets/shots/overview-2880-v3.webp 2880w"
+                  sizes="(max-width: 1099px) 100vw, 65vw"
+                  alt="SpireVault Overview on sample data: a win-rate ring, run totals, and six stat cards fanned like a hand."
+                  width="1440" height="900" loading="lazy" decoding="async" />
+              </picture>
+              <span class="viewer-seam" aria-hidden="true"></span>
+            </div>
             <div class="viewer-cap">
-              <p class="viewer-note">
-                <span class="chip chip--violet">The new look</span>
-                <span>This is how the app opens. Prefer the original? The palette button beside the logo switches looks.</span>
+              <p class="viewer-note" aria-live="polite">
+                <span class="chip chip--violet" id="viewer-look-chip">The new look</span>
+                <span id="viewer-look-text">This is how the app opens. Prefer the original? The palette button beside the logo switches looks.</span>
               </p>
-              <a class="btn btn--paper" href="https://app.spirevault.app/?ui=classic">Open the classic look</a>
+              <div class="viewer-actions">
+                <a class="btn btn--paper" href="https://app.spirevault.app/?ui=classic">Open the classic look</a>
+                <button class="btn btn--try" type="button" id="viewer-try" aria-controls="viewer-panel" hidden>Try me</button>
+              </div>
             </div>
           </div>
         </div>
@@ -521,7 +530,7 @@
   <footer class="footer">
     <div class="wrap footer-inner">
       <div class="footer-brand">
-        <img class="brand-emblem" src="/assets/art/emblem-96-v1.webp" alt="" width="40" height="40" loading="lazy" />
+        <img class="brand-emblem" src="/assets/art/crest-trim-96-v1.webp" alt="" width="34" height="40" loading="lazy" />
         <p><strong>SpireVault</strong> is free, open source and fan-made, built by <a href="https://coreycrooks.com" target="_blank" rel="noopener">Corey Crooks</a>. Not affiliated with Mega Crit Games. <em>Slay the Spire</em> is a trademark of Mega Crit Games.</p>
       </div>
       <nav class="footer-links" aria-label="More">

@@ -22,6 +22,12 @@
  *   node scripts/snap-app-for-site.mjs --tabs overview,runs --no-share
  *   node scripts/snap-app-for-site.mjs --no-desktop --no-share   # phone pictures only
  *   node scripts/snap-app-for-site.mjs --base-url http://127.0.0.1:8788
+ *   node scripts/snap-app-for-site.mjs --look classic   # the classic look, for the
+ *                                                       # viewer's "Try me" swap
+ *
+ * With --look classic the same tabs are written as <tab>-classic-<width> and
+ * <tab>-classic-phone-<width>, in the app's classic look and default theme;
+ * the hand values and the share card are new-look only, so they are skipped.
  */
 
 import { chromium } from "playwright";
@@ -48,6 +54,11 @@ const ART_VERSION = 3;
 const SETTLE_MS = 2600;
 const TIMEOUT_MS = 180_000;
 const DEFAULT_TABS = "overview,characters,ascensions,relics,cards,runs";
+/** How each look is asked for, what says it has drawn, and its file-name suffix. */
+const LOOKS = Object.freeze({
+  next: { query: "?ui=next&theme=inked", ready: ".v-ov, .demo-banner", suffix: "" },
+  classic: { query: "?ui=classic", ready: '.tab-panel[data-tab="overview"]:not([hidden])', suffix: "-classic" },
+});
 
 const arg = (name, fallback) => {
   const i = process.argv.indexOf(`--${name}`);
@@ -91,8 +102,8 @@ function toWebp(source, dir, name, widths, quality) {
   });
 }
 
-/** The app as a guest on sample data: new look, Inked, fixed climber, room and rolls. */
-async function openApp(browser, baseUrl, { companion, room, seed, phone = false }) {
+/** The app as a guest on sample data in the given look (new look: Inked, fixed climber, room and rolls). */
+async function openApp(browser, baseUrl, { companion, room, seed, look, phone = false }) {
   const context = await browser.newContext(
     phone
       ? { viewport: { width: PHONE.width, height: PHONE.height }, deviceScaleFactor: PHONE.scale, isMobile: true, hasTouch: true }
@@ -121,9 +132,9 @@ async function openApp(browser, baseUrl, { companion, room, seed, phone = false 
   await context.route((url) => url.hostname !== "127.0.0.1" && url.hostname !== "localhost", (route) => route.abort());
   const page = await context.newPage();
   page.setDefaultTimeout(TIMEOUT_MS);
-  await page.goto(`${baseUrl}/?ui=next&theme=inked`, { waitUntil: "domcontentloaded" });
+  await page.goto(`${baseUrl}/${LOOKS[look].query}`, { waitUntil: "domcontentloaded" });
   await page.waitForFunction(() => window.SpireVault && !window.SpireVault.__isStub);
-  await page.waitForSelector(".v-ov, .demo-banner", { timeout: TIMEOUT_MS });
+  await page.waitForSelector(LOOKS[look].ready, { timeout: TIMEOUT_MS });
   return { context, page };
 }
 
@@ -183,7 +194,11 @@ async function main() {
   const external = arg("base-url");
   const server = external ? { baseUrl: external.replace(/\/$/, ""), stop: () => {} } : await startAppServer();
   const written = [];
-  const who = { companion: arg("companion", "ironclad"), room: arg("room", "glory"), seed: Number(arg("seed", "3")) };
+  const look = String(arg("look", "next"));
+  if (!Object.prototype.hasOwnProperty.call(LOOKS, look)) throw new Error(`--look must be one of ${Object.keys(LOOKS).join(", ")}, not "${look}"`);
+  const isNext = look === "next";
+  const suffix = LOOKS[look].suffix;
+  const who = { companion: arg("companion", "ironclad"), room: arg("room", "glory"), seed: Number(arg("seed", "3")), look };
   let browser = null;
   try {
     browser = await chromium.launch();
@@ -192,9 +207,9 @@ async function main() {
       for (const tab of tabs) {
         await showTab(page, tab);
         await page.evaluate(() => window.scrollTo(0, 0));
-        const source = join(SRC_DIR, `${tab}-phone@3x.png`);
+        const source = join(SRC_DIR, `${tab}${suffix}-phone@3x.png`);
         await page.screenshot({ path: source, clip: { x: 0, y: 0, width: PHONE.width, height: PHONE.crop } });
-        written.push(source, ...toWebp(source, SHOTS_DIR, `${tab}-phone`, PHONE.outWidths, 82));
+        written.push(source, ...toWebp(source, SHOTS_DIR, `${tab}${suffix}-phone`, PHONE.outWidths, 82));
       }
       await context.close();
     }
@@ -203,10 +218,10 @@ async function main() {
     for (const tab of tabs) {
       await showTab(page, tab);
       await page.evaluate(() => window.scrollTo(0, 0));
-      const source = join(SRC_DIR, `${tab}-1440@2x.png`);
+      const source = join(SRC_DIR, `${tab}${suffix}-1440@2x.png`);
       await page.screenshot({ path: source });
-      written.push(source, ...toWebp(source, SHOTS_DIR, tab, SHOT_WIDTHS, 82));
-      if (tab === "overview") {
+      written.push(source, ...toWebp(source, SHOTS_DIR, `${tab}${suffix}`, SHOT_WIDTHS, 82));
+      if (isNext && tab === "overview") {
         const hand = await page.evaluate(readHand);
         const handFile = join(SRC_DIR, "hand.json");
         writeFileSync(handFile, `${JSON.stringify(hand, null, 2)}\n`);
@@ -214,7 +229,7 @@ async function main() {
         process.stdout.write(`hand: ${JSON.stringify(hand)}\n`);
       }
     }
-    if (!flag("no-share")) {
+    if (isNext && !flag("no-share")) {
       const share = await exportShareCard(page);
       process.stdout.write(`share card: ${share.character}, ${share.result}\n`);
       written.push(share.source, ...toWebp(share.source, SHARE_DIR, "share-sample", SHARE_WIDTHS, 86));
