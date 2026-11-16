@@ -1,0 +1,817 @@
+/* ==========================================================================
+   The painted world. The page is set in the same place as the app's header:
+   the first screen is one of the app's painted scenes, alive (the camera
+   eases in, lights breathe and flicker, the air drifts), with a climber and
+   the Architect squared up on its ground, and the page below is the climb
+   at night, room by room, each lit by its own painted scene. No flat fields,
+   no dot screens, no parchment slabs: parchment is for cards.
+
+   Data (each scene's picture, colours and lights; each climber's figure,
+   seat and glows) is generated into world-data.css by
+   scripts/build-site-world.mjs. boot.js deals the scene (data-scene) and
+   the climber (data-climber) on <html> before first paint, so the scene's
+   colours (--sc-*) are page-wide.
+   ========================================================================== */
+
+:root {
+  /* Fallbacks until a scene is dealt (and for no-JS). */
+  --sc-deep: #0f0a22;
+  --sc-haze: #b9a6ff;
+  --sc-accent: #ffd27a;
+  --sc-veil: 14%;
+  --sc-mist: 1;
+  --sc-focus: 0.86;
+  /* The figures are inked here, not in their pictures: an outline on all
+     four sides and the hard shadow, like the app's header. */
+  --fig-ink:
+    drop-shadow(2px 0 0 var(--v-ink)) drop-shadow(-2px 0 0 var(--v-ink)) drop-shadow(0 2px 0 var(--v-ink))
+    drop-shadow(0 -2px 0 var(--v-ink)) drop-shadow(4px 5px 0 rgb(10 6 22 / 0.55));
+}
+
+body {
+  background: var(--v-bg-deep);
+}
+
+/* ---- The first screen: a living scene ------------------------------------------ */
+.hero {
+  /* The painting covers the hero's width, and on shorter-than-wide windows
+     at least ~60% of its height (anchored right, where the duel stands).
+     Never wider than its 3840px file at 2x. Declared here, not on the
+     painting, so the words below it can be placed from the same numbers. */
+  --plate-w: max(100cqw, min(calc((100svh - var(--nav-h)) * 1.9), 1920px));
+  --plate-h: calc(var(--plate-w) / 3);
+  /* One unit sizes both figures: the plate's height, capped so the largest
+     figure never shows past its own pixels on a 2x screen. */
+  --fig-unit: min(var(--plate-h), 550px);
+  container-type: inline-size;
+  /* The floor under the painting: the scene's own darkest tone. */
+  background: linear-gradient(180deg, transparent 0%, color-mix(in oklab, var(--sc-deep) 70%, var(--v-ink)) 100%), var(--sc-deep);
+  border-bottom: 0;
+}
+/* The dot screen is gone: the painting is the texture. */
+.hero::before {
+  display: none;
+}
+
+.world {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+}
+.world-plate {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: var(--plate-w);
+  height: var(--plate-h);
+  isolation: isolate;
+  /* The camera eases in and out around the duel's feet. */
+  transform-origin: 80% calc(var(--sc-focus) * 100%);
+  animation: w-camera 46s ease-in-out -15s infinite alternate;
+  /* The painting's floor runs on into the hero's floor. */
+  -webkit-mask-image: linear-gradient(180deg, #000 calc(var(--sc-focus) * 100% + 3%), transparent 100%);
+  mask-image: linear-gradient(180deg, #000 calc(var(--sc-focus) * 100% + 3%), transparent 100%);
+}
+@keyframes w-camera {
+  to {
+    transform: scale(1.06);
+  }
+}
+.world-img {
+  position: absolute;
+  inset: 0;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
+  animation: w-fade-in 900ms var(--ease-out) both;
+}
+@keyframes w-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+/* Lights and shafts each sit in their own layer over the picture. */
+.world-lights,
+.world-shafts {
+  position: absolute;
+  inset: 0;
+}
+/* Lights: a soft glow on each of the picture's own light sources. */
+.world-light {
+  display: none;
+  position: absolute;
+  left: var(--x);
+  top: var(--y);
+  width: calc(var(--r) * 200%);
+  aspect-ratio: 1;
+  translate: -50% -50%;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--c) 58%, transparent) 0%,
+    color-mix(in srgb, var(--c) 24%, transparent) 36%,
+    transparent 70%
+  );
+  mix-blend-mode: screen;
+  opacity: 0.7;
+  animation-duration: var(--t);
+  animation-delay: var(--d);
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+  animation-direction: alternate;
+}
+@keyframes w-breathe {
+  from {
+    opacity: 0.5;
+  }
+  to {
+    opacity: 0.95;
+  }
+}
+@keyframes w-flicker {
+  0%,
+  100% {
+    opacity: 0.78;
+    transform: scale(1);
+  }
+  13% {
+    opacity: 1;
+    transform: scale(1.05);
+  }
+  29% {
+    opacity: 0.72;
+    transform: scale(0.98);
+  }
+  47% {
+    opacity: 0.94;
+    transform: scale(1.03);
+  }
+  66% {
+    opacity: 1;
+    transform: scale(1.06);
+  }
+  82% {
+    opacity: 0.74;
+    transform: scale(0.99);
+  }
+}
+@keyframes w-shimmer {
+  from {
+    opacity: 0.35;
+    transform: translateX(-2%) scaleX(0.96);
+  }
+  to {
+    opacity: 0.75;
+    transform: translateX(2%) scaleX(1.04);
+  }
+}
+@keyframes w-sway {
+  from {
+    opacity: 0.4;
+    transform: translateX(-5%) skewX(-7deg) scaleY(1.2);
+  }
+  to {
+    opacity: 0.9;
+    transform: translateX(5%) skewX(7deg) scaleY(1.4);
+  }
+}
+
+/* Shafts of light from the top of the picture, fading in and out. */
+.world-shaft {
+  display: none;
+  position: absolute;
+  top: -6%;
+  left: var(--x);
+  width: var(--w);
+  height: 96%;
+  transform-origin: 50% 0;
+  rotate: var(--a);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--c) 46%, transparent) 0%,
+    color-mix(in srgb, var(--c) 18%, transparent) 52%,
+    transparent 100%
+  );
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 32%, #000 68%, transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 32%, #000 68%, transparent);
+  mix-blend-mode: screen;
+  animation: w-shaft var(--t) ease-in-out var(--d) infinite alternate;
+}
+@keyframes w-shaft {
+  from {
+    opacity: 0.22;
+  }
+  to {
+    opacity: 0.72;
+  }
+}
+
+/* The air: motes inside the scene's box, each moving its own way. */
+.world-motes {
+  position: absolute;
+  inset: 0;
+}
+.world-motes i {
+  position: absolute;
+  width: var(--s);
+  height: var(--s);
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    var(--sc-accent) 0 28%,
+    color-mix(in srgb, var(--sc-accent) 34%, transparent) 46%,
+    transparent 70%
+  );
+  opacity: 0;
+  animation-duration: var(--t);
+  animation-delay: var(--d);
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+@keyframes w-rise {
+  14% {
+    opacity: 0.9;
+  }
+  50% {
+    transform: translate3d(9px, -30px, 0);
+  }
+  86% {
+    opacity: 0.7;
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(-5px, -62px, 0);
+  }
+}
+@keyframes w-dust {
+  20% {
+    opacity: 0.6;
+  }
+  60% {
+    opacity: 0.45;
+    transform: translate3d(18px, -10px, 0);
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(30px, 4px, 0);
+  }
+}
+@keyframes w-wander {
+  0%,
+  100% {
+    opacity: 0.15;
+    transform: translate3d(0, 0, 0);
+  }
+  22% {
+    opacity: 1;
+    transform: translate3d(14px, -9px, 0);
+  }
+  48% {
+    opacity: 0.2;
+    transform: translate3d(26px, 3px, 0);
+  }
+  74% {
+    opacity: 1;
+    transform: translate3d(9px, 11px, 0);
+  }
+}
+@keyframes w-ember {
+  12% {
+    opacity: 1;
+  }
+  60% {
+    opacity: 0.8;
+    transform: translate3d(-12px, -60px, 0) scale(0.8);
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(6px, -110px, 0) scale(0.4);
+  }
+}
+@keyframes w-snow {
+  15% {
+    opacity: 0.85;
+  }
+  85% {
+    opacity: 0.7;
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(-34px, 96px, 0);
+  }
+}
+@keyframes w-twinkle {
+  0%,
+  100% {
+    opacity: 0.1;
+    transform: scale(0.6);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.15);
+  }
+}
+
+/* Mist over the floor, sliding slowly (two identical halves: no seam). */
+.world-mist {
+  --bank: color-mix(in srgb, var(--sc-haze) calc(18% * var(--sc-mist)), transparent);
+  position: absolute;
+  top: calc(var(--plate-h) * (var(--sc-focus) - 0.32));
+  left: 0;
+  width: 200%;
+  height: calc(var(--plate-h) * 0.42);
+  background-image:
+    radial-gradient(ellipse 24% 58% at 16% 74%, var(--bank), transparent 72%),
+    radial-gradient(ellipse 30% 46% at 52% 90%, var(--bank), transparent 72%),
+    radial-gradient(ellipse 20% 62% at 83% 70%, var(--bank), transparent 72%);
+  background-repeat: repeat-x;
+  background-size: 50% 100%;
+  animation: w-mist 110s linear infinite;
+}
+@keyframes w-mist {
+  to {
+    transform: translate3d(-50%, 0, 0);
+  }
+}
+
+/* The veil: the scene recedes behind the words and under the nav, and the
+   whole room settles a step back. */
+.world-veil {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--sc-deep) 90%, transparent) 0%,
+      color-mix(in srgb, var(--sc-deep) 70%, transparent) 26%,
+      color-mix(in srgb, var(--sc-deep) 18%, transparent) 50%,
+      transparent 64%
+    ),
+    linear-gradient(180deg, color-mix(in srgb, var(--v-bg-deep) 60%, transparent) 0%, transparent 18%),
+    color-mix(in srgb, var(--sc-deep) var(--sc-veil), transparent);
+}
+
+/* ---- The duel: a climber and the Architect on the scene's ground ------------- */
+.duel {
+  position: absolute;
+  right: max(var(--site-gutter), 3.5cqw);
+  /* Feet on the painting's ground line. */
+  top: calc(var(--plate-h) * var(--sc-focus));
+  display: flex;
+  align-items: flex-end;
+  gap: calc(var(--fig-unit) * 0.12);
+  translate: 0 -100%;
+}
+.duel-fig {
+  position: relative;
+  flex: none;
+  height: calc(var(--fig-unit) * var(--fig-h, 0.52));
+  aspect-ratio: var(--fig-aspect, 0.66);
+}
+/* The Architect's staff tip hangs below his boots: his feet go on the line. */
+.duel-fig--boss {
+  margin-bottom: calc(var(--fig-unit) * var(--fig-h) * (var(--fig-foot) - 1));
+}
+.duel-art {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background-position: center bottom;
+  background-repeat: no-repeat;
+  background-size: contain;
+  filter: var(--fig-ink);
+  transform-origin: 50% 100%;
+  animation: w-fig-breathe 3.8s ease-in-out infinite;
+}
+.duel-fig--boss .duel-art {
+  transform-origin: 50% calc(var(--fig-foot) * 100%);
+  animation-duration: 5.2s;
+}
+@keyframes w-fig-breathe {
+  50% {
+    transform: scaleY(1.02);
+  }
+}
+.duel-shadow {
+  position: absolute;
+  z-index: 0;
+  bottom: -6px;
+  left: var(--shadow-l);
+  width: var(--shadow-w);
+  height: 12px;
+  border-radius: 50%;
+  background: var(--v-ink);
+  opacity: 0.55;
+}
+.duel-fig--boss .duel-shadow {
+  bottom: calc(var(--fig-unit) * var(--fig-h) * (1 - var(--fig-foot)) - 6px);
+}
+/* The seated poses rest on a drum of weathered stone. */
+.duel-seat {
+  --seat-stone: color-mix(in oklab, var(--sc-deep) 28%, #554c63);
+  display: none;
+  position: absolute;
+  z-index: 0;
+  border: var(--v-outline);
+  border-radius: 50% / 24%;
+  background: linear-gradient(
+    90deg,
+    color-mix(in oklab, var(--seat-stone) 80%, #000) 0%,
+    var(--seat-stone) 45%,
+    color-mix(in oklab, var(--seat-stone) 70%, #000) 100%
+  );
+  box-shadow: var(--v-shadow-sm);
+}
+.duel-seat::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 46%;
+  border-bottom: var(--v-outline);
+  border-radius: 50%;
+  background: color-mix(in oklab, var(--seat-stone) 62%, #b9b2c8);
+}
+/* The figures' own lights: eyes, the Defect's orb and core, the Architect's
+   flame. They breathe with the figure. */
+.duel-glows {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  transform-origin: 50% 100%;
+  animation: w-fig-breathe 3.8s ease-in-out infinite;
+}
+.duel-fig--boss .duel-glows {
+  transform-origin: 50% calc(var(--fig-foot) * 100%);
+  animation-duration: 5.2s;
+}
+.duel-glow {
+  display: none;
+  position: absolute;
+  left: var(--x);
+  top: var(--y);
+  width: calc(var(--r) * 200%);
+  aspect-ratio: 1;
+  translate: -50% -50%;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--c) 80%, #fff) 0 7%,
+    color-mix(in srgb, var(--c) 58%, transparent) 20%,
+    color-mix(in srgb, var(--c) 20%, transparent) 44%,
+    transparent 70%
+  );
+  mix-blend-mode: screen;
+  animation-duration: var(--t);
+  animation-delay: var(--d);
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+  animation-direction: alternate;
+}
+@keyframes w-glow-breathe {
+  from {
+    opacity: 0.45;
+    transform: scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1.08);
+  }
+}
+@keyframes w-glow-flicker {
+  0%,
+  100% {
+    opacity: 0.8;
+    transform: scale(1);
+  }
+  17% {
+    opacity: 1;
+    transform: scale(1.08) translateY(-2%);
+  }
+  34% {
+    opacity: 0.7;
+    transform: scale(0.96);
+  }
+  52% {
+    opacity: 0.95;
+    transform: scale(1.05) translateY(-1%);
+  }
+  71% {
+    opacity: 0.74;
+    transform: scale(0.98);
+  }
+  86% {
+    opacity: 1;
+    transform: scale(1.06) translateY(-2%);
+  }
+}
+/* The climber's line, in the app's balloon, above their head. */
+.duel-say {
+  position: absolute;
+  bottom: calc(100% + 16px);
+  left: 18%;
+  z-index: 3;
+  width: max-content;
+  max-width: 260px;
+  padding: 8px 14px;
+  border: var(--v-outline);
+  border-radius: 14px;
+  background: var(--v-paper);
+  box-shadow: var(--v-shadow);
+  color: var(--v-on-paper);
+  font-size: var(--t-sm);
+  font-weight: 800;
+  line-height: 1.3;
+  animation: w-say 600ms var(--ease-spring) 900ms both;
+}
+.duel-say::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 22px;
+  width: 14px;
+  height: 14px;
+  margin-top: -7px;
+  border-right: var(--v-outline);
+  border-bottom: var(--v-outline);
+  background: var(--v-paper);
+  rotate: 45deg;
+}
+.duel-say span {
+  display: none;
+}
+[data-climber="ironclad"] .duel-say [data-c="ironclad"],
+[data-climber="silent"] .duel-say [data-c="silent"],
+[data-climber="defect"] .duel-say [data-c="defect"],
+[data-climber="regent"] .duel-say [data-c="regent"],
+[data-climber="necrobinder"] .duel-say [data-c="necrobinder"] {
+  display: inline;
+}
+@keyframes w-say {
+  from {
+    opacity: 0;
+    scale: 0.7;
+  }
+}
+
+/* ---- The words over the scene -------------------------------------------------- */
+.hero-inner {
+  position: relative;
+}
+.hero-title {
+  filter: drop-shadow(0 6px 18px rgb(5 3 12 / 0.55));
+}
+.hero-lede {
+  text-shadow: 0 1px 12px rgb(5 3 12 / 0.7);
+}
+/* The one thing to do, lit: the primary button glows and a shine runs
+   across it now and then. */
+.hero .btn--primary,
+.closing .btn--primary {
+  position: relative;
+  overflow: hidden;
+  filter: drop-shadow(0 10px 22px color-mix(in srgb, var(--v-accent) 55%, transparent));
+  animation: w-cta-glow 2.8s ease-in-out 1.6s infinite alternate;
+}
+.hero .btn--primary::after,
+.closing .btn--primary::after {
+  content: "";
+  position: absolute;
+  inset: -20% auto -20% -40%;
+  width: 30%;
+  background: linear-gradient(100deg, transparent, rgb(255 255 255 / 0.55), transparent);
+  translate: -100% 0;
+  rotate: 12deg;
+  animation: w-cta-shine 5.6s ease-in-out 2.2s infinite;
+  pointer-events: none;
+}
+@keyframes w-cta-glow {
+  to {
+    filter: drop-shadow(0 12px 34px color-mix(in srgb, var(--v-accent) 95%, transparent));
+  }
+}
+@keyframes w-cta-shine {
+  0%,
+  70% {
+    translate: -100% 0;
+  }
+  100% {
+    translate: 640% 0;
+  }
+}
+/* The second way in stays quieter: a glass button over the scene. */
+.hero #classic-cta {
+  background: color-mix(in srgb, var(--v-bg-deep) 55%, transparent);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+}
+
+/* ---- The hand: dealt on the floor, under the duel ------------------------------ */
+/* Every climber is in the hand now (the duel shows the dealt one); the dealt
+   climber's card stands proud, ringed in their colour. */
+.hero-stage {
+  /* Six cards now, so each is narrower than when one stood out on its own. */
+  --hand-w: min(142px, 17.5cqw);
+  align-self: end;
+  padding-bottom: clamp(20px, 3.4vh, 40px);
+}
+/* The tag goes on the hand's near corner, clear of the duel's feet. */
+.hand-tag {
+  top: -18px;
+  right: auto;
+  left: 6%;
+  transform: rotate(-3deg);
+}
+[data-climber] .hand-card[data-c] {
+  display: grid;
+}
+/* Each card's painting at the size the cards are drawn (world-data.css). */
+.hero .hand-card .hand-art {
+  background-image: var(--art-hand, var(--art));
+}
+[data-climber] .hand-card:nth-child(n) {
+  --i: var(--n);
+  --d: calc(var(--i) - 2.5);
+}
+[data-climber="ironclad"] .hand-card[data-c="ironclad"],
+[data-climber="silent"] .hand-card[data-c="silent"],
+[data-climber="defect"] .hand-card[data-c="defect"],
+[data-climber="regent"] .hand-card[data-c="regent"],
+[data-climber="necrobinder"] .hand-card[data-c="necrobinder"] {
+  z-index: 2;
+  box-shadow:
+    var(--v-shadow),
+    0 0 0 3px var(--c),
+    0 12px 36px -8px var(--c);
+  translate: 0 calc(var(--d) * var(--d) * 5px - 16px);
+}
+
+/* ---- The climb: every section is a lit room at night --------------------------- */
+/* The parchment slabs become night rooms: the same tokens, re-pointed, so
+   every card inside turns to the night's card stock and every word to the
+   night's ink, without touching the components. */
+.section--paper {
+  --focus: var(--v-title);
+  --v-paper: var(--v-surface-1);
+  --v-paper-2: var(--v-surface-1);
+  --v-paper-3: var(--v-line);
+  --v-on-paper: var(--v-text);
+  --v-on-paper-2: var(--v-text-2);
+  border-block: 0;
+  color: var(--v-text);
+}
+.section--paper::before {
+  display: none;
+}
+.section--paper .section-head h2 {
+  color: var(--v-title);
+  text-shadow: var(--v-title-shadow);
+}
+.section--paper .section-head p {
+  color: var(--v-text-2);
+}
+/* The game's map symbols are black ink: their badges stay parchment. */
+.section--paper .route-badge {
+  background: var(--v-text);
+}
+/* Gold step numbers keep their ink. */
+.section--paper .ledger-num {
+  color: var(--v-ink);
+}
+/* The privacy codex was a parchment book: it becomes a night one. */
+.codex {
+  --focus: var(--v-title);
+  --v-paper: var(--v-surface-1);
+  --v-paper-2: var(--v-surface-2);
+  --v-paper-3: var(--v-line);
+  --v-on-paper: var(--v-text);
+  --v-on-paper-2: var(--v-text-2);
+}
+/* Each room: a deep floor, lit from above in its scene's colour. */
+.section,
+.room {
+  background:
+    radial-gradient(90% 60% at 50% 0%, color-mix(in srgb, var(--room-tint, var(--sc-accent)) 13%, transparent), transparent 70%),
+    radial-gradient(60% 50% at 100% 100%, color-mix(in srgb, var(--room-tint, var(--sc-accent)) 6%, transparent), transparent 70%),
+    linear-gradient(180deg, color-mix(in srgb, var(--room-deep, var(--sc-deep)) 45%, transparent) 0%, transparent 100%),
+    var(--v-bg-deep);
+}
+.section--night {
+  --room-tint: var(--sc-accent);
+}
+
+/* A band: a strip of the room's painting at the top of the section, fading
+   in from the room before and out into this one; the heading overlaps it. */
+.band {
+  position: relative;
+  height: clamp(150px, 15vw, 290px);
+  margin-top: calc(var(--s-section) * -1);
+  margin-bottom: calc(clamp(60px, 6vw, 120px) * -1);
+  background-position: center 72%;
+  background-repeat: no-repeat;
+  background-size: cover;
+  -webkit-mask-image: linear-gradient(180deg, transparent 0%, #000 22%, #000 52%, transparent 100%);
+  mask-image: linear-gradient(180deg, transparent 0%, #000 22%, #000 52%, transparent 100%);
+  opacity: 0.92;
+  pointer-events: none;
+}
+.band + .wrap,
+.band ~ .wrap {
+  position: relative;
+}
+
+/* ---- The last call: the full painting ------------------------------------------ */
+.closing {
+  isolation: isolate;
+  border-top: 0;
+  background: var(--v-bg-deep);
+}
+.closing-world {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background-position: center 70%;
+  background-repeat: no-repeat;
+  background-size: cover;
+}
+.closing-world::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--band-deep) 88%, transparent) 0%, color-mix(in srgb, var(--band-deep) 40%, transparent) 48%, transparent 75%),
+    linear-gradient(180deg, var(--v-bg-deep) 0%, transparent 28%, transparent 70%, var(--v-bg-deep) 100%);
+}
+
+/* ---- Tablets and phones: the scene on top, the words under it --------------- */
+@media (max-width: 1099px) {
+  .hero {
+    --plate-w: max(100cqw, 1000px);
+  }
+  .world-veil {
+    background:
+      linear-gradient(180deg, color-mix(in srgb, var(--v-bg-deep) 50%, transparent) 0%, transparent 16%),
+      linear-gradient(180deg, transparent 0%, transparent calc(var(--plate-h) * 0.7), var(--sc-deep) calc(var(--plate-h) * 0.98)),
+      color-mix(in srgb, var(--sc-deep) var(--sc-veil), transparent);
+  }
+  .hero-inner {
+    /* The words start under the painting. */
+    padding-top: calc(var(--plate-h) * 0.92);
+  }
+}
+@media (max-width: 699px) {
+  .hero {
+    /* A taller crop of the painting, anchored on the duel's side. */
+    --plate-w: max(100cqw, 780px);
+    --fig-unit: min(var(--plate-h), 260px);
+  }
+  .duel {
+    right: 16px;
+  }
+  .duel-say {
+    max-width: 180px;
+    font-size: var(--t-xs);
+  }
+}
+
+/* ---- Reduced motion: the room holds still ------------------------------------- */
+.reduce-motion .world-plate,
+.reduce-motion .world-img,
+.reduce-motion .world-light,
+.reduce-motion .world-shaft,
+.reduce-motion .world-mist,
+.reduce-motion .duel-art,
+.reduce-motion .duel-glows,
+.reduce-motion .duel-glow,
+.reduce-motion .duel-say,
+.reduce-motion .hero .btn--primary,
+.reduce-motion .closing .btn--primary,
+.reduce-motion .hero .btn--primary::after,
+.reduce-motion .closing .btn--primary::after {
+  animation: none;
+}
+.reduce-motion .world-motes {
+  display: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .world-plate,
+  .world-img,
+  .world-light,
+  .world-shaft,
+  .world-mist,
+  .duel-art,
+  .duel-glows,
+  .duel-glow,
+  .duel-say,
+  .hero .btn--primary,
+  .closing .btn--primary,
+  .hero .btn--primary::after,
+  .closing .btn--primary::after {
+    animation: none;
+  }
+  .world-motes {
+    display: none;
+  }
+}

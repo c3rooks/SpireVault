@@ -8,10 +8,11 @@
  *
  *   layout   no sideways scroll, nothing off-screen, cut or covered, no broken
  *            pictures; on phones 44px tap targets and 11px text
- *   fold     the whole first screen (headline, buttons, featured card, hand)
+ *   fold     the whole first screen (headline, buttons, the duel, the hand)
  *            fits in 1440x760, 1454x816 and 1728x950
- *   hand     each climber the roll can feature: their card, painting and line;
- *            the other five (The Fool among them) in the hand; all on screen
+ *   hand     each climber the roll can deal: their figure in the duel on a
+ *            painted scene, one of their lines; all six (The Fool among them)
+ *            in the hand, theirs standing proud; nothing over the figures
  *   sharp    no picture on the page is drawn past its own pixels at 2x
  *   health   no console errors, failed requests, CSP violations or requests
  *            to hosts the CSP does not list
@@ -38,7 +39,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { startSiteServer } from "./site-server.mjs";
 import { heroGeometry, lowContrast } from "./verify-site-page.mjs";
-import { checkFold, checkHand, checkSharp } from "./verify-site-hero.mjs";
+import { FEATURED, checkFold, checkHand, checkSharp } from "./verify-site-hero.mjs";
 import { RELEASE, RELEASES_PAGE, SCENARIOS, SITE_ROOT, existsExactly, loadLazy, openPage } from "./verify-site-harness.mjs";
 import { collectFindings } from "./mobile-audit/page-checks.mjs";
 
@@ -415,13 +416,13 @@ async function checkMotion(browser, baseUrl) {
         await Promise.all(all.map((a) => a.ready.catch(() => null)));
         await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
       });
-      const snapshot = () => page.evaluate(() => Array.from(document.querySelectorAll(".hero .featured, .hero .hand-card, .hero .hand-tag"), (el) => { const r = el.getBoundingClientRect(); return [r.left, r.top, r.width, r.height].map((n) => Math.round(n * 10)).join(","); }).join("|"));
+      const snapshot = () => page.evaluate(() => Array.from(document.querySelectorAll(".hero .hand-card, .hero .hand-tag"), (el) => { const r = el.getBoundingClientRect(); return [r.left, r.top, r.width, r.height].map((n) => Math.round(n * 10)).join(","); }).join("|"));
       const before = await snapshot();
-      // Hover the middle of the featured card and of every hand card, and look
+      // Hover the middle of every hand card, and look
       // after each move: a lift that drops back when the pointer leaves would
       // slip past a single look at the end.
       const points = await page.evaluate(() =>
-        Array.from(document.querySelectorAll(".hero .featured, .hero .hand-card")).filter((el) => el.getClientRects().length > 0).map((el) => {
+        Array.from(document.querySelectorAll(".hero .hand-card")).filter((el) => el.getClientRects().length > 0).map((el) => {
           const r = el.getBoundingClientRect();
           return [Math.round(r.left + r.width / 2), Math.round(r.top + r.height / 2)];
         }),
@@ -490,14 +491,18 @@ async function checkResilience(browser, baseUrl) {
           chip: shown("presence-text"),
           count: shown("presence-count"),
           hidden: Array.from(document.querySelectorAll("[data-reveal]")).filter((el) => getComputedStyle(el).opacity !== "1").length,
-          featured: Array.from(document.querySelectorAll(".featured")).filter((el) => el.getClientRects().length > 0).length,
+          climber: document.documentElement.dataset.climber || "",
+          figure: getComputedStyle(document.querySelector(".duel-fig--climber .duel-art")).backgroundImage,
+          scene: getComputedStyle(document.querySelector(".world-img")).backgroundImage,
           hand: Array.from(document.querySelectorAll(".hand-card")).filter((el) => el.getClientRects().length > 0).length,
         };
       });
       if (state.chip !== null) failures.push(`without JavaScript the hero still shows "${state.chip}", which nothing will ever replace`);
       if (state.count !== null) failures.push(`without JavaScript the live-count ticket still shows "${state.count}"`);
       if (state.hidden) failures.push(`without JavaScript ${state.hidden} block(s) are invisible`);
-      if (state.featured !== 1 || state.hand !== 5) failures.push(`without JavaScript the hero shows ${state.featured} featured card(s) and ${state.hand} hand cards`);
+      if (!state.figure.includes(`/assets/figure/${state.climber}-ink-`) || !state.scene.includes("/assets/scene/") || state.hand !== 6) {
+        failures.push(`without JavaScript the hero shows figure ${state.figure}, scene ${state.scene} and ${state.hand} hand cards`);
+      }
     } finally {
       await context.close();
     }
@@ -519,15 +524,18 @@ async function checkResilience(browser, baseUrl) {
       await context.close();
     }
   }
-  // A climber the roll does not know (or The Fool, who is never featured) still gives one card and five.
+  // A climber the roll does not know (or The Fool, who is never dealt) still deals one of the five, and all six are in the hand.
   for (const wanted of ["bogus", "fool"]) {
     const { page, context } = await openPage(browser, baseUrl, { width: 1440, height: 900, query: `climber=${wanted}&motion=off` });
     try {
       const shown = await page.evaluate(() => ({
-        featured: Array.from(document.querySelectorAll(".featured")).filter((el) => el.getClientRects().length > 0).length,
+        climber: document.documentElement.dataset.climber || "",
+        figure: getComputedStyle(document.querySelector(".duel-fig--climber .duel-art")).backgroundImage,
         hand: Array.from(document.querySelectorAll(".hand-card")).filter((el) => el.getClientRects().length > 0).map((el) => el.dataset.c),
       }));
-      if (shown.featured !== 1 || shown.hand.length !== 5) failures.push(`?climber=${wanted}: ${shown.featured} featured card(s) and ${shown.hand.length} hand cards`);
+      if (!FEATURED.includes(shown.climber)) failures.push(`?climber=${wanted}: the duel deals "${shown.climber}"`);
+      else if (!shown.figure.includes(`/assets/figure/${shown.climber}-ink-`)) failures.push(`?climber=${wanted}: the duel shows ${shown.figure}`);
+      if (shown.hand.length !== 6) failures.push(`?climber=${wanted}: ${shown.hand.length} hand cards`);
       if (!shown.hand.includes("fool")) failures.push(`?climber=${wanted}: The Fool is not in the hand`);
     } finally {
       await context.close();

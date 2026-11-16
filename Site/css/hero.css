@@ -1,15 +1,12 @@
 /* ==========================================================================
-   The first screen: the words on the left; on the right, one climber's card
-   (a painting from the game beside that climber's numbers, on the app's
-   sample data) with the other climbers fanned beneath it as a hand.
+   The first screen: the words on the left; on the right, the climbers'
+   cards fanned as a hand, on the app's sample data. world.css sets all of it
+   in a painted scene, shows all six cards and stands the dealt one proud.
 
-   Every picture is one of the game's own paintings, drawn at no more than
-   half its pixels, so it is sharp on a 2x screen: the paintings are about
-   812px wide, so the featured one is at most 406 CSS px wide, and the hand
-   uses 560px copies (406px ones on phones, where its cards are small).
+   Every card is one of the game's own paintings, drawn at no more than half
+   its pixels, so it is sharp on a 2x screen.
 
-   boot.js rolls which climber is featured (data-climber on <html>) before
-   first paint; the rules at the end show that card and close up the hand.
+   boot.js deals the climber (data-climber on <html>) before first paint.
    ========================================================================== */
 .hero {
   position: relative;
@@ -152,7 +149,7 @@
   white-space: normal;
 }
 
-/* ---- The stage: a featured card and the hand --------------------------------- */
+/* ---- The stage: the hand of climber cards ------------------------------------ */
 .hero-stage {
   /* A hand card's width: five of them, overlapping, span the stage. */
   --hand-w: min(172px, 21.5cqw);
@@ -164,121 +161,13 @@
   max-width: 764px;
   container: hero-stage / inline-size;
 }
-/* The tag sits on the featured card's corner, where the numbers are. */
+/* The tag sits on the stage's corner. */
 .hand-tag {
   position: absolute;
   top: -14px;
   right: max(10px, calc((100% - 746px) / 2 + 10px));
   z-index: 3;
   transform: rotate(3deg);
-}
-
-/* The featured climber: the painting, and beside it the name and numbers. */
-.featured {
-  position: relative;
-  display: none;
-  grid-template-columns: min(406px, 56cqw) minmax(0, 1fr);
-  width: min(100%, 746px);
-  overflow: hidden;
-  border: var(--v-outline);
-  border-radius: var(--v-radius-lg);
-  background: var(--v-paper);
-  box-shadow: 8px 8px 0 var(--v-ink);
-  color: var(--v-on-paper);
-  rotate: -1.2deg;
-  animation: deal 480ms var(--ease-out) 120ms both;
-}
-.featured-art {
-  align-self: stretch;
-  aspect-ratio: 406 / 250;
-  border-right: var(--v-outline);
-  background: var(--art-2x) center / cover no-repeat var(--v-bg);
-}
-.featured-facts {
-  display: grid;
-  align-content: start;
-  gap: 3px;
-  min-width: 0;
-  padding: 0 clamp(12px, 2.4cqw, 18px) clamp(10px, 2cqw, 14px);
-}
-/* The name is a band in the climber's colour, like every card in the hand. */
-.featured-name {
-  margin-inline: calc(clamp(12px, 2.4cqw, 18px) * -1);
-  margin-bottom: clamp(6px, 1.4cqw, 10px);
-  padding: 7px clamp(12px, 2.4cqw, 18px) 9px;
-  border-bottom: var(--v-outline);
-  background: var(--c);
-  font-family: var(--v-font-display);
-  font-size: clamp(1.5rem, 4.6cqw, 2.125rem);
-  font-weight: var(--v-display-weight);
-  line-height: 1;
-}
-.featured-kit {
-  color: var(--v-on-paper-2);
-  font-size: var(--t-xs);
-  font-weight: 800;
-  letter-spacing: 0.04em;
-}
-.featured-rate {
-  display: flex;
-  align-items: baseline;
-  /* The % sits tight against the number, as on the hand cards and in the app. */
-  gap: 0;
-  margin-top: 2px;
-  line-height: 1;
-}
-.featured-rate strong {
-  font-family: var(--v-font-display);
-  font-size: clamp(2.5rem, 8.6cqw, 4rem);
-  font-weight: var(--v-display-weight);
-  line-height: 0.9;
-}
-.featured-rate small {
-  font-family: var(--v-font-display);
-  font-size: clamp(1.25rem, 3.6cqw, 1.75rem);
-  font-weight: var(--v-display-weight);
-}
-.featured-rate span {
-  margin-left: 10px;
-  color: var(--v-on-paper-2);
-  font-size: var(--t-xs);
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-/* The win rate as a bar, filled in the climber's colour. */
-.meter {
-  display: block;
-  height: 12px;
-  margin-block: 4px;
-  overflow: hidden;
-  border: var(--v-outline);
-  border-radius: var(--v-radius-pill);
-  background: var(--v-paper-3);
-}
-.meter i {
-  display: block;
-  width: var(--rate);
-  height: 100%;
-  border-right: var(--v-outline);
-  background: var(--c);
-}
-.featured-record {
-  font-size: var(--t-sm);
-  font-weight: 800;
-}
-.featured-line {
-  margin-top: 4px;
-  font-family: var(--v-font-heading);
-  font-size: clamp(1rem, 2.6cqw, 1.1875rem);
-  font-weight: 800;
-  line-height: 1.15;
-}
-.featured-line::before {
-  content: "\201C";
-}
-.featured-line::after {
-  content: "\201D";
 }
 
 /* The hand: the other climbers, fanned. --i is a card's place among the ones
@@ -379,15 +268,6 @@
 @container hero-stage (max-width: 519px) {
   .hand-tag {
     right: max(10px, calc((100% - 406px) / 2 + 10px));
-  }
-  .featured {
-    grid-template-columns: minmax(0, 1fr);
-    width: min(100%, 406px);
-    rotate: none;
-  }
-  .featured-art {
-    border-right: 0;
-    border-bottom: var(--v-outline);
   }
   .hand {
     flex-wrap: wrap;
@@ -549,15 +429,8 @@
 .hand-card:nth-child(6) {
   --n: 5;
 }
-/* The rolled climber's big card shows; their hand card steps out, and the
-   cards after it move up one place so the fan stays even. */
-[data-climber="ironclad"] .featured[data-c="ironclad"],
-[data-climber="silent"] .featured[data-c="silent"],
-[data-climber="defect"] .featured[data-c="defect"],
-[data-climber="regent"] .featured[data-c="regent"],
-[data-climber="necrobinder"] .featured[data-c="necrobinder"] {
-  display: grid;
-}
+/* Without world.css the rolled climber's hand card steps out, and the cards
+   after it move up one place so the fan stays even. */
 [data-climber="ironclad"] .hand-card[data-c="ironclad"],
 [data-climber="silent"] .hand-card[data-c="silent"],
 [data-climber="defect"] .hand-card[data-c="defect"],

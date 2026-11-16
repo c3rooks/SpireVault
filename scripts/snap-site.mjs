@@ -18,7 +18,7 @@
  *
  *   node scripts/snap-site.mjs                         # first screens, 1728/1440/390
  *   node scripts/snap-site.mjs --full --sections       # whole page and per-section
- *   node scripts/snap-site.mjs --climbers ironclad,defect   # which climber is featured
+ *   node scripts/snap-site.mjs --climbers ironclad,defect   # which climber is dealt
  *   node scripts/snap-site.mjs --engines chromium,webkit --widths 320,768,1440
  *   node scripts/snap-site.mjs --clip --widths 1728     # motion clip
  *   node scripts/snap-site.mjs --og                     # Site/assets/og-v<N>.jpg, the link-preview picture

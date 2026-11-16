@@ -1,22 +1,24 @@
 /**
  * The first-screen checks of scripts/verify-site.mjs: that the whole first
- * screen fits a laptop window, that the featured card and the hand are right
- * for every climber, and that no picture on the page is drawn past its pixels.
+ * screen fits a laptop window, that the duel and the hand are right for every
+ * climber, and that no picture on the page is drawn past its pixels.
  */
 
 import { loadLazy, openPage } from "./verify-site-harness.mjs";
 import { drawnTooLarge, heroGeometry } from "./verify-site-page.mjs";
 
-/** The climbers boot.js may feature, and everyone who must be on the first screen. */
+/** The climbers boot.js may deal into the duel, and everyone who must be on the first screen. */
 export const FEATURED = Object.freeze(["ironclad", "silent", "defect", "regent", "necrobinder"]);
 const EVERYONE = Object.freeze([...FEATURED, "fool"]);
 /** Where a rotated card's corner may reach past the hero's column without being a fault. */
 const SLACK_PX = 1;
 /** A picture may be drawn up to this many device pixels per picture pixel. */
 const STRETCH_LIMIT = 1.05;
+/** How far a hand card may reach over a figure's box (the boxes have air around the art). */
+const COVER_SLACK_PX = 12;
 
 /**
- * The whole first screen fits the window: copy, featured card and hand.
+ * The whole first screen fits the window: copy, the duel and the hand.
  * @param {import("playwright").Browser} browser
  * @param {string} baseUrl
  * @param {ReadonlyArray<{ width: number, height: number }>} folds
@@ -36,9 +38,9 @@ export async function checkFold(browser, baseUrl, folds) {
       };
       inside(geo.hero, "hero");
       inside(geo.lastCopyChild, "copy");
-      if (geo.featured.length !== 1) failures.push(`${where}: expected 1 featured card, found ${geo.featured.length}`);
-      geo.featured.forEach((card) => inside(card.box, `featured card (${card.climber})`));
-      if (geo.cards.length !== 5) failures.push(`${where}: expected 5 cards in the hand, found ${geo.cards.length}`);
+      inside(geo.duel.climberBox, "the climber in the duel");
+      inside(geo.duel.bossBox, "the Architect");
+      if (geo.cards.length !== EVERYONE.length) failures.push(`${where}: expected ${EVERYONE.length} cards in the hand, found ${geo.cards.length}`);
       geo.cards.forEach((card) => inside(card.box, `hand card (${card.climber})`));
     } finally {
       await context.close();
@@ -47,10 +49,17 @@ export async function checkFold(browser, baseUrl, folds) {
   return failures;
 }
 
+/** How far two boxes overlap, in px of height (0 when they do not). */
+function overlapHeight(a, b) {
+  if (!a || !b || a.right <= b.left || b.right <= a.left) return 0;
+  return Math.max(0, Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top));
+}
+
 /**
- * For each climber the roll can feature, at each width: that climber's card
- * is the big one with their own painting and one of their lines, the other
- * five (The Fool among them) are the hand, and nothing leaves the screen.
+ * For each climber the roll can deal, at each width: that climber stands in
+ * the duel with their own figure and one of their lines, on a painted scene;
+ * all six climbers (The Fool among them) are in the hand, the dealt one's card
+ * standing proud; nothing leaves the screen or covers the figures.
  * @param {import("playwright").Browser} browser
  * @param {string} baseUrl
  * @param {ReadonlyArray<number>} widths
@@ -67,30 +76,35 @@ export async function checkHand(browser, baseUrl, widths, heights, phoneMaxWidth
         const geo = await page.evaluate(heroGeometry);
         const lines = await page.evaluate((id) => (window.SpireVaultSite ? window.SpireVaultSite.linesFor(id) : null), climber);
         const where = `${climber} at ${width}`;
-        const [card] = geo.featured;
-        if (geo.featured.length !== 1 || !card) {
-          failures.push(`${where}: ${geo.featured.length} featured cards showing`);
+        const { duel } = geo;
+        if (duel.climber !== climber) failures.push(`${where}: the duel deals ${duel.climber || "nobody"}`);
+        if (!duel.climberBox || !duel.bossBox) {
+          failures.push(`${where}: the duel is not drawn (climber ${!!duel.climberBox}, Architect ${!!duel.bossBox})`);
           continue;
         }
-        if (card.climber !== climber) failures.push(`${where}: the featured card is ${card.climber}`);
-        if (!card.art.includes(`/${climber}-2x-`)) failures.push(`${where}: wrong painting on the featured card (${card.art})`);
-        if (!/^\d+\.\d$/.test(card.rate)) failures.push(`${where}: the featured card's win rate reads "${card.rate}"`);
+        if (!duel.climberArt.includes(`/assets/figure/${climber}-ink-`)) failures.push(`${where}: wrong figure in the duel (${duel.climberArt})`);
+        if (!duel.bossArt.includes("/assets/figure/architect-ink-")) failures.push(`${where}: the Architect's figure is missing (${duel.bossArt})`);
+        if (!/\/assets\/scene\//.test(geo.scene.art)) failures.push(`${where}: no painted scene behind the duel (${geo.scene.id || "none dealt"})`);
+        if (duel.lineBy !== climber) failures.push(`${where}: the balloon speaks for ${duel.lineBy || "nobody"}`);
         if (!lines) failures.push(`${where}: window.SpireVaultSite.linesFor missing`);
-        else if (!lines.includes(card.line)) failures.push(`${where}: "${card.line}" is not one of their lines`);
+        else if (!lines.includes(duel.line)) failures.push(`${where}: "${duel.line}" is not one of their lines`);
 
         const inHand = geo.cards.map((c) => c.climber);
-        const expected = EVERYONE.filter((id) => id !== climber);
-        if (inHand.join(",") !== expected.join(",")) failures.push(`${where}: the hand holds ${inHand.join(", ") || "nothing"}, expected ${expected.join(", ")}`);
+        if (inHand.join(",") !== EVERYONE.join(",")) failures.push(`${where}: the hand holds ${inHand.join(", ") || "nothing"}, expected ${EVERYONE.join(", ")}`);
         for (const c of geo.cards) if (!c.art.includes(`/${c.climber}-`)) failures.push(`${where}: ${c.climber}'s hand card shows ${c.art}`);
+        const proud = geo.cards.filter((c) => c.proud).map((c) => c.climber);
+        if (proud.join(",") !== climber) failures.push(`${where}: the card standing proud is ${proud.join(", ") || "nobody's"}, not ${climber}'s`);
 
-        for (const [label, box] of [["featured card", card.box], ...geo.cards.map((c) => [`${c.climber}'s hand card`, c.box])]) {
+        for (const [label, box] of [["the climber in the duel", duel.climberBox], ["the Architect", duel.bossBox], ...geo.cards.map((c) => [`${c.climber}'s hand card`, c.box])]) {
           if (box.width < 40 || box.height < 40) failures.push(`${where}: ${label} is not drawn`);
           if (box.left < -SLACK_PX || box.right > geo.viewport.width + SLACK_PX) failures.push(`${where}: ${label} runs off the side`);
           if (geo.hero && (box.top < geo.hero.top - SLACK_PX || box.bottom > geo.hero.bottom + SLACK_PX)) failures.push(`${where}: ${label} sticks out of the hero`);
         }
-        // The hand sits under the featured card, never over its numbers.
-        const highest = Math.min(...geo.cards.map((c) => c.box.top));
-        if (highest < card.box.bottom - card.box.height * 0.12) failures.push(`${where}: the hand covers the featured card by ${Math.round(card.box.bottom - highest)}px`);
+        // The hand is dealt on the floor, never over the figures.
+        for (const c of geo.cards) {
+          const over = Math.max(overlapHeight(c.box, duel.climberBox), overlapHeight(c.box, duel.bossBox));
+          if (over > COVER_SLACK_PX) failures.push(`${where}: ${c.climber}'s hand card covers the duel by ${Math.round(over)}px`);
+        }
       } finally {
         await context.close();
       }

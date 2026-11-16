@@ -1,10 +1,11 @@
 /* SpireVault landing page.
  *
- *   1. The featured climber's card carries one of their own lines
+ *   1. The dealt climber's balloon says one of their own lines
  *   2. Live "players signed up" count from the matchmaking server
  *   3. Download links and version pills from the latest GitHub release
  *   4. The screenshot buttons under "Your numbers, drawn like the game"
- *   5. Sections rise into place as they scroll in
+ *   5. Sections rise into place as they scroll in; painted bands load as
+ *      they come near
  *   6. A link to an answer opens it
  *
  * The page is complete without any of this: every element below has a
@@ -49,7 +50,7 @@
   });
 
   /**
-   * The lines a featured climber may say.
+   * The lines a dealt climber may say.
    * @param {string} climber
    * @returns {ReadonlyArray<string>}
    */
@@ -59,8 +60,8 @@
 
   function speak() {
     const climber = root.getAttribute("data-climber") || "";
-    // The card boot.js chose; each card already carries a line of its own.
-    const line = document.querySelector(`.featured[data-c="${CSS.escape(climber)}"] .featured-line`);
+    // The climber boot.js dealt; their balloon already carries a line of its own.
+    const line = document.querySelector(`.duel-say [data-c="${CSS.escape(climber)}"]`);
     if (!line) return;
     const lines = linesFor(climber);
     if (lines.length === 0) return; // the card keeps the line it was written with
@@ -273,6 +274,30 @@
     waiting.forEach((target) => observer.observe(target));
   }
 
+  // ---- 5b. Paintings: the section bands load as they come near ------------------
+  // A CSS background loads as soon as its element exists, however far down;
+  // the bands are painted (world-data.css keys them on .is-near) only when
+  // within reach, motion or not.
+  function wirePaintings() {
+    const paintings = Array.from(document.querySelectorAll("[data-band], [data-art]"));
+    if (paintings.length === 0) return;
+    if (!("IntersectionObserver" in window)) {
+      paintings.forEach((el) => el.classList.add("is-near"));
+      return;
+    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (!entry.isIntersecting) return;
+          entry.target.classList.add("is-near");
+          observer.unobserve(entry.target);
+        });
+      },
+      { rootMargin: "250px 0px" },
+    );
+    paintings.forEach((el) => observer.observe(el));
+  }
+
   // ---- 6. A link to an answer (#runcoach, or an old link from elsewhere) opens it
   function openLinkedAnswer() {
     let id = "";
@@ -326,6 +351,7 @@
   start(speak);
   start(wireViewer);
   start(wireReveals);
+  start(wirePaintings);
   start(openLinkedAnswer);
   start(useLocalApp);
   // The checks ask this for a climber's lines.

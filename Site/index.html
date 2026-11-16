@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-theme="inked" data-climber="ironclad">
+<html lang="en" data-theme="inked" data-climber="ironclad" data-scene="overgrowth">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -26,13 +26,15 @@
   <link rel="preload" href="/assets/fonts/grenze-gotisch-latin-var-v1.woff2" as="font" type="font/woff2" crossorigin />
   <link rel="preload" href="/assets/fonts/figtree-latin-var-v1.woff2" as="font" type="font/woff2" crossorigin />
 
-  <link rel="stylesheet" href="/css/tokens.css?v=21" />
-  <link rel="stylesheet" href="/css/base.css?v=21" />
-  <link rel="stylesheet" href="/css/components.css?v=21" />
-  <link rel="stylesheet" href="/css/hero.css?v=21" />
-  <link rel="stylesheet" href="/css/sections.css?v=21" />
-  <link rel="stylesheet" href="/css/sections-lower.css?v=21" />
-  <script src="/boot.js?v=21"></script>
+  <link rel="stylesheet" href="/css/tokens.css?v=23" />
+  <link rel="stylesheet" href="/css/base.css?v=23" />
+  <link rel="stylesheet" href="/css/components.css?v=23" />
+  <link rel="stylesheet" href="/css/hero.css?v=23" />
+  <link rel="stylesheet" href="/css/sections.css?v=23" />
+  <link rel="stylesheet" href="/css/sections-lower.css?v=23" />
+  <link rel="stylesheet" href="/css/world-data.css?v=23" />
+  <link rel="stylesheet" href="/css/world.css?v=23" />
+  <script src="/boot.js?v=23"></script>
 </head>
 <body>
   <a class="skip-link" href="#main">Skip to content</a>
@@ -57,6 +59,32 @@
   <main id="main">
     <!-- ================= Hero: the fight screen, your stats as the hand ================= -->
     <section class="hero" aria-labelledby="hero-title">
+      <!-- The first screen is one of the app's painted scenes, dealt by boot.js. -->
+      <div class="world" aria-hidden="true">
+        <div class="world-plate">
+          <span class="world-img"></span>
+          <span class="world-shafts"><span class="world-shaft"></span><span class="world-shaft"></span><span class="world-shaft"></span></span>
+          <span class="world-lights"><span class="world-light"></span><span class="world-light"></span><span class="world-light"></span><span class="world-light"></span><span class="world-light"></span><span class="world-light"></span><span class="world-light"></span><span class="world-light"></span><span class="world-light"></span></span>
+          <span class="world-motes"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>
+        </div>
+        <span class="world-mist"></span>
+        <span class="world-veil"></span>
+        <!-- The dealt climber and the Architect, squared up on the scene's ground. -->
+        <div class="duel">
+          <span class="duel-fig duel-fig--climber">
+            <span class="duel-say"><span data-c="ironclad">Anger. Steel. Repeat.</span><span data-c="silent">From the shadows.</span><span data-c="defect">Channel. Defend. Destroy.</span><span data-c="regent">Bow to the deck.</span><span data-c="necrobinder">Bones remember.</span></span>
+            <span class="duel-seat"></span>
+            <span class="duel-shadow"></span>
+            <span class="duel-art"></span>
+            <span class="duel-glows"><span class="duel-glow"></span><span class="duel-glow"></span></span>
+          </span>
+          <span class="duel-fig duel-fig--boss">
+            <span class="duel-shadow"></span>
+            <span class="duel-art"></span>
+            <span class="duel-glows"><span class="duel-glow"></span></span>
+          </span>
+        </div>
+      </div>
       <div class="wrap hero-inner">
         <div class="hero-copy">
           <ul class="hero-chips" role="list" aria-label="At a glance">
@@ -95,65 +123,9 @@
           </p>
         </div>
 
-        <!-- One climber's card and the rest of the hand, on the app's sample data.
-             boot.js rolls which of the five is featured; the Fool is always in the hand. -->
+        <!-- Every climber's card, on the app's sample data; the dealt one stands proud. -->
         <div class="hero-stage" role="group" aria-label="Sample data: win rate by climber">
           <span class="tag hand-tag">Sample data</span>
-          <article class="featured" data-c="ironclad">
-            <div class="featured-art" role="img" aria-label="A painting from Slay the Spire 2: the Ironclad."></div>
-            <div class="featured-facts">
-              <p class="featured-name">Ironclad</p>
-              <p class="featured-kit">Strength · Block · Self-damage</p>
-              <p class="featured-rate"><strong>48.4</strong><small>%</small> <span>win rate</span></p>
-              <span class="meter" aria-hidden="true"><i></i></span>
-              <p class="featured-record">15W · 16L · 31 runs</p>
-              <p class="featured-line">Anger. Steel. Repeat.</p>
-            </div>
-          </article>
-          <article class="featured" data-c="silent">
-            <div class="featured-art" role="img" aria-label="A painting from Slay the Spire 2: the Silent."></div>
-            <div class="featured-facts">
-              <p class="featured-name">Silent</p>
-              <p class="featured-kit">Poison · Shivs · Discard</p>
-              <p class="featured-rate"><strong>53.3</strong><small>%</small> <span>win rate</span></p>
-              <span class="meter" aria-hidden="true"><i></i></span>
-              <p class="featured-record">8W · 7L · 15 runs</p>
-              <p class="featured-line">From the shadows.</p>
-            </div>
-          </article>
-          <article class="featured" data-c="defect">
-            <div class="featured-art" role="img" aria-label="A painting from Slay the Spire 2: the Defect."></div>
-            <div class="featured-facts">
-              <p class="featured-name">Defect</p>
-              <p class="featured-kit">Orbs · Focus · Power scaling</p>
-              <p class="featured-rate"><strong>53.8</strong><small>%</small> <span>win rate</span></p>
-              <span class="meter" aria-hidden="true"><i></i></span>
-              <p class="featured-record">7W · 6L · 13 runs</p>
-              <p class="featured-line">Channel. Defend. Destroy.</p>
-            </div>
-          </article>
-          <article class="featured" data-c="regent">
-            <div class="featured-art" role="img" aria-label="A painting from Slay the Spire 2: the Regent."></div>
-            <div class="featured-facts">
-              <p class="featured-name">Regent</p>
-              <p class="featured-kit">Cosmic · Royal · Banner buffs</p>
-              <p class="featured-rate"><strong>44.4</strong><small>%</small> <span>win rate</span></p>
-              <span class="meter" aria-hidden="true"><i></i></span>
-              <p class="featured-record">4W · 5L · 9 runs</p>
-              <p class="featured-line">Bow to the deck.</p>
-            </div>
-          </article>
-          <article class="featured" data-c="necrobinder">
-            <div class="featured-art" role="img" aria-label="A painting from Slay the Spire 2: the Necrobinder."></div>
-            <div class="featured-facts">
-              <p class="featured-name">Necrobinder</p>
-              <p class="featured-kit">Summon · Sacrifice · Curses</p>
-              <p class="featured-rate"><strong>20.0</strong><small>%</small> <span>win rate</span></p>
-              <span class="meter" aria-hidden="true"><i></i></span>
-              <p class="featured-record">1W · 4L · 5 runs</p>
-              <p class="featured-line">Bones remember.</p>
-            </div>
-          </article>
           <ul class="hand" role="list">
             <li class="hand-card" data-c="ironclad">
               <span class="hand-name">Ironclad</span>
@@ -191,7 +163,8 @@
     </section>
 
     <!-- ================= Import: the page's first job ================= -->
-    <section class="section section--paper import" id="import" aria-labelledby="import-title">
+    <section class="section section--paper import room" data-room="campfire" id="import" aria-labelledby="import-title">
+      <div class="band" data-band="campfire" aria-hidden="true"></div>
       <div class="wrap">
         <div class="section-top">
           <header class="section-head" data-reveal>
@@ -312,7 +285,8 @@
     </section>
 
     <!-- ================= Co&#8209;op ================= -->
-    <section class="section section--paper coop" id="coop" aria-labelledby="coop-title">
+    <section class="section section--paper coop room" data-room="clouds" id="coop" aria-labelledby="coop-title">
+      <div class="band" data-band="clouds" aria-hidden="true"></div>
       <div class="wrap">
         <header class="section-head section-head--split" data-reveal>
           <span class="chip chip--gold">Co&#8209;op</span>
@@ -403,7 +377,8 @@
     </section>
 
     <!-- ================= Get it ================= -->
-    <section class="section section--paper install" id="install" aria-labelledby="install-title">
+    <section class="section section--paper install room" data-room="merchant" id="install" aria-labelledby="install-title">
+      <div class="band" data-band="merchant" aria-hidden="true"></div>
       <div class="wrap">
         <header class="section-head section-head--split" data-reveal>
           <span class="chip chip--gold">Download</span>
@@ -527,6 +502,7 @@
 
     <!-- ================= Closing call ================= -->
     <section class="closing" aria-labelledby="closing-title">
+      <div class="closing-world" data-art="glory" aria-hidden="true"></div>
       <div class="wrap closing-inner">
         <div class="closing-copy">
           <h2 class="closing-title" id="closing-title">Deal your first hand.</h2>
@@ -561,6 +537,6 @@
     </div>
   </footer>
 
-  <script src="/script.js?v=21" defer></script>
+  <script src="/script.js?v=23" defer></script>
 </body>
 </html>

@@ -4,7 +4,7 @@
  * use nothing from outside its own body.
  */
 
-/** The first screen's parts, as they are drawn: the copy, the featured card and the hand. */
+/** The first screen's parts, as they are drawn: the copy, the scene, the duel and the hand. */
 export function heroGeometry() {
   const box = (el) => {
     if (!el) return null;
@@ -12,29 +12,37 @@ export function heroGeometry() {
     return { left: r.left, top: r.top, right: r.right, bottom: r.bottom, width: r.width, height: r.height };
   };
   const one = (selector) => box(document.querySelector(selector));
-  const shown = (selector) => Array.from(document.querySelectorAll(selector)).filter((el) => el.getClientRects().length > 0);
+  const isShown = (el) => el.getClientRects().length > 0;
+  const shown = (selector) => Array.from(document.querySelectorAll(selector)).filter(isShown);
   const text = (el) => (el ? (el.textContent || "").trim() : "");
+  const art = (el) => (el ? getComputedStyle(el).backgroundImage : "");
   const copy = document.querySelector(".hero-copy");
-  const lastShown = copy ? Array.from(copy.children).filter((el) => el.getClientRects().length > 0).pop() : null;
+  const lastShown = copy ? Array.from(copy.children).filter(isShown).pop() : null;
+  const climberFig = document.querySelector(".duel-fig--climber");
+  const bossFig = document.querySelector(".duel-fig--boss");
+  const [said] = shown(".duel-say [data-c]");
   return {
     viewport: { width: window.innerWidth, height: window.innerHeight },
     nav: one(".nav"),
     hero: one(".hero"),
     lastCopyChild: box(lastShown),
     primary: one("#web-cta"),
-    featured: shown(".featured").map((el) => ({
-      climber: el.dataset.c,
-      box: box(el),
-      name: text(el.querySelector(".featured-name")),
-      rate: text(el.querySelector(".featured-rate strong")),
-      line: text(el.querySelector(".featured-line")),
-      art: getComputedStyle(el.querySelector(".featured-art")).backgroundImage,
-    })),
+    scene: { id: document.documentElement.dataset.scene || "", art: art(document.querySelector(".world-img")) },
+    duel: {
+      climber: document.documentElement.dataset.climber || "",
+      climberBox: climberFig && isShown(climberFig) ? box(climberFig) : null,
+      bossBox: bossFig && isShown(bossFig) ? box(bossFig) : null,
+      climberArt: art(climberFig && climberFig.querySelector(".duel-art")),
+      bossArt: art(bossFig && bossFig.querySelector(".duel-art")),
+      line: text(said),
+      lineBy: said ? said.dataset.c : "",
+    },
     cards: shown(".hand-card").map((el) => ({
       climber: el.dataset.c,
       box: box(el),
       name: text(el.querySelector(".hand-name")),
-      art: getComputedStyle(el.querySelector(".hand-art")).backgroundImage,
+      art: art(el.querySelector(".hand-art")),
+      proud: getComputedStyle(el).zIndex === "2",
     })),
   };
 }
@@ -79,10 +87,19 @@ export async function drawnTooLarge(tolerance) {
     const fit = getComputedStyle(img).objectFit;
     judge(new URL(img.currentSrc || img.src).pathname, img.clientWidth || r.width, img.clientHeight || r.height, size.w, size.h, fit === "cover" || fit === "contain" ? fit : "fill");
   }
+  /** The picture a background paints: for image-set(), the candidate the browser picks at this density. */
+  const backgroundUrl = (value) => {
+    const set = /image-set\((.+)\)/.exec(value);
+    if (!set) return /url\(["']?([^"')]+)["']?\)/.exec(value)[1];
+    const candidates = [...set[1].matchAll(/url\(["']?([^"')]+)["']?\)\s*([\d.]+)(?:x|dppx)/g)]
+      .map((match) => ({ url: match[1], density: Number(match[2]) }))
+      .sort((a, b) => a.density - b.density);
+    return (candidates.find((candidate) => candidate.density >= dpr) || candidates[candidates.length - 1]).url;
+  };
   const painted = Array.from(document.querySelectorAll("body *")).filter((el) => visible(el) && /url\(/.test(getComputedStyle(el).backgroundImage) && !/gradient/.test(getComputedStyle(el).backgroundImage));
   for (const el of painted) {
     const style = getComputedStyle(el);
-    const url = /url\(["']?([^"')]+)["']?\)/.exec(style.backgroundImage)[1];
+    const url = backgroundUrl(style.backgroundImage);
     const size = await sizeOf(url);
     if (!size) continue;
     const r = el.getBoundingClientRect();
