@@ -67,7 +67,7 @@ let server;
 async function main() {
   log(`launching wrangler dev on :${PORT}`);
   server = spawn("npx", ["-y", "wrangler@latest", "dev", "--ip", "127.0.0.1", "--port", String(PORT), "--local"], {
-    cwd: "/Users/corey/Desktop/SlayTheSpireApp/Backend",
+    cwd: decodeURIComponent(new URL("..", import.meta.url).pathname),
     stdio: ["ignore", "pipe", "pipe"],
     env: { ...process.env },
   });

@@ -16,7 +16,7 @@
 //      change on every tab so the page feels alive — verified here.
 //
 // Hits the local server at :8765 by default; override with URL=...
-import { chromium } from "/Users/corey/Desktop/Business-Automation/node_modules/playwright/index.mjs";
+import { chromium } from "playwright";
 
 const URL = process.env.URL || "http://127.0.0.1:8765/";
 

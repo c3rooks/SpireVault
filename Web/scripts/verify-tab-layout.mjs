@@ -12,7 +12,7 @@
 //      tab + viewport.
 //
 // Hits the local server at :8765 and prints PASS/FAIL per check.
-import { chromium } from "/Users/corey/Desktop/Business-Automation/node_modules/playwright/index.mjs";
+import { chromium } from "playwright";
 
 const URL  = process.env.URL || "http://127.0.0.1:8765/";
 const TABS = ["overview", "characters", "ascensions", "relics", "cards"];

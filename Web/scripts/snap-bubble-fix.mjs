@@ -6,7 +6,7 @@
 //   /tmp/sv-bubble-ascensions-desktop.png
 //   /tmp/sv-bubble-overview-mobile.png
 //   /tmp/sv-bubble-ascensions-mobile.png
-import { chromium } from "/Users/corey/Desktop/Business-Automation/node_modules/playwright/index.mjs";
+import { chromium } from "playwright";
 
 const URL = process.env.URL || "http://127.0.0.1:8765/";
 const SHOTS = [

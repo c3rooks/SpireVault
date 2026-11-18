@@ -119,6 +119,11 @@ generate_screenshots.py
 # Internal launch playbook — keep local, not on the public repo
 LAUNCH_POSTS.md
 GOLIVE.md
+docs/release-runbook.md
+
+# Local tool config for this machine's agents (paths, project ids) — never public
+.mcp.json
+dreaming.json
 
 # Local dev artifacts from Playwright UI audits (not shipped)
 Web/.audit-screenshots/
@@ -129,3 +134,6 @@ Web/.audit-screenshots/
 # scripts/audit-mobile.mjs, scripts/snap-ui.mjs) — regenerate, never commit.
 docs/screenshots/ui-next/
 docs/screenshots/mobile-audit/
+# Review captures are local by default; the few that belong in the repo are
+# already tracked (add new ones with `git add -f` on purpose).
+docs/screenshots/

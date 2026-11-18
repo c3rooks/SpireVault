@@ -1,4 +1,4 @@
-import { chromium, devices } from "/Users/corey/Desktop/Business-Automation/node_modules/playwright/index.mjs";
+import { chromium, devices } from "playwright";
 
 const URL = "https://app.spirevault.app";
 

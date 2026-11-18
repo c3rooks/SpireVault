@@ -16,14 +16,15 @@
 // Usage:
 //   cd Web/ && node scripts/snap-marketing.mjs
 
-import { chromium, devices } from "/Users/corey/Desktop/Business-Automation/node_modules/playwright/index.mjs";
+import { chromium, devices } from "playwright";
 import { spawn } from "node:child_process";
 import { setTimeout as wait } from "node:timers/promises";
 import { mkdirSync } from "node:fs";
 
 const PORT = 8851;
-const ROOT = "/Users/corey/Desktop/SlayTheSpireApp/Web";
-const OUT  = "/Users/corey/Desktop/SlayTheSpireApp/Site/assets/screenshots";
+const REPO = decodeURIComponent(new URL("../../", import.meta.url).pathname);
+const ROOT = `${REPO}Web`;
+const OUT  = `${REPO}Site/assets/screenshots`;
 mkdirSync(OUT, { recursive: true });
 
 const server = spawn("python3", ["-m", "http.server", String(PORT), "--bind", "127.0.0.1"], {
