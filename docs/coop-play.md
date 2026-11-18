@@ -73,6 +73,7 @@ When there are no co-op runs to show, the same layout is drawn on sample numbers
 | The one live queue (Durable Object `COOP_PLAY`) | `Backend/src/coop-play-do.ts` |
 | Routes `/coop/play*` | `Backend/src/coop-play-routes.ts` |
 | Web Push (VAPID, no payload) | `Backend/src/coop-play-push.ts`, `Web/sw.js` |
+| Push queue: pings in batches of 40, matched first | `Backend/src/coop-play-pushq.ts` |
 | The card (state, polling, actions) | `Web/lib/coop-play.js` |
 | Markup per state | `Web/lib/coop-play-view.js` |
 | Chime, notification, push subscribe | `Web/lib/coop-play-alerts.js` |
@@ -98,7 +99,9 @@ Usage counters (taps, matches, wait times, Steam adds, "we're in") are kept per 
 ## Checks
 
 - `make -C Backend preflight`: types, offline suite, and `scripts/verify-coop-play.mjs` (matching and push).
-- `node Backend/scripts/verify-coop-play-flow.mjs`: end to end against the local worker. Its "pings switched on mid-search" step only runs when that worker has VAPID keys; without them it prints `skip`.
+- `node Backend/scripts/verify-coop-play-flow.mjs`: end to end against the local worker. Its "pings switched on mid-search" step only runs when that worker has VAPID keys; without them it prints `skip`. To test pings without touching `Backend/.dev.vars`, run a second worker with throwaway keys: `node Backend/scripts/gen-vapid.mjs > /tmp/vapid.env`, then `wrangler dev --env localdev --port <free> --env-file /tmp/vapid.env`, and pass its address to the flow script.
+
+**Pings go out in batches.** Cloudflare caps outbound requests per invocation (50 on Workers Free, 1,000 on Paid), and a "someone's looking" ping fans out to every opted-in player. So the Durable Object queues pings (`pushq` in its storage, one entry per player, matched pings ahead of looking ones), sends one batch of 40 in the call that queued them, and drains the rest from its alarm, one batch per second. 120 subscribers take three batches, about two seconds; 1,000 take 25 seconds. The queue rules are pure and covered by `scripts/verify-coop-play.mjs`.
 - `node scripts/verify-ui-next.mjs --only coop`: every state in both looks, Play visible without scrolling at 1440, 1024 and 390px. Set `VERIFY_UI_PORT` if 8798 is taken.
 - `node Web/scripts/verify-coop-share.mjs` (part of `make -C Web preflight`): the Discord post, name safety, copy and share-sheet paths, and the `/coop` preview tags, offline.
 - `node Web/scripts/verify-coop-climbs.mjs` (also in the web preflight): the parser keeps every player of a save, and the co-op numbers count only runs with a party.

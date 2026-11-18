@@ -24,7 +24,8 @@ const entry = join(workDir, "entry.ts");
 writeFileSync(
   entry,
   `export * from ${JSON.stringify(join(SRC, "coop-play-core"))};\n` +
-    `export * as Push from ${JSON.stringify(join(SRC, "coop-play-push"))};\n`,
+    `export * as Push from ${JSON.stringify(join(SRC, "coop-play-push"))};\n` +
+    `export * as PushQ from ${JSON.stringify(join(SRC, "coop-play-pushq"))};\n`,
 );
 const bundle = join(workDir, "bundle.mjs");
 execFileSync(
@@ -499,6 +500,104 @@ await check("only real push services are accepted as endpoints", () => {
   assert.equal(P.Push.isAllowedPushEndpoint("http://fcm.googleapis.com/x"), false);
   assert.equal(P.Push.isAllowedPushEndpoint("https://169.254.169.254/latest"), false);
   assert.equal(P.Push.isAllowedPushEndpoint(42), false);
+});
+
+// ---- Push queue: pings go out in batches under the subrequest cap ----------
+// Cloudflare caps outbound requests per invocation (50 on Workers Free, 1,000
+// on Paid). A "someone's looking" ping fans out to every opted-in player, so
+// the Durable Object sends at most PUSH_BATCH_SIZE per invocation and drains
+// the rest from its alarm.
+
+/** A fake subscription store and push service that counts sends per invocation. */
+function pushWorld(sids, goneSids = []) {
+  const subs = new Map(sids.map((sid) => [sid, { endpoint: `https://fcm.googleapis.com/fcm/send/${sid}`, keys: {} }]));
+  const sent = [];
+  const deleted = [];
+  let invocation = 0;
+  const perInvocation = [];
+  const deps = {
+    getSub: async (sid) => subs.get(sid) ?? null,
+    deleteSub: async (sid) => { subs.delete(sid); deleted.push(sid); },
+    send: async (sub) => {
+      const sid = sub.endpoint.split("/").pop();
+      sent.push(sid);
+      perInvocation[invocation] = (perInvocation[invocation] ?? 0) + 1;
+      return goneSids.includes(sid) ? "gone" : "sent";
+    },
+  };
+  return { subs, sent, deleted, perInvocation, deps, next: () => { invocation++; } };
+}
+
+const sidsN = (n, p = "7656119800000") => Array.from({ length: n }, (_, i) => `${p}${String(i).padStart(4, "0")}`);
+
+await check("the push batch stays under the Free plan's 50 subrequests, with headroom", () => {
+  assert.ok(P.PushQ.PUSH_BATCH_SIZE >= 10 && P.PushQ.PUSH_BATCH_SIZE <= 45, `batch ${P.PushQ.PUSH_BATCH_SIZE}`);
+});
+
+await check("a queued player is pinged once, and a match jumps ahead of looking pings", () => {
+  let q = P.PushQ.enqueuePushes([], [["a", "looking"], ["b", "looking"], ["c", "looking"]]);
+  q = P.PushQ.enqueuePushes(q, [["a", "looking"], ["b", "matched"], ["d", "matched"]]);
+  assert.deepEqual(q.map((e) => `${e.sid}:${e.kind}`), ["b:matched", "d:matched", "a:looking", "c:looking"]);
+  const again = P.PushQ.enqueuePushes(q, [["b", "looking"]]);
+  assert.deepEqual(again.map((e) => `${e.sid}:${e.kind}`), ["b:matched", "d:matched", "a:looking", "c:looking"], "a match is never downgraded");
+  assert.deepEqual(q.map((e) => e.sid), ["b", "d", "a", "c"], "enqueue returns a new queue, never edits the old one");
+});
+
+await check("takeBatch takes at most one batch and leaves the rest in order", () => {
+  const q = P.PushQ.enqueuePushes([], sidsN(95).map((sid) => [sid, "looking"]));
+  const { batch, rest } = P.PushQ.takeBatch(q);
+  assert.equal(batch.length, P.PushQ.PUSH_BATCH_SIZE);
+  assert.equal(rest.length, 95 - P.PushQ.PUSH_BATCH_SIZE);
+  assert.equal(rest[0].sid, q[P.PushQ.PUSH_BATCH_SIZE].sid);
+  assert.deepEqual(P.PushQ.takeBatch([]), { batch: [], rest: [] });
+});
+
+await check("120 looking subscribers are all pinged exactly once, never more than one batch per invocation", async () => {
+  const sids = sidsN(120);
+  const w = pushWorld(sids);
+  let q = P.PushQ.enqueuePushes([], sids.map((sid) => [sid, "looking"]));
+  let invocations = 0;
+  while (q.length > 0) {
+    const { batch, rest } = P.PushQ.takeBatch(q);
+    q = rest;
+    await P.PushQ.sendPushBatch(batch, w.deps);
+    invocations++;
+    w.next();
+    assert.ok(invocations < 50, "the queue drains");
+  }
+  assert.equal(invocations, Math.ceil(120 / P.PushQ.PUSH_BATCH_SIZE));
+  assert.ok(w.perInvocation.every((n) => n <= P.PushQ.PUSH_BATCH_SIZE), `per invocation: ${w.perInvocation.join(", ")}`);
+  assert.equal(w.sent.length, 120);
+  assert.equal(new Set(w.sent).size, 120, "nobody pinged twice");
+});
+
+await check("a match during a big looking fan-out goes out in the very next batch", async () => {
+  const sids = sidsN(300);
+  const w = pushWorld([...sids, "76561198999999999"]);
+  let q = P.PushQ.enqueuePushes([], sids.map((sid) => [sid, "looking"]));
+  ({ rest: q } = P.PushQ.takeBatch(q));
+  q = P.PushQ.enqueuePushes(q, [["76561198999999999", "matched"]]);
+  const { batch } = P.PushQ.takeBatch(q);
+  assert.equal(batch[0].sid, "76561198999999999");
+  await P.PushQ.sendPushBatch(batch, w.deps);
+  assert.equal(w.sent[0], "76561198999999999");
+});
+
+await check("a gone subscription is deleted and a missing one costs no request", async () => {
+  const w = pushWorld(["s1", "s2", "s3"], ["s2"]);
+  const q = P.PushQ.enqueuePushes([], [["s1", "looking"], ["s2", "looking"], ["nosub", "looking"], ["s3", "matched"]]);
+  const out = await P.PushQ.sendPushBatch(q, w.deps);
+  assert.deepEqual(w.sent, ["s3", "s1", "s2"], "matched first; no request for a player without a subscription");
+  assert.deepEqual(w.deleted, ["s2"]);
+  assert.deepEqual(out, { sent: 2, gone: 1, skipped: 1, failed: 0 });
+});
+
+await check("one failing push does not stop the rest of its batch", async () => {
+  const w = pushWorld(["s1", "s2"]);
+  const deps = { ...w.deps, send: async (sub) => { if (sub.endpoint.endsWith("s1")) throw new Error("network"); return w.deps.send(sub); } };
+  const out = await P.PushQ.sendPushBatch(P.PushQ.enqueuePushes([], [["s1", "looking"], ["s2", "looking"]]), deps);
+  assert.deepEqual(w.sent, ["s2"]);
+  assert.deepEqual(out, { sent: 1, gone: 0, skipped: 0, failed: 1 });
 });
 
 console.log(`coop-play: ${passed} checks passed${process.exitCode ? " (with failures above)" : ""}`);

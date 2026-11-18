@@ -12,6 +12,9 @@
  *   c:<YYYYMMDD>     daily counters { play_tap: n, matched: n, … }
  *   u:<YYYYMMDD>     Steam IDs that tapped Play that day (unique players)
  *   sub:<steamID>    Web Push subscription
+ *   pushq            pings still to send (coop-play-pushq.ts): one batch goes
+ *                    out in the call that queued them, the alarm drains the
+ *                    rest, so no invocation passes the subrequest cap
  */
 
 import { DurableObject } from "cloudflare:workers";
@@ -39,6 +42,15 @@ import {
   type Result,
 } from "./coop-play-core";
 import { sendPush, type PushSubscriptionRecord } from "./coop-play-push";
+import {
+  enqueuePushes,
+  PUSH_DRAIN_EVERY_MS,
+  sendPushBatch,
+  takeBatch,
+  type PushBatchDeps,
+  type PushKind,
+  type PushQueue,
+} from "./coop-play-pushq";
 import { appendCoopHistory } from "./coop-reputation";
 
 const ALARM_EVERY_MS = 30_000;
@@ -61,6 +73,7 @@ function ymd(ms: number): string {
 
 export class CoopPlayDO extends DurableObject<Env> {
   private state: PlayState = emptyState();
+  private pushQueue: PushQueue = [];
   private lastPersistAt = 0;
   private readonly hits = new Map<string, { start: number; n: number }>();
 
@@ -68,6 +81,7 @@ export class CoopPlayDO extends DurableObject<Env> {
     super(ctx, env);
     ctx.blockConcurrencyWhile(async () => {
       this.state = (await ctx.storage.get<PlayState>("state")) ?? emptyState();
+      this.pushQueue = (await ctx.storage.get<PushQueue>("pushq")) ?? [];
     });
   }
 
@@ -158,13 +172,21 @@ export class CoopPlayDO extends DurableObject<Env> {
     await this.ctx.storage.deleteAll();
     await this.ctx.storage.deleteAlarm();
     this.state = emptyState();
+    this.pushQueue = [];
     this.hits.clear();
   }
 
   // MARK: - Alarm
 
+  /**
+   * Expire what timed out, then send at most one batch of queued pings. While
+   * pings remain the alarm comes back in PUSH_DRAIN_EVERY_MS; otherwise every
+   * ALARM_EVERY_MS while anyone is waiting or matched.
+   */
   async alarm(): Promise<void> {
-    await this.apply(tick(this.state, Date.now()), true);
+    await this.apply(tick(this.state, Date.now()), true, { drain: false, schedule: false });
+    if (this.pushQueue.length > 0) await this.drainOneBatch();
+    await this.scheduleAlarm();
   }
 
   // MARK: - Internals
@@ -197,7 +219,11 @@ export class CoopPlayDO extends DurableObject<Env> {
    * times, so they are saved at most every 30 s; anything that changes who is
    * waiting or matched is saved right away.
    */
-  private async apply(r: Pick<Result, "state" | "events">, structural: boolean): Promise<void> {
+  private async apply(
+    r: Pick<Result, "state" | "events">,
+    structural: boolean,
+    { drain = true, schedule = true }: { drain?: boolean; schedule?: boolean } = {},
+  ): Promise<void> {
     this.state = r.state;
     const now = Date.now();
     const mustSave = structural || r.events.length > 0 || now - this.lastPersistAt > PERSIST_SEEN_EVERY_MS;
@@ -206,16 +232,21 @@ export class CoopPlayDO extends DurableObject<Env> {
       this.lastPersistAt = now;
     }
     if (r.events.length > 0) await this.handleEvents(r.events, now);
-    await this.scheduleAlarm();
+    // One batch per invocation at most. drainOneBatch takes its batch before
+    // its first await, so the alarm below already sees what is left.
+    if (drain && this.pushQueue.length > 0) this.ctx.waitUntil(this.drainOneBatch());
+    if (schedule) await this.scheduleAlarm();
   }
 
   private async scheduleAlarm(): Promise<void> {
-    if (isQuiet(this.state)) {
+    const draining = this.pushQueue.length > 0;
+    if (!draining && isQuiet(this.state)) {
       await this.ctx.storage.deleteAlarm();
       return;
     }
     const existing = await this.ctx.storage.getAlarm();
-    if (existing === null) await this.ctx.storage.setAlarm(Date.now() + ALARM_EVERY_MS);
+    const due = Date.now() + (draining ? PUSH_DRAIN_EVERY_MS : ALARM_EVERY_MS);
+    if (existing === null || (draining && existing > due)) await this.ctx.storage.setAlarm(due);
   }
 
   private async handleEvents(events: PlayEvent[], now: number): Promise<void> {
@@ -244,12 +275,15 @@ export class CoopPlayDO extends DurableObject<Env> {
       }
     }
 
-    const pushTargets = new Map<string, "matched" | "looking">();
+    const pushTargets: Array<[string, PushKind]> = [];
     for (const e of events) {
-      if (e.type === "push_matched") pushTargets.set(e.sid, "matched");
-      if (e.type === "push_looking") for (const sid of e.sids) if (!pushTargets.has(sid)) pushTargets.set(sid, "looking");
+      if (e.type === "push_matched") pushTargets.push([e.sid, "matched"]);
+      if (e.type === "push_looking") for (const sid of e.sids) pushTargets.push([sid, "looking"]);
     }
-    if (pushTargets.size > 0) this.ctx.waitUntil(this.sendPushes(pushTargets));
+    if (pushTargets.length > 0) {
+      this.pushQueue = enqueuePushes(this.pushQueue, pushTargets);
+      await this.ctx.storage.put("pushq", this.pushQueue);
+    }
   }
 
   private async pruneOldDays(now: number): Promise<void> {
@@ -260,13 +294,27 @@ export class CoopPlayDO extends DurableObject<Env> {
     if (keys.length > 0) await this.ctx.storage.delete(keys);
   }
 
-  /** Payload-free pushes: the service worker asks /coop/play what happened. */
-  private async sendPushes(targets: Map<string, "matched" | "looking">): Promise<void> {
-    for (const [sid] of targets) {
-      const sub = await this.ctx.storage.get<PushSubscriptionRecord>(`sub:${sid}`);
-      if (!sub) continue;
-      const outcome = await sendPush(this.env, sub);
-      if (outcome === "gone") await this.ctx.storage.delete(`sub:${sid}`);
-    }
+  /**
+   * Sends the front batch of the push queue. The batch is taken from memory
+   * synchronously, before the first await, so two invocations can never send
+   * the same pings. Payload-free: the service worker asks /coop/play/peek
+   * what happened.
+   */
+  private async drainOneBatch(): Promise<void> {
+    const { batch, rest } = takeBatch(this.pushQueue);
+    if (batch.length === 0) return;
+    this.pushQueue = rest;
+    await this.ctx.storage.put("pushq", rest);
+    await sendPushBatch(batch, this.pushDeps());
+  }
+
+  private pushDeps(): PushBatchDeps {
+    return {
+      getSub: (sid) => this.ctx.storage.get<PushSubscriptionRecord>(`sub:${sid}`),
+      deleteSub: async (sid) => {
+        await this.ctx.storage.delete(`sub:${sid}`);
+      },
+      send: (sub) => sendPush(this.env, sub),
+    };
   }
 }
