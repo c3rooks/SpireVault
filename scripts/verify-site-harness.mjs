@@ -104,7 +104,9 @@ export async function openPage(browser, baseUrl, { width, height, scenario = SCE
   page.on("request", (request) => {
     try {
       const host = new URL(request.url()).hostname;
-      if (!ALLOWED_HOSTS.includes(host)) log.hosts.push(host);
+      // The page's own address is 'self' in its CSP: 127.0.0.1 locally,
+      // spirevault.app (or a preview host) when checking a deployment.
+      if (!ALLOWED_HOSTS.includes(host) && host !== new URL(baseUrl).hostname) log.hosts.push(host);
     } catch {
       /* data: and blob: URLs have no host to check */
     }

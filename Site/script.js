@@ -72,8 +72,9 @@
   }
 
   // ---- 2. Live count -----------------------------------------------------------
-  // The server's roster is everyone signed up, not everyone online right now,
-  // so the wording says "signed up".
+  // The count is everyone who has signed in, not everyone online right now,
+  // so the wording says "signed up". Web/script.js communityCountLine() uses
+  // the same words and sources, so the page and the app never disagree.
   /** @param {number} count @param {number} inGame */
   function presenceCopy(count, inGame) {
     if (count === 0) {
@@ -125,12 +126,22 @@
     presenceInFlight = true;
     try {
       const signal = typeof AbortSignal.timeout === "function" ? AbortSignal.timeout(PRESENCE_TIMEOUT_MS) : undefined;
-      const response = await fetch(`${SERVER_URL}/presence`, { cache: "no-store", signal });
+      // "Signed up" is every account that has signed in (the server's user
+      // records, the same total the app shows); "currently in" is how many of
+      // the co-op roster Steam shows in STS2 right now.
+      const [response, total] = await Promise.all([
+        fetch(`${SERVER_URL}/presence`, { cache: "no-store", signal }),
+        fetch(`${SERVER_URL}/stats/community`, { cache: "no-store", signal })
+          .then((r) => (r.ok ? r.json() : null))
+          .then((stats) => Number(stats?.totalClimbers) || 0)
+          .catch(() => 0),
+      ]);
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const roster = await response.json();
       const people = Array.isArray(roster) ? roster : [];
       const inGame = people.filter((person) => person && person.inSTS2).length;
-      showPresence(presenceCopy(people.length, inGame), people.length === 0 ? "empty" : "live");
+      const count = Math.max(total, people.length);
+      showPresence(presenceCopy(count, inGame), count === 0 ? "empty" : "live");
     } catch {
       // The count is decoration; say so plainly and try again next tick.
       showPresence(PRESENCE_DOWN, "down");

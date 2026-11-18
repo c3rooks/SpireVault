@@ -87,7 +87,7 @@ const STS2_APP_ID = "2868840";
  * on an old client — instruct hard refresh. If it DOES match, the
  * bug is real and we can stop chasing cache ghosts.
  */
-const VAULT_BUILD = "v243-2026-11-17-ui-polish";
+const VAULT_BUILD = "v244-2026-11-17-live-count";
 
 /** True on wrangler pages dev / local loopback — not production hostnames. */
 function isLocalDevHost() {
@@ -2459,6 +2459,29 @@ function watchToolbarPulseFit($line) {
   new ResizeObserver(fit).observe($line.parentElement);
 }
 
+/**
+ * The live count line, worded exactly as on spirevault.app (Site/script.js):
+ * everyone who has signed in (the server's user records) and how many of the
+ * co-op roster Steam shows in Slay the Spire 2 right now.
+ * @param {number} total @param {number} inGame
+ */
+function communityCountLine(total, inGame) {
+  if (inGame > 0) return `${total} signed up · ${inGame} currently in Slay the Spire 2`;
+  return `${total} ${total === 1 ? "player" : "players"} signed up`;
+}
+
+/** How many on the co-op roster Steam shows in STS2 now (0 when unknown). */
+async function fetchInGameNow() {
+  try {
+    const r = await fetch(`${API_BASE}/presence`, { headers: { accept: "application/json" }, cache: "no-store" });
+    if (!r.ok) return 0;
+    const roster = await r.json();
+    return Array.isArray(roster) ? roster.filter((p) => p && p.inSTS2).length : 0;
+  } catch {
+    return 0;
+  }
+}
+
 async function loadCommunityPulse() {
   const $pulse = document.getElementById("community-pulse");
   if (!$pulse) return;
@@ -2485,20 +2508,14 @@ async function loadCommunityPulse() {
       return;
     }
   }
-  const week = Number(pulse?.climbersThisWeek) || 0;
   const total = Number(pulse?.totalClimbers) || 0;
   // Need at least a couple of climbers for the line to feel true and
   // warm rather than sad. Below that, stay hidden.
-  if (week < 2 && total < 2) return;
+  if (total < 2) return;
   // Plain words, no trailing full stop (no other header line has one) and no
   // ⚔ glyph: Figtree has none, and the fallback drew a thin stray "x".
-  const parts = [];
-  if (week >= 2) {
-    parts.push(`${week} climbers active this week`);
-  }
-  if (total >= 2) {
-    parts.push(week >= 2 ? `${total} signed up` : `${total} climbers signed up`);
-  }
+  // Same words and sources as spirevault.app's live line.
+  const parts = [communityCountLine(total, await fetchInGameNow())];
   // The new look shows it in Overview's toolbar row, which keeps one height,
   // so the line arriving late moves nothing and Overview's stage stands as
   // high as the other tabs'. Classic keeps it under the subtitle.
@@ -2520,16 +2537,10 @@ async function refreshPublicCount() {
   try {
     const stats = await fetchCommunityStatsCached();
     if (!stats) throw new Error("no stats");
-    const week = Number(stats.climbersThisWeek) || 0;
     const total = Number(stats.totalClimbers) || 0;
-    if (total === 0) {
-      $text.textContent = "Nobody signed up yet. Be the first.";
-    } else {
-      const parts = [];
-      if (week > 0) parts.push(`${week} active this week`);
-      parts.push(`${total} ${total === 1 ? "climber" : "climbers"} signed up`);
-      $text.textContent = parts.join(" · ");
-    }
+    $text.textContent = total === 0
+      ? "Nobody signed up yet. Be the first."
+      : communityCountLine(total, await fetchInGameNow());
   } catch {
     $text.textContent = "Community stats momentarily unavailable.";
   }
