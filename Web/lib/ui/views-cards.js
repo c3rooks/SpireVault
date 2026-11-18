@@ -9,6 +9,7 @@
 // podium.
 
 import { esc, fixed, clamp } from "./html.js?v=1";
+import { toneKey, toneLegendHtml } from "./tone-legend.js?v=2";
 
 /** @typedef {"win"|"gold"|"accent"} CardTone */
 
@@ -44,6 +45,7 @@ import { esc, fixed, clamp } from "./html.js?v=1";
  * @property {ReadonlyArray<SkippedCard>} skipped   least picked first
  * @property {boolean} hasOffers                    pick rate is meaningful
  * @property {number} lowSampleRuns
+ * @property {number} baselinePct                   the player's overall win rate, 0..100
  */
 
 const PODIUM_SIZE = 3;
@@ -65,11 +67,6 @@ function ordinal(rank) {
   if (rank === 2) return "2nd";
   if (rank === 3) return "3rd";
   return `${rank}th`;
-}
-
-/** @param {CardTone} tone */
-function toneKey(tone) {
-  return tone === "win" || tone === "gold" ? tone : "accent";
 }
 
 /** @param {string|null} classKey */
@@ -95,19 +92,20 @@ function meter(pct, kind) {
 
 /**
  * Card art at row size. The image grows into a full-size card on hover (CSS
- * transform). The small face is enough for the thumbnail but soft at full
- * size on a 2x screen, so the row names the large face (`data-hd`) and
- * motion.js swaps it in the first time the row is hovered: one request, only
- * for a card someone actually inspects.
+ * transform), so the row loads the large face from the start. It used to
+ * load the small face and swap the large one in when the row neared the
+ * screen, and players watched every card go soft-to-sharp a couple of
+ * seconds after the tab opened. The large face is ~15KB more per row, and
+ * rows load lazily.
  * @param {{ src: string|null, srcLarge?: string|null }} card
  * @param {boolean} [isSkip]
  */
 function thumb(card, isSkip = false) {
-  const large = card.srcLarge && card.srcLarge !== card.src ? ` data-hd="${esc(card.srcLarge)}"` : "";
-  const art = card.src
-    ? `<img src="${esc(card.src)}"${large} alt="" loading="lazy" decoding="async" draggable="false">`
+  const src = card.srcLarge || card.src;
+  const art = src
+    ? `<img src="${esc(src)}" alt="" loading="lazy" decoding="async" draggable="false">`
     : `<span class="v-cd-thumb-glyph">${isSkip ? SKIP_GLYPH : CARD_GLYPH}</span>`;
-  return `<span class="v-cd-thumb${card.src ? "" : " is-missing"}" aria-hidden="true">${art}${isSkip ? `<span class="v-cd-skip-badge">${SKIP_GLYPH}</span>` : ""}</span>`;
+  return `<span class="v-cd-thumb${src ? "" : " is-missing"}" aria-hidden="true">${art}${isSkip ? `<span class="v-cd-skip-badge">${SKIP_GLYPH}</span>` : ""}</span>`;
 }
 
 /**
@@ -257,9 +255,11 @@ function pickedSection(model) {
   const maxPicks = Math.max(...model.picked.map((card) => card.picks));
   const podium = model.picked.slice(0, PODIUM_SIZE);
   const rest = model.picked.slice(PODIUM_SIZE);
+  // The tab subtitle already says "how those runs end"; the lede says what
+  // the numbers are instead of saying that again.
   const lede = model.hasOffers
-    ? "How often you take each card when it is offered, and how those runs ended."
-    : "The cards you take most often, and how those runs ended. Bars compare each card with your most-picked one.";
+    ? "How often you take each card when it's offered, and how many of those picks went on to win."
+    : "Most-taken first, with how often those picks went on to win. Bars compare each card with your top pick.";
   const ledger = rest.length
     ? `
       <div class="v-panel v-cd-ledger" data-offers="${model.hasOffers ? "1" : "0"}" data-reveal style="--r:3">
@@ -269,10 +269,15 @@ function pickedSection(model) {
         </ol>
       </div>`
     : "";
+  // The win-rate bars carry the same colours as Top Relics; the shared key
+  // says what they mean (tone-legend.js).
   return `
     <section class="v-cd-sec" aria-labelledby="v-cd-picked-h">
       ${title}
-      <p class="v-cd-lede">${lede}</p>
+      <div class="v-cd-intro">
+        <p class="v-cd-lede">${lede}</p>
+        ${toneLegendHtml({ baselinePct: model.baselinePct, lowSampleRuns: model.lowSampleRuns, lowSampleNoun: "picks" })}
+      </div>
       <ol class="v-cd-podium" data-size="${podium.length}">
         ${podium.map((card, index) => podiumItem(card, index + 1, model)).join("")}
       </ol>

@@ -12,7 +12,7 @@
 
 import { invalidateColorCache, isCharacterKey } from "./tokens.js?v=1";
 import { esc } from "./html.js?v=1";
-import { reduced } from "./motion.js?v=1";
+import { reduced } from "./motion.js?v=2";
 
 const STORAGE_PREFERENCE = "vault.web.theme";
 const STORAGE_RESOLVED = "vault.web.theme.resolved";

@@ -45,7 +45,7 @@ import { esc } from "./html.js?v=1";
  * @typedef {Object} RunsModel
  * @property {{ outcome: string, ascensionTier: string, character: string, search: string }} filters
  * @property {ReadonlyArray<{ id: string, label: string }>} outcomes
- * @property {ReadonlyArray<{ id: string, label: string }>} tiers
+ * @property {ReadonlyArray<{ id: string, label: string, title?: string }>} tiers   title: the tier's name (Early climb …)
  * @property {ReadonlyArray<{ key: string, label: string, disabled?: boolean }>} characters   every climber; unplayed ones disabled
  * @property {number} total          runs before filters
  * @property {number} filteredCount  runs after filters
@@ -178,12 +178,13 @@ function art(item, fallbackClass) {
  * @param {boolean} pressed
  * @param {string} [charKey]
  * @param {boolean} [disabled]  shown but not clickable (a climber with no runs)
+ * @param {string} [title]      tooltip, e.g. an ascension tier's name
  */
-function chip(kind, value, label, pressed, charKey, disabled = false) {
+function chip(kind, value, label, pressed, charKey, disabled = false, title = "") {
   const char = charKey ? ` data-char="${esc(charKey)}"` : "";
   const dot = charKey ? '<i class="v-runs-dot" aria-hidden="true"></i>' : "";
-  const off = disabled ? ` disabled title="No runs as ${esc(label)} yet"` : "";
-  return `<button class="v-runs-chip" type="button" data-filter-kind="${esc(kind)}" data-filter-value="${esc(value)}" aria-pressed="${pressed}"${char}${off}>${dot}${esc(label)}</button>`;
+  const tip = disabled ? ` disabled title="No runs as ${esc(label)} yet"` : title ? ` title="${esc(title)}"` : "";
+  return `<button class="v-runs-chip" type="button" data-filter-kind="${esc(kind)}" data-filter-value="${esc(value)}" aria-pressed="${pressed}"${char}${tip}>${dot}${esc(label)}</button>`;
 }
 
 /** @param {string} label @param {string} chipsHtml */
@@ -199,7 +200,7 @@ function chipGroup(label, chipsHtml) {
 function filtersBar(model) {
   const { filters } = model;
   const outcome = model.outcomes.map((o) => chip("outcome", o.id, o.label, filters.outcome === o.id)).join("");
-  const tiers = model.tiers.map((t) => chip("ascensionTier", t.id, t.label, filters.ascensionTier === t.id)).join("");
+  const tiers = model.tiers.map((t) => chip("ascensionTier", t.id, t.label, filters.ascensionTier === t.id, undefined, false, t.title)).join("");
   const chars = [
     chip("character", "all", "All", filters.character === "all"),
     ...model.characters.map((c) => chip("character", c.key, c.label, filters.character === c.key, c.key, c.disabled)),
@@ -214,7 +215,7 @@ function filtersBar(model) {
         <label class="v-runs-search">
           ${icon("search")}
           <span class="v-sr">Search runs</span>
-          <input type="search" placeholder="Search seed, character, win or loss" value="${esc(filters.search)}" data-filter-kind="search" autocomplete="off" enterkeyhint="search">
+          <input type="search" placeholder="Search runs" title="Search by seed, character, win or loss" value="${esc(filters.search)}" data-filter-kind="search" autocomplete="off" enterkeyhint="search">
         </label>
         <button class="v-btn v-runs-compare" type="button" data-action="compare-toggle" aria-pressed="${model.compareMode}"
                 title="Compare mode (c): pick 2 or 3 runs and see them side by side">

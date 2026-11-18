@@ -134,6 +134,13 @@ export function parseSTS2Run(obj, sourceName = "unknown.run") {
   if (!character) {
     character = inferCharacterFromDeck(player) || inferCharacterFromRelics(player) || null;
   }
+  // Everyone in the run, in the file's order. A co-op save lists each player
+  // (the game's RunHistoryPlayer: a 64-bit id, the character, deck, relics).
+  // Nothing in it says which entry is the local player, so `character`, the
+  // deck and the relics on this record stay the first player's, as they
+  // always were; `party` is for co-op numbers about the party as a whole
+  // (lib/coop-climbs.js). A character we cannot read is kept as null.
+  const party = obj.players.map((p, i) => (i === 0 ? character : extractCharacter(p) || parseCharacter(p?.character)) || null);
   const ascension = Number.isFinite(obj.ascension) ? Math.max(0, Math.min(20, obj.ascension | 0)) : null;
   const seed = typeof obj.seed === "string" ? obj.seed : null;
   const won = obj.win === true || obj.win === 1;
@@ -326,6 +333,8 @@ export function parseSTS2Run(obj, sourceName = "unknown.run") {
   return {
     id,
     character,
+    partySize: obj.players.length,
+    party,
     ascension,
     seed,
     won,

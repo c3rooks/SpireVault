@@ -41,24 +41,27 @@
   background: var(--v-paper);
   color: var(--v-on-paper);
 }
-.btn-primary:hover,
-.btn-ghost:hover,
-.v-btn:hover {
+/* A disabled button does not answer the pointer at all: no press, no
+   lighter fill. :where() keeps these selectors' specificity unchanged, so
+   surface rules that restyle a hover still win as before. */
+.btn-primary:hover:where(:not(:disabled)),
+.btn-ghost:hover:where(:not(:disabled)),
+.v-btn:hover:where(:not(:disabled)) {
   transform: translate(var(--v-press), var(--v-press));
   box-shadow: var(--v-shadow-pressed);
   filter: none;
 }
-.btn-primary:hover,
-.v-btn--primary:hover {
+.btn-primary:hover:where(:not(:disabled)),
+.v-btn--primary:hover:where(:not(:disabled)) {
   background: var(--v-accent-hi);
 }
-.btn-ghost:hover {
+.btn-ghost:hover:where(:not(:disabled)) {
   background: var(--v-surface-2);
   color: var(--v-text);
 }
-.btn-primary:active,
-.btn-ghost:active,
-.v-btn:active {
+.btn-primary:active:where(:not(:disabled)),
+.btn-ghost:active:where(:not(:disabled)),
+.v-btn:active:where(:not(:disabled)) {
   transform: translate(calc(var(--v-press) + 1px), calc(var(--v-press) + 1px));
   box-shadow: none;
 }

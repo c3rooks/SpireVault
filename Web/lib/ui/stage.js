@@ -18,9 +18,9 @@
 // game's sprites re-inked for this stage by scripts/build-stage-sprites.mjs.
 
 import { esc } from "./html.js?v=1";
-import { STAGE_ACTOR_ART } from "./stage-actors.js?v=1";
+import { STAGE_ACTOR_ART } from "./stage-actors.js?v=2";
 import { STAGE_PROPS } from "./stage-props.js?v=1";
-import { dealScene, peekScene, preloadScene, sceneFarHtml, sceneMidHtml, sceneTints } from "./stage-scenes.js?v=1";
+import { dealScene, peekScene, preloadScene, sceneFarHtml, sceneMidHtml, sceneTints } from "./stage-scenes.js?v=2";
 
 const DEFAULT_ASCENSION_CAP = 10;
 /** Hard ceiling on the ascension cap a save can claim, so a corrupt save
@@ -418,8 +418,26 @@ export function syncDuelGeometry(root = document) {
       if (value) head.style.setProperty(prop, value);
       else head.style.removeProperty(prop);
     });
+    // The tower stands where it would beside the widest climber (stage.css
+    // --spire-right), so it holds one place whichever climber a tab deals.
+    head.style.setProperty("--climber-hw-max", widestClimberShare().toFixed(4));
   });
   fitStages(root);
+}
+
+/** Every climber the header can deal (the boss is not one). */
+const STAGE_CLIMBERS = Object.freeze(["ironclad", "silent", "defect", "regent", "necrobinder", "fool"]);
+
+/**
+ * The widest climber's drawn width as a share of the stage height (height
+ * share x art aspect), before the duel's scale.
+ * @returns {number}
+ */
+function widestClimberShare() {
+  return Math.max(...STAGE_CLIMBERS.map((id) => {
+    const size = climberSizing(id);
+    return Number(size.height) * Number(size.aspect);
+  }));
 }
 
 /** Open ground kept between the scenery, the title text and the balloon. */
@@ -442,6 +460,33 @@ function spireMinWidth() {
 }
 /** Narrowest balloon worth drawing; the longest line wraps to three lines. */
 const BUBBLE_MIN_W_PX = 120;
+/** Binds a balloon line's last two words when the last would stand alone. */
+const NBSP = " ";
+
+/**
+ * Whether the balloon's text, as laid out now, ends on a line holding one
+ * word, with at least two words before it to keep it company. Compares the
+ * tops of the last two words; half the font size of difference is a new
+ * line (the balloon's hover tilt moves words on one line by a pixel or two).
+ * @param {HTMLElement} textEl
+ * @returns {boolean}
+ */
+function endsOnLoneWord(textEl) {
+  const node = textEl.firstChild;
+  if (!node || node.nodeType !== Node.TEXT_NODE || textEl.childNodes.length !== 1) return false;
+  const words = [...node.data.matchAll(/\S+/g)];
+  if (words.length < 3) return false;
+  /** @param {RegExpMatchArray} word */
+  const topOf = (word) => {
+    const range = document.createRange();
+    range.setStart(node, word.index);
+    range.setEnd(node, word.index + word[0].length);
+    const rects = range.getClientRects();
+    return rects.length ? rects[0].top : NaN;
+  };
+  const gap = topOf(words[words.length - 1]) - topOf(words[words.length - 2]);
+  return gap > parseFloat(getComputedStyle(textEl).fontSize) / 2;
+}
 const TITLE_TEXT = ".panel-head-stage h2, .panel-head-stage p";
 
 /**
@@ -586,7 +631,33 @@ function ceilingOf(head) {
     .map(drawnRect)
     .filter(Boolean);
   const top = head.getBoundingClientRect().top;
-  return row.reduce((low, r) => Math.max(low, r.bottom), top) + CEILING_AIR_PX;
+  let low = row.reduce((edge, r) => Math.max(edge, r.bottom), top);
+  // The stats tabs other than Overview hide its toolbar row. They keep the
+  // ceiling it would give them all the same, so all five reserve the same
+  // headroom for the balloon and stand at one height: with their own (higher)
+  // ceiling Overview alone grew, and its ground, figures and page sat lower.
+  const hiddenRow = head.querySelector(".panel-head-toprow");
+  if (row.length === 0 && hiddenRow && head.classList.contains("v-has-stage")) {
+    low = Math.max(low, top + parseFloat(getComputedStyle(head).paddingTop) + toolbarRowHeight(hiddenRow));
+  }
+  return low + CEILING_AIR_PX;
+}
+
+/** The toolbar row's least height (panel-head.css), as Overview draws it. */
+const TOOLBAR_ROW_MIN_PX = 36;
+
+/**
+ * How tall Overview's toolbar row stands at this width, read from the styles
+ * of a hidden copy of it: the row's own least height, or its buttons' where
+ * they are taller (44px tap targets on a phone).
+ * @param {Element} toprow
+ * @returns {number}
+ */
+function toolbarRowHeight(toprow) {
+  const button = toprow.querySelector(".btn-icon-text");
+  const own = parseFloat(getComputedStyle(toprow).minHeight) || TOOLBAR_ROW_MIN_PX;
+  const tap = button ? parseFloat(getComputedStyle(button).minHeight) || 0 : 0;
+  return Math.max(own, tap);
 }
 
 /** @type {Map<string, number>} steadyExtra() answers, by what they depend on */
@@ -674,9 +745,17 @@ function fitBalloon(head) {
   const slotEl = head.querySelector(".v-duel-gap");
   const climberEl = head.querySelector(".v-actor--climber");
   const bossEl = head.querySelector(".v-actor--boss");
-  if (!(duel instanceof HTMLElement) || !(bubble instanceof HTMLElement) || !slotEl || !textEl) return null;
+  if (!(duel instanceof HTMLElement) || !(bubble instanceof HTMLElement) || !slotEl || !(textEl instanceof HTMLElement)) return null;
   if (!(climberEl instanceof HTMLElement) || !(bossEl instanceof HTMLElement)) return null;
   if (!drawnRect(climberEl) || !drawnRect(bossEl)) return null;
+  // Every fit starts from the line as written: the last one may have bound
+  // its last two words for the width it had then (see below), unless a new
+  // line has been written in since.
+  const written = textEl.dataset.plain;
+  if (written !== undefined) {
+    if (textEl.textContent.replace(NBSP, " ") === written) textEl.textContent = written;
+    delete textEl.dataset.plain;
+  }
 
   const headBox = head.getBoundingClientRect();
   const pad = getComputedStyle(head);
@@ -700,6 +779,10 @@ function fitBalloon(head) {
   ];
 
   head.classList.add("v-stage--bubble-fit");
+  // The balloon's own padding and border, around its text (see tryAt).
+  const bubbleStyle = getComputedStyle(bubble);
+  const bubbleChromeX = ["paddingLeft", "paddingRight", "borderLeftWidth", "borderRightWidth"]
+    .reduce((sum, prop) => sum + (parseFloat(bubbleStyle[prop]) || 0), 0);
   // Each trial below writes the balloon's slot and reads the balloon back.
   // The slot's own inline properties re-style only the slot and the balloon;
   // the same write on the header would re-style every element in it (the
@@ -732,9 +815,13 @@ function fitBalloon(head) {
       const room = Math.min(cap, span.right - span.left);
       lay(span.left, room);
       // Layout width, not the drawn box: the balloon scales in from 70% when
-      // a line appears. +1 because offsetWidth rounds, and a pixel short
-      // re-wraps.
-      const width = Math.min(room, bubble.offsetWidth + 1);
+      // a line appears. Sized to the text's widest line, not to the room: a
+      // line that wraps is balanced (stage.css, no "…aren't / you?"), so its
+      // lines fall short of the room and the balloon would keep that slack
+      // on its right. The inline text's offsetWidth spans its widest line
+      // and ignores transforms. +1 because offsetWidth rounds, and a pixel
+      // short re-wraps.
+      const width = Math.min(room, Math.ceil(textEl.offsetWidth + bubbleChromeX) + 1);
       const height = bubble.offsetHeight;
       const wanted = bossSpeaks ? anchor + TAIL_INSET_PX - width : anchor - TAIL_INSET_PX;
       const left = Math.min(Math.max(wanted, span.left), span.right - width);
@@ -836,6 +923,26 @@ function fitBalloon(head) {
     return null;
   }
   lay(best.left, best.width);
+  // Balanced lines can still leave a long last word on its own ("Not even
+  // an / introduction?" in Safari). Then the last two words are bound with a
+  // no-break space and the line placed again, kept only where it still fits
+  // its balloon and grows the header no more than before.
+  if (endsOnLoneWord(textEl) && textEl.textContent.lastIndexOf(" ") > 0) {
+    const plain = textEl.textContent;
+    const at = plain.lastIndexOf(" ");
+    textEl.textContent = `${plain.slice(0, at)}${NBSP}${plain.slice(at + 1)}`;
+    const bound = placeFor(bossSpeaks, reserved);
+    const fits = bound
+      && textEl.offsetWidth + bubbleChromeX <= bound.width + 0.5
+      && Math.max(bound.extra, reserved) <= Math.max(best.extra, reserved);
+    if (fits) {
+      best = bound;
+      textEl.dataset.plain = plain;
+    } else {
+      textEl.textContent = plain;
+    }
+    lay(best.left, best.width);
+  }
   slotEl.style.setProperty("--bubble-bottom", `${(headBox.bottom - best.bottom).toFixed(1)}px`);
   slotEl.style.setProperty("--tail-x", `${best.tail.toFixed(1)}px`);
   const growth = Math.max(best.extra, reserved);
@@ -845,7 +952,7 @@ function fitBalloon(head) {
 
 /** What a fit writes: inline properties (header or balloon slot) and classes. */
 const FIT_OUTPUT_PROPS = Object.freeze([
-  "--spire-fit-w", "--torch-step-fit", "--torches-left", "--bubble-left", "--bubble-w", "--bubble-bottom", "--tail-x",
+  "--spire-fit-w", "--spire-cap-shift", "--torch-step-fit", "--torches-left", "--bubble-left", "--bubble-w", "--bubble-bottom", "--tail-x",
 ]);
 const FIT_OUTPUT_CLASSES = Object.freeze(["v-stage--no-spire", "v-stage--no-spire-cap", "v-stage--bubble-fit", "v-stage--march"]);
 const FIT_IGNORED_PROPS = new Set([...FIT_OUTPUT_PROPS, "--stage-extra"]);
@@ -944,6 +1051,8 @@ function fitStage(head) {
 
 /** Air kept between the tower's caption and the torches' row and caption. */
 const SPIRE_CAP_AIR_PX = 8;
+/** ...and between it and the climber beside the tower. */
+const SPIRE_CAP_CLIMBER_AIR_PX = 6;
 
 /**
  * The marching row's spacing (one torch per step; stage.css draws a torch
@@ -965,17 +1074,46 @@ const MARCH_TEXT_GAP_PX = 40;
  * Never more than the ground there is: the title keeps its own gap.
  */
 const MARCH_LEAD_MIN_PX = 26;
+/**
+ * The title block's share of the header, from its inner left edge, gap
+ * included: Overview's, the longest, whose subtitle ("48% win rate · your
+ * form and streaks below") sits low under the toolbar and so reaches down
+ * beside the torches, with room for a three-digit win rate. Every tab starts
+ * the marching row past it, so the torches stand in the same place whichever
+ * tab is open; a tab measured only by its own title (most sit high, clear of
+ * the row) put them some 180px further left than on Overview.
+ */
+const MARCH_TITLE_ZONE_PX = 292;
+/**
+ * How much further left the widest climber's back would reach than the one
+ * dealt now (0 when this one is the widest). Where the tower is left out the
+ * torches stop at the climber, whose right edge is fixed and whose width
+ * depends on who was dealt; measured from the widest one's back, the torches
+ * do not move with it. (The tower itself already stands beside the widest.)
+ * @param {HTMLElement} head
+ * @returns {number}
+ */
+function climberSlack(head) {
+  const art = drawnRect(head.querySelector(".v-actor--climber .v-actor-art"));
+  const duel = head.querySelector(".v-duel");
+  if (!art || !(duel instanceof HTMLElement)) return 0;
+  const now = Number(duel.style.getPropertyValue("--climber-h")) * Number(duel.style.getPropertyValue("--climber-aspect"));
+  if (!(now > 0)) return 0;
+  return Math.max(0, art.width * (widestClimberShare() / now - 1));
+}
 
 /**
  * On a wide header the torches leave the title block and march across the
  * open ground toward the tower (or, when the tower is left out, the
  * climber), the newest nearest it, as large as the ground allows. The row
  * stands centred in that ground, so the header balances: hugging the tower,
- * it left the title's side bare and piled everything on the right. Where
- * they would not fit at a readable size, they stay under the title. Run
- * after fitSpire, so the row is measured from where the tower now stands.
- * Writes --torch-step-fit and --torches-left; components/stage.css lays the
- * row out from them.
+ * it left the title's side bare and piled everything on the right. The
+ * ground is measured the same way on every tab (past the widest title block,
+ * up to where the tower stands beside the widest climber), so the row does
+ * not jump as tabs change. Where they would not fit there at a readable
+ * size, they stay under the title, on every tab alike. Run after fitSpire, so the row is measured from
+ * where the tower now stands. Writes --torch-step-fit and --torches-left;
+ * components/stage.css lays the row out from them.
  * @param {HTMLElement} head
  */
 function fitTorches(head) {
@@ -983,20 +1121,30 @@ function fitTorches(head) {
   const row = drawnRect(head.querySelector(".v-torch-row"));
   if (!(torches instanceof HTMLElement) || !row || window.matchMedia(PHONE_LAYOUT).matches) return;
   const frame = torches.offsetParent;
-  const stop = drawnRect(head.querySelector(".v-spire")) || drawnRect(head.querySelector(".v-actor--climber .v-actor-art"));
+  const tower = drawnRect(head.querySelector(".v-spire"));
+  const stop = tower || drawnRect(head.querySelector(".v-actor--climber .v-actor-art"));
   if (!(frame instanceof HTMLElement) || !stop) return;
   const count = Math.max(1, Number(torches.style.getPropertyValue("--torch-count")) || MAX_TORCHES);
   const ground = row.bottom;
   const reachTop = ground - MARCH_STEP_MAX_PX * TORCH_REACH_STEPS;
   const headBox = head.getBoundingClientRect();
-  const start = textRects(head, TITLE_TEXT)
+  const inner = headBox.left + parseFloat(getComputedStyle(head).paddingLeft);
+  // Never over this tab's own title where it reaches down beside the row.
+  const clear = textRects(head, TITLE_TEXT)
     .filter((r) => r.bottom > reachTop && r.top < ground)
-    .reduce((edge, r) => Math.max(edge, r.right + MARCH_TEXT_GAP_PX), headBox.left + parseFloat(getComputedStyle(head).paddingLeft));
+    .reduce((edge, r) => Math.max(edge, r.right + MARCH_TEXT_GAP_PX), inner);
   // The tower's caption is centred under it and can reach further left than
   // its foot; the row's own caption must not run into it.
   const spireCap = drawnRect(head.querySelector(".v-spire-cap"));
-  const end = Math.min(stop.left - MARCH_TOWER_GAP_PX, spireCap ? spireCap.left - SPIRE_CAP_AIR_PX * 2 : Infinity);
-  const step = Math.min(MARCH_STEP_MAX_PX, Math.floor((end - start) / count));
+  const slack = tower ? 0 : climberSlack(head);
+  const end = Math.min(stop.left - slack - MARCH_TOWER_GAP_PX, spireCap ? spireCap.left - SPIRE_CAP_AIR_PX * 2 : Infinity);
+  const stepFor = (from, to) => Math.min(MARCH_STEP_MAX_PX, Math.floor((to - from) / count));
+  // The same ground on every tab: past the widest title block, up to the
+  // tower (which stands beside the widest climber). Where that is too tight,
+  // every tab keeps the torches under its title, so no tab marches while
+  // another does not.
+  const start = Math.max(clear, inner + MARCH_TITLE_ZONE_PX);
+  const step = stepFor(start, end);
   if (step < MARCH_STEP_MIN_PX) return;
   // Centred between the title text and the tower: the ground left over is
   // shared so the bare ground on both sides matches (start and end already
@@ -1017,8 +1165,17 @@ function fitTorches(head) {
  * @param {HTMLElement} head
  */
 function fitSpireCaption(head) {
-  const caption = drawnRect(head.querySelector(".v-spire-cap"));
+  let caption = drawnRect(head.querySelector(".v-spire-cap"));
   if (!caption) return;
+  // Where the tower stands close behind the climber (a phone), the caption
+  // centred under it can reach the figure: it steps left just far enough to
+  // keep its air, and stays (written as --spire-cap-shift; stage.css).
+  const climber = drawnRect(head.querySelector(".v-actor--climber .v-actor-art"));
+  const crowd = climber && caption.bottom > climber.top - SPIRE_CAP_CLIMBER_AIR_PX ? caption.right + SPIRE_CAP_CLIMBER_AIR_PX - climber.left : 0;
+  if (crowd > 0) {
+    head.style.setProperty("--spire-cap-shift", `${(-crowd).toFixed(1)}px`);
+    caption = { ...caption, left: caption.left - crowd, right: caption.right - crowd };
+  }
   const torches = [...head.querySelectorAll(".v-torch-row, .v-torches > .v-stage-cap")].map(drawnRect).filter(Boolean);
   const left = torches.reduce((edge, r) => Math.max(edge, r.right), -Infinity);
   if (caption.left < left + SPIRE_CAP_AIR_PX) head.classList.add("v-stage--no-spire-cap");

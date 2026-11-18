@@ -12,7 +12,7 @@
 // sits at the bottom of the window instead and says where the button lives.
 
 import { esc } from "./html.js?v=1";
-import { reduced } from "./motion.js?v=1";
+import { reduced } from "./motion.js?v=2";
 
 /** Set once the visitor has answered; never shown again on this device. */
 const STORAGE_SEEN = "vault.web.ui.notice";

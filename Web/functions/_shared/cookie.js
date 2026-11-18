@@ -12,11 +12,14 @@ export const COOKIE_NAME = "vault_session";
 
 /**
  * Cookie lifetime. Mirrors `SESSION_TTL_SECONDS` on the worker so the
- * cookie expires no later than the bearer it carries. The worker also
- * slides the bearer's KV TTL on every authenticated request, so an
- * actively-used cookie effectively lives until the user explicitly signs
- * out. Stale cookies degrade gracefully (the proxy strips them and the
- * client falls back to the unauthenticated app shell).
+ * cookie expires no later than the bearer it carries. The browser never
+ * extends a cookie on its own: it lives exactly this long from the last
+ * Set-Cookie. So `GET /api/_session` (run on every boot) re-issues it
+ * with a fresh Max-Age, and the worker slides the bearer's KV TTL on
+ * each presence heartbeat; between the two, a player who keeps visiting
+ * stays signed in until they sign out, and one who stays away 30 days
+ * is signed out. Stale cookies degrade gracefully (the proxy strips them
+ * and the client falls back to the unauthenticated app shell).
  */
 export const COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 30; // 30 days
 

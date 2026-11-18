@@ -494,13 +494,14 @@
   line-height: 1.1;
   color: var(--v-text);
 }
+/* One line wherever the column holds it (it always does today: see the
+   column floor below); a longer modifier wraps, evenly, rather than being
+   cut with an ellipsis. */
 .v-asc-row-badge {
-  overflow: hidden;
   color: var(--v-text-2);
   font-size: 0.8125rem;
   font-weight: 700;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  text-wrap: balance;
 }
 .v-asc-row-wr {
   font-family: var(--v-font-display);
@@ -616,8 +617,12 @@
   .v-asc-top {
     grid-template-columns: minmax(0, 1fr);
   }
+  /* The modifier column's floor is the longest modifier line, "Start with
+     an Ascender's Bane" (168px), plus air: at 160px it was cut at 881–908px.
+     Every row is its own grid, so the floor is a length, not max-content,
+     to keep the columns lined up row to row. The meter gives way. */
   .v-asc-row > summary {
-    grid-template-columns: 52px minmax(160px, 1fr) minmax(72px, 1fr) 60px 92px 20px;
+    grid-template-columns: 52px minmax(176px, 1fr) minmax(72px, 1fr) 60px 92px 20px;
     gap: var(--v-space-3);
   }
 }
@@ -649,9 +654,6 @@
   }
   .v-asc-row-body {
     padding: 0 14px 14px 12px;
-  }
-  .v-asc-row-badge {
-    white-space: normal;
   }
 }
 

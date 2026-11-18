@@ -51,7 +51,7 @@ const TAB_IDS = ["overview", "characters", "ascensions", "relics", "cards", "run
 const NAV_TAB_COUNT = 10;
 const THEME_COUNT = 8;
 const CLIMBER_IDS = ["ironclad", "silent", "defect", "regent", "necrobinder"];
-const BETA_NEWS_ID = "013";
+const BETA_NEWS_ID = "015";
 /** The brand is one word. These spellings must not reach a visitor. */
 const OLD_BRAND = /Spire Vault|The Vault/;
 /** The demo data's classic Overview shows well over this many numbers; far
@@ -74,8 +74,16 @@ const CONTRACT = [
 
 let passed = 0;
 
+/** VERIFY_UI_MATCH="name tags" runs only the checks whose name matches (a regular expression). */
+const NAME_FILTER = process.env.VERIFY_UI_MATCH ? new RegExp(process.env.VERIFY_UI_MATCH) : null;
+
 /** @param {string} name @param {() => Promise<void>} fn */
+// Never pass a Playwright handle to assert.equal/deepEqual (`assert.equal(await
+// page.$(sel), null)`): when it fails, Node formats the whole handle graph for
+// the message and runs out of memory, so the run dies (exit 137) with no FAIL
+// line. Count with page.locator(sel).count() instead.
 async function check(name, fn) {
+  if (NAME_FILTER && !NAME_FILTER.test(name)) return;
   try {
     await fn();
     passed += 1;
@@ -191,7 +199,7 @@ async function run(browser) {
     assert.ok(await page.$("#overview-body .kpi-strip"), "classic Overview renderer must run");
     assert.equal(await page.locator('.head-crest[data-crest="overview"] .crest-plaque').count(), 3, "classic header plaques");
     assert.equal(await page.locator(".v-stage-bg, .v-theme-btn").count(), 0, "no new-UI DOM in classic");
-    assert.equal(await page.$("#overview-body .v-ov"), null);
+    assert.equal(await page.locator("#overview-body .v-ov").count(), 0, "no new Overview in classic");
     assert.deepEqual(requests.filter((p) => p.startsWith("/lib/ui/") || p === "/styles.next.css"), []);
     assert.equal(await page.textContent(".sidebar-wordmark"), "SpireVault");
     assert.deepEqual(errors, []);
@@ -221,7 +229,7 @@ async function run(browser) {
 
   await check("new Overview renders every metric group once", async () => {
     assert.ok(await page.$("#overview-body .v-ov"));
-    assert.equal(await page.$("#overview-body .kpi-strip"), null);
+    assert.equal(await page.locator("#overview-body .kpi-strip").count(), 0, "no classic KPI strip in the new look");
     assert.equal(await page.locator(".v-ring").count(), 1);
     assert.equal(await page.locator(".v-hand .v-card").count(), 6);
     // Six climbers: The Fool (STS2 beta) is on the roster for everyone, unplayed or not.
@@ -307,7 +315,7 @@ async function run(browser) {
     assert.equal(after.checked, "vault");
     assert.notEqual(after.meta, "#0c0a14");
     await page.keyboard.press("Escape");
-    assert.equal(await page.$("#v-theme-pop"), null);
+    assert.equal(await page.locator("#v-theme-pop").count(), 0, "theme pop-up closed");
   });
 
   await check("T cycles themes; the choice survives a reload", async () => {
@@ -434,7 +442,7 @@ async function run(browser) {
     await p.waitForFunction(() => document.documentElement.dataset.theme === "vault");
     assert.equal(await p.evaluate(() => document.activeElement.dataset.themeId), "vault");
     await p.keyboard.press("Escape");
-    assert.equal(await p.$("#v-theme-pop"), null);
+    assert.equal(await p.locator("#v-theme-pop").count(), 0, "theme pop-up closed");
     assert.equal(await p.evaluate(() => document.activeElement.classList.contains("v-theme-btn")), true, "focus returns to the trigger");
     await context.close();
   });
@@ -1613,15 +1621,19 @@ async function runCards(browser) {
     for (const card of podium) {
       assert.ok(card.natural >= card.needed, `a podium card needs ${card.needed}px and its file has ${card.natural}px`);
     }
-    // A row far down the page keeps its small face (no fetch for a card no
-    // one can see) until it nears the screen; then its large face arrives
-    // without any hover, so the card never grows blurry first.
+    // Every row names its large face from the start and the picture never
+    // changes after it appears: rows used to show the small face and swap
+    // the large one in as they neared the screen, and players watched each
+    // card go soft-to-sharp. Lazy loading still keeps far rows from loading.
+    const sources = await p.evaluate(() => [...document.querySelectorAll(".v-cd-row .v-cd-thumb img")].map((img) => ({ src: img.getAttribute("src"), hd: img.hasAttribute("data-hd") })));
+    assert.ok(sources.length >= 2, "the table has card rows");
+    assert.ok(sources.every((s) => /cards-hd/.test(s.src) && !s.hd), "every row names its large face from the start");
     const row = p.locator(".v-cd-row").last();
     const image = await row.locator(".v-cd-thumb img").elementHandle();
-    assert.equal(await image.evaluate((img) => img.hasAttribute("data-hd")), true, "a far row has not fetched its large face");
+    const before = await image.evaluate((img) => img.getAttribute("src"));
     await row.scrollIntoViewIfNeeded();
     await p.waitForFunction((img) => img.complete && img.naturalWidth === 410, image);
-    assert.equal(await image.evaluate((img) => img.hasAttribute("data-hd")), false, "the swap happens once");
+    assert.equal(await image.evaluate((img) => img.getAttribute("src")), before, "the picture is not swapped once it is on screen");
     await row.hover();
     assert.equal(await image.evaluate((img) => img.naturalWidth), 410, "hovered, it is already the large face");
     assert.deepEqual(errors, []);
@@ -1798,9 +1810,9 @@ async function runCoop(browser) {
       add: [...document.querySelectorAll('[data-cp="steam-add"]')].map((b) => b.textContent.trim()),
       hosting: !!document.querySelector('[data-cp="hosting"]'),
       launch: document.querySelector('[data-cp="launch"]')?.getAttribute("href"),
-      figures: document.querySelectorAll(".cp-scene .cp-climber").length,
-      seats: document.querySelectorAll(".cp-scene .cp-seat").length,
-      stones: document.querySelectorAll(".cp-scene .cp-stone").length,
+      figures: document.querySelectorAll(".cp-card .cp-scene .cp-climber").length,
+      seats: document.querySelectorAll(".cp-card .cp-scene .cp-seat").length,
+      stones: document.querySelectorAll(".cp-card .cp-scene .cp-stone").length,
     }));
     assert.deepEqual(host.add, ["Add Boble"], "the host adds each joiner");
     assert.equal(host.hosting, true);
@@ -1816,6 +1828,688 @@ async function runCoop(browser) {
     }));
     assert.deepEqual(joiner.add, ["Add Boble"], "a joiner adds the host only");
     assert.equal(joiner.hosting, false, "only the host says they're hosting");
+    assert.deepEqual(errors, []);
+    await context.close();
+  });
+
+  // Share to Discord (lib/coop-play-share.js): offered only while a friend
+  // could still take a seat, in both looks, and never pushing the page wide.
+  for (const [label, path] of [["new look", "/?ui=next"], ["classic", CLASSIC_PATH]]) {
+    for (const width of [1440, 390]) {
+      await check(`co-op (${label}, ${width}px): Share to Discord shows while looking and with open seats, and only then`, async () => {
+        const server = coopServer("idle");
+        const { context, page: p, errors } = await open(browser, path, {
+          signedIn: true, routes: [server.route], viewport: { width, height: width < 600 ? 844 : 900 },
+        });
+        const shareButton = () => p.evaluate(() => {
+          const b = document.querySelector('#coop-play-root .cp-card [data-cp="share"]');
+          if (!b) return null;
+          const r = b.getBoundingClientRect();
+          const bar = document.querySelector("[data-v-mnav]");
+          const barTop = bar && bar.getClientRects().length ? bar.getBoundingClientRect().top : Infinity;
+          const floor = barTop > window.innerHeight / 2 && barTop < window.innerHeight ? barTop : window.innerHeight;
+          return {
+            text: b.innerText.trim(), height: Math.round(r.height), onScreen: r.top >= 0 && r.bottom <= floor,
+            inside: r.left >= 0 && r.right <= window.innerWidth, sideways: document.documentElement.scrollWidth > window.innerWidth,
+            background: getComputedStyle(b).backgroundColor, color: getComputedStyle(b).color,
+          };
+        });
+        await coopCard(p, "idle");
+        assert.equal(await shareButton(), null, "the card has no Share button before you tap Play");
+        for (const [fixture, state] of [["searching", "searching"], ["host", "matched"], ["joiner", "matched"]]) {
+          server.view = coopView(fixture);
+          await coopCard(p, state);
+          const b = await shareButton();
+          assert.ok(b, `${fixture}: the button is there`);
+          assert.equal(b.text, "Share to Discord", fixture);
+          assert.ok(b.height >= 44, `${fixture}: ${b.height}px tall`);
+          assert.equal(b.onScreen, true, `${fixture}: visible without scrolling`);
+          assert.equal(b.inside && !b.sideways, true, `${fixture}: inside the page`);
+          assert.equal(b.background, "rgb(88, 101, 242)", `${fixture}: Discord's blurple`);
+          assert.equal(b.color, "rgb(255, 255, 255)", fixture);
+        }
+        const full = coopView("host");
+        full.match.seatsLeft = 0;
+        server.view = full;
+        await coopCard(p, "matched");
+        assert.equal(await shareButton(), null, "a full party has no seat to offer");
+        server.view = coopView("in_game");
+        await coopCard(p, "in_game");
+        assert.equal(await shareButton(), null, "a run under way cannot be joined");
+        assert.deepEqual(errors, []);
+        await context.close();
+      });
+    }
+  }
+
+  // Under the card: the live strip, the invite panel and the co-op numbers.
+  const coopSave = (n, party, extra = {}) => {
+    const ended = new Date(Date.UTC(2026, 10, 1 + n, 21, 0, 0));
+    return {
+      id: `coop-${n}`, character: party[0], party, partySize: party.length, ascension: 5, seed: `T${n}`, won: false, floorReached: 24,
+      playTimeSeconds: 2400, startedAt: new Date(ended.getTime() - 2400_000).toISOString(), endedAt: ended.toISOString(),
+      relics: [], deckAtEnd: [], cardPicks: [], pathByAct: [], sourceFile: `coop-${n}.run`, schemaVersion: 11, gameMode: "standard",
+      wasAbandoned: false, modifiers: [], inProgress: false, ...extra,
+    };
+  };
+  const SOLO_SAVES = [coopSave(1, ["silent"], { won: true, floorReached: 51 }), coopSave(2, ["ironclad"])];
+  const COOP_SAVES = [
+    ...SOLO_SAVES,
+    coopSave(4, ["fool", "necrobinder"], { ascension: 3, floorReached: 20 }),
+    coopSave(6, ["ironclad", "silent"], { won: true, ascension: 7, floorReached: 51 }),
+    coopSave(9, ["defect", "regent", "silent"], { floorReached: 12, wasAbandoned: true }),
+    coopSave(12, ["ironclad", "silent"], { ascension: 9, floorReached: 33 }),
+    coopSave(14, ["silent", "ironclad"], { won: true, ascension: 8, floorReached: 51 }),
+  ];
+
+  for (const [label, path] of [["new look", "/?ui=next"], ["classic", CLASSIC_PATH]]) {
+    for (const width of [1728, 1440, 390, 320]) {
+      await check(`co-op (${label}, ${width}px): under the card sit the live strip, the invite and your co-op climbs, all inside the page`, async () => {
+        const server = coopServer("idle");
+        const { context, page: p, errors } = await open(browser, path, {
+          signedIn: true, routes: [server.route], viewport: { width, height: width < 600 ? 844 : width > 1600 ? 1000 : 900 },
+        });
+        const below = () => p.evaluate(async () => {
+          const root = document.querySelector("#coop-play-root");
+          await Promise.all([...root.querySelectorAll(".cp-more img")].map((img) => img.decode().catch(() => {})));
+          const wide = (sel) => [...root.querySelectorAll(sel)].filter((el) => el.getBoundingClientRect().right > window.innerWidth + 0.5 || el.getBoundingClientRect().left < -0.5).length;
+          const card = root.querySelector(".cp-card").getBoundingClientRect();
+          const more = root.querySelector(".cp-more")?.getBoundingClientRect();
+          return {
+            now: [...root.querySelectorAll(".cp-now-item")].map((li) => li.innerText.replace(/\s+/g, " ").trim()),
+            dots: [...root.querySelectorAll(".cp-now-item")].map((li) => (li.querySelector(".cp-live-dot") ? (li.classList.contains("is-on") ? "green" : "grey") : "none")),
+            post: [...root.querySelectorAll(".cp-bring .cp-post-line")].map((el) => el.innerText.replace(/\s+/g, " ").trim()),
+            art: root.querySelector(".cp-post-art")?.naturalWidth ?? 0,
+            bringButtons: [...root.querySelectorAll(".cp-bring .cp-btn")].map((b) => ({ text: b.innerText.trim(), height: Math.round(b.getBoundingClientRect().height) })),
+            climbs: root.querySelector(".cp-climbs")?.innerText.replace(/\s+/g, " ").trim() ?? null,
+            solo: !!root.querySelector(".cp-more--solo"),
+            belowCard: more ? more.top >= card.bottom - 0.5 : null,
+            sameEdges: more ? Math.abs(more.left - card.left) < 1 && Math.abs(more.right - card.right) < 1 : null,
+            outside: wide(".cp-more, .cp-panel, .cp-post, .cp-now, .cp-stats, .cp-recent-row, .cp-btn"),
+            cut: [...root.querySelectorAll(".cp-post-line, .cp-panel-title, .cp-result, .cp-stat dd, .cp-best-head, .cp-climbs-note p")].filter((el) => el.scrollWidth > el.clientWidth + 1).length,
+            example: !!root.querySelector(".cp-climbs.is-example .cp-example-tag"),
+            noteButton: (() => { const b = root.querySelector(".cp-climbs-note .cp-btn"); return b ? { text: b.innerText.trim(), height: Math.round(b.getBoundingClientRect().height) } : null; })(),
+            stats: [...root.querySelectorAll(".cp-climbs .cp-stat dd")].map((dd) => dd.textContent.trim()),
+            sprites: [...root.querySelectorAll(".cp-climbs .cp-recent-row .cp-mini")].filter((img) => img.tagName !== "IMG" || img.naturalWidth > 0).length,
+            roomFigures: root.querySelectorAll(".cp-climbs .cp-best .cp-scene .cp-climber").length,
+            // Side by side, the two panels end on one line and are filled to their feet.
+            panels: (() => {
+              const bring = root.querySelector(".cp-bring"), climbs = root.querySelector(".cp-climbs");
+              if (!bring || !climbs) return null;
+              const b = bring.getBoundingClientRect(), c = climbs.getBoundingClientRect();
+              const foot = (panel) => {
+                const last = panel.lastElementChild.getBoundingClientRect();
+                return Math.round(panel.getBoundingClientRect().bottom - last.bottom - parseFloat(getComputedStyle(panel).paddingBottom) - parseFloat(getComputedStyle(panel).borderBottomWidth));
+              };
+              // The widest space between two neighbouring parts of a panel: a hole shows up here.
+              const hole = (panel) => { const kids = [...panel.children].map((k) => k.getBoundingClientRect()); return Math.round(Math.max(0, ...kids.slice(1).map((k, i) => k.top - kids[i].bottom))); };
+              return { sideBySide: Math.abs(b.top - c.top) < 1, bottoms: Math.abs(b.bottom - c.bottom), bringGap: foot(bring), climbsGap: foot(climbs), bringHole: hole(bring), climbsHole: hole(climbs), room: Math.round(climbs.querySelector(".cp-best .cp-scene").getBoundingClientRect().height) };
+            })(),
+            sideways: document.documentElement.scrollWidth > window.innerWidth,
+            // Text that is actually drawn (a hidden avatar chip has no boxes).
+            smallText: [...root.querySelectorAll(".cp-more *")].filter((el) => el.children.length === 0 && el.textContent.trim() && el.getClientRects().length > 0 && parseFloat(getComputedStyle(el).fontSize) < 11).length,
+          };
+        });
+
+        await coopCard(p, "idle");
+        const idle = await below();
+        assert.deepEqual(idle.now, ["1 looking on Stable", "0 looking on Beta", "0 players in a party"]);
+        assert.deepEqual(idle.dots, ["green", "grey", "grey"], "every count has the same dot: green when someone is there, grey at zero");
+        assert.deepEqual(idle.post, [
+          "Slay the Spire 2 co-op · who's up for a run?",
+          `${TEST_SESSION.personaName} wants to climb · Any climber · Stable version · up to 4 in a party`,
+          "Tap Play to get matched: https://app.spirevault.app/coop?branch=stable",
+        ]);
+        assert.ok(idle.art > 0, "the link card's picture loaded");
+        assert.deepEqual(idle.bringButtons.map((b) => b.text), ["Share to Discord", "Copy link"]);
+        assert.ok(idle.bringButtons.every((b) => b.height >= 44), `buttons are tappable (${idle.bringButtons.map((b) => b.height).join(", ")}px)`);
+        assert.match(idle.climbs, /Your co-op climbs/);
+        assert.equal(idle.example, true, "with no co-op runs the panel is tagged Example");
+        assert.match(idle.climbs, /This is an example\. Import your saves to see your own co-op runs here\./, "only the sample runs are loaded");
+        assert.equal(idle.noteButton?.text, "Import saves");
+        assert.ok(idle.noteButton.height >= 44, `the note's button is tappable (${idle.noteButton.height}px)`);
+        assert.deepEqual(idle.stats, ["12", "5", "42%", "51"], "the example's numbers: 5 wins in 12 runs is 42%");
+        assert.equal(idle.sprites, 7, "every climber in the example's runs is drawn");
+        assert.equal(idle.roomFigures, 2, "the example's best party stands in the room");
+        if (width >= 1024) {
+          assert.equal(idle.panels.sideBySide, true);
+          assert.ok(idle.panels.bottoms <= 1, `the two panels end on one line (off by ${idle.panels.bottoms}px)`);
+          assert.ok(Math.abs(idle.panels.bringGap) <= 1 && Math.abs(idle.panels.climbsGap) <= 1, `both are filled to the foot (gaps ${idle.panels.bringGap}px and ${idle.panels.climbsGap}px)`);
+          assert.ok(idle.panels.bringHole <= 20 && idle.panels.climbsHole <= 20, `neither panel has an empty stretch inside (${idle.panels.bringHole}px and ${idle.panels.climbsHole}px between parts)`);
+        } else {
+          assert.equal(idle.panels.sideBySide, false, "on a phone the panels stack");
+        }
+        for (const [name, s] of [["idle", idle]]) {
+          assert.equal(s.belowCard, true, `${name}: the section starts under the card`);
+          assert.equal(s.sameEdges, true, `${name}: it lines up with the card's edges`);
+          assert.equal(s.outside, 0, `${name}: nothing sticks out of the page`);
+          assert.equal(s.cut, 0, `${name}: no clipped text`);
+          assert.equal(s.sideways, false, `${name}: no sideways scroll`);
+          assert.equal(s.smallText, 0, `${name}: no text under 11px`);
+        }
+
+        server.view = coopView("searching");
+        await coopCard(p, "searching");
+        const looking = await below();
+        assert.equal(looking.post[1], `${TEST_SESSION.personaName} is waiting · Silent · Stable version · 3 seats open`);
+        assert.deepEqual([looking.outside, looking.cut, looking.sideways], [0, 0, false], "while looking");
+
+        server.view = coopView("host");
+        await coopCard(p, "matched");
+        const partyState = await below();
+        assert.equal(partyState.post[0], "Slay the Spire 2 co-op · 2 seats open");
+        assert.equal(partyState.now[2], "2 players in a party");
+        assert.deepEqual(partyState.dots, ["grey", "grey", "green"]);
+        assert.deepEqual([partyState.outside, partyState.cut, partyState.sideways], [0, 0, false], "in a party");
+
+        server.view = coopView("in_game");
+        await coopCard(p, "in_game");
+        const started = await below();
+        assert.deepEqual(started.post, [], "no invite once the run is under way");
+        assert.equal(started.solo, true);
+        assert.match(started.climbs, /Your co-op climbs/);
+        assert.deepEqual(errors, []);
+        await context.close();
+      });
+    }
+  }
+
+  // The Play card: one left axis, the ping row on one centre line, and the
+  // seats standing in the middle of the room in every state.
+  const coopParty = (size) => {
+    const view = coopView("host");
+    const extra = [
+      { sid: "76561198000000003", name: "Mako", character: "defect" },
+      { sid: "76561198000000004", name: "IAmWeirdAndLong", character: "necrobinder" },
+    ].slice(0, size - 2);
+    view.match.members = [...view.match.members, ...extra.map((m) => ({ ...m, isHost: false, isYou: false, steamAdded: false, status: "joined" }))];
+    view.match.seatsLeft = 4 - size;
+    return view;
+  };
+  for (const [label, path] of [["new look", "/?ui=next"], ["classic", CLASSIC_PATH]]) {
+    for (const width of [1728, 1440, 390, 320]) {
+      await check(`co-op (${label}, ${width}px): the Play card's controls share one left edge, the ping row one centre line, and the seats stand in the middle of the room`, async () => {
+        const server = coopServer("idle");
+        const { context, page: p, errors } = await open(browser, path, {
+          signedIn: true, routes: [server.route], viewport: { width, height: width < 600 ? 844 : 1000 },
+        });
+        const room = () => p.evaluate(async () => {
+          const scene = document.querySelector("#coop-play-root .cp-card .cp-scene");
+          await Promise.all([...scene.querySelectorAll("img")].map((img) => img.decode().catch(() => {})));
+          const frame = scene.getBoundingClientRect(), border = parseFloat(getComputedStyle(scene).borderLeftWidth);
+          const items = [...scene.querySelectorAll(".cp-scene-floor > *")].map((el) => el.getBoundingClientRect());
+          const tags = [...scene.querySelectorAll(".cp-tag")].map((el) => el.getBoundingClientRect());
+          return {
+            left: items[0].left - frame.left - border, right: frame.right - border - items[items.length - 1].right, items: items.length,
+            tagsInside: tags.every((t) => t.left >= frame.left + 6 && t.right <= frame.right - 6),
+          };
+        });
+        await coopCard(p, "idle");
+        const card = await p.evaluate(() => {
+          const root = document.querySelector("#coop-play-root");
+          const box = (sel) => root.querySelector(sel).getBoundingClientRect();
+          const words = (sel) => { const range = document.createRange(); range.selectNodeContents(root.querySelector(sel)); return range.getBoundingClientRect(); };
+          const mid = (r) => r.top + r.height / 2;
+          const lefts = { label: words("#cp-branch-label").left, pickLabel: words("#cp-pick-label").left, climbers: box(".cp-pick").left, version: box(".cp-branch").left, play: box(".cp-play").left, toggle: box(".cp-ping-switch").left };
+          const gaps = {
+            labelToClimbers: box(".cp-pick").top - box("#cp-pick-label").bottom, labelToVersion: box(".cp-branch").top - box("#cp-branch-label").bottom,
+            climbersToVersion: box("#cp-branch-label").top - box(".cp-pick").bottom, versionToPlay: box(".cp-play").top - box(".cp-branch").bottom, playToPing: box(".cp-ping").top - box(".cp-play").bottom,
+          };
+          return { lefts, gaps, ping: { toggle: mid(box(".cp-ping-switch")), bell: mid(box(".cp-ping-text svg")), words: mid(box(".cp-ping-text > span")) } };
+        });
+        const lefts = Object.values(card.lefts);
+        assert.ok(Math.max(...lefts) - Math.min(...lefts) <= 1, `one left edge (${JSON.stringify(card.lefts)})`);
+        assert.ok(Math.abs(card.gaps.labelToClimbers - card.gaps.labelToVersion) <= 1, "a label sits the same distance above its control");
+        const between = [card.gaps.climbersToVersion, card.gaps.versionToPlay, card.gaps.playToPing];
+        assert.ok(Math.max(...between) - Math.min(...between) <= 1, `one gap between the groups (${between.map((g) => Math.round(g)).join(", ")}px)`);
+        assert.ok(Math.abs(card.ping.bell - card.ping.toggle) <= 1 && Math.abs(card.ping.words - card.ping.toggle) <= 1, `toggle, bell and words share a centre line (${JSON.stringify(card.ping)})`);
+
+        for (const [name, state, view] of [["idle", "idle", coopView("idle")], ["looking", "searching", coopView("searching")], ["party of 2", "matched", coopParty(2)], ["party of 3", "matched", coopParty(3)], ["party of 4", "matched", coopParty(4)]]) {
+          server.view = view;
+          await coopCard(p, state);
+          await p.waitForTimeout(200);
+          const r = await room();
+          assert.equal(r.items, 4, `${name}: four places in the room`);
+          assert.ok(Math.abs(r.left - r.right) <= 2, `${name}: as much bare ground left as right (${r.left.toFixed(1)}px and ${r.right.toFixed(1)}px)`);
+          assert.equal(r.tagsInside, true, `${name}: name tags stay inside the room`);
+        }
+        assert.deepEqual(errors, []);
+        await context.close();
+      });
+    }
+  }
+
+  // The Nov 16 UI audit. A name is never cut where there is room for it: in
+  // the Play card's room, in the "Most wins together" room (two climbers
+  // standing close) and in the climber picker on either game version. Widths
+  // are compared in fractions of a pixel, because a tag 0.3px narrower than
+  // its name is enough for the browser to draw "Ma…". Also: the recent runs
+  // share one left edge, the room fills the card beside a taller left column,
+  // the version switch is a 44px target, an empty seat hides the props behind
+  // it, and classic has no empty bar above the card.
+  const duo = () => {
+    const view = coopView("host");
+    view.match.members = [
+      { sid: COOP_ME, name: "Mako", character: "silent", isHost: true, isYou: true, steamAdded: false, status: "joined" },
+      { sid: COOP_MATE, name: "Bo", character: "ironclad", isHost: false, isYou: false, steamAdded: false, status: "joined" },
+    ];
+    return view;
+  };
+  for (const [label, path] of [["new look", "/?ui=next"], ["classic", CLASSIC_PATH]]) {
+    for (const width of [1920, 1440, 1280, 1180, 768, 390]) {
+      await check(`co-op (${label}, ${width}px): no name is cut where there is room, recent runs line up, the room fills the card`, async () => {
+        const server = coopServer("idle");
+        const { context, page: p, errors } = await open(browser, path, {
+          signedIn: true, routes: [server.route], viewport: { width, height: width < 600 ? 844 : 1000 },
+        });
+        const measure = () => p.evaluate(async () => {
+          const root = document.querySelector("#coop-play-root");
+          await Promise.all([...root.querySelectorAll("img")].map((img) => img.decode().catch(() => {})));
+          await new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok)));
+          const box = (el) => el.getBoundingClientRect();
+          const words = (el) => { const range = document.createRange(); range.selectNodeContents(el); return range.getBoundingClientRect(); };
+          // Short of its own text by more than a twentieth of a pixel: the browser draws an ellipsis.
+          const cutBy = (el) => { const pad = parseFloat(getComputedStyle(el).paddingLeft) + parseFloat(getComputedStyle(el).paddingRight); return Math.max(0, words(el).width - (box(el).width - pad)); };
+          const rooms = [...root.querySelectorAll(".cp-scene")].map((scene) => {
+            const frame = box(scene);
+            const tags = [...scene.querySelectorAll(".cp-climber > .cp-tag")].map((tag) => {
+              const name = tag.querySelector(".cp-tag-name"), r = box(tag);
+              return { name: name.textContent, cutBy: cutBy(name), left: r.left - frame.left, right: frame.right - r.right, top: r.top, width: r.width };
+            });
+            return { where: scene.closest(".cp-best") ? "most wins together" : "the Play card", tags };
+          });
+          const card = root.querySelector(".cp-card"), main = root.querySelector(".cp-main"), side = root.querySelector(".cp-side"), scene = side?.querySelector(".cp-scene");
+          const beside = !!main && !!side && box(side).left >= box(main).right - 1;
+          const inner = card ? box(card).bottom - parseFloat(getComputedStyle(card).paddingBottom) - parseFloat(getComputedStyle(card).borderBottomWidth) : 0;
+          const seat = root.querySelector(".cp-card .cp-seat");
+          const head = document.querySelector('.tab-panel[data-tab="coop"] > .panel-head');
+          const headStyle = getComputedStyle(head);
+          return {
+            rooms,
+            pickCut: [...root.querySelectorAll(".cp-pick-name")].filter((n) => cutBy(n) > 0.05 || n.scrollWidth > n.clientWidth).map((n) => n.textContent),
+            pickSmall: [...root.querySelectorAll(".cp-pick-name")].filter((n) => parseFloat(getComputedStyle(n).fontSize) < 11).length,
+            rows: [...root.querySelectorAll(".cp-recent-row")].map((row) => ({ names: words(row.querySelector(".cp-recent-names")).left, meta: words(row.querySelector(".cp-recent-meta")).left })),
+            hero: beside ? { emptyUnderRoomSide: inner - box(side.lastElementChild).bottom, room: [box(scene).width, box(scene).height] } : null,
+            switch: [...root.querySelectorAll(".cp-branch-opt")].map((b) => Math.round(box(b).height)),
+            seatFill: seat ? Number((getComputedStyle(seat).backgroundColor.match(/rgba?\([^)]*?,\s*([\d.]+)\)$/) ?? [])[1] ?? 1) : null,
+            head: { height: box(head).height, position: headStyle.position, rule: parseFloat(headStyle.borderBottomWidth) },
+            sideways: document.documentElement.scrollWidth > window.innerWidth,
+          };
+        });
+        const wholeNames = (m, when) => {
+          for (const room of m.rooms) {
+            assert.deepEqual(room.tags.filter((t) => t.cutBy > 0.05).map((t) => `${t.name} (short by ${t.cutBy.toFixed(2)}px)`), [], `${when}: every name in ${room.where} is whole`);
+            for (const t of room.tags) assert.ok(t.left >= 7.5 && t.right >= 7.5, `${when}: ${t.name} stays 8px inside ${room.where} (${t.left.toFixed(1)} / ${t.right.toFixed(1)})`);
+            for (const [i, t] of room.tags.entries()) {
+              const next = room.tags.slice(i + 1).find((u) => Math.abs(u.top - t.top) < 3);
+              if (next) assert.ok(next.left - (t.left + t.width) >= 7.5, `${when}: ${t.name} and ${next.name} keep an 8px gap in ${room.where}`);
+            }
+          }
+        };
+
+        await coopCard(p, "idle");
+        const idle = await measure();
+        assert.equal(idle.rooms.length, 2, "the Play card's room and the example's room");
+        wholeNames(idle, "idle");
+        assert.deepEqual(idle.pickCut, [], "every climber's name in the picker is whole");
+        assert.equal(idle.pickSmall, 0, "and none is drawn under 11px");
+        const edges = (key) => idle.rows.map((r) => r[key]);
+        assert.equal(idle.rows.length, 3);
+        assert.ok(Math.max(...edges("names")) - Math.min(...edges("names")) <= 0.5, `recent runs start their names on one left edge (${edges("names").map((x) => x.toFixed(1)).join(", ")})`);
+        assert.ok(Math.max(...edges("meta")) - Math.min(...edges("meta")) <= 0.5, `and their second lines too (${edges("meta").map((x) => x.toFixed(1)).join(", ")})`);
+        if (idle.hero) {
+          assert.ok(Math.abs(idle.hero.emptyUnderRoomSide) <= 1, `the room's column reaches the foot of the card (${idle.hero.emptyUnderRoomSide.toFixed(1)}px left empty)`);
+          assert.ok(idle.hero.room[1] >= idle.hero.room[0] / 2 - 1, `the room is never flatter than 2:1 (${idle.hero.room.map(Math.round).join("x")})`);
+        } else {
+          assert.ok(width < 1100, "from a laptop up the room stands beside the controls");
+        }
+        assert.ok(idle.switch.length === 2 && idle.switch.every((h) => h >= 44), `Stable and Beta branch are 44px targets (${idle.switch.join(", ")}px)`);
+        assert.ok(idle.seatFill >= 0.5, `an empty seat is dark enough to hide what stands behind it (fill ${idle.seatFill})`);
+        if (label === "classic") {
+          assert.ok(idle.head.height <= 1 && idle.head.rule === 0 && idle.head.position !== "sticky", `no empty bar above the card (${JSON.stringify(idle.head)})`);
+        }
+        assert.equal(idle.sideways, false);
+
+        // Seven tiles on the beta branch.
+        await p.click('[data-cp-branch="beta"]');
+        await p.waitForSelector('.cp-pick[data-cp-n="7"]');
+        const beta = await measure();
+        assert.deepEqual(beta.pickCut, [], "beta branch: every climber's name in the picker is whole");
+        assert.equal(beta.sideways, false);
+
+        // A four-letter name of your own, in a party of two.
+        server.view = duo();
+        await coopCard(p, "matched");
+        wholeNames(await measure(), "party of two");
+
+        // A name that outgrows its measurement afterwards (a web font landing
+        // late does this) must widen its tag while there is room, not get cut.
+        server.view = coopView("idle");
+        await coopCard(p, "idle");
+        await measure();
+        await p.evaluate(() => {
+          for (const name of document.querySelectorAll("#coop-play-root .cp-tag-name")) name.style.letterSpacing = "0.5px";
+        });
+        const grown = await measure();
+        for (const room of grown.rooms) {
+          assert.deepEqual(room.tags.filter((t) => t.cutBy > 0.05).map((t) => t.name), [], `a name that grows after the fit stays whole in ${room.where}`);
+        }
+        assert.deepEqual(errors, []);
+        await context.close();
+      });
+    }
+  }
+
+  // The tags are sized by script, so they are sized again whenever a font
+  // finishes loading: a face that lands after the first fit changes every
+  // name's width without changing the size of anything the page watches.
+  for (const [label, path] of [["new look", "/?ui=next"], ["classic", CLASSIC_PATH]]) {
+    await check(`co-op (${label}): name tags are fitted again when a font arrives late`, async () => {
+      const server = coopServer("idle");
+      server.view = duo();
+      const { context, page: p, errors } = await open(browser, path, { signedIn: true, routes: [server.route] });
+      await coopCard(p, "matched");
+      await p.waitForTimeout(250);
+      const tags = () => p.evaluate(() => [...document.querySelectorAll("#coop-play-root .cp-card .cp-tag")].map((tag) => {
+        const name = tag.querySelector(".cp-tag-name"), range = document.createRange();
+        range.selectNodeContents(name);
+        return { name: name.textContent, width: tag.getBoundingClientRect().width, cutBy: Math.max(0, range.getBoundingClientRect().width - name.getBoundingClientRect().width) };
+      }));
+      const before = await tags();
+      assert.equal(before.length, 2);
+      // A wider face for the tags only, so nothing else on the page moves.
+      await p.evaluate(async () => {
+        const face = new FontFace("Late Face", 'url("/assets/fonts/figtree-latin-var-v1.woff2?late=1") format("woff2")', { weight: "100 900", sizeAdjust: "130%" });
+        document.fonts.add(face);
+        const sheet = new CSSStyleSheet();
+        sheet.replaceSync('#coop-play-root .cp-tag { font-family: "Late Face", system-ui, sans-serif; }');
+        document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
+        await face.loaded;
+        await document.fonts.ready;
+      });
+      await p.waitForTimeout(250);
+      const after = await tags();
+      assert.ok(after[0].width > before[0].width + 2, `the late face is wider (${before[0].width.toFixed(1)}px to ${after[0].width.toFixed(1)}px)`);
+      assert.deepEqual(after.filter((t) => t.cutBy > 0.05).map((t) => t.name), [], "no name is cut after the font lands");
+      assert.ok(Math.abs(after[0].width - after[1].width) <= 0.5, `the party still shares one tag width (${after.map((t) => t.width.toFixed(1)).join(", ")})`);
+      assert.deepEqual(errors, []);
+      await context.close();
+    });
+  }
+
+  // In a party the three steps stand side by side under the heading and the
+  // room, so the card has no empty column under the room. On a phone they
+  // stay stacked under the room. Checked as the host of a full party (three
+  // Add buttons, one for the longest Steam name there can be) and as a joiner.
+  const longNameParty = () => {
+    const view = coopView("host");
+    const extra = [
+      { sid: "76561198000000003", name: "Mako", character: "defect" },
+      { sid: "76561198000000004", name: "W".repeat(32), character: "necrobinder" },
+    ];
+    view.match.members = [...view.match.members, ...extra.map((m) => ({ ...m, isHost: false, isYou: false, steamAdded: false, status: "joined" }))];
+    view.match.seatsLeft = 0;
+    return view;
+  };
+  for (const [label, path] of [["new look", "/?ui=next"], ["classic", CLASSIC_PATH]]) {
+    for (const width of [1920, 1440, 1280, 1180, 768, 390]) {
+      await check(`co-op (${label}, ${width}px): in a party the steps stand side by side under the room, with no empty column`, async () => {
+        const server = coopServer("idle");
+        server.view = longNameParty();
+        const { context, page: p, errors } = await open(browser, path, {
+          signedIn: true, routes: [server.route], viewport: { width, height: width < 600 ? 844 : 1000 },
+        });
+        // Measured once fonts and images are in: under load a button measured
+        // before its web font arrived read 1-2px short of 44.
+        const measure = () => p.evaluate(async () => {
+          const root = document.querySelector("#coop-play-root");
+          await document.fonts.ready;
+          await Promise.all([...root.querySelectorAll("img")].map((img) => img.decode().catch(() => {})));
+          await new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok)));
+          const box = (el) => { const r = el.getBoundingClientRect(); return { left: r.left, right: r.right, top: r.top, bottom: r.bottom, height: r.height }; };
+          const card = root.querySelector(".cp-card--party"), style = getComputedStyle(card), outer = box(card);
+          const inner = {
+            left: outer.left + parseFloat(style.paddingLeft) + parseFloat(style.borderLeftWidth),
+            right: outer.right - parseFloat(style.paddingRight) - parseFloat(style.borderRightWidth),
+            bottom: outer.bottom - parseFloat(style.paddingBottom) - parseFloat(style.borderBottomWidth),
+          };
+          const steps = [...card.querySelectorAll(".cp-step")];
+          return {
+            inner,
+            steps: steps.map(box),
+            actions: steps.map((step) => box(step.querySelector(".cp-step-actions")).bottom),
+            // Anything in a step that reaches its card's edge or sticks out of it.
+            spills: steps.flatMap((step) => {
+              const edge = box(step);
+              return [...step.querySelectorAll(".cp-btn, .cp-step-text, .cp-step-title, .cp-step-status")]
+                .filter((el) => box(el).right > edge.right - 4 || box(el).left < edge.left + 4)
+                .map((el) => el.textContent.replace(/\s+/g, " ").trim().slice(0, 24));
+            }),
+            head: box(card.querySelector(".cp-head")),
+            room: box(card.querySelector(".cp-side .cp-scene")),
+            help: box(card.querySelector(".cp-help")),
+            summary: box(card.querySelector(".cp-help summary")),
+            leave: box(card.querySelector('[data-cp="leave"]')),
+            smallTargets: [...card.querySelectorAll("button, a.cp-btn")].filter((el) => el.getBoundingClientRect().height < 44).map((el) => `${el.textContent.trim()} (${el.getBoundingClientRect().height.toFixed(1)}px)`),
+            sideways: document.documentElement.scrollWidth > window.innerWidth,
+          };
+        });
+        const near = (a, b, by = 1) => Math.abs(a - b) <= by;
+        const layout = (m, when) => {
+          const [one, two, three] = m.steps;
+          assert.equal(m.steps.length, 3, `${when}: three steps`);
+          if (width >= 1100) {
+            assert.ok(near(one.top, two.top) && near(two.top, three.top) && one.left < two.left && two.left < three.left, `${when}: the three steps stand side by side (tops ${m.steps.map((s) => Math.round(s.top)).join(", ")}, lefts ${m.steps.map((s) => Math.round(s.left)).join(", ")})`);
+            assert.ok(near(one.bottom, two.bottom) && near(two.bottom, three.bottom), `${when}: and end on one line`);
+            assert.ok(near(one.left, m.inner.left) && near(three.right, m.inner.right), `${when}: the row of steps spans the card (${Math.round(one.left)}–${Math.round(three.right)} of ${Math.round(m.inner.left)}–${Math.round(m.inner.right)})`);
+            assert.ok(near(two.left - one.right, three.left - two.right), `${when}: with even gaps between them`);
+            assert.ok(m.room.left >= m.head.right - 1 && near(m.room.right, m.inner.right), `${when}: the room stands beside the heading`);
+            const underRoom = one.top - m.room.bottom;
+            assert.ok(underRoom > 0 && underRoom <= 44, `${when}: the steps start right under the room (${Math.round(underRoom)}px below it)`);
+            assert.ok(Math.max(...m.actions) - Math.min(...m.actions) <= 1, `${when}: each step's buttons end on one line (${m.actions.map((y) => Math.round(y)).join(", ")})`);
+            assert.ok(near(m.help.left, m.inner.left) && near(m.leave.right, m.inner.right), `${when}: help on the left edge, Leave party on the right`);
+            assert.ok(near((m.help.top + m.help.bottom) / 2, (m.leave.top + m.leave.bottom) / 2, 1.5), `${when}: on one centre line`);
+            assert.ok(m.inner.bottom - Math.max(m.help.bottom, m.leave.bottom) <= 1, `${when}: nothing empty at the foot of the card`);
+          } else {
+            assert.ok(near(one.left, two.left) && near(two.left, three.left) && one.bottom <= two.top && two.bottom <= three.top, `${when}: on a narrow screen the steps stay stacked`);
+            assert.ok(m.room.top >= m.head.bottom - 1 && m.room.bottom <= one.top, `${when}: with the room between the heading and the steps`);
+          }
+          assert.deepEqual(m.spills, [], `${when}: nothing reaches the edge of its step`);
+          assert.ok(m.summary.height >= 44, `${when}: the help line is a 44px target (${Math.round(m.summary.height)}px)`);
+          assert.deepEqual(m.smallTargets, [], `${when}: every button is a 44px target`);
+          assert.equal(m.sideways, false, `${when}: no sideways scroll`);
+        };
+
+        await coopCard(p, "matched");
+        await p.waitForTimeout(200);
+        layout(await measure(), "host of a full party");
+
+        server.view = coopView("joiner");
+        await coopCard(p, "matched");
+        await p.waitForTimeout(200);
+        layout(await measure(), "joiner");
+        assert.deepEqual(errors, []);
+        await context.close();
+      });
+    }
+  }
+
+  await check("co-op: the idle invite copies a post that does not claim you are waiting, and Copy link copies the link", async () => {
+    const server = coopServer("idle");
+    const { context, page: p, errors } = await open(browser, "/?ui=next", { signedIn: true, routes: [server.route] });
+    await context.grantPermissions(["clipboard-read", "clipboard-write"], { origin: BASE });
+    await coopCard(p, "idle");
+    await p.click('[data-cp-branch="beta"]');
+    await p.click('[data-cp-pick="fool"]');
+    assert.match(await p.innerText(".cp-bring .cp-post"), /The Fool · Beta branch/, "the preview follows the picks");
+    await p.click('.cp-bring [data-cp="share"]');
+    await p.waitForSelector('.cp-bring [data-cp="share"].is-done');
+    assert.equal(
+      await p.evaluate(() => navigator.clipboard.readText()),
+      [
+        "**Slay the Spire 2 co-op** · who's up for a run?",
+        `${TEST_SESSION.personaName} wants to climb · The Fool · Beta branch · up to 4 in a party`,
+        "Tap Play to get matched: https://app.spirevault.app/coop?branch=beta",
+      ].join("\n"),
+    );
+    await p.waitForSelector('.cp-bring [data-cp="share"]:not(.is-done)', { timeout: 6000 });
+    const before = await p.evaluate(() => Math.round(document.querySelector('[data-cp="copy-link"]').getBoundingClientRect().width));
+    await p.click('[data-cp="copy-link"]');
+    await p.waitForSelector('[data-cp="copy-link"].is-done');
+    assert.equal((await p.innerText('[data-cp="copy-link"]')).trim(), "Link copied");
+    assert.equal(await p.evaluate(() => Math.round(document.querySelector('[data-cp="copy-link"]').getBoundingClientRect().width)), before, "the button keeps its width");
+    assert.equal(await p.evaluate(() => navigator.clipboard.readText()), "https://app.spirevault.app/coop?branch=beta");
+    assert.match(await p.evaluate(() => document.getElementById("toast")?.textContent ?? ""), /Link copied/);
+    assert.deepEqual(errors, []);
+    await context.close();
+  });
+
+  await check("co-op: your co-op climbs counts runs with a party, from your own saves", async () => {
+    const server = coopServer("idle");
+    const { context, page: p, errors } = await open(browser, "/?ui=next", { signedIn: true, routes: [server.route] });
+    await coopCard(p, "idle");
+    // Loading saves takes the app to Overview (as it always has); come back to Co-op.
+    const loadSaves = async (runs) => {
+      await p.evaluate((list) => window.SpireVault.ingestDesktopRuns(list), runs);
+      await p.waitForFunction(() => window.SpireVault.activeTab() === "overview", null, { timeout: 8000 });
+      await p.evaluate(() => window.SpireVault.switchTab("coop"));
+    };
+    // Both buttons in the note are the app's own: they end at its folder picker.
+    await p.evaluate(() => {
+      window.__pickerOpened = 0;
+      window.showDirectoryPicker = () => { window.__pickerOpened += 1; return Promise.reject(new DOMException("closed", "AbortError")); };
+    });
+    // Which picker the app opens depends on the browser and the OS: the folder
+    // API where the folder can be kept, a folder input elsewhere. Either counts.
+    const opensPicker = async (selector) => {
+      const before = await p.evaluate(() => window.__pickerOpened);
+      const viaInput = p.waitForEvent("filechooser", { timeout: 8000 }).then(() => true, () => false);
+      await p.click(selector);
+      const viaApi = p.waitForFunction((n) => window.__pickerOpened > n, before, { timeout: 8000 }).then(() => true, () => false);
+      return new Promise((resolve) => {
+        let pending = 2;
+        const settle = (opened) => { if (opened) resolve(true); else if (--pending === 0) resolve(false); };
+        viaInput.then(settle);
+        viaApi.then(settle);
+      });
+    };
+    assert.equal(await opensPicker('.cp-climbs-note [data-cp="import-saves"]'), true, "Import saves opens the app's save picker");
+
+    await loadSaves(SOLO_SAVES);
+    await p.waitForFunction(() => /Your saves have no co-op runs yet/.test(document.querySelector(".cp-climbs-note")?.textContent ?? ""), null, { timeout: 8000 });
+    // Compared in the page: assert cannot describe two page handles (Node runs out of memory trying).
+    assert.equal(await p.evaluate(() => document.querySelector(".cp-climbs")?.classList.contains("is-example") ?? false), true, "solo saves still show the example, marked as one");
+    assert.equal(await opensPicker('.cp-climbs-note [data-cp="refresh-saves"]'), true, "Refresh asks for the save folder again when the browser cannot re-read it");
+
+    await loadSaves(COOP_SAVES);
+    await p.waitForSelector(".cp-climbs:not(.is-example) .cp-stats", { timeout: 8000 });
+    const shown = await p.evaluate(() => ({
+      example: !!document.querySelector(".cp-climbs .cp-example-tag, .cp-climbs .cp-climbs-note"),
+      stats: [...document.querySelectorAll(".cp-stat")].map((s) => `${s.querySelector("dt").textContent.trim()}: ${s.querySelector("dd").textContent.trim()}`),
+      best: document.querySelector(".cp-best-head")?.innerText.replace(/\s+/g, " ").trim(),
+      room: [...document.querySelectorAll(".cp-best .cp-scene .cp-tag-name")].map((t) => t.textContent.trim()),
+      recent: [...document.querySelectorAll(".cp-recent-row")].map((row) => ({
+        party: row.querySelector(".cp-recent-names").textContent.trim(),
+        sprites: row.querySelectorAll(".cp-mini").length,
+        label: row.querySelector(".cp-minis").getAttribute("aria-label"),
+        meta: row.querySelector(".cp-recent-meta").textContent.replace(/\s+/g, " ").trim().replace(/^.*?(A\d)/, "$1"),
+        result: row.querySelector(".cp-result").textContent.trim(),
+      })),
+    }));
+    assert.equal(shown.example, false, "real co-op runs are never tagged Example");
+    const filled = await p.evaluate(() => {
+      const bring = document.querySelector(".cp-bring"), climbs = document.querySelector(".cp-climbs");
+      const foot = (panel) => Math.round(panel.getBoundingClientRect().bottom - panel.lastElementChild.getBoundingClientRect().bottom - parseFloat(getComputedStyle(panel).paddingBottom) - parseFloat(getComputedStyle(panel).borderBottomWidth));
+      return { bottoms: Math.abs(bring.getBoundingClientRect().bottom - climbs.getBoundingClientRect().bottom), bringGap: foot(bring), climbsGap: foot(climbs) };
+    });
+    assert.ok(filled.bottoms <= 1 && Math.abs(filled.bringGap) <= 1 && Math.abs(filled.climbsGap) <= 1, `with real runs both panels still end on one line, filled (off by ${filled.bottoms}px, gaps ${filled.bringGap}px and ${filled.climbsGap}px)`);
+    assert.deepEqual(shown.stats, ["Co-op runs: 5", "Wins: 2", "Win rate: 40%", "Best floor: 51"], "5 co-op runs, 2 won: 40%, counted over every run like the rest of the app");
+    assert.equal(shown.best, "Most wins together Ironclad + Silent · 2 wins in 3 runs");
+    assert.deepEqual(shown.room, ["Ironclad", "Silent"], "that party stands in the room");
+    assert.deepEqual(shown.recent, [
+      { party: "Silent + Ironclad", sprites: 2, label: "Silent, Ironclad", meta: "A8 · Floor 51", result: "Won" },
+      { party: "Ironclad + Silent", sprites: 2, label: "Ironclad, Silent", meta: "A9 · Floor 33", result: "Lost" },
+      { party: "Defect + Regent + Silent", sprites: 3, label: "Defect, Regent, Silent", meta: "A5 · Floor 12", result: "Abandoned" },
+    ]);
+    assert.deepEqual(errors, []);
+    await context.close();
+  });
+
+  await check("co-op: Share to Discord copies the post and says so", async () => {
+    const server = coopServer("searching");
+    const { context, page: p, errors } = await open(browser, "/?ui=next", { signedIn: true, routes: [server.route] });
+    await context.grantPermissions(["clipboard-read", "clipboard-write"], { origin: BASE });
+    await coopCard(p, "searching");
+    await p.click('.cp-card [data-cp="share"]');
+    await p.waitForSelector('.cp-card [data-cp="share"].is-done');
+    assert.equal((await p.innerText('.cp-card [data-cp="share"]')).trim(), "Post copied");
+    const copied = await p.evaluate(() => navigator.clipboard.readText());
+    assert.equal(
+      copied,
+      [
+        "**Slay the Spire 2 co-op** · looking for a partner right now",
+        `${TEST_SESSION.personaName} is waiting · Silent · Stable version · 3 seats open`,
+        "Tap Play to team up: https://app.spirevault.app/coop?branch=stable",
+      ].join("\n"),
+    );
+    const toast = await p.evaluate(() => {
+      const t = document.getElementById("toast");
+      return t && t.classList.contains("is-visible") ? t.textContent : "";
+    });
+    assert.match(toast, /Discord post copied/);
+    await p.waitForSelector('[data-cp="share"]:not(.is-done)', { timeout: 6000 });
+    assert.equal((await p.innerText('[data-cp="share"]')).trim(), "Share to Discord", "the button goes back to its label");
+
+    // In a party the post names everyone and the seats left.
+    server.view = coopView("host");
+    await coopCard(p, "matched");
+    await p.click('[data-cp="share"]');
+    await p.waitForSelector('[data-cp="share"].is-done');
+    const party = await p.evaluate(() => navigator.clipboard.readText());
+    assert.match(party, /^\*\*Slay the Spire 2 co-op\*\* · 2 seats open\n/);
+    assert.match(party, /TestClimber \(Silent\) and Boble \(Ironclad\) are gathering a party · Stable version/);
+    assert.match(party, /https:\/\/app\.spirevault\.app\/coop\?branch=stable$/);
+    assert.deepEqual(errors, []);
+    await context.close();
+  });
+
+  await check("co-op: on a phone, Share to Discord opens the share sheet with the whole post", async () => {
+    const server = coopServer("searching");
+    const { context, page: p, errors } = await open(browser, "/?ui=next", {
+      signedIn: true, routes: [server.route], viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true,
+    });
+    await p.evaluate(() => {
+      window.__shared = [];
+      navigator.share = (data) => { window.__shared.push(data); return Promise.resolve(); };
+    });
+    await coopCard(p, "searching");
+    assert.equal(await p.evaluate(() => matchMedia("(pointer: coarse)").matches), true, "the test phone reports a touch screen");
+    await p.tap('[data-cp="share"]');
+    await p.waitForSelector('[data-cp="share"].is-done');
+    const shared = await p.evaluate(() => window.__shared);
+    assert.equal(shared.length, 1);
+    assert.deepEqual(Object.keys(shared[0]), ["text"]);
+    assert.match(shared[0].text, /Tap Play to team up: https:\/\/app\.spirevault\.app\/coop\?branch=stable$/);
+    assert.equal((await p.innerText('[data-cp="share"]')).trim(), "Shared");
+    assert.deepEqual(errors, []);
+    await context.close();
+  });
+
+  await check("co-op: a shared link opens Play on the sharer's game version", async () => {
+    const server = coopServer("idle");
+    const { context, page: p, errors } = await open(browser, "/?ui=next", { signedIn: true, routes: [server.route] });
+    // Follow the link the post carries, as a friend would: a fresh page load.
+    await p.goto(`${BASE}/coop?branch=beta`, { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => window.SpireVault && !window.SpireVault.__isStub, null, { timeout: BOOT_TIMEOUT_MS });
+    await p.waitForSelector('#coop-play-root .cp[data-cp-state="idle"]', { timeout: 8000 });
+    const state = await p.evaluate(() => ({
+      onCoop: document.querySelector('.tab-panel[data-tab="coop"]')?.getClientRects().length > 0,
+      beta: document.querySelector('[data-cp-branch="beta"]')?.getAttribute("aria-checked"),
+      fool: !!document.querySelector('[data-cp-pick="fool"]'),
+      invite: localStorage.getItem("vault.coop.invite.v1"),
+      saved: JSON.parse(localStorage.getItem("vault.coop.play.v1") || "{}").branch,
+    }));
+    assert.deepEqual(state, { onCoop: true, beta: "true", fool: true, invite: null, saved: "beta" });
     assert.deepEqual(errors, []);
     await context.close();
   });
@@ -1840,9 +2534,9 @@ async function runCoop(browser) {
     const server = coopServer("idle");
     const { context, page: p } = await open(browser, "/?ui=next", { signedIn: true, routes: [server.route] });
     await coopCard(p, "idle");
-    assert.equal(await p.$('[data-cp-pick="fool"]'), null);
+    assert.equal(await p.locator('[data-cp-pick="fool"]').count(), 0, "not offered on the stable version");
     await p.click('[data-cp-branch="beta"]');
-    assert.notEqual(await p.$('[data-cp-pick="fool"]'), null);
+    assert.equal(await p.locator('[data-cp-pick="fool"]').count(), 1, "offered on the beta branch");
     await context.close();
   });
 
@@ -1860,6 +2554,57 @@ async function runCoop(browser) {
   });
 }
 
+// ---- In-between widths ------------------------------------------------------------
+// The audits that only looked at 320/390/768/1024/1440 missed defects that live
+// between them (the rail's 881-912 handover, 890-960 beside the rail,
+// 1120-1340 where two columns get cramped). These widths sit in those gaps.
+const IN_BETWEEN_WIDTHS = Object.freeze([
+  320, 340, 360, 390, 430, 470, 520, 600, 700, 768, 820, 881, 890, 900, 912, 940, 980,
+  1024, 1080, 1120, 1180, 1250, 1310, 1366, 1440, 1600, 1920,
+]);
+const IN_BETWEEN_TABS = Object.freeze(["overview", "characters", "ascensions", "relics", "cards", "runs", "news", "settings"]);
+
+/** Problems on the open tab: sideways scroll, a footer link split over two lines. */
+function inBetweenProblems(page) {
+  return page.evaluate(() => {
+    const out = [];
+    const over = document.documentElement.scrollWidth - window.innerWidth;
+    if (over > 1) out.push(`scrolls sideways by ${over}px`);
+    for (const link of document.querySelectorAll(".footer-links a")) {
+      const range = document.createRange();
+      range.selectNodeContents(link);
+      const lines = new Set([...range.getClientRects()].filter((r) => r.width > 0).map((r) => Math.round(r.top))).size;
+      if (lines > 1) out.push(`footer link "${link.textContent.trim()}" takes ${lines} lines`);
+    }
+    return out;
+  });
+}
+
+async function runWidths(browser) {
+  for (const [look, path] of [["new look", "/?ui=next"], ["classic", CLASSIC_PATH]]) {
+    await check(`${look}: no sideways scroll or split footer link at ${IN_BETWEEN_WIDTHS.length} in-between widths`, async () => {
+      const { context, page, errors } = await open(browser, path);
+      try {
+        /** @type {string[]} */
+        const problems = [];
+        for (const width of IN_BETWEEN_WIDTHS) {
+          await page.setViewportSize({ width, height: 900 });
+          for (const tab of IN_BETWEEN_TABS) {
+            await page.evaluate((t) => window.SpireVault.switchTab(t), tab);
+            await page.waitForSelector(`.tab-panel[data-tab="${tab}"]:not([hidden])`);
+            await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+            for (const problem of await inBetweenProblems(page)) problems.push(`${tab} at ${width}px: ${problem}`);
+          }
+        }
+        assert.deepEqual(problems, []);
+        assert.deepEqual(errors, []);
+      } finally {
+        await context.close();
+      }
+    });
+  }
+}
+
 const GROUPS = Object.freeze({
   saves: runSaves,
   core: run,
@@ -1873,6 +2618,7 @@ const GROUPS = Object.freeze({
   scene: runScene,
   share: runShare,
   cards: runCards,
+  widths: runWidths,
 });
 
 /** @returns {string[]} the group names to run */

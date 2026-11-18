@@ -71,7 +71,8 @@ export function expectations(runs) {
     lossStreak: newestFirst[0]?.json.win ? 0 : lossStreak, bestStreak: best,
     bestFloor: Math.max(...runs.map(floorsOf)),
     relicCount: Math.min(RELIC_TOP_N, [...relicRuns.values()].filter((n) => n >= RELIC_MIN_RUNS).length),
-    tiers: { a0: tier(0, 0), low: tier(1, 4), mid: tier(5, 8), high: tier(9, 10) },
+    // The Runs ascension chips use the Ascensions tab's tiers (lib/ascension-info.js).
+    tiers: { a0: tier(0, 0), early: tier(1, 3), mid: tier(4, 6), expert: tier(7, 9), master: tier(10, 10) },
     newestWin: newestFirst.find((r) => r.json.win) || null,
     foolRuns: runs.filter((r) => charKey(r) === "fool"),
     modes: [...new Set(runs.map((r) => r.json.game_mode))],

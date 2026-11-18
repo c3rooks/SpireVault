@@ -43,12 +43,16 @@ ALLOWED_RETURN_HOSTS = "spirevault.app,vault-web-e90.pages.dev,vault-site-3ki.pa
 # leaves user choice (per-browser localStorage) intact.
 COOP_LOBBY_BETA_ENABLED = "1"
 
-# Scheduled triggers: none. The every-15-minutes House Lobby renewer was
-# removed on 2026-11-14 when co-op moved to one-tap Play (the fake rooms made
-# an empty board look busy). To bring it back: restore
-#   [triggers]
+# Scheduled triggers: none, and said so out loud. The every-15-minutes House
+# Lobby renewer was retired on 2026-11-14 when co-op moved to one-tap Play
+# (the fake rooms made an empty board look busy). The empty list below is
+# what takes the schedule off the live Worker: wrangler only sends schedules
+# when `crons` is defined, so deleting this section would leave the old
+# */15 trigger running in production. To bring the renewer back, set
 #   crons = ["*/15 * * * *"]
-# and set HOUSE_LOBBIES_ENABLED = "1".
+# and HOUSE_LOBBIES_ENABLED = "1".
+[triggers]
+crons = []
 
 # Co-op Play queue: one global Durable Object (src/coop-play-do.ts) with
 # SQLite storage. Matching happens inside it one request at a time, and its

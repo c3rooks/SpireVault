@@ -596,6 +596,17 @@
   overflow: hidden;
   opacity: var(--k);
   mix-blend-mode: screen;
+  /* Feathered on all four sides: clipped hard at the box, the band drew a
+     straight-edged rectangle over the painting wherever the box ends inside
+     the picture (the hive's, beside Overview's subtitle). */
+  -webkit-mask-image:
+    linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent),
+    linear-gradient(180deg, transparent, #000 18%, #000 82%, transparent);
+  -webkit-mask-composite: source-in;
+  mask-image:
+    linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent),
+    linear-gradient(180deg, transparent, #000 18%, #000 82%, transparent);
+  mask-composite: intersect;
 }
 .v-life-sweep[data-mode="dark"] {
   mix-blend-mode: multiply;
@@ -609,9 +620,19 @@
   background: linear-gradient(90deg, transparent, var(--c) 50%, transparent);
   animation: v-sweep var(--dur) ease-in-out infinite;
 }
+/* Blown snow: a few streaks at uneven heights, lengths and strengths. Evenly
+   spaced lines (a repeating gradient) read as scan lines, not spindrift. */
 .v-life-sweep[data-mode="gust"] i {
+  --gust-a: color-mix(in srgb, var(--c) 80%, transparent);
+  --gust-b: color-mix(in srgb, var(--c) 55%, transparent);
+  --gust-c: color-mix(in srgb, var(--c) 35%, transparent);
   background:
-    repeating-linear-gradient(180deg, transparent 0 5px, color-mix(in srgb, var(--c) 75%, transparent) 6px, transparent 8px),
+    linear-gradient(90deg, transparent, var(--gust-a) 35%, var(--gust-a) 65%, transparent) 8% 11% / 62% 2px no-repeat,
+    linear-gradient(90deg, transparent, var(--gust-c) 40%, transparent) 30% 24% / 44% 1px no-repeat,
+    linear-gradient(90deg, transparent, var(--gust-b) 30%, var(--gust-b) 70%, transparent) 0 37% / 78% 1px no-repeat,
+    linear-gradient(90deg, transparent, var(--gust-a) 40%, transparent) 46% 55% / 50% 2px no-repeat,
+    linear-gradient(90deg, transparent, var(--gust-c) 35%, var(--gust-c) 65%, transparent) 14% 71% / 58% 1px no-repeat,
+    linear-gradient(90deg, transparent, var(--gust-b) 45%, transparent) 60% 86% / 36% 1px no-repeat,
     linear-gradient(180deg, transparent, color-mix(in srgb, var(--c) 30%, transparent) 60%, transparent);
   -webkit-mask-image: linear-gradient(90deg, transparent, #000 40%, #000 62%, transparent);
   mask-image: linear-gradient(90deg, transparent, #000 40%, #000 62%, transparent);

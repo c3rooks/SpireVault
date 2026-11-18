@@ -13,7 +13,7 @@
 //   Co-op (presence + canned-message invite system + Steam deep-links)
 // =========================================================================
 
-import * as Stats from "/lib/stats-engine.js?v=6";
+import * as Stats from "/lib/stats-engine.js?v=7";
 import * as HistoryStore from "/lib/history-store.js?v=9";
 import * as InviteAPI from "/lib/invites.js?v=4";
 import * as HighlightsAPI from "/lib/highlights.js?v=1";
@@ -30,7 +30,7 @@ let CoopPlay = null;
 let coopPlayLoading = null;
 function loadCoopPlay() {
   if (!coopPlayLoading) {
-    coopPlayLoading = import("/lib/coop-play.js?v=1").then((mod) => { CoopPlay = mod; return mod; });
+    coopPlayLoading = import("/lib/coop-play.js?v=8").then((mod) => { CoopPlay = mod; return mod; });
   }
   return coopPlayLoading;
 }
@@ -87,7 +87,7 @@ const STS2_APP_ID = "2868840";
  * on an old client — instruct hard refresh. If it DOES match, the
  * bug is real and we can stop chasing cache ghosts.
  */
-const VAULT_BUILD = "v231-2026-11-15-saves-stay";
+const VAULT_BUILD = "v243-2026-11-17-ui-polish";
 
 /** True on wrangler pages dev / local loopback — not production hostnames. */
 function isLocalDevHost() {
@@ -450,7 +450,6 @@ const STORAGE_LINKED_LIVE   = "vault.web.history.linked-live";
 const STORAGE_LAST_IMPORT_AT = "vault.web.history.last-import-at";
 /** Epoch-ms of the last time we showed the no-FSA refresh nudge so we
  *  don't spam it on every visibility flicker. */
-const STORAGE_LAST_NUDGE_AT  = "vault.web.history.last-nudge-at";
 /** "granted" once navigator.storage.persist() succeeded on this
  *  origin, so we can skip re-asking on every boot. */
 const STORAGE_DURABLE_FLAG   = "vault.web.storage.durable";
@@ -579,11 +578,29 @@ function renderSinceLastVisitStrip(sortedByDate) {
   return "";
 }
 
+const WEEK_MS = 7 * 86_400_000;
+
+/**
+ * How long ago a run happened, in ms: from when it ended, else when it
+ * started; Infinity when undated. Never negative: a run stamped in the future
+ * (another device's clock running ahead) counts as just now, the way the Runs
+ * list files it under Today. Every "this week" number goes through this, so
+ * the Overview's "Your week" strip and its This week card count the same runs.
+ * @param {{ endedAt?: Date|null, startedAt?: Date|null }} run
+ * @param {number} now  epoch ms
+ * @returns {number}
+ */
+function runAgeMs(run, now) {
+  const t = run.endedAt ? run.endedAt.getTime() : (run.startedAt ? run.startedAt.getTime() : 0);
+  if (!t) return Infinity;
+  return Math.max(0, now - t);
+}
+
 /** In-app weekly digest v0 until the mailer ships. */
 function renderWeeklyDigestStrip(sortedByDate) {
   if (isDemoMode || !sortedByDate?.length) return "";
-  const weekAgo = Date.now() - 7 * 86400000;
-  const weekRuns = sortedByDate.filter((r) => r.endedAt && r.endedAt.getTime() > weekAgo);
+  const now = Date.now();
+  const weekRuns = sortedByDate.filter((r) => runAgeMs(r, now) < WEEK_MS);
   if (weekRuns.length === 0) return "";
   const wins = weekRuns.filter((r) => r.won).length;
   const losses = weekRuns.length - wins;
@@ -1448,7 +1465,7 @@ let UI = null;
  *  below happens once per tab session, never in a loop. */
 const UI_RETRY_KEY = "vault.web.ui.retry";
 const uiReady = IS_UI_NEXT
-  ? import("/lib/ui/index.js?v=7")
+  ? import("/lib/ui/index.js?v=13")
       .then((mod) => {
         mod.bootUI({
           stageTabs: STAGE_TABS,
@@ -1505,11 +1522,11 @@ function deferUntilUIReady(rerender) {
 // =========================================================================
 /** Must match the boot script in index.html. */
 const STORAGE_UI_VARIANT = "vault.web.ui";
-/** The news post that explains the beta; "What's new" links open it. */
-const UI_BETA_NEWS_POST_ID = "013";
+/** The news post that explains the new look; "What's new" links open it. */
+const UI_BETA_NEWS_POST_ID = "015";
 const UI_BETA_PITCH =
   "SpireVault's new look: every tab redrawn, a header that shows your climb, and themes that switch instantly. " +
-  "Your runs, stats and co-op are the same in both looks, and you can switch any time.";
+  "Your runs, stats and co\u2011op are the same in both looks, and you can switch any time.";
 const UI_BETA_ON_NOTE =
   "You're on the new look. If something looks off, tell me. " +
   "The classic look is one click away, and so is coming back.";
@@ -1893,8 +1910,12 @@ let isDemoMode = false;
 //   3. Cookie says auth'd + localStorage empty → cookie hydrates from scratch.
 //   4. Cookie says transient (503) → keep whatever localStorage has, retry
 //      on next page load. This is the case our resilience fix unblocked.
-//   5. Cookie says definitive 401 → wipe localStorage (token genuinely dead).
-//   6. No cookie + no localStorage → guest.
+//   5. No cookie (401 no_cookie) + localStorage holds a real bearer → POST
+//      it back to /api/_session to set the cookie again: keep the session
+//      on 200, wipe it on 401 invalid_session, keep it if unreachable.
+//   6. Cookie says expired (401 expired) → wipe localStorage (token
+//      genuinely dead). Same for no cookie + a cookie-only session.
+//   7. No cookie + no localStorage → guest.
 let bootShellCommitted = false;
 
 /** First paint in under 100ms on localhost — never wait for /api/_session or IDB. */
@@ -1933,6 +1954,103 @@ function bootShellFirstPaint() {
   }
 }
 
+/** How long the boot waits for a cookie restore before keeping the
+ *  session as it is and trying again on the next visit. */
+const SESSION_RESTORE_TIMEOUT_MS = 2800;
+
+/**
+ * @param {object | null} s a session record
+ * @returns {boolean} true when it holds the worker bearer itself, not the
+ *   `__cookie__` stand-in a cookie-only session carries
+ */
+function holdsRealBearer(s) {
+  const token = s?.sessionToken;
+  return typeof token === "string" && token !== "__cookie__" && /^[A-Za-z0-9_-]{16,128}$/.test(token);
+}
+
+/**
+ * @param {Response} r an error response from /api/_session
+ * @returns {Promise<string>} its `error` code ("no_cookie", "expired", ...), or "" when the body has none
+ */
+async function sessionErrorCode(r) {
+  try {
+    const j = await r.json();
+    return typeof j?.error === "string" ? j.error : "";
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * Makes a profile from /api/_session the signed-in session. Same Steam ID
+ * and a real bearer here: keep the bearer and refresh name and avatar.
+ * Otherwise (a new browser, or another account signed in elsewhere) the
+ * cookie's account wins and the session runs on the cookie.
+ *
+ * @param {object | null} j the profile JSON
+ * @returns {boolean} false when it is not a usable profile
+ */
+function adoptSessionProfile(j) {
+  const sid = j?.steamID || "";
+  const sidOk =
+    /^\d{17}$/.test(sid) ||
+    (isLocalDevHost() && /^local-[a-z0-9_-]+$/i.test(sid));
+  if (!j || !sidOk) return false;
+  const sameSteam = !!session && session.steamID === j.steamID;
+  if (sameSteam && holdsRealBearer(session)) {
+    session = {
+      ...session,
+      personaName: j.personaName || session.personaName,
+      avatarURL: j.avatarURL || session.avatarURL,
+      viaCookie: true,
+    };
+  } else {
+    session = {
+      steamID: j.steamID,
+      personaName: j.personaName || "Steam User",
+      avatarURL: j.avatarURL || undefined,
+      sessionToken: "__cookie__",
+      signedInAt: new Date().toISOString(),
+      viaCookie: true,
+    };
+  }
+  try {
+    localStorage.setItem(STORAGE_SESSION, JSON.stringify(session));
+  } catch { /* private mode */ }
+  syncSteamLock();
+  return true;
+}
+
+/**
+ * The cookie is gone but this browser still holds the bearer: POST it to
+ * /api/_session, which checks it with the worker and sets the cookie again.
+ *
+ * @param {string} token the stored bearer
+ * @returns {Promise<"restored" | "invalid" | "unreachable">} "invalid" only
+ *   when the worker says the bearer is dead; anything else keeps the session
+ */
+async function restoreSessionCookie(token) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), SESSION_RESTORE_TIMEOUT_MS);
+  try {
+    const r = await fetch("/api/_session", {
+      method: "POST",
+      credentials: "include",
+      cache: "no-store",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ token }),
+      signal: ctrl.signal,
+    });
+    if (r.ok) return adoptSessionProfile(await r.json()) ? "restored" : "unreachable";
+    if (r.status === 401) return "invalid";
+    return "unreachable";
+  } catch {
+    return "unreachable";
+  } finally {
+    clearTimeout(t);
+  }
+}
+
 async function rehydrateSessionFromCookie() {
   const hadLocalSession = !!session;
   const timeoutMs = isLocalDevHost() ? 500 : 2800;
@@ -1949,47 +2067,37 @@ async function rehydrateSessionFromCookie() {
     if (r.ok) {
       sessionCookieVerified = true;
       sessionCookieMissing = false;
-      const j = await r.json();
-      const sid = j?.steamID || "";
-      const sidOk =
-        /^\d{17}$/.test(sid) ||
-        (isLocalDevHost() && /^local-[a-z0-9_-]+$/i.test(sid));
-      if (j && sidOk) {
-        const sameSteam = !!session && session.steamID === j.steamID;
-        const hasRealBearer = !!session?.sessionToken && session.sessionToken !== "__cookie__";
-        if (sameSteam && hasRealBearer) {
-          session = {
-            ...session,
-            personaName: j.personaName || session.personaName,
-            avatarURL: j.avatarURL || session.avatarURL,
-            viaCookie: true,
-          };
-        } else {
-          session = {
-            steamID: j.steamID,
-            personaName: j.personaName || "Steam User",
-            avatarURL: j.avatarURL || undefined,
-            sessionToken: "__cookie__",
-            signedInAt: new Date().toISOString(),
-            viaCookie: true,
-          };
-        }
-        try {
-          localStorage.setItem(STORAGE_SESSION, JSON.stringify(session));
-        } catch { /* private mode */ }
-        syncSteamLock();
-      }
+      adoptSessionProfile(await r.json());
     } else if (r.status === 401) {
-      session = null;
-      syncSteamLock();
-      sessionCookieVerified = false;
-      sessionCookieMissing = false;
-      try { localStorage.removeItem(STORAGE_SESSION); } catch {}
-      if (isLocalDevHost()) {
-        try {
-          bootShellCommitted = false;
-          bootShellFirstPaint();
-        } catch { /* ignore */ }
+      // `no_cookie`: the cookie is gone (it aged out, or cookies were
+      // cleared) but this browser may still hold the bearer itself; send
+      // it back so the server sets the cookie again. The session is only
+      // dropped when the server says the bearer is dead (`expired` from
+      // the cookie check, `invalid_session` from the restore) or when
+      // there is no bearer here to restore from (a cookie-only session,
+      // whose stand-in token cannot work without the cookie).
+      const code = await sessionErrorCode(r);
+      const restore = code === "no_cookie" && holdsRealBearer(session)
+        ? await restoreSessionCookie(session.sessionToken)
+        : "none";
+      if (restore === "restored") {
+        sessionCookieVerified = true;
+        sessionCookieMissing = false;
+      } else if (restore === "unreachable") {
+        console.info("[Vault] session cookie restore unreachable, retaining local session");
+        sessionCookieMissing = true;
+      } else {
+        session = null;
+        syncSteamLock();
+        sessionCookieVerified = false;
+        sessionCookieMissing = false;
+        try { localStorage.removeItem(STORAGE_SESSION); } catch {}
+        if (isLocalDevHost()) {
+          try {
+            bootShellCommitted = false;
+            bootShellFirstPaint();
+          } catch { /* ignore */ }
+        }
       }
     } else if (r.status === 503) {
       console.info("[Vault] /api/_session transient, retaining local session");
@@ -2334,6 +2442,23 @@ function vaultGtagEvent(name, params) {
  * a believable number back. A dashboard that says "0 climbers" or
  * errors out would do the opposite of making the place feel alive.
  */
+/**
+ * The toolbar's community line is shown whole or not at all: where the row
+ * is too narrow for all of it (the saves pill takes the room on a laptop),
+ * cut to "3 climbe…" it read as broken. Re-checked whenever the row resizes.
+ * @param {HTMLElement} $line
+ */
+function watchToolbarPulseFit($line) {
+  const fit = () => {
+    $line.classList.remove("is-clipped");
+    $line.classList.toggle("is-clipped", $line.scrollWidth > $line.clientWidth + 1);
+  };
+  fit();
+  if ($line.dataset.fitWatched || typeof ResizeObserver !== "function" || !$line.parentElement) return;
+  $line.dataset.fitWatched = "1";
+  new ResizeObserver(fit).observe($line.parentElement);
+}
+
 async function loadCommunityPulse() {
   const $pulse = document.getElementById("community-pulse");
   if (!$pulse) return;
@@ -2374,12 +2499,18 @@ async function loadCommunityPulse() {
   if (total >= 2) {
     parts.push(week >= 2 ? `${total} signed up` : `${total} climbers signed up`);
   }
-  $pulse.textContent = parts.join(" · ");
-  $pulse.hidden = false;
-  // The line arrives after the header was laid out, and it makes the title
-  // block taller: lay the stage out again, or on a phone the speech balloon
-  // ends up over the subtitle. (A stage only re-fits on its own when its
-  // width changes.)
+  // The new look shows it in Overview's toolbar row, which keeps one height,
+  // so the line arriving late moves nothing and Overview's stage stands as
+  // high as the other tabs'. Classic keeps it under the subtitle.
+  const $toolbarPulse = document.getElementById("toolbar-pulse");
+  const $line = document.documentElement.dataset.ui === "next" && $toolbarPulse ? $toolbarPulse : $pulse;
+  $line.textContent = parts.join(" · ");
+  $line.hidden = false;
+  if ($line === $toolbarPulse) watchToolbarPulseFit($line);
+  // The line arrives after the header was laid out, and in classic it makes
+  // the title block taller: lay the stage out again, or on a phone the
+  // speech balloon ends up over the subtitle. (A stage only re-fits on its
+  // own when its width changes.)
   if (UI) UI.Stage.fitStages();
 }
 
@@ -2548,6 +2679,8 @@ async function boot() {
     if ($mobileSignout) $mobileSignout.hidden = true;
     if ($mobileSignin)  $mobileSignin.hidden  = false;
   }
+  // The same row carries the way to Settings on classic phones and tablets.
+  mountClassicSettingsButton(!session);
 
   // Tab navigation — sidebar buttons + content panels.
   // Default tab is now "overview" so a fresh visitor lands on stats, not
@@ -2582,6 +2715,16 @@ async function boot() {
     }
     const partyMatch = path.match(/^\/party\/([0-9a-f]{32})$/i);
     if (partyMatch) window.__VAULT_PARTY_ID = partyMatch[1];
+    // A shared co-op link (/coop?branch=beta) carries the sharer's game
+    // version, so the friend who opens it lands in the same line. Kept until
+    // the Play card reads it (lib/coop-play.js, same key), which may be after
+    // a Steam sign-in.
+    if (path === "/coop") {
+      const invitedBranch = new URLSearchParams(window.location.search).get("branch");
+      if (invitedBranch === "stable" || invitedBranch === "beta") {
+        try { localStorage.setItem("vault.coop.invite.v1", invitedBranch); } catch { /* storage blocked: Play opens on the saved version */ }
+      }
+    }
     if (path === "/overlay") initialTab = "overlay";
     else if (path === "/coop" || partyMatch) initialTab = "coop";
     else if (qsTab && known.has(qsTab)) initialTab = qsTab;
@@ -3128,10 +3271,6 @@ async function boot() {
     // to keep the background loop cheap, not to filter user-driven
     // refreshes — alt-tabbing back IS a "tell me what's new" signal.
     void autoReloadHistoryIfPermitted({ silent: true, bypassFingerprint: true });
-    // Safari/Firefox path: no auto-poll runs on those browsers, so the
-    // nudge banner is the only signal the user has that fresh runs may
-    // be on disk. Tick it on every focus.
-    void maybeOfferNoFSARefresh({ reason: "visibility" });
   });
 
   // Phone-breakpoint re-render. Charts emit a different viewBox on
@@ -3161,7 +3300,6 @@ async function boot() {
     }
     // Same "fresh window, fresh read" reasoning as visibilitychange.
     void autoReloadHistoryIfPermitted({ silent: true, bypassFingerprint: true });
-    void maybeOfferNoFSARefresh({ reason: "pageshow" });
   });
 
   // Auth-only: tell the server we're going away so the roster decays.
@@ -3186,7 +3324,7 @@ async function boot() {
       void runBootSlowPath()
         .catch((err) => {
           console.error("[Vault] boot slow path failed", err);
-          if (session) setStatus("trouble", "Trouble starting — try refreshing");
+          if (session) setStatus("trouble", "Trouble starting\u00a0— try refreshing");
           try { paintInitialTabShell(); } catch {}
         })
         .finally(finishBootGuards);
@@ -3210,14 +3348,14 @@ async function boot() {
     await runBootSlowPath();
   } catch (err) {
     console.error("[Vault] boot failed", err);
-    if (session) setStatus("trouble", "Trouble starting — try refreshing");
+    if (session) setStatus("trouble", "Trouble starting\u00a0— try refreshing");
     try { paintInitialTabShell(); } catch {}
   } finally {
     finishBootGuards();
   }
   } catch (err) {
     console.error("[Vault] boot failed", err);
-    if (session) setStatus("trouble", "Trouble starting — try refreshing");
+    if (session) setStatus("trouble", "Trouble starting\u00a0— try refreshing");
     try { paintInitialTabShell(); } catch {}
     finishBootGuards();
   }
@@ -3281,6 +3419,36 @@ function setupNavStripEdges() {
   updateNavStripEdges();
 }
 
+// Classic phones and tablets (≤880px) hide the sidebar footer, and with it the
+// account card that opens Settings on desktop, so nothing on screen led there.
+// A gear goes before Sign in / Sign out in the mobile account row instead.
+// Built here, classic only, so the new look's row stays exactly as it is.
+/** @param {boolean} isGuest  a guest's status line gives way on small phones (styles.css) */
+function mountClassicSettingsButton(isGuest) {
+  if (IS_UI_NEXT) return;
+  const $row = document.querySelector(".mobile-account-row");
+  const $slot = document.getElementById("mobile-account-action");
+  if (!$row || !$slot || document.getElementById("mobile-settings-btn")) return;
+  $slot.insertAdjacentHTML(
+    "afterbegin",
+    `<button class="mobile-settings-btn" id="mobile-settings-btn" type="button" aria-label="Settings"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09a1.65 1.65 0 00-1-1.51 1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 110-4h.09a1.65 1.65 0 001.51-1 1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg><span>Settings</span></button>`,
+  );
+  $row.classList.toggle("is-guest", isGuest);
+  document.getElementById("mobile-settings-btn")?.addEventListener("click", () => switchTab("settings"));
+  const $settings = document.querySelector('.tab-panel[data-tab="settings"]');
+  markClassicSettingsButton($settings && !$settings.hidden ? "settings" : "");
+}
+
+/** Lights the gear while Settings shows, like the active tab chip. */
+function markClassicSettingsButton(tab) {
+  const $gear = document.getElementById("mobile-settings-btn");
+  if (!$gear) return;
+  const isHere = tab === "settings";
+  $gear.classList.toggle("is-here", isHere);
+  if (isHere) $gear.setAttribute("aria-current", "page");
+  else $gear.removeAttribute("aria-current");
+}
+
 function switchTab(tab) {
   if (!tab) tab = "coop";
   // Overlay is hidden in production. Redirect any deep-link to overview.
@@ -3342,6 +3510,12 @@ function switchTab(tab) {
       b.removeAttribute("aria-current");
     }
   });
+  // Settings has no rail row: it opens from the account card, so that card
+  // carries the "you are here" mark while Settings is showing.
+  document.getElementById("me-pill")?.classList.toggle("is-here", tab === "settings");
+  // On a classic phone or tablet the account card is hidden; the gear in the
+  // account row (mountClassicSettingsButton) carries the mark instead.
+  markClassicSettingsButton(tab);
   // Refresh the edge-fade state after the active-tab auto-scroll settles.
   // The scroll listener covers smooth scrolling, but this catches the
   // no-overflow / instant cases too.
@@ -3432,7 +3606,7 @@ function switchTab(tab) {
  * thing I read still the latest thing published?" — without forcing
  * a chronological compare that could go wrong on a typo.
  */
-const LATEST_NEWS_POST_ID = "post-015-2026-11-15-coop-play";
+const LATEST_NEWS_POST_ID = "post-015-2026-11-17-roll-up";
 const STORAGE_NEWS_LAST_READ = "vault.web.news.lastRead";
 
 /** Show the "NEW" pill on the sidebar News button when the user
@@ -3569,6 +3743,114 @@ function rollCompanionScene() {
   return companionScene;
 }
 
+// ---- Classic diorama: aim the speech balloon's tail at the speaker -------
+// The balloon is centred over the speaker's grid column, but the tail sat
+// a fixed 32px in from one end, so it pointed 40-60px off the head.
+
+/** Where each classic sprite's head sits across its art, 0 (left edge) to
+ *  1, as painted, before any mirroring. Read off characters/*-v2.webp and
+ *  bosses/architect-crystal-v4.webp; a sprite not listed uses the middle. */
+const CLASSIC_HEAD_SHARE = Object.freeze({
+  ironclad: 0.48,
+  silent: 0.47,
+  defect: 0.54,
+  regent: 0.42,
+  necrobinder: 0.54,
+  fool: 0.53,
+  architect: 0.64,
+});
+/** Half the tail's outer triangle (its 11px side borders in styles.css). */
+const CLASSIC_TAIL_HALF_PX = 11;
+/** The tail stays on the balloon's straight bottom edge, clear of its 24px corners. */
+const CLASSIC_TAIL_EDGE_PX = 18;
+/** Re-aims tails when a header shows (hidden tabs measure 0) or resizes. */
+let classicSceneWatcher = null;
+
+/**
+ * Head position across a classic sprite as drawn.
+ * @param {string} id  character or boss id
+ * @param {boolean} mirrored  true for climbers drawn with .scene-art-flip
+ * @returns {string} 0-1, two decimals, for a data attribute
+ */
+function classicHeadShare(id, mirrored) {
+  const share = Object.prototype.hasOwnProperty.call(CLASSIC_HEAD_SHARE, id) ? CLASSIC_HEAD_SHARE[id] : 0.5;
+  return (mirrored ? 1 - share : share).toFixed(2);
+}
+
+/**
+ * The drawn picture inside an object-fit: contain <img> (centred across),
+ * in the image box's own coordinates. Before the file loads, the whole box.
+ * @param {HTMLImageElement} img
+ * @returns {{ left: number, width: number }}
+ */
+function containedArtSpan(img) {
+  const boxW = img.clientWidth;
+  const boxH = img.clientHeight;
+  if (!img.naturalWidth || !img.naturalHeight || !boxW || !boxH) return { left: 0, width: boxW };
+  const width = img.naturalWidth * Math.min(boxW / img.naturalWidth, boxH / img.naturalHeight);
+  return { left: (boxW - width) / 2, width };
+}
+
+/**
+ * Left edge of `el` inside `ancestor` from layout offsets, so the bob and
+ * pop animations (transforms) do not move the answer. Null if `ancestor`
+ * is not on the offset chain.
+ * @param {HTMLElement} el
+ * @param {HTMLElement} ancestor
+ * @returns {number | null}
+ */
+function offsetLeftWithin(el, ancestor) {
+  let x = 0;
+  let node = el;
+  while (node && node !== ancestor) {
+    x += node.offsetLeft;
+    node = node.offsetParent;
+  }
+  return node === ancestor ? x : null;
+}
+
+/**
+ * Sets --tail-x on one classic scene's balloon so its tail points at the
+ * speaker's head, kept on the balloon's straight bottom edge.
+ * @param {HTMLElement} scene
+ */
+function aimClassicBubbleTail(scene) {
+  const bubble = scene.querySelector(".scene-bubble");
+  if (!bubble || !bubble.clientWidth) return; // hidden tab: the watcher aims it once it shows
+  const speakerSel = bubble.classList.contains("scene-bubble-boss") ? ".scene-figure-boss .scene-art" : ".scene-figure-climber .scene-art";
+  const speaker = scene.querySelector(speakerSel);
+  if (!(speaker instanceof HTMLImageElement)) return;
+  if (!speaker.complete) speaker.addEventListener("load", () => aimClassicBubbleTail(scene), { once: true });
+  const artLeft = offsetLeftWithin(speaker, scene);
+  const bubbleLeft = offsetLeftWithin(bubble, scene);
+  if (artLeft === null || bubbleLeft === null) return;
+  const art = containedArtSpan(speaker);
+  const share = Number(speaker.dataset.headX);
+  const headX = artLeft + art.left + art.width * (share > 0 && share < 1 ? share : 0.5);
+  const tailLeft = headX - (bubbleLeft + bubble.clientLeft) - CLASSIC_TAIL_HALF_PX;
+  const maxLeft = bubble.clientWidth - CLASSIC_TAIL_EDGE_PX - 2 * CLASSIC_TAIL_HALF_PX;
+  bubble.style.setProperty("--tail-x", `${Math.round(Math.min(Math.max(tailLeft, CLASSIC_TAIL_EDGE_PX), maxLeft))}px`);
+}
+
+/** Aims every classic balloon now and again whenever a header or balloon resizes. */
+function aimClassicBubbleTails() {
+  document.querySelectorAll(".companion-slot .scene").forEach((scene) => aimClassicBubbleTail(scene));
+  if (typeof ResizeObserver !== "function") return;
+  if (!classicSceneWatcher) {
+    classicSceneWatcher = new ResizeObserver((entries) => {
+      const scenes = new Set(entries.map((entry) => entry.target.closest(".companion-slot")?.querySelector(".scene")).filter(Boolean));
+      scenes.forEach((scene) => aimClassicBubbleTail(scene));
+    });
+  }
+  // Each render replaces the balloons; start over so removed ones are let go.
+  classicSceneWatcher.disconnect();
+  document.querySelectorAll(".companion-slot").forEach((slot) => {
+    classicSceneWatcher.observe(slot);
+    const bubble = slot.querySelector(".scene-bubble");
+    if (bubble) classicSceneWatcher.observe(bubble);
+  });
+}
+
 function renderCompanion() {
   const slots = document.querySelectorAll(".companion-slot");
   if (!slots.length) return;
@@ -3614,7 +3896,7 @@ function renderCompanion() {
               title="${esc(climberHint)}">
         <span class="scene-shadow" aria-hidden="true"></span>
         ${climberSrc
-          ? `<img class="scene-art${climber.facesLeft ? " scene-art-flip" : ""}" src="${esc(climberSrc)}" alt="${esc(climber.label)}" draggable="false">`
+          ? `<img class="scene-art${climber.facesLeft ? " scene-art-flip" : ""}" src="${esc(climberSrc)}" alt="${esc(climber.label)}" draggable="false" data-head-x="${classicHeadShare(climber.id, !!climber.facesLeft)}">`
           : `<span class="scene-glyph">${esc(climber.label[0])}</span>`}
       </button>
 
@@ -3622,7 +3904,7 @@ function renderCompanion() {
            aria-label="${esc(boss.label)}" title="${esc(boss.label)}">
         <span class="scene-shadow" aria-hidden="true"></span>
         ${bossSrc
-          ? `<img class="scene-art scene-art-boss" src="${esc(bossSrc)}"${bossSrcset ? ` srcset="${esc(bossSrcset)}"` : ""} alt="${esc(boss.label)}" draggable="false">`
+          ? `<img class="scene-art scene-art-boss" src="${esc(bossSrc)}"${bossSrcset ? ` srcset="${esc(bossSrcset)}"` : ""} alt="${esc(boss.label)}" draggable="false" data-head-x="${classicHeadShare(boss.id, false)}">`
           : `<span class="scene-glyph">${esc(boss.label[0])}</span>`}
       </div>
 
@@ -3630,7 +3912,7 @@ function renderCompanion() {
               type="button" data-action="scene-reroll"
               aria-label="New line. Tap for another."
               title="Tap for a new line">
-        <span class="scene-bubble-text">${esc(quote.text)}</span>
+        <span class="scene-bubble-text">${esc(glueLastTwoWords(quote.text))}</span>
         <span class="scene-bubble-tail" aria-hidden="true"></span>
       </button>
     </div>`;
@@ -3674,6 +3956,7 @@ function renderCompanion() {
   // New UI: the scenery (spire, moon) is laid out around the climber's real
   // width, which lives on the duel; hand it up to each stage header.
   if (UI) UI.Stage.syncDuelGeometry();
+  else aimClassicBubbleTails();
 
   if ($focusedSlot && focusedAction) {
     // The picker closes on render, so a picked option hands focus to the climber.
@@ -3902,7 +4185,7 @@ function runsStatus() {
   if (lastCloudSyncAt) {
     return { stale: true, main: "From your Steam copy", sub: "not read from your saves here yet" };
   }
-  return { stale: true, main: "Not read from your saves here yet", sub: newestLabel };
+  return { stale: true, main: "Saves not read here yet", sub: newestLabel };
 }
 
 /** Runs status, in the toolbar's left slot on Overview (both looks): where
@@ -4014,6 +4297,8 @@ function showPrivateModeNotice() {
 // =========================================================================
 
 let coopPlayMounted = false;
+/** What co-op Play is handed while only the sample runs are loaded. */
+const COOP_NO_RUNS = Object.freeze([]);
 /** Mount one-tap co-op Play (signed-in only). Idempotent. */
 function ensureCoopPlayMounted() {
   if (coopPlayMounted || !session) return;
@@ -4033,6 +4318,11 @@ function ensureCoopPlayMounted() {
         if (giveUp) clearSessionAndReload();
       },
       partyId: window.__VAULT_PARTY_ID || null,
+      // "Your co-op climbs" reads the player's own runs, never the sample set.
+      runs: () => (isDemoMode ? COOP_NO_RUNS : parsedRuns),
+      // The panel's Refresh and Import buttons are the app's own.
+      refreshSaves: () => void reloadSavedHistoryInteractive(),
+      importSaves: () => void scanForHistory(),
     });
     CoopPlay.setCoopTabVisible(activeTab === "coop");
   }).catch((err) => {
@@ -5743,6 +6033,99 @@ function buildHighlightPayload(run, caption) {
 // to invoke from boot, from `renderActiveTab()` on every News tab
 // entry, and from a hashchange listener.
 // =========================================================================
+/**
+ * A one-line string with its last two words joined by a no-break space, so a
+ * classic speech balloon never ends on one word ("…coming for / you.",
+ * "Not even an / introduction?"). With `text-wrap: balance` on the balloon
+ * the two lines then split evenly ("Not even / an introduction?").
+ * @param {string} text
+ * @param {number} [maxWord] a longer last "word" (a URL, a path) keeps its break
+ * @returns {string}
+ */
+function glueLastTwoWords(text, maxWord = 20) {
+  const t = String(text ?? "");
+  const cut = t.lastIndexOf(" ");
+  if (cut <= 0 || t.length - cut - 1 > maxWord) return t;
+  return `${t.slice(0, cut)}\u00a0${t.slice(cut + 1)}`;
+}
+
+/**
+ * Joins a block's last two words with a no-break space, so its last line
+ * never holds one word alone ("everyone.", "SpireVault”."). Works across
+ * inline tags (`the <b>Settings</b> tab`); text inside code and buttons is left
+ * as is (a button's label is one control, and tests read it exactly).
+ * Idempotent: a block whose last break is already a no-break space is
+ * skipped.
+ * @param {Element} block
+ * @param {number} [maxWord] a longer last "word" (a URL, a path) keeps its break
+ */
+function keepLastWordsTogether(block, maxWord = 20) {
+  const walker = document.createTreeWalker(block, NodeFilter.SHOW_TEXT, {
+    acceptNode: (n) => (n.parentElement?.closest("code, pre, kbd, svg, button") ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT),
+  });
+  const nodes = [];
+  while (walker.nextNode()) nodes.push(/** @type {Text} */ (walker.currentNode));
+  const isBreak = (ch) => /\s/.test(ch) && ch !== "\u00a0";
+  let wordLen = 0;
+  for (let i = nodes.length - 1; i >= 0; i--) {
+    const text = nodes[i].nodeValue || "";
+    for (let j = text.length - 1; j >= 0; j--) {
+      const ch = text[j];
+      if (ch === "\u00a0") return;
+      if (!isBreak(ch)) { wordLen++; continue; }
+      if (wordLen === 0) continue; // trailing white space
+      if (wordLen > maxWord) return;
+      let k = j;
+      while (k > 0 && isBreak(text[k - 1])) k--;
+      // Is there a word before this break at all?
+      const before = nodes.slice(0, i).map((n) => n.nodeValue || "").join("") + text.slice(0, k);
+      if (!/\S/.test(before)) return;
+      nodes[i].nodeValue = text.slice(0, k) + "\u00a0" + text.slice(j + 1);
+      // White space that ended the previous text node would still allow a
+      // break just before the no-break space.
+      for (let p = i - 1; k === 0 && p >= 0; p--) {
+        const prev = nodes[p].nodeValue || "";
+        const trimmed = prev.replace(/[^\S\u00a0]+$/, "");
+        nodes[p].nodeValue = trimmed;
+        if (trimmed.length) break;
+      }
+      return;
+    }
+  }
+}
+
+/** How far from a block's end a hyphen is kept whole (about the last three words). */
+const HYPHEN_TAIL_CHARS = 30;
+
+/**
+ * Keeps the hyphenated words near a block's end whole ("sign-in", "lock-in",
+ * "beta-patch"). Once keepLastWordsTogether has glued the last two words, a
+ * hyphen there is often the only break left near the end, and the browser
+ * takes it ("sign- / in stay put"). A WORD JOINER (U+2060, invisible, in no
+ * font's way) after each such hyphen removes that break. Text inside code is
+ * left as is. Idempotent.
+ * @param {Element} block
+ */
+function keepTailHyphensWhole(block) {
+  const walker = document.createTreeWalker(block, NodeFilter.SHOW_TEXT, {
+    acceptNode: (n) => (n.parentElement?.closest("code, pre, kbd, svg, button") ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT),
+  });
+  const nodes = [];
+  while (walker.nextNode()) nodes.push(/** @type {Text} */ (walker.currentNode));
+  let after = 0; // characters between the current position and the block's end
+  for (let i = nodes.length - 1; i >= 0 && after <= HYPHEN_TAIL_CHARS; i--) {
+    const text = nodes[i].nodeValue || "";
+    let out = "";
+    for (let j = text.length - 1; j >= 0; j--) {
+      const ch = text[j];
+      const joinable = ch === "-" && after <= HYPHEN_TAIL_CHARS && /\p{L}/u.test(text[j - 1] || "") && /\p{L}/u.test(text[j + 1] || "");
+      out = (joinable ? "-\u2060" : ch) + out;
+      after++;
+    }
+    nodes[i].nodeValue = out;
+  }
+}
+
 function wireNewsTabs() {
   const $detail = document.getElementById("news-detail");
   const $list   = document.getElementById("news-list");
@@ -5754,10 +6137,26 @@ function wireNewsTabs() {
   if (!window.__newsTabsWired) {
     window.__newsTabsWired = true;
 
+    // No paragraph, list item or heading in a post ends on one word alone,
+    // at any width, in either look (the rail's titles are read after this).
+    posts.forEach((post) => {
+      post.querySelectorAll("p, li, h3, h4, figcaption").forEach((block) => {
+        keepLastWordsTogether(block);
+        keepTailHyphensWhole(block);
+      });
+    });
+
     // Paint the left rail once. We deliberately preserve DOM order
     // (newest first because that's how the article markup is
     // ordered in index.html). Each tile has aria-pressed so screen
     // readers get the active state.
+    // "Game update · November 13, 2026": the date never breaks inside, so
+    // a narrow list wraps after the "·", not between "13," and "2026".
+    const newsEyebrowHtml = (eyebrow) => {
+      const cut = eyebrow.lastIndexOf(" · ");
+      if (cut < 0) return esc(eyebrow);
+      return `${esc(eyebrow.slice(0, cut + 3))}<span class="news-list-date">${esc(eyebrow.slice(cut + 3))}</span>`;
+    };
     const items = posts.map((p) => {
       const id = p.getAttribute("data-news-id") || "";
       const eyebrow = p.getAttribute("data-news-eyebrow") || "";
@@ -5767,7 +6166,7 @@ function wireNewsTabs() {
       return `
         <li>
           <button type="button" class="news-list-item" data-news-id="${esc(id)}" aria-pressed="false">
-            <span class="news-list-eyebrow">${esc(eyebrow)}</span>
+            <span class="news-list-eyebrow">${newsEyebrowHtml(eyebrow)}</span>
             <span class="news-list-title">${esc(title)}</span>
             ${tags.length ? `<span class="news-list-tags">${tags.map((t) => `<span class="news-list-tag">${esc(t)}</span>`).join("")}</span>` : ""}
           </button>
@@ -7522,13 +7921,11 @@ function startHistoryAutoRefresh() {
     HistoryStore.supportsFSA() || typeof window.showDirectoryPicker === "function";
   if (!canFSA) {
     // Safari / Firefox: no File System Access API → we cannot poll the
-    // disk between user gestures. The "stale runs" CTA in
-    // maybeOfferNoFSARefresh() picks up the slack.
+    // disk between user gestures. The toolbar's freshness line says how
+    // old the saves are and Refresh re-picks the folder with its path
+    // copied; a floating "Fresh runs may be on disk" banner used to pop
+    // up on every focus as well, and players read it as nagging.
     publishAutoRefreshState({ phase: "off" });
-    // Schedule the first nudge eligibility check on boot. The handler
-    // is idempotent and self-throttling, so it's safe to call from
-    // multiple places.
-    void maybeOfferNoFSARefresh({ reason: "boot" });
     return;
   }
   // Snapshot the linked target name so the pill can display it.
@@ -7548,101 +7945,6 @@ function startHistoryAutoRefresh() {
       bypassFingerprint: !currentRun,
     });
   }, HISTORY_REREAD_INTERVAL_MS);
-}
-
-/**
- * Safari / Firefox refresh nudge.
- *
- * These browsers have no File System Access API, so once the user has
- * imported their saves there's no way for the page to silently re-read
- * the disk on a timer. The result was a real user-reported failure
- * mode: a player completes a run, alt-tabs back to the browser, and
- * the fresh win is nowhere on the Overview — they have to manually
- * re-pick the folder every single time.
- *
- * This function decides whether to show a polite, dismissible banner
- * that says "Fresh runs may be on disk — tap to re-import" with a
- * one-click button that opens the file picker.
- *
- * Suppression rules (in priority order):
- *   1. If the browser DOES support FSA → never show. The background
- *      loop handles freshness, this banner would be pure noise.
- *   2. If the user has never successfully imported → never show. They
- *      haven't picked a folder yet; the empty-state already prompts
- *      them.
- *   3. If less than NUDGE_FRESHNESS_MS has passed since the last
- *      import → never show. Stats are still likely current.
- *   4. If less than NUDGE_THROTTLE_MS has passed since the last
- *      nudge → never show. Nagging on every focus is worse than
- *      missing one update.
- *   5. If a nudge banner is already on screen → never show. Don't
- *      stack.
- *
- * @param {object} opts
- * @param {"boot"|"visibility"|"pageshow"} opts.reason — diagnostic
- *     hint for analytics; does not change behavior.
- */
-const NUDGE_FRESHNESS_MS = 90 * 1000;   // 90s: long enough that a
-                                         // run could have ended on disk
-const NUDGE_THROTTLE_MS  = 5 * 60 * 1000; // 5 min: hard floor between
-                                          // consecutive nudges
-async function maybeOfferNoFSARefresh({ reason = "unknown" } = {}) {
-  if (HistoryStore.supportsFSA() || typeof window.showDirectoryPicker === "function") {
-    return;
-  }
-  let lastImportAt = 0;
-  let lastNudgeAt = 0;
-  try {
-    lastImportAt = Number(localStorage.getItem(STORAGE_LAST_IMPORT_AT)) || 0;
-    lastNudgeAt = Number(localStorage.getItem(STORAGE_LAST_NUDGE_AT)) || 0;
-  } catch { /* private mode — fall through, just won't throttle as well */ }
-  if (!lastImportAt) return;
-  const now = Date.now();
-  if (now - lastImportAt < NUDGE_FRESHNESS_MS) return;
-  if (now - lastNudgeAt < NUDGE_THROTTLE_MS) return;
-  if (document.getElementById("vault-no-fsa-nudge")) return;
-
-  try { localStorage.setItem(STORAGE_LAST_NUDGE_AT, String(now)); }
-  catch { /* private mode */ }
-  vaultGtagEvent("no_fsa_nudge_shown", { reason, since_import_s: Math.round((now - lastImportAt) / 1000) });
-
-  const banner = document.createElement("div");
-  banner.id = "vault-no-fsa-nudge";
-  banner.className = "vault-no-fsa-nudge";
-  banner.setAttribute("role", "status");
-  banner.innerHTML = `
-    <div class="vault-no-fsa-nudge-body">
-      <span class="vault-no-fsa-nudge-icon" aria-hidden="true">↻</span>
-      <div class="vault-no-fsa-nudge-text">
-        <strong>Fresh runs may be on disk.</strong>
-        <span class="vault-no-fsa-nudge-sub">Safari can't auto-refresh — tap to pull the latest from your STS2 folder.</span>
-      </div>
-      <div class="vault-no-fsa-nudge-actions">
-        <button type="button" class="vault-no-fsa-nudge-go" data-action="no-fsa-refresh">Refresh now</button>
-        <button type="button" class="vault-no-fsa-nudge-dismiss" data-action="dismiss-no-fsa" aria-label="Dismiss">×</button>
-      </div>
-    </div>`;
-  document.body.appendChild(banner);
-
-  // One global dismisser. Use { once: true } so we don't accumulate
-  // dangling listeners across multiple nudges in the same session.
-  banner.addEventListener("click", (e) => {
-    const target = e.target instanceof Element ? e.target : null;
-    if (!target) return;
-    if (target.closest('[data-action="dismiss-no-fsa"]')) {
-      e.preventDefault();
-      vaultGtagEvent("no_fsa_nudge_dismissed", { reason });
-      banner.remove();
-      return;
-    }
-    if (target.closest('[data-action="no-fsa-refresh"]')) {
-      e.preventDefault();
-      vaultGtagEvent("no_fsa_nudge_accepted", { reason });
-      banner.remove();
-      try { scanForHistory(); }
-      catch (err) { console.warn("[Vault] no-FSA nudge picker failed", err); }
-    }
-  });
 }
 
 /**
@@ -7970,6 +8272,8 @@ async function commitParsedRuns(runs, sourceName, { silent, fileCount = 1 }) {
   const newWins = completedRuns.filter((r) => !previousIds.has(r.id) && r.won === true);
   // Real data has arrived — flip out of demo mode so the banner disappears.
   isDemoMode = false;
+  // Co-op Play shows numbers from these runs; redraw them now rather than on its next poll.
+  try { CoopPlay?.refreshClimbs(); } catch { /* not loaded, or signed out */ }
 
   // Stamp "last successful disk read" so the Safari/Firefox nudge
   // (the only refresh signal available on no-FSA browsers) knows when
@@ -8167,6 +8471,11 @@ function reviveRun(r) {
 async function hydrateFromCloudIfAvailable() {
   try {
     const blob = await CloudRuns.download();
+    // Unreadable is not empty: say so, so no caller tells the player their
+    // Steam copy has no runs when the server was only out of reach.
+    if (blob?.ok === false) {
+      return { changed: false, count: parsedRuns.length, failed: true, status: blob.status };
+    }
     // The cloud copy only grows when an import happens while signed in, so
     // runs imported as a guest (or while sign-in was failing) never reached
     // it: one owner's copy stopped three months and 140 runs behind the save
@@ -8259,7 +8568,7 @@ async function hydrateFromCloudIfAvailable() {
     return { changed: true, count: merged.length };
   } catch (e) {
     console.warn("[Vault] cloud rehydrate failed", e);
-    return { changed: false, count: parsedRuns.length };
+    return { changed: false, count: parsedRuns.length, failed: true, status: 0 };
   }
 }
 
@@ -8285,6 +8594,21 @@ const CloudRuns = (() => {
   // the user finishes a new run, both will change.
   let lastUploadFingerprint = "";
   let inflightUpload = null;
+  // The one run set still waiting to go up: handed in while another upload
+  // was in flight, or kept after an attempt the server or the network
+  // failed. Sets handed in meanwhile merge into it by run id rather than
+  // replace it: an import carries only what it read (one file, say), and
+  // the server's POST only adds runs, so the union loses nothing.
+  let pendingRuns = null;
+  // Back-off after a failed attempt: 30 s, 2 min, then 10 min. After the
+  // last one the timer stops, but the set stays pending and goes up when
+  // the browser comes back online, the tab is shown again, or the next
+  // import calls upload().
+  const RETRY_DELAYS_MS = Object.freeze([30_000, 2 * 60_000, 10 * 60_000]);
+  let retryAttempt = 0;
+  let retryTimer = 0;
+  // A failed save tells the player once; the save that finally lands says so.
+  let failureAnnounced = false;
 
   function fingerprintForRuns(runs) {
     if (!Array.isArray(runs) || runs.length === 0) return "0:";
@@ -8329,62 +8653,156 @@ const CloudRuns = (() => {
   }
 
   /** Fire-and-forget upload of the current local run set to the cloud.
-   *  Skipped when not signed in, when there's nothing to upload, or
-   *  when an upload is already inflight for the same fingerprint. */
-  async function upload(runs) {
-    if (!session || !session.steamID) return;
-    const fp = fingerprintForRuns(runs);
-    if (fp === lastUploadFingerprint) return;
-    if (inflightUpload) return;
-
-    const body = JSON.stringify({ runs: runs.map(toWire) });
-    inflightUpload = (async () => {
-      try {
-        const r = await fetch("/api/runs", {
-          method: "POST",
-          credentials: "include",
-          cache: "no-store",
-          headers: {
-            "content-type": "application/json",
-            "x-vault-source": "web",
-            authorization: `Bearer ${session.sessionToken || "__cookie__"}`,
-          },
-          body,
-        });
-        if (r.ok) {
-          lastUploadFingerprint = fp;
-          const j = await r.json().catch(() => ({}));
-          sendBeacon("cloud-runs-uploaded",
-            `count=${j.count || 0} added=${j.added || 0} truncated=${j.truncated ? 1 : 0}`);
-          recordCloudSync(j.count || runs.length);
-        } else {
-          sendBeacon("cloud-runs-upload-failed", `status=${r.status}`);
-          // Surface persistence failures so the user knows their
-          // history isn't being saved to their Steam account. The
-          // previous silent-fail let users assume sync was working
-          // when it wasn't, then they'd lose progress on the next
-          // device. Now they see it and can intervene (re-sign-in,
-          // check connection, etc.).
-          if (r.status === 401 || r.status === 403) {
-            toast("Couldn't save to your Steam account — your session expired. Please sign in again.");
-          } else if (r.status >= 500) {
-            toast(`Couldn't save to your Steam account (server ${r.status}). We'll retry automatically.`);
-          } else if (r.status >= 400) {
-            toast(`Couldn't save to your Steam account (${r.status}). Please refresh and try again.`);
-          }
-        }
-      } catch (e) {
-        sendBeacon("cloud-runs-upload-error", String(e?.message || e).slice(0, 80));
-      } finally {
-        inflightUpload = null;
-      }
-    })();
+   *  Skipped when not signed in or when the cloud already has this set.
+   *  While an upload is in flight or a retry is waiting, the set takes
+   *  the pending slot instead and goes up with that. */
+  function upload(runs) {
+    if (!session || !session.steamID || !Array.isArray(runs)) return;
+    if (fingerprintForRuns(runs) === lastUploadFingerprint) return;
+    pendingRuns = mergeRunSets(pendingRuns, runs);
+    if (inflightUpload || retryTimer) return;
+    flushPending();
   }
 
-  /** Pull the cloud copy. Returns { runs, count, updatedAt } or null
-   *  on auth/network failure. The runs come back as wire-format objects
-   *  (ISO date strings, no Date instances) — caller should revive
-   *  them via reviveRun() before mixing with parsedRuns. */
+  /** Union of two run sets by id; for the same id the later `endedAt`
+   *  wins, as on the server. A null set is empty. */
+  function mergeRunSets(older, newer) {
+    if (!older || older.length === 0) return newer;
+    const byId = new Map();
+    const unnamed = [];
+    for (const r of [...older, ...newer]) {
+      if (!r?.id) { unnamed.push(r); continue; }
+      const kept = byId.get(r.id);
+      const keptAt = kept?.endedAt?.getTime?.() ?? 0;
+      const runAt = r.endedAt?.getTime?.() ?? 0;
+      if (!kept || runAt >= keptAt) byId.set(r.id, r);
+    }
+    return [...byId.values(), ...unnamed];
+  }
+
+  /** Sends the pending set now, unless one is already on its way. */
+  function flushPending() {
+    if (inflightUpload || !pendingRuns) return;
+    clearRetryTimer();
+    if (!session || !session.steamID) {
+      pendingRuns = null;
+      return;
+    }
+    const runs = pendingRuns;
+    pendingRuns = null;
+    const fp = fingerprintForRuns(runs);
+    if (fp === lastUploadFingerprint) return;
+    inflightUpload = sendRuns(runs, fp).then(
+      (landed) => {
+        inflightUpload = null;
+        // A set handed in during the flight goes up now. After a failure
+        // it waits for the retry timer or the next online / tab-shown.
+        if (landed) flushPending();
+      },
+      (e) => {
+        inflightUpload = null;
+        console.warn("[Vault] cloud upload failed", e);
+      },
+    );
+  }
+
+  /** One POST of `runs`; schedules a retry when the failure is the
+   *  server's or the network's, so it can pass on its own.
+   *  @returns {Promise<boolean>} true when the cloud took the set */
+  async function sendRuns(runs, fp) {
+    let status = 0;
+    try {
+      const r = await fetch("/api/runs", {
+        method: "POST",
+        credentials: "include",
+        cache: "no-store",
+        headers: {
+          "content-type": "application/json",
+          "x-vault-source": "web",
+          authorization: `Bearer ${session.sessionToken || "__cookie__"}`,
+        },
+        body: JSON.stringify({ runs: runs.map(toWire) }),
+      });
+      status = r.status;
+      if (r.ok) {
+        lastUploadFingerprint = fp;
+        retryAttempt = 0;
+        const j = await r.json().catch(() => ({}));
+        sendBeacon("cloud-runs-uploaded",
+          `count=${j.count || 0} added=${j.added || 0} truncated=${j.truncated ? 1 : 0}`);
+        recordCloudSync(j.count || runs.length);
+        if (failureAnnounced) toast("Your runs are saved to your Steam account now.");
+        failureAnnounced = false;
+        return true;
+      }
+      sendBeacon("cloud-runs-upload-failed", `status=${status}${retryAttempt ? ` retry=${retryAttempt}` : ""}`);
+    } catch (e) {
+      sendBeacon("cloud-runs-upload-error", String(e?.message || e).slice(0, 80));
+    }
+    const isRetryable = status === 0 || status === 408 || status === 429 || status >= 500;
+    if (isRetryable) {
+      // Back into the slot, alongside any set handed in during the flight.
+      pendingRuns = mergeRunSets(runs, pendingRuns || []);
+      scheduleRetry();
+    } else {
+      // Retrying cannot fix these; the player has to act first.
+      pendingRuns = null;
+      retryAttempt = 0;
+    }
+    announceFailure(status);
+    return false;
+  }
+
+  /** Surface persistence failures so the user knows their history isn't
+   *  being saved to their Steam account. The old silent fail let players
+   *  assume sync was working, then lose progress on the next device. */
+  function announceFailure(status) {
+    if (status === 401 || status === 403) {
+      toast("Couldn't save to your Steam account — your session expired. Please sign in again.");
+      return;
+    }
+    if (status >= 400 && status < 500 && status !== 408 && status !== 429) {
+      toast(`Couldn't save to your Steam account (${status}). Please refresh and try again.`);
+      return;
+    }
+    if (failureAnnounced) return;
+    failureAnnounced = true;
+    toast(status
+      ? `Couldn't save to your Steam account (server ${status}). We'll retry automatically.`
+      : "Couldn't reach your Steam account. We'll retry automatically.");
+  }
+
+  function scheduleRetry() {
+    clearRetryTimer();
+    if (retryAttempt >= RETRY_DELAYS_MS.length) return;
+    const delay = RETRY_DELAYS_MS[retryAttempt];
+    retryAttempt += 1;
+    retryTimer = setTimeout(() => {
+      retryTimer = 0;
+      flushPending();
+    }, delay);
+  }
+
+  function clearRetryTimer() {
+    if (!retryTimer) return;
+    clearTimeout(retryTimer);
+    retryTimer = 0;
+  }
+
+  // Coming back online or to the tab is the likeliest moment a failed save
+  // can land, so try then instead of waiting out the back-off.
+  window.addEventListener("online", flushPending);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") flushPending();
+  });
+
+  /** Pull the cloud copy. Returns { runs, count, updatedAt }, null when
+   *  not signed in, or { ok: false, status } when the copy couldn't be
+   *  read (status 0 for a network failure) — which says nothing about
+   *  whether runs are there, so callers must not report "no runs". The
+   *  runs come back as wire-format objects (ISO date strings, no Date
+   *  instances) — caller should revive them via reviveRun() before
+   *  mixing with parsedRuns. */
   async function download() {
     if (!session || !session.steamID) return null;
     try {
@@ -8398,13 +8816,12 @@ const CloudRuns = (() => {
       });
       if (!r.ok) {
         sendBeacon("cloud-runs-download-failed", `status=${r.status}`);
-        return null;
+        return { ok: false, status: r.status };
       }
-      const j = await r.json();
-      return j;
+      return await r.json();
     } catch (e) {
       sendBeacon("cloud-runs-download-error", String(e?.message || e).slice(0, 80));
-      return null;
+      return { ok: false, status: 0 };
     }
   }
 
@@ -8430,6 +8847,7 @@ const CloudRuns = (() => {
    *  identical to what was last uploaded under the previous identity. */
   function resetFingerprint() {
     lastUploadFingerprint = "";
+    retryAttempt = 0;
   }
 
   return { upload, download, clearCloud, resetFingerprint };
@@ -8630,16 +9048,21 @@ function renderStatsTab(tab) {
         btn.innerHTML = "Pulling…";
         try {
           const res = await hydrateFromCloudIfAvailable();
-          if (res?.changed && res.count > 0) {
+          if (res?.failed) {
+            toast("Couldn't reach your Steam copy right now. Your runs aren't gone.");
+          } else if (res?.changed && res.count > 0) {
             toast(`Restored ${res.count} run${res.count === 1 ? "" : "s"} from your Steam account.`);
             // hydrateFromCloudIfAvailable already triggered renderActiveTab.
           } else if (res?.count === 0) {
             toast("Your Steam account has no runs synced yet — drop your save folder once to start.");
           } else {
-            toast("Couldn't reach the cloud. Check your connection and try again.");
+            toast("Everything in your Steam copy is already here.");
           }
         } catch (e) {
           toast(`Restore failed: ${String(e?.message || e).slice(0, 80)}`);
+        } finally {
+          // A restore that changed nothing leaves this button on screen,
+          // so it must not stay stuck on "Pulling…".
           btn.innerHTML = original;
           btn.disabled = false;
         }
@@ -8681,6 +9104,7 @@ function renderStatsTab(tab) {
     case "runs":       $body.innerHTML = prefix + renderRecentRuns(parsedRuns); break;
   }
   if (UI) UI.Motion.afterRender($body);
+  else if (tab === "overview") fitClassicCharts($body);
   // Demo banner CTAs route to the existing scan/upload flow.
   if (isDemoMode) {
     $body.querySelectorAll('[data-action="scan"]').forEach((btn) => {
@@ -8794,7 +9218,7 @@ function renderStatsTab(tab) {
       }
       const report = Stats.summarize(parsedRuns);
       const bucket = (report.byRelic || []).find((b) => b.key === key) || null;
-      slot.innerHTML = renderRelicDetail(key, bucket);
+      slot.innerHTML = renderRelicDetail(key, bucket, report.overallWinrate);
       $body.querySelectorAll('[data-action="relic-expand"].is-active').forEach((c) => c.classList.remove("is-active"));
       el.classList.add("is-active");
       slot.querySelectorAll('[data-action="relic-collapse"]').forEach((btn) => {
@@ -8851,7 +9275,9 @@ function renderStatsTab(tab) {
   if (tab === "overview") {
     const $sub = document.getElementById("overview-sub");
     if ($sub) {
-      $sub.textContent = `${(report.overallWinrate * 100).toFixed(0)}% win rate · streaks, form, and character mix below`;
+      // Short enough for one line in the stage's title column: a second line
+      // would make Overview's header taller than the other tabs'.
+      $sub.textContent = `${(report.overallWinrate * 100).toFixed(0)}% win rate · your form and streaks below`;
     }
   }
 }
@@ -9130,7 +9556,7 @@ function renderDemoBanner() {
       <button class="demo-banner-dismiss" type="button" data-action="dismiss-demo-banner" aria-label="Dismiss sample data notice" title="Hide this notice">&times;</button>
       <div class="demo-strip-row">
         <span class="demo-strip-eyebrow">Sample data</span>
-        <span class="demo-strip-text">Demo preview. Point us at your STS2 save folder once &mdash; stats load in under a minute and stay saved on this device. No re-import next visit.</span>
+        <span class="demo-strip-text">Demo preview. Point us at your STS2 save folder once &mdash; stats load in under a minute and stay saved on this device. No re&#8209;import next&nbsp;visit.</span>
         <div class="demo-strip-actions">${primaryCTAs}</div>
       </div>
       <details class="demo-strip-help">
@@ -9188,7 +9614,7 @@ function renderDemoBanner() {
 let cachedKnownSchemas = null;
 async function loadKnownSchemas() {
   if (cachedKnownSchemas) return cachedKnownSchemas;
-  const mod = await import("./lib/sts2-run-parser.js?v=2");
+  const mod = await import("./lib/sts2-run-parser.js?v=3");
   cachedKnownSchemas = mod.KNOWN_SCHEMA_VERSIONS || new Set();
   return cachedKnownSchemas;
 }
@@ -9952,15 +10378,12 @@ function fastestWinRun(runs) {
  *  Used to render the "This week" delta. */
 function weeklyCadence(runs) {
   const now = Date.now();
-  const oneDay = 24 * 60 * 60 * 1000;
   let thisWeek = 0;
   let prevWeek = 0;
   for (const r of runs) {
-    const t = r.endedAt ? r.endedAt.getTime() : (r.startedAt ? r.startedAt.getTime() : 0);
-    if (!t) continue;
-    const ageDays = (now - t) / oneDay;
-    if (ageDays >= 0 && ageDays < 7) thisWeek += 1;
-    else if (ageDays >= 7 && ageDays < 14) prevWeek += 1;
+    const age = runAgeMs(r, now);
+    if (age < WEEK_MS) thisWeek += 1;
+    else if (age < 2 * WEEK_MS) prevWeek += 1;
   }
   return { thisWeek, prevWeek, delta: thisWeek - prevWeek };
 }
@@ -10016,7 +10439,7 @@ function renderKPIStrip(runs) {
         ? `${last10Wins}W &ndash; ${last10.length - last10Wins}L &middot; <strong>&minus;${Math.abs(trend)}</strong> vs. lifetime`
         : `${last10Wins}W &ndash; ${last10.length - last10Wins}L &middot; on par with lifetime`;
   const recentFormCard = `
-      <div class="kpi-card" role="listitem" data-tone="${last10Tone}">
+      <div class="kpi-card kpi-card--spark" role="listitem" data-tone="${last10Tone}">
         <span class="kpi-card-label">${SEC_ICONS.bolt} Recent form</span>
         <span class="kpi-card-value">
           <span class="kpi-trend ${trendClass}" aria-hidden="true">${trendGlyph}</span>${last10Pct}<span class="kpi-unit">%</span>
@@ -10051,8 +10474,8 @@ function renderKPIStrip(runs) {
           : `${streak.count} in a row &mdash; new personal best`)
     : streak.kind === "loss"
       ? (streak.count === 1
-          ? `One loss &mdash; reset and re-roll`
-          : `${streak.count} in a row &mdash; reset and re-roll`)
+          ? `One loss &mdash; reset and re&#8209;roll`
+          : `${streak.count} in a row &mdash; reset and re&#8209;roll`)
       : `No active streak yet &mdash; play a run`;
   const streakCard = `
       <div class="kpi-card" role="listitem" data-tone="${streakTone}">
@@ -10128,14 +10551,18 @@ function renderKPIStrip(runs) {
         <span class="kpi-card-sub">${cadenceSub}</span>
       </div>`;
 
+  // The wrapper is a size container: the strip's own width picks six
+  // columns or three (styles.css .kpi-strip-wrap), never 5 + 1.
   return `
-    <div class="kpi-strip" role="list" aria-label="At-a-glance KPIs">
-      ${recentFormCard}
-      ${streakCard}
-      ${longestCard}
-      ${pbCard}
-      ${fastestCard}
-      ${cadenceCard}
+    <div class="kpi-strip-wrap">
+      <div class="kpi-strip" role="list" aria-label="At-a-glance KPIs">
+        ${recentFormCard}
+        ${streakCard}
+        ${longestCard}
+        ${pbCard}
+        ${fastestCard}
+        ${cadenceCard}
+      </div>
     </div>`;
 }
 
@@ -10180,11 +10607,36 @@ function renderWinrateChart(runs) {
     points.push({ idx: i, wr: wins / slice.length, won: !!sorted[i].won });
   }
   const lifetime = sorted.filter((r) => r.won).length / sorted.length;
+  const model = Object.freeze({ points, lifetime, runCount: sorted.length });
+  classicChartModels = Object.freeze({ ...classicChartModels, winrate: model });
 
-  const phone = isPhoneViewport();
-  const w = phone ? 480 : 760;
-  const h = 72;
-  const padL = phone ? 24 : 30, padR = 6, padT = 4, padB = phone ? 18 : 16;
+  return `
+    <div class="chart-panel">
+      <div class="chart-panel-head">
+        <div>
+          <h3 class="chart-panel-title">Winrate trend</h3>
+          <p class="chart-panel-sub">Trailing ${window}-run win rate across your history. Dashed line: lifetime&nbsp;average.</p>
+        </div>
+      </div>
+      <div class="chart-svg-wrap chart-svg-wrap--fit chart-svg-wrap--winrate" data-classic-chart="winrate">
+        ${winrateChartSvg(model, CLASSIC_CHART_GUESS_W, CLASSIC_CHART_MIN_H)}
+      </div>
+    </div>`;
+}
+
+/**
+ * The winrate trend's SVG at `w` x `h` CSS pixels (one SVG unit = 1px),
+ * so its labels render at their CSS size. fitClassicCharts() redraws it
+ * whenever its box changes size.
+ * @param {{ points: { wr: number }[], lifetime: number, runCount: number }} model
+ * @param {number} w
+ * @param {number} h
+ * @returns {string}
+ */
+function winrateChartSvg(model, w, h) {
+  const { points, lifetime, runCount } = model;
+  // Room for "100%" at the phone's 12px labels, and for the run labels below.
+  const padL = isPhoneViewport() ? 38 : 36, padR = 8, padT = 10, padB = 22;
   const innerW = w - padL - padR;
   const innerH = h - padT - padB;
   const stepX = points.length > 1 ? innerW / (points.length - 1) : 0;
@@ -10206,28 +10658,20 @@ function renderWinrateChart(runs) {
     const tv = (i / tickN) * yCeil;
     grid.push(`
     <line class="grid-line" x1="${padL}" x2="${padL + innerW}" y1="${yFor(tv)}" y2="${yFor(tv)}"></line>
-    <text class="axis-label" x="${padL - 4}" y="${yFor(tv) + 3}" text-anchor="end">${Math.round(tv * 100)}%</text>`);
+    <text class="axis-label" x="${padL - 6}" y="${yFor(tv) + 4}" text-anchor="end">${Math.round(tv * 100)}%</text>`);
   }
   const gridStr = grid.join("");
   const lifeClamp = Math.min(lifetime, yCeil);
   const baseline = `<line class="baseline" x1="${padL}" x2="${padL + innerW}" y1="${yFor(lifeClamp)}" y2="${yFor(lifeClamp)}"></line>
-    <text class="axis-label" x="${padL + innerW}" y="${yFor(lifeClamp) - 2}" text-anchor="end">avg ${(lifetime * 100).toFixed(0)}%</text>`;
+    <text class="axis-label" x="${padL + innerW}" y="${yFor(lifeClamp) - 4}" text-anchor="end">avg ${(lifetime * 100).toFixed(0)}%</text>`;
   const axis = `
     <line class="axis-line" x1="${padL}" x2="${padL + innerW}" y1="${padT + innerH}" y2="${padT + innerH}"></line>
-    <text class="axis-label" x="${padL}" y="${h - 4}">Run #1</text>
-    <text class="axis-label" x="${padL + innerW}" y="${h - 4}" text-anchor="end">Run #${sorted.length}</text>`;
+    <text class="axis-label" x="${padL}" y="${h - 5}">Run #1</text>
+    <text class="axis-label" x="${padL + innerW}" y="${h - 5}" text-anchor="end">Run #${runCount}</text>`;
   const lineColor = "var(--accent, #ffa05c)";
   const lastPt = points[points.length - 1];
 
   return `
-    <div class="chart-panel">
-      <div class="chart-panel-head">
-        <div>
-          <h3 class="chart-panel-title">Winrate trend</h3>
-          <p class="chart-panel-sub">Trailing ${window}-run win rate across your history. Dashed line: lifetime average.</p>
-        </div>
-      </div>
-      <div class="chart-svg-wrap chart-svg-wrap--winrate" style="aspect-ratio: ${w} / ${h};">
       <svg class="chart-svg" viewBox="0 0 ${w} ${h}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Rolling win rate over time">
         ${gridStr}
         ${baseline}
@@ -10235,9 +10679,7 @@ function renderWinrateChart(runs) {
         <path class="series-line" d="${dLine}" stroke="${lineColor}"></path>
         <circle class="series-pt" cx="${xFor(points.length - 1).toFixed(1)}" cy="${yFor(lastPt.wr).toFixed(1)}" r="2.5" fill="${lineColor}"></circle>
         ${axis}
-      </svg>
-      </div>
-    </div>`;
+      </svg>`;
 }
 
 /**
@@ -10274,11 +10716,57 @@ function renderDeathHistogram(runs) {
   }
   const series = [...bins.values()].sort((a, b) => a.floor - b.floor);
   const maxCount = Math.max(...series.map((b) => b.wins + b.losses), 1);
+  const model = Object.freeze({ series, binSize, maxCount });
+  classicChartModels = Object.freeze({ ...classicChartModels, hist: model });
 
-  const phone = isPhoneViewport();
-  const w = phone ? 480 : 760;
-  const h = phone ? 96 : 88;
-  const padL = phone ? 22 : 28, padR = 8, padT = 6, padB = phone ? 30 : 26;
+  // Legend chips
+  const legend = `
+    <div class="chart-panel-chips" aria-hidden="true">
+      <span class="chart-chip" style="border-color: rgba(95,224,154,0.5); color: #6fe091; background: rgba(95,224,154,0.12); cursor: default;">Victories</span>
+      <span class="chart-chip" style="border-color: rgba(255,107,107,0.5); color: #ff8888; background: rgba(255,107,107,0.12); cursor: default;">Defeats</span>
+    </div>`;
+  // The exact counts live in each bar's tooltip, which only a pointer that
+  // can hover ever shows, so phones and tablets are not told to hover.
+  const hoverHint = canHoverPointer() ? " Hover a bar for exact&nbsp;counts." : "";
+
+  return `
+    <div class="chart-panel">
+      <div class="chart-panel-head">
+        <div>
+          <h3 class="chart-panel-title">Where you end up</h3>
+          <p class="chart-panel-sub">Floors where runs end (wins green, losses&nbsp;red).${hoverHint}</p>
+        </div>
+        ${legend}
+      </div>
+      <div class="chart-svg-wrap chart-svg-wrap--fit chart-svg-wrap--hist" data-classic-chart="hist">
+        ${histChartSvg(model, CLASSIC_CHART_GUESS_W, CLASSIC_CHART_MIN_H)}
+      </div>
+    </div>`;
+}
+
+/** True when the main pointer can hover (a mouse or trackpad). */
+function canHoverPointer() {
+  try { return window.matchMedia("(hover: hover)").matches; }
+  catch { return true; }
+}
+
+/** Space one floor label needs along the axis at the 11-12px label size:
+ *  a floor number ("51"), or a binned range ("12–13"), plus a gap. */
+const HIST_LABEL_SLOT_PX = 26;
+const HIST_RANGE_LABEL_SLOT_PX = 44;
+
+/**
+ * The floor histogram's SVG at `w` x `h` CSS pixels (one SVG unit = 1px).
+ * Floor labels run level, as many as fit: every `step`-th bar, always
+ * ending on the highest floor.
+ * @param {{ series: { floor: number, wins: number, losses: number }[], binSize: number, maxCount: number }} model
+ * @param {number} w
+ * @param {number} h
+ * @returns {string}
+ */
+function histChartSvg(model, w, h) {
+  const { series, binSize, maxCount } = model;
+  const padL = 10, padR = 10, padT = 8, padB = 22;
   const innerW = w - padL - padR;
   const innerH = h - padT - padB;
   const barGap = 2;
@@ -10286,8 +10774,18 @@ function renderDeathHistogram(runs) {
 
   const yFor = (v) => padT + (1 - v / maxCount) * innerH;
 
-  const labelStep = Math.max(1, Math.ceil(series.length / 12));
-  const tiltLabels = series.length > 8;
+  const slot = binSize > 1 ? HIST_RANGE_LABEL_SLOT_PX : HIST_LABEL_SLOT_PX;
+  const step = Math.max(1, Math.ceil(slot / (barW + barGap)));
+  const last = series.length - 1;
+  const labelled = new Set();
+  for (let i = 0; i <= last; i += step) labelled.add(i);
+  const lastLabelled = Math.floor(last / step) * step;
+  if (lastLabelled !== last) {
+    // End on the highest floor: add it if there is room, else it replaces
+    // the label just before it.
+    if (last - lastLabelled < Math.ceil(step / 2)) labelled.delete(lastLabelled);
+    labelled.add(last);
+  }
 
   const bars = series.map((b, i) => {
     const x = padL + i * (barW + barGap);
@@ -10297,13 +10795,9 @@ function renderDeathHistogram(runs) {
     const heightTotal = (padT + innerH) - yTop;
     const winsHeight = total > 0 ? heightTotal * (b.wins / total) : 0;
     const lossHeight = heightTotal - winsHeight;
-    const showLabel = i % labelStep === 0 || i === series.length - 1;
     const lab = `${b.floor}${binSize > 1 ? `–${b.floor + binSize - 1}` : ""}`;
-    const yLab = h - (tiltLabels ? 4 : 6);
-    const labSvg = showLabel
-      ? (tiltLabels
-        ? `<text class="bar-label" transform="rotate(-52 ${cx.toFixed(2)} ${yLab})" x="${cx.toFixed(2)}" y="${yLab}" text-anchor="end">${esc(lab)}</text>`
-        : `<text class="bar-label" x="${cx.toFixed(2)}" y="${yLab}" text-anchor="middle">${esc(lab)}</text>`)
+    const labSvg = labelled.has(i)
+      ? `<text class="bar-label" x="${cx.toFixed(2)}" y="${h - 5}" text-anchor="middle">${esc(lab)}</text>`
       : "";
     return `
       <g>
@@ -10315,28 +10809,57 @@ function renderDeathHistogram(runs) {
       </g>`;
   }).join("");
 
-  // Legend chips
-  const legend = `
-    <div class="chart-panel-chips" aria-hidden="true">
-      <span class="chart-chip" style="border-color: rgba(95,224,154,0.5); color: #6fe091; background: rgba(95,224,154,0.12); cursor: default;">Victories</span>
-      <span class="chart-chip" style="border-color: rgba(255,107,107,0.5); color: #ff8888; background: rgba(255,107,107,0.12); cursor: default;">Defeats</span>
-    </div>`;
-
   return `
-    <div class="chart-panel">
-      <div class="chart-panel-head">
-        <div>
-          <h3 class="chart-panel-title">Where you end up</h3>
-          <p class="chart-panel-sub">Floors where runs end (wins green, losses red). Hover a bar for exact counts.</p>
-        </div>
-        ${legend}
-      </div>
-      <div class="chart-svg-wrap chart-svg-wrap--hist" style="aspect-ratio: ${w} / ${h};">
       <svg class="chart-svg" viewBox="0 0 ${w} ${h}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Floor outcome histogram">
         ${bars}
-      </svg>
-      </div>
-    </div>`;
+      </svg>`;
+}
+
+// ---- Classic Overview charts drawn at their box's own size ---------------
+// A fixed viewBox scaled into a ~540px card (or a ~310px phone) shrank the
+// axis text to 5-8px. Each chart is drawn once at a guessed size into the
+// HTML string, then redrawn at its box's measured size (one SVG unit = one
+// CSS pixel) right after it is inserted and whenever the box resizes.
+
+/** Plot height (CSS px, the wrap's min-height in styles.css) and the width
+ *  guessed for the first draw, before the box can be measured. */
+const CLASSIC_CHART_MIN_H = 132;
+const CLASSIC_CHART_GUESS_W = 520;
+/** The data each classic chart was last built from, for redraws. */
+let classicChartModels = Object.freeze({});
+/** Redraws a chart whose box changes size (a hidden tab measures 0). */
+let classicChartWatcher = null;
+
+/**
+ * Redraws one classic chart at its box's size, unless already drawn so.
+ * @param {HTMLElement} wrap  a [data-classic-chart] element
+ */
+function fitClassicChart(wrap) {
+  const w = Math.round(wrap.clientWidth);
+  const h = Math.round(wrap.clientHeight);
+  if (w <= 0 || h <= 0 || wrap.dataset.drawn === `${w}x${h}`) return;
+  const kind = wrap.dataset.classicChart;
+  const model = classicChartModels[kind];
+  const draw = kind === "winrate" ? winrateChartSvg : kind === "hist" ? histChartSvg : null;
+  if (!model || !draw) return;
+  wrap.innerHTML = draw(model, w, h);
+  wrap.dataset.drawn = `${w}x${h}`;
+}
+
+/**
+ * Fits every classic chart in `root` now, and again whenever one resizes.
+ * @param {ParentNode} root
+ */
+function fitClassicCharts(root) {
+  const wraps = [...root.querySelectorAll("[data-classic-chart]")];
+  wraps.forEach((wrap) => fitClassicChart(wrap));
+  if (typeof ResizeObserver !== "function") return;
+  if (!classicChartWatcher) {
+    classicChartWatcher = new ResizeObserver((entries) => entries.forEach((entry) => fitClassicChart(entry.target)));
+  }
+  // The Overview body is rebuilt on every render; let go of the old wraps.
+  classicChartWatcher.disconnect();
+  wraps.forEach((wrap) => classicChartWatcher.observe(wrap));
 }
 
 /** Mini sparkline of the last N runs, ordered oldest → newest from
@@ -10513,7 +11036,9 @@ function renderOverview(report) {
   // mirror that layout exactly so the web reads as the same product.
   // Delegates to renderCharCards so Overview and the dedicated Characters
   // tab pick up the same character-portrait art treatment.
-  const charCards = renderCharCards(report.byCharacter, { expandable: false });
+  // The whole roster, as on the Characters tab and the new look: an
+  // unplayed character (The Fool, for most players) shows "No runs yet".
+  const charCards = renderCharCards(rosterBuckets(report.byCharacter), { expandable: false });
 
   // KPI strip + analytics charts (added in v49). Reasoned about as
   // "answers to the questions a player asks every session": am I on a
@@ -10544,7 +11069,8 @@ function renderOverview(report) {
     ${secTitle("Per character", "people")}
     ${charCards}
     ${secTitle("Top relics", "sparkles", "gold")}
-    ${renderRelicCards(report.byRelic.slice(0, 6))}`;
+    ${classicToneKeyHtml(report.overallWinrate, { belowTone: "muted" })}
+    ${renderRelicCards(report.byRelic.slice(0, 6), { baseline: report.overallWinrate })}`;
 }
 
 // =========================================================================
@@ -10652,7 +11178,7 @@ function nextStreakCards(runs) {
           ? `${streak.count} in a row &middot; best is <strong>${longest.count}</strong>`
           : `${streak.count} in a row &mdash; a new personal best`)
     : streak.kind === "loss"
-      ? (streak.count === 1 ? "One loss &mdash; reset and re-roll" : `${streak.count} in a row &mdash; reset and re-roll`)
+      ? (streak.count === 1 ? "One loss &mdash; reset and re&#8209;roll" : `${streak.count} in a row &mdash; reset and re&#8209;roll`)
       : "No active streak yet &mdash; play a run";
   const active = {
     title: streak.kind === "win" ? "Win streak" : streak.kind === "loss" ? "Loss streak" : "Active streak",
@@ -11010,6 +11536,17 @@ function renderAppearanceCard() {
       </section>`;
 }
 
+/** Settings → Account picture when Steam gave none: the crest, as in the sidebar. */
+const SETTINGS_AVATAR_FALLBACK = "/assets/brand/crest-avatar-128-v1.png";
+
+/** True on a phone or tablet with no mouse: keyboard shortcuts mean nothing
+ *  there, so Settings leaves the shortcut list out (both looks). The same
+ *  test as the CSS that hides "Press T" (settings.css, hover: none). */
+function isTouchOnly() {
+  try { return window.matchMedia("(hover: none)").matches; }
+  catch { return false; }
+}
+
 function renderSettingsTab() {
   const $body = document.getElementById("settings-body");
   if (!$body) return;
@@ -11020,7 +11557,10 @@ function renderSettingsTab() {
   const runCount = parsedRuns.length;
   const isAuthed = !!session?.sessionToken;
   const personaName = session?.personaName || "";
-  const avatarUrl = session?.avatar || "";
+  // The session keeps the picture as avatarURL (the sidebar reads it there);
+  // `avatar` was never set, so this card showed "?" for everyone. No picture
+  // falls back to the crest, the same as the sidebar.
+  const avatarUrl = session?.avatarURL || SETTINGS_AVATAR_FALLBACK;
   const steamID = session?.steamID || "";
   const lastSyncCount = lastCloudSyncCount;
   const lastSyncAt = lastCloudSyncAt ? formatRelativeActive(lastCloudSyncAt) : "";
@@ -11044,7 +11584,7 @@ function renderSettingsTab() {
         <div class="settings-status-row">
           <div class="settings-status-cell">
             <span class="settings-stat-label">Runs loaded</span>
-            <span class="settings-stat-value">${runCount.toLocaleString()}</span>
+            <span class="settings-stat-value">${runCount.toLocaleString()} run${runCount === 1 ? "" : "s"}</span>
           </div>
           ${isAuthed && lastSyncCount != null ? `
             <div class="settings-status-cell">
@@ -11063,7 +11603,7 @@ function renderSettingsTab() {
             <div class="settings-status-cell settings-status-cell--warn">
               <span class="settings-stat-label">Auto refresh</span>
               <span class="settings-stat-value">Off</span>
-              <span class="settings-stat-foot">${canKeepSaveFolder() ? "Link a folder to enable" : "New runs: press Refresh and pick the folder"}</span>
+              <span class="settings-stat-foot">${canKeepSaveFolder() ? "Link a folder to enable" : "After a run, press Refresh now and pick the folder"}</span>
             </div>
           `}
         </div>
@@ -11073,7 +11613,10 @@ function renderSettingsTab() {
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21V9"/><polyline points="7 14 12 9 17 14"/><path d="M5 3h14"/></svg>
             <span>${isLinked ? "Re-pick folder" : "Link save folder"}</span>
           </button>
-          <button class="btn-ghost" type="button" data-action="reload-saves" ${!isLinked ? "disabled" : ""}>
+          <!-- Always enabled: with no kept folder, reloadSavedHistoryInteractive()
+               explains and opens the picker, the same as the toolbar Refresh,
+               which is what the Auto refresh tile above tells people to press. -->
+          <button class="btn-ghost" type="button" data-action="reload-saves">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15A9 9 0 1 1 18.36 5.64L23 10"/></svg>
             <span>Refresh now</span>
           </button>
@@ -11103,13 +11646,13 @@ function renderSettingsTab() {
           <p class="settings-card-sub">
             ${isAuthed
               ? "Signed in with Steam. Your runs sync across devices."
-              : "Signed out. Sign in with Steam to enable cross-device sync, the co-op feed, community highlights and beta features."}
+              : "Signed out. Sign in with Steam to enable cross-device sync, the co\u2011op feed, community highlights and beta features."}
           </p>
         </header>
 
         ${isAuthed ? `
           <div class="settings-account-row">
-            ${avatarUrl ? `<img class="settings-avatar" src="${esc(avatarUrl)}" alt="" />` : `<div class="settings-avatar settings-avatar--placeholder">?</div>`}
+            <img class="settings-avatar" src="${esc(avatarUrl)}" alt="" />
             <div class="settings-account-meta">
               <strong>${esc(personaName || "Steam User")}</strong>
               ${steamID ? `<span class="muted small">SteamID ${esc(steamID)}</span>` : ""}
@@ -11154,6 +11697,7 @@ function renderSettingsTab() {
           </label>
         </div>
 
+        ${isTouchOnly() ? "" : `
         <div class="settings-shortcut-block">
           <h4>Keyboard shortcuts</h4>
           <ul class="settings-shortcut-list">
@@ -11164,7 +11708,7 @@ function renderSettingsTab() {
             <li><kbd>?</kbd> <span>open keyboard help overlay</span></li>
             <li><kbd>Esc</kbd> <span>close any modal or popover</span></li>
           </ul>
-        </div>
+        </div>`}
       </section>
 
       <!-- ───────── Danger / advanced card ───────── -->
@@ -12393,6 +12937,33 @@ function renderCharacterDetailNext(charKey, bucket) {
   });
 }
 
+/** Classic "Detailed breakdown" bar colour per winrateTone() band against
+ *  the player's overall win rate, as the relic and card panels colour
+ *  theirs, so a 17% level no longer looks as green as a 71% one. */
+const ASC_BAR_TINT = Object.freeze({ win: "var(--win)", gold: "var(--gold)", accent: "var(--accent)" });
+
+/** z for a 95% interval, as lib/stats-engine.js uses. */
+const WILSON_Z_95 = 1.96;
+
+/**
+ * Wilson lower bound (95%) of a win rate: the sum lib/stats-engine.js
+ * gives relic and card buckets as `lb`. Ascension buckets come without
+ * one, so winrateTone() painted every above-average level green, "proven",
+ * and the colour key would have said so of a 5-run level. Copied because
+ * that module does not export it.
+ * @param {number} wins
+ * @param {number} runs
+ * @returns {number} 0..1
+ */
+function winRateLowerBound(wins, runs) {
+  if (runs <= 0) return 0;
+  const z2 = WILSON_Z_95 * WILSON_Z_95;
+  const p = wins / runs;
+  const center = p + z2 / (2 * runs);
+  const margin = WILSON_Z_95 * Math.sqrt((p * (1 - p) + z2 / (4 * runs)) / runs);
+  return Math.max(0, (center - margin) / (1 + z2 / runs));
+}
+
 /** Bar chart matching the desktop app's "Per ascension" panel.
  *  Each bar shows total runs (height proportional to max) with the wins
  *  portion painted in green from the bottom up. */
@@ -12460,17 +13031,21 @@ function renderAscensionsTab(report) {
     <div class="asc-detail-panel">
       ${buckets.map((b, i) => {
         const wr = (b.winrate * 100).toFixed(1);
-        const tint = b.winrate >= 0.10 ? "var(--win)" : "var(--accent)";
+        const tint = ASC_BAR_TINT[winrateTone({ ...b, lb: winRateLowerBound(b.wins, b.runs) }, report.overallWinrate)];
         const ascLevel = parseAsc(b.key);
         const info = AscInfo.modifierFor(ascLevel);
         const modBadge = info.modifier
-          ? `<span class="asc-mod-badge">${esc(info.modifier)}</span>`
+          ? `<span class="asc-mod-badge" title="${esc(info.modifier)}">${esc(info.modifier)}</span>`
           : `<span class="asc-mod-badge asc-mod-badge-plain">${esc(info.tier.label)}</span>`;
         const divider = i === buckets.length - 1 ? "" : " has-divider";
+        // The level is drawn in plain ink now (its tier colour clashed with the
+        // win-rate key), so the tier is named on hover instead.
+        const band = info.tier.band;
+        const tierTip = band ? `${info.tier.label} (${band[0] === band[1] ? `A${band[0]}` : `A${band[0]}–A${band[1]}`})` : info.tier.label;
         return `
           <details class="asc-detail-row${divider}" data-asc="${esc(String(ascLevel))}">
             <summary class="asc-detail-summary">
-              <span class="asc-detail-key" style="--tier-accent:${info.tier.accent}">${esc(b.key)}</span>
+              <span class="asc-detail-key" style="--tier-accent:${info.tier.accent}" title="${esc(tierTip)}">${esc(b.key)}</span>
               ${modBadge}
               <div class="asc-detail-bar"><span style="width:${Math.min(100, b.winrate*100)}%; background:${tint}"></span></div>
               <span class="asc-detail-pct">${wr}%</span>
@@ -12507,6 +13082,7 @@ function renderAscensionsTab(report) {
     ${secTitle("Difficulty tiers", "sparkles")}
     ${tierLegend}
     ${secTitle("Detailed breakdown", "list")}
+    ${classicToneKeyHtml(report.overallWinrate)}
     ${detailRows}`;
 }
 
@@ -12591,17 +13167,19 @@ function renderRelicsNext(report) {
       runs: b.runs,
       wins: b.wins,
       winratePct: b.winrate * 100,
-      tone: winrateTone(b),
+      tone: winrateTone(b, report.overallWinrate),
       rarity: RelicInfo.relicInfoFor(b.key)?.rarity || null,
     }));
   return UI.RelicsView.relicsTabHtml({
     relics,
     minRuns: NEXT_RELIC_MIN_RUNS,
     lowSampleRuns: NEXT_LOW_SAMPLE_RUNS,
+    baselinePct: report.overallWinrate * 100,
   });
 }
 
-function renderRelicDetailNext(relicKey, bucket) {
+/** @param {string} relicKey @param {object|null} bucket @param {number} baseline overall win rate, 0..1 */
+function renderRelicDetailNext(relicKey, bucket, baseline) {
   const info = RelicInfo.relicInfoFor(relicKey);
   return UI.RelicsView.relicDetailHtml({
     key: relicKey,
@@ -12610,7 +13188,7 @@ function renderRelicDetailNext(relicKey, bucket) {
     rarity: info?.rarity || null,
     info: info ? { effect: info.effect, tip: info.tip, synergy: info.synergy || [] } : null,
     record: bucket
-      ? { runs: bucket.runs, wins: bucket.wins, winratePct: bucket.winrate * 100, tone: winrateTone(bucket) }
+      ? { runs: bucket.runs, wins: bucket.wins, winratePct: bucket.winrate * 100, tone: winrateTone(bucket, baseline) }
       : null,
     lowSampleRuns: NEXT_LOW_SAMPLE_RUNS,
   });
@@ -12623,16 +13201,20 @@ function renderRelicsTab(report) {
   const buckets = report.byRelic.filter((b) => b.runs >= 3);
   if (!buckets.length) {
     return `
-      ${secTitle("Top relics by winrate", "sparkles", "gold")}
-      <p class="muted">Not enough data yet — pick a relic at least 3 times to see a winrate here.</p>`;
+      ${secTitle("Top relics by win rate", "sparkles", "gold")}
+      <p class="muted">Not enough data yet — pick a relic at least 3 times to see a win rate here.</p>`;
   }
+  // The order is the Wilson lower bound (stats-engine.js relicBuckets): the
+  // tab subtitle says "weighted by runs" (81.8% above 83.3% is on purpose),
+  // so the note says why instead of saying it again (same as the new look).
   return `
-    ${secTitle("Top relics by winrate", "sparkles", "gold")}
+    ${secTitle("Top relics by win rate", "sparkles", "gold")}
     <p class="muted small" style="margin: -6px 0 14px;">
-      Sorted by winrate, with a minimum-sample filter applied to suppress one-run flukes.
-      <strong>Tap any relic for details.</strong>
+      A relic you've had in only a few runs counts for less, so one lucky run can't top the list.
+      It needs 3+ runs to show. <strong>Tap any relic for&nbsp;details.</strong>
     </p>
-    ${renderRelicCards(buckets, { expandable: true })}
+    ${classicToneKeyHtml(report.overallWinrate, { belowTone: "muted" })}
+    ${renderRelicCards(buckets, { expandable: true, baseline: report.overallWinrate })}
     <div id="relic-detail-slot" class="relic-detail-slot"></div>`;
 }
 
@@ -12651,7 +13233,7 @@ function renderRelicCards(buckets, opts = {}) {
     <div class="relic-grid">
       ${buckets.map((b) => {
         const wr = (b.winrate * 100).toFixed(1);
-        const tone = winrateTone(b);
+        const tone = winrateTone(b, opts.baseline);
         const isLowSample = b.runs < 10;
         const art = relicImageSrc(b.key);
         const icon = art
@@ -12688,12 +13270,12 @@ function renderRelicCards(buckets, opts = {}) {
  *  drill-down on the Characters tab. Pulls hand-written copy from
  *  RelicInfo for the in-game effect + when-to-pick advice; pulls
  *  the user's personal numbers from the bucket. */
-function renderRelicDetail(relicKey, bucket) {
-  if (UI) return renderRelicDetailNext(relicKey, bucket);
+function renderRelicDetail(relicKey, bucket, baseline) {
+  if (UI) return renderRelicDetailNext(relicKey, bucket, baseline);
   const info = RelicInfo.relicInfoFor(relicKey);
   const art = relicImageSrc(relicKey);
   const wr = bucket ? (bucket.winrate * 100).toFixed(1) : "—";
-  const tone = bucket ? winrateTone(bucket) : "accent";
+  const tone = bucket ? winrateTone(bucket, baseline) : "accent";
   const lossCount = bucket ? bucket.runs - bucket.wins : 0;
   const tier = info?.rarity || "unknown";
   const tierColor = RelicInfo.RARITY_COLORS[tier] || "#8a7cb8";
@@ -12779,17 +13361,59 @@ function renderRelicDetail(relicKey, bucket) {
     </div>`;
 }
 
-/** Pick a color tone using the Wilson lower-bound (95% confidence) so a
- *  3-trial 67% relic doesn't look as confident as a 30-trial 67% relic.
- *  - lb >= 0.5  → "win"     (we're 95% confident this beats a coin flip)
- *  - lb >= 0.15 → "gold"    (confidently above a typical baseline)
- *  - else       → "accent"  (small-sample / below baseline)
+/** Fallback baseline when a caller has no overall win rate: a coin flip. */
+const TONE_FALLBACK_BASELINE = 0.5;
+
+/** Colour a relic's or card's win rate by what it says against the player's
+ *  own overall win rate (`baseline`, 0..1), so the legend can say it in
+ *  words (lib/ui/tone-legend.js):
+ *  - "win"    the Wilson lower bound (95%) beats the baseline: proven above
+ *             your average, not a lucky streak
+ *  - "gold"   the win rate beats the baseline, but not by enough runs to prove it
+ *  - "accent" at or below the baseline
+ *  It used to be fixed cut-offs (lb ≥ 0.5 / ≥ 0.15), which painted a 47%
+ *  card gold under an "Above baseline" legend for a 48% player.
  *  Falls back to raw winrate when an old engine output is missing `lb`. */
-function winrateTone(b) {
-  const lb = typeof b?.lb === "number" ? b.lb : (b?.winrate ?? 0);
-  if (lb >= 0.5) return "win";
-  if (lb >= 0.15) return "gold";
+function winrateTone(b, baseline) {
+  const base = Number.isFinite(baseline) ? baseline : TONE_FALLBACK_BASELINE;
+  const rate = b?.winrate ?? 0;
+  const lb = typeof b?.lb === "number" ? b.lb : rate;
+  if (lb > base) return "win";
+  if (rate > base) return "gold";
   return "accent";
+}
+
+/** What each winrateTone() colour means: the new look's words
+ *  (lib/ui/tone-legend.js TONE_LABELS), copied because classic does not
+ *  load lib/ui/. */
+const CLASSIC_TONE_LABELS = Object.freeze({
+  win: "Proven above your average",
+  gold: "Above your average",
+  accent: "At or below your average",
+});
+
+/**
+ * Classic's quiet key for the winrateTone() colours, set above the list
+ * they colour. Its swatches take that list's colours (styles.css .tone-key).
+ * @param {number} baseline  the player's overall win rate, 0..1
+ * @param {{ belowTone?: "accent" | "muted" }} [opts]  "muted" where "at or
+ *   below" is drawn grey (relic cards) rather than orange (card rows, bars)
+ * @returns {string}
+ */
+function classicToneKeyHtml(baseline, opts = {}) {
+  const base = Number.isFinite(baseline)
+    ? `<li class="tone-key-base">Your average: <b>${(baseline * 100).toFixed(1)}%</b></li>`
+    : "";
+  const below = opts.belowTone === "muted" ? " is-below-muted" : "";
+  // The wrapper is the container the key's layout reads (styles.css): one
+  // line where all four fit, else two by two, so no chip sits alone.
+  return `
+    <div class="tone-key-wrap">
+      <ul class="tone-key${below}${base ? " has-base" : ""}" aria-label="How to read the colours">
+        ${base}
+        ${["win", "gold", "accent"].map((tone) => `<li data-tone="${tone}"><i aria-hidden="true"></i>${CLASSIC_TONE_LABELS[tone]}</li>`).join("")}
+      </ul>
+    </div>`;
 }
 
 /** Title-case-ish prettifier for ids like "sword_of_jade" -> "Sword Of Jade". */
@@ -12880,7 +13504,7 @@ function renderCardsNext(report) {
     wins: b.wins,
     winratePct: b.winrate * 100,
     pickRatePct: hasOffers ? Math.min(1, b.pickedRate ?? 0) * 100 : null,
-    tone: winrateTone(b),
+    tone: winrateTone(b, report.overallWinrate),
   }));
   const skipped = (report.topSkippedCards || []).map((b) => ({
     ...identity(b),
@@ -12888,7 +13512,13 @@ function renderCardsNext(report) {
     picks: b.wins,
     pickRatePct: (b.pickedRate ?? 0) * 100,
   }));
-  return UI.CardsView.cardsTabHtml({ picked, skipped, hasOffers, lowSampleRuns: NEXT_LOW_SAMPLE_RUNS });
+  return UI.CardsView.cardsTabHtml({
+    picked,
+    skipped,
+    hasOffers,
+    lowSampleRuns: NEXT_LOW_SAMPLE_RUNS,
+    baselinePct: report.overallWinrate * 100,
+  });
 }
 
 /** Cards tab — mirrors VaultApp/App/DetailView.swift CardsView.
@@ -12914,10 +13544,11 @@ function renderCards(report) {
   const pickedSection = report.topPickedCards?.length
     ? `
       ${secTitle("Most-picked cards", "cards")}
+      ${classicToneKeyHtml(report.overallWinrate)}
       <div class="card-list-panel">
         ${report.topPickedCards.map((b) => {
           const wr = (b.winrate * 100).toFixed(1);
-          const wrCls = winrateTone(b);
+          const wrCls = winrateTone(b, report.overallWinrate);
           return `
             <div class="card-row card-row-picked">
               ${cardThumb(b.key, "picked")}
@@ -12966,6 +13597,11 @@ function renderCards(report) {
  * "show me only my A10 wins" or similar.
  */
 const STORAGE_RUN_FILTERS = "vault.web.runfilters.v1";
+/** Ascension chips saved before they matched the Ascensions tab's tiers
+ *  (they were A1–A4 "low", A5–A8 "mid", A9–A10 "high"). A saved one maps to
+ *  the tier closest to what it asked for, so nobody's filter is dropped;
+ *  "mid" keeps its id (now A4–A6, the Ascensions tab's mid climb). */
+const LEGACY_RUN_TIER_IDS = Object.freeze({ low: "early", high: "master" });
 let runFilters = (() => {
   try {
     const raw = localStorage.getItem(STORAGE_RUN_FILTERS);
@@ -12974,7 +13610,8 @@ let runFilters = (() => {
       return {
         character: j.character || "all",      // all | ironclad | silent | ...
         outcome: j.outcome || "all",          // all | wins | losses
-        ascensionTier: j.ascensionTier || "all", // all | low | mid | high
+        // all | a0 | early | mid | expert | master (RUN_FILTER_TIERS)
+        ascensionTier: LEGACY_RUN_TIER_IDS[j.ascensionTier] || j.ascensionTier || "all",
         search: j.search || "",
       };
     }
@@ -13091,10 +13728,8 @@ function applyRunFilters(runs) {
       // cleanly into the top tier instead of vanishing from results.
       const raw = Number.isFinite(r.ascension) ? r.ascension : -1;
       const a = raw < 0 ? -1 : Math.min(STS2_MAX_ASCENSION, raw);
-      if (runFilters.ascensionTier === "a0"   && !(a === 0))             return false;
-      if (runFilters.ascensionTier === "low"  && !(a >= 1 && a <= 4))    return false;
-      if (runFilters.ascensionTier === "mid"  && !(a >= 5 && a <= 8))    return false;
-      if (runFilters.ascensionTier === "high" && !(a >= 9 && a <= STS2_MAX_ASCENSION)) return false;
+      const tier = RUN_FILTER_TIERS.find((t) => t.id === runFilters.ascensionTier);
+      if (tier?.band && !(a >= tier.band[0] && a <= tier.band[1])) return false;
     }
     if (q) {
       const hay = [r.character, Stats.offLadderMode(r.gameMode), r.seed, r.sourceFile, r.won ? "victory win" : "defeat loss"]
@@ -13107,17 +13742,20 @@ function applyRunFilters(runs) {
 
 // One chip per climber; those without runs render disabled.
 const RUN_FILTER_CHARACTERS = ["ironclad", "silent", "defect", "regent", "necrobinder", "fool"];
-// STS2 ascension buckets: A0 is the default "any character can pick it"
-// entry point so it stands alone; A1–A4 covers the early climb;
-// A5–A8 the mid climb; A9–A10 is the high-asc bucket where the meta
-// sharpens. A11+ is impossible in STS2 — the clamp in applyRunFilters
-// folds any rogue legacy save into the top bucket.
+// Ascension chips: the same tiers as the Ascensions tab (lib/ascension-info.js
+// ASCENSION_TIERS: A0 · A1–A3 · A4–A6 · A7–A9 · A10), so "mid climb" is the
+// same runs on both tabs. The tier name rides along as the chip's tooltip.
+// A11+ is impossible in STS2; the clamp in applyRunFilters folds any rogue
+// legacy save into the top tier. Standard keeps the id "a0" so saved filters
+// still match.
 const RUN_FILTER_TIERS = [
-  { id: "all",  label: "All Asc" },
-  { id: "a0",   label: "A0"      },
-  { id: "low",  label: "A1–A4"   },
-  { id: "mid",  label: "A5–A8"   },
-  { id: "high", label: "A9–A10"  },
+  { id: "all", label: "All Asc" },
+  ...AscInfo.ASCENSION_TIERS.map((t) => ({
+    id: t.key === "standard" ? "a0" : t.key,
+    label: t.band[0] === t.band[1] ? `A${t.band[0]}` : `A${t.band[0]}–A${t.band[1]}`,
+    title: t.label,
+    band: t.band,
+  })),
 ];
 const RUN_FILTER_OUTCOMES = [
   { id: "all",    label: "All" },
@@ -13145,7 +13783,7 @@ function renderRunFilters(allRuns, filteredCount) {
   `).join("");
 
   const tierChips = RUN_FILTER_TIERS.map((t) => `
-    <button class="chart-chip" type="button" data-filter-kind="ascensionTier" data-filter-value="${esc(t.id)}" aria-pressed="${runFilters.ascensionTier === t.id}">${esc(t.label)}</button>
+    <button class="chart-chip" type="button" data-filter-kind="ascensionTier" data-filter-value="${esc(t.id)}" aria-pressed="${runFilters.ascensionTier === t.id}"${t.title ? ` title="${esc(t.title)}"` : ""}>${esc(t.label)}</button>
   `).join("");
 
   const isFiltered = runFilters.character !== "all" || runFilters.outcome !== "all" || runFilters.ascensionTier !== "all" || (runFilters.search || "").trim() !== "";
@@ -13174,19 +13812,19 @@ function renderRunFilters(allRuns, filteredCount) {
     <div class="run-filters" role="region" aria-label="Filter runs">
       <div class="run-filter-group">
         <span class="run-filter-label">Outcome</span>
-        ${outcomeChips}
+        <span class="run-filter-chips">${outcomeChips}</span>
       </div>
       <div class="run-filter-group">
         <span class="run-filter-label">Ascension</span>
-        ${tierChips}
+        <span class="run-filter-chips">${tierChips}</span>
       </div>
       <div class="run-filter-group">
         <span class="run-filter-label">Character</span>
-        ${charChips}
+        <span class="run-filter-chips">${charChips}</span>
       </div>
       <label class="run-filter-search" aria-label="Search runs">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-        <input type="search" placeholder="Search seed, character, win/loss…" value="${esc(runFilters.search || "")}" data-filter-kind="search" />
+        <input type="search" placeholder="Search runs" title="Search by seed, character, win or loss" value="${esc(runFilters.search || "")}" data-filter-kind="search" />
       </label>
       ${compareToggle}
       <p class="run-filter-summary">${summary}</p>
@@ -13216,7 +13854,7 @@ function renderRecentRuns(runs) {
     ${renderAutoRefreshPill()}
     ${secTitle("Recent runs", "clock")}
     <p class="muted small recent-runs-hint">
-      <strong>Tap any run</strong> to see your full Act timeline — every combat, elite, shop, and rest you walked through, with the floor where the run ended marked.
+      <strong>Tap any run</strong> to see your full Act timeline — every combat, elite, shop, and rest you walked through, with the floor where the run ended&nbsp;marked.
     </p>
     <div class="run-list">
       ${slice.map((r) => {
@@ -15048,14 +15686,18 @@ function renderActTimeline(r) {
 
   // Per-act node count summary so the closed-state of each <details>
   // tells you what you'd see if you opened it ("12 nodes · 1 elite, 2 rests").
+  // "9 enemies · 2 elites · 1 boss": real plurals ("enemys", "bosss" before).
+  // No-break spaces keep each count with its noun, and each "·" with the
+  // item before it, so a wrapped line never starts with a dot.
+  const NODE_PLURAL = { combat: "enemies", elite: "elites", shop: "merchants", rest: "rests", event: "unknowns", chest: "treasures", boss: "bosses" };
   const summarize = (nodes) => {
     const counts = {};
     nodes.forEach((n) => { counts[n.type] = (counts[n.type] || 0) + 1; });
     const order = ["combat", "elite", "shop", "rest", "event", "chest", "boss"];
     return order
       .filter((k) => counts[k])
-      .map((k) => `${counts[k]} ${nodeLabel(k).toLowerCase()}${counts[k] > 1 ? "s" : ""}`)
-      .join(" · ");
+      .map((k) => `${counts[k]}\u00a0${counts[k] > 1 ? NODE_PLURAL[k] : nodeLabel(k).toLowerCase()}`)
+      .join("\u00a0· ");
   };
 
   // Legend: every icon used in the timeline, captioned. Renders at
@@ -15075,11 +15717,11 @@ function renderActTimeline(r) {
     <div class="run-detail-section run-detail-path-section">
       <div class="run-detail-section-head">
         <h3 class="run-detail-section-title">Act timeline — the path you took</h3>
-        <span class="run-detail-section-count">${path.reduce((n, a) => n + (a.nodes?.length || 0), 0)} nodes</span>
+        <span class="run-detail-section-count">${path.reduce((n, a) => n + (a.nodes?.length || 0), 0)}&nbsp;nodes</span>
       </div>
       <p class="run-detail-section-sub muted small">
         The actual sequence of rooms you walked through, taken from your <code>.run</code> file. We don't show
-        the unvisited branches because the save data only records nodes you visited.
+        the unvisited branches because the save data only records nodes you&nbsp;visited.
       </p>
       ${path.map((act, idx) => {
         if (!act.nodes || !act.nodes.length) return "";

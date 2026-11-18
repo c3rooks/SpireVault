@@ -40,7 +40,7 @@
 
   <meta property="og:title" content="SpireVault · Slay the Spire 2 stats &amp; co-op (web)" />
   <meta property="og:description" content="Drop your STS2 save folder, see your stats instantly. Nothing uploads. Optional Steam sign-in for the co-op partner feed." />
-  <meta property="og:image" content="https://app.spirevault.app/assets/og-v2.png" />
+  <meta property="og:image" content="https://app.spirevault.app/assets/og-crest-v1.png" />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
   <meta property="og:url" content="https://app.spirevault.app" />
@@ -49,7 +49,7 @@
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="SpireVault · Slay the Spire 2 stats &amp; co-op (web)" />
   <meta name="twitter:description" content="Drop your STS2 save folder, see your stats instantly. Nothing uploads. Optional Steam sign-in for the co-op partner feed." />
-  <meta name="twitter:image" content="https://app.spirevault.app/assets/og-v2.png" />
+  <meta name="twitter:image" content="https://app.spirevault.app/assets/og-crest-v1.png" />
   <!-- UI boot. Runs before first paint and before the stylesheets below.
        Decides the layout generation (classic | next) and the theme, and tags
        <html> so CSS responds with no flash. Also sets `is-desktop-host` and
@@ -157,14 +157,14 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link id="vault-legacy-fonts" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Playfair+Display:wght@700;900&family=Cinzel:wght@700;800;900&display=swap" rel="stylesheet" />
-  <link id="vault-legacy-css" rel="stylesheet" href="/styles.css?v=163" />
+  <link id="vault-legacy-css" rel="stylesheet" href="/styles.css?v=165" />
   <!-- Co-op Play card (structure + classic paint). The new look loads it again
        inside the legacy layer below and repaints it from styles.next.css. -->
-  <link id="vault-coop-play-css" rel="stylesheet" href="/lib/coop-play.css?v=1" />
+  <link id="vault-coop-play-css" rel="stylesheet" href="/lib/coop-play.css?v=8" />
   <!-- Phone fixes for the shared markup. The media attribute keeps it out of
        desktop rendering entirely (a non-matching sheet is fetched at idle
        priority and never applied). -->
-  <link id="vault-legacy-phone-css" rel="stylesheet" href="/styles.mobile.css?v=2" media="(max-width: 880px)" />
+  <link id="vault-legacy-phone-css" rel="stylesheet" href="/styles.mobile.css?v=3" media="(max-width: 880px)" />
   <!-- New-UI stylesheet swap. The classic layout keeps the two static links
        above exactly as they were. For next, the legacy sheets are loaded again
        INSIDE a cascade layer, so every rule in the new sheet outranks them
@@ -185,11 +185,11 @@
         '<link rel="preload" as="font" type="font/woff2" crossorigin href="/assets/fonts/grenze-gotisch-latin-var-v1.woff2">' +
         '<style id="vault-legacy-layer">' +
           '@layer v-override, legacy, v-reset, v-tokens, v-base, v-shell, v-components, v-surfaces, v-host, v-util;' +
-          '@import url("/styles.css?v=163") layer(legacy);' +
-          '@import url("/styles.mobile.css?v=2") layer(legacy) (max-width: 880px);' +
-          '@import url("/lib/coop-play.css?v=1") layer(legacy);' +
+          '@import url("/styles.css?v=165") layer(legacy);' +
+          '@import url("/styles.mobile.css?v=3") layer(legacy) (max-width: 880px);' +
+          '@import url("/lib/coop-play.css?v=8") layer(legacy);' +
         '</style>' +
-        '<link rel="stylesheet" href="/styles.next.css?v=8">' +
+        '<link rel="stylesheet" href="/styles.next.css?v=16">' +
         // The header is drawn by lib/ui, which script.js only imports once it
         // has itself loaded and run, and whose stage code sits four imports
         // deep: on a phone network each level was another round trip before
@@ -197,17 +197,17 @@
         // flattens that to one. The tokens must match the imports exactly
         // (check-asset-versions fails the build when one file is referenced
         // at two tokens).
-        '<link rel="modulepreload" href="/script.js?v=231">' +
-        '<link rel="modulepreload" href="/lib/stats-engine.js?v=6">' +
+        '<link rel="modulepreload" href="/script.js?v=243">' +
+        '<link rel="modulepreload" href="/lib/stats-engine.js?v=7">' +
         '<link rel="modulepreload" href="/lib/history-store.js?v=9">' +
-        '<link rel="modulepreload" href="/lib/ui/index.js?v=7">' +
-        '<link rel="modulepreload" href="/lib/ui/stage.js?v=2">' +
-        '<link rel="modulepreload" href="/lib/ui/stage-scenes.js?v=1">' +
-        '<link rel="modulepreload" href="/lib/ui/stage-life.js?v=1">' +
+        '<link rel="modulepreload" href="/lib/ui/index.js?v=13">' +
+        '<link rel="modulepreload" href="/lib/ui/stage.js?v=7">' +
+        '<link rel="modulepreload" href="/lib/ui/stage-scenes.js?v=2">' +
+        '<link rel="modulepreload" href="/lib/ui/stage-life.js?v=2">' +
         '<link rel="modulepreload" href="/lib/ui/stage-life-list.js?v=1">' +
         '<link rel="modulepreload" href="/lib/ui/stage-scene-list.js?v=1">' +
         '<link rel="modulepreload" href="/lib/ui/html.js?v=1">' +
-        '<link rel="modulepreload" href="/lib/ui/motion.js?v=1">'
+        '<link rel="modulepreload" href="/lib/ui/motion.js?v=2">'
       );
     })();
   }
@@ -361,7 +361,7 @@
 
   <main id="main-public" class="main-public" hidden>
     <section id="signed-out-view" class="signed-out">
-      <span class="eyebrow">Slay the Spire 2 · Vault for the Web</span>
+      <span class="eyebrow">Slay the Spire 2 · SpireVault for the Web</span>
       <h1>Run history, stats, and co-op, <span class="grad">in&nbsp;your&nbsp;browser</span>.</h1>
       <p class="lede">
         Drop your <strong>Slay the Spire 2</strong> save folder in to see the
@@ -618,6 +618,9 @@
                 <span class="app-toolbar-empty-dot" aria-hidden="true"></span>
                 <span class="app-toolbar-empty-text">Showing sample data — link your STS2 saves to see your runs.</span>
               </span>
+              <!-- The community line, new look only (loadCommunityPulse): up here the
+                   row keeps one height, so its late arrival moves nothing below it. -->
+              <span class="toolbar-pulse" id="toolbar-pulse" hidden></span>
             </div>
             <div class="app-toolbar-right">
               <div class="app-toolbar-export" data-export-wrap>
@@ -817,7 +820,7 @@
             </div>
           </div>
           <div class="panel-head-stage">
-            <div class="panel-head-title-wrap"><h2 id="tab-relics-title">Top Relics</h2><p class="panel-sub">Best relics by win rate (min. 3 runs).</p></div>
+            <div class="panel-head-title-wrap"><h2 id="tab-relics-title">Top Relics</h2><p class="panel-sub">Best relics by win rate, weighted by runs.</p></div>
             <!-- "Reliquary shelf" — renderHeadCrests(). -->
             <div class="head-crest" data-crest="relics"></div>
             <div class="companion-slot" aria-live="polite"></div>
@@ -868,7 +871,7 @@
             </div>
           </div>
           <div class="panel-head-stage">
-            <div class="panel-head-title-wrap"><h2 id="tab-cards-title">Cards</h2><p class="panel-sub">Most picked vs. most skipped.</p></div>
+            <div class="panel-head-title-wrap"><h2 id="tab-cards-title">Cards</h2><p class="panel-sub">The cards you pick, and how those runs end.</p></div>
             <!-- "The Hand" fanned card art — renderHeadCrests(). -->
             <div class="head-crest" data-crest="cards"></div>
             <div class="companion-slot" aria-live="polite"></div>
@@ -921,7 +924,7 @@
             </div>
           </div>
           <div class="panel-head-stage panel-head-stage--text-only">
-            <div class="panel-head-title-wrap"><h2 id="tab-runs-title">Recent Runs</h2><p class="panel-sub">Latest runs from your history. Auto-refreshes from disk.</p></div>
+            <div class="panel-head-title-wrap"><h2 id="tab-runs-title">Recent Runs</h2><p class="panel-sub">Search, filter and compare your runs.</p></div>
           </div>
         </div>
         <div class="panel-body" id="runs-body"></div>
@@ -1019,7 +1022,10 @@
               <p class="panel-sub">Runs the community is excited to share. React, leave a quick comment, or post your own from the share modal on any run.</p>
             </div>
             <div class="panel-head-actions">
-              <button class="btn-ghost" id="highlights-refresh" type="button" title="Refresh feed">Refresh</button>
+              <button class="btn-ghost btn-icon-text" id="highlights-refresh" type="button" title="Refresh feed">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15A9 9 0 1 1 18.36 5.64L23 10"/></svg>
+                <span>Refresh</span>
+              </button>
             </div>
           </div>
           <!-- Filter + sort row. Filter chips are radio-buttons under the
@@ -1062,7 +1068,7 @@
           <div class="panel-head-coop-row">
             <div>
               <h2 id="tab-news-title">News &amp; updates</h2>
-              <p class="panel-sub">Notes from Corey, the human behind the app. Bug fixes, new features, and what's coming next.</p>
+              <p class="panel-sub">Fixes, new features and what's next, from Corey.</p>
             </div>
           </div>
         </div>
@@ -1102,52 +1108,114 @@
             <!-- exactly what goes wrong if you reference a webp that isn't uploaded     -->
             <!-- yet (Cloudflare caches the SPA-fallback HTML at that path for a year).  -->
             <!-- Add the <figure class="news-post-banner"> block back once art ships.    -->
-            <!-- ====== Post 015 — Nov 15 2026 — Co-op is one-tap Play ====== -->
-            <!-- Posts 007, 011 and 012 link here from their "Replaced" notes. If this     -->
-            <!-- goes live on a later day, change the date in the eyebrow (both places),  -->
-            <!-- LATEST_NEWS_POST_ID in script.js and this comment.                       -->
-            <article class="news-post" id="news-015" data-news-id="015" data-news-eyebrow="Update · November 15, 2026" data-news-tags="Update,Co-op" aria-labelledby="news-015-title">
+            <!-- ====== Post 015 — Nov 17 2026 — Release roll-up: new look for everyone, sign-in, co-op Play ====== -->
+            <!-- Replaces the 013 (Nov 11) and 015 (Nov 15) drafts, which never went live.     -->
+            <!-- Keeps id news-015, so the "Replaced" notes on posts 007, 011 and 012 still   -->
+            <!-- land here. LATEST_NEWS_POST_ID in script.js: "post-015-2026-11-17-roll-up";  -->
+            <!-- UI_BETA_NEWS_POST_ID: "015" (every "What's new" button opens this post).     -->
+            <!-- The two [data-action="ui-set"] buttons are live controls (setUiVariant and   -->
+            <!-- syncUiSwitchButtons in script.js), carried over from the 013 draft.           -->
+            <!-- Banner is a real screenshot of the new Overview; both files ship in the      -->
+            <!-- same deploy as this markup (see the post-007 cache-key note below).          -->
+            <article class="news-post" id="news-015" data-news-id="015" data-news-eyebrow="Update · November 17, 2026" data-news-tags="Update,New look,Co-op,Sign-in" aria-labelledby="news-015-title">
+              <figure class="news-post-banner">
+                <picture>
+                  <source media="(max-width: 720px)" srcset="/assets/news/post-015-phone-720-v2.webp 1x, /assets/news/post-015-phone-1440-v2.webp 2x" />
+                  <img loading="lazy" src="/assets/news/post-015-banner.webp?v=1" alt="The new SpireVault Overview. A painted library runs across the top: a row of ten torches with two burning and the rest smoking, a stone tower with its windows lit up to A9, and the Ironclad crouched facing the Architect. Below it, a fanned hand of stat cards." decoding="async" />
+                </picture>
+              </figure>
               <header class="news-post-head">
-                <span class="news-post-eyebrow">Update &middot; November 15, 2026</span>
-                <h3 class="news-post-title" id="news-015-title">Co-op is one button now</h3>
+                <span class="news-post-eyebrow">Update &middot; November 17, 2026</span>
+                <h3 class="news-post-title" id="news-015-title">Everyone gets the new look, your sign-in lasts, and co-op is one button</h3>
                 <p class="news-post-byline">
                   Corey
                   <span class="news-post-byline-sep">&middot;</span>
-                  <span class="news-post-byline-meta">~2 min read</span>
+                  <span class="news-post-byline-meta">~5 min read</span>
                 </p>
               </header>
 
               <div class="news-post-body">
                 <p class="news-lede">
-                  The lobby board, &ldquo;When are you free?&rdquo;, the campfire log and the rest of the old Co-op tab are gone. In their place is one <strong>Play</strong> button. The honest reason: nobody was using it. When I checked on November 14, not one account had ever hosted, joined or finished a party through it, and the board only looked busy because of two placeholder rooms the server kept open. Those are gone too.
+                  Everyone now gets the new look, and the classic look is still there. Your runs stay on screen, and your Steam sign-in lasts as long as you keep coming back. And co-op is one <strong>Play</strong> button. This post rolls up everything since the November 13 Fool update, and it all ships today.
                 </p>
 
-                <h4 class="news-post-section">How Play works</h4>
-                <ol class="news-post-list">
-                  <li>Pick a climber (or Any) and your game version, Stable or Beta, then tap <strong>Play</strong>.</li>
-                  <li>If someone is waiting on the same version, you&rsquo;re matched straight away. If nobody is, you wait in line and you&rsquo;re matched with the next person who taps Play.</li>
-                  <li>The party card walks you through the rest. The game only lets Steam friends join each other, so first you add each other on Steam. Then the player who waited longest hosts from Multiplayer &rarr; Host, and everyone else joins them from Multiplayer &rarr; Join.</li>
-                  <li>Up to four can join until the host taps <strong>We&rsquo;re in</strong>. After that the party is closed and you&rsquo;re playing.</li>
-                </ol>
+                <h4 class="news-post-section">Everyone gets the new look</h4>
                 <p>
-                  If someone leaves before the run starts, the next player in the party becomes host. If you&rsquo;re the only one left, you go back in line at the place you had.
+                  <strong>Every tab is redrawn.</strong> Overview leads with a win-rate ring and a hand of six stat cards, characters are banners that open a codex page, Ascensions is a tower, and every run gets a Victory, Defeat or Abandoned stamp. Open one and it draws your path as a map. Same runs, same stats, in the browser and the desktop apps.
                 </p>
-
-                <h4 class="news-post-section">You don&rsquo;t have to watch the tab</h4>
                 <p>
-                  Turn on pings and your browser tells you when someone joins you, even with the tab closed. You can also ask for a ping whenever someone starts looking, at most once every half hour. On an iPhone, pings need SpireVault added to your Home Screen first (Share &rarr; Add to Home Screen). Where pings can&rsquo;t work, including the Windows app, keep the page open and you&rsquo;ll hear a chime. The Mac app&rsquo;s Co-op tab is still its own who&rsquo;s-online list for now; Play is in the browser and the Windows app.
+                  <strong>Classic is still there.</strong> Tap the palette button beside the logo (in the desktop apps, at the top of the Stats tabs) and choose <strong>Classic</strong> next to <strong>Look</strong>. It&rsquo;s also in Settings, and on a phone under <strong>More &rarr; Look &amp; theme</strong>. One reload, same tab, and it&rsquo;s saved per device.
+                </p>
+                <p>
+                  <button class="btn-ghost" type="button" data-action="ui-set" data-ui="classic" data-source="news" data-active-label="The classic look is on">Switch to the classic look</button>
+                  <button class="btn-primary" type="button" data-action="ui-set" data-ui="next" data-source="news" data-active-label="The new look is on">Switch to the new look</button>
+                </p>
+                <p>
+                  <strong>A header that keeps score.</strong> A painted tower&rsquo;s ten windows light up to your highest ascension, with a beacon at A10. Ten torches are your last ten runs: a win burns, a loss stands cold and smoking. Behind your climber and the Architect, one of 12 painted scenes is dealt as you change tabs, from the Hive to the Ossuary, each with its own motion: flickering lights, snow, a crow, lightning. Reduced motion holds it all still.
+                </p>
+                <p>
+                  <strong>Themes and a crest.</strong> Press <kbd>T</kbd> to cycle through eight themes, including Ember Vault, classic&rsquo;s ember and gold on the new layout. A painted shield, the Spire Crest, replaces the old emblem in the app, in browser tabs and on co-op pings.
                 </p>
 
-                <h4 class="news-post-section">What Play keeps</h4>
+                <h4 class="news-post-section">Your runs and your sign-in stay put</h4>
+                <p>
+                  Overview&rsquo;s toolbar now says how old your runs are, like &ldquo;Saves read 3d ago &middot; newest run Nov 13&rdquo;.
+                </p>
+                <p>
+                  <strong>Why you still press Refresh.</strong> In a browser on a Mac or Windows PC, SpireVault can&rsquo;t re-read your save folder by itself. Chrome and Edge won&rsquo;t keep a lasting link to the folders STS2 saves to, and Safari and Firefox can&rsquo;t keep one at all. So after a run, press <strong>Refresh</strong> and pick the folder once more. Refresh now says why and copies the save path for you. The Mac and Windows apps read new runs on their own. The &ldquo;Fresh runs may be on disk&rdquo; pop-up that nagged Safari and Firefox players is gone.
+                </p>
+                <p>
+                  <strong>You stay signed in.</strong> Steam sign-in used to end 30 days after you signed in, even if you came every day. Now each visit renews it for another 30. If the old limit already signed you out, sign in once more. And if a sign-in ever lapses, this device keeps showing your runs instead of an empty guest view. Signing out yourself still clears them.
+                </p>
+                <p>
+                  <strong>Three tabs need a sign-in now.</strong> Co-op, Highlights and Beta used to open for guests. Now they need a Steam sign-in. Your stats, runs and News stay open to everyone.
+                </p>
+                <p>
+                  <strong>Your Steam copy catches up.</strong> If the server or your connection drops a save of your runs to your Steam account, SpireVault tries again after 30 seconds, 2 minutes and 10 minutes, and when you&rsquo;re back online or return to the tab, then tells you when it lands. It also picks up runs this device has that the copy was missing.
+                </p>
+
+                <h4 class="news-post-section">Co-op is one button</h4>
+                <p>
+                  The old lobby board is gone. The honest reason: when I checked on November 14, not one account had ever hosted, joined or finished a party through it. Now you pick a climber (or <strong>Any</strong>) and <strong>Stable</strong> or <strong>Beta branch</strong>, and tap <strong>Play</strong>. If someone is already waiting on your version, or a party is gathering on it, you&rsquo;re in straight away. Otherwise you wait for the next player. A party takes up to four in its first 15 minutes, until the host taps <strong>We&rsquo;re in</strong>, and the party card walks you through adding each other on Steam.
+                </p>
+                <p>
+                  <strong>Bring someone.</strong> <strong>Share to Discord</strong> copies a ready three-line post: who&rsquo;s waiting, their climbers, the game version, open seats and a link that opens Play on your version. On a phone it opens the share sheet.
+                </p>
+                <p>
+                  <strong>Your co-op climbs.</strong> A new panel counts your co-op runs, wins, win rate and best floor from the save files this browser has read, and lists your three latest co-op runs. Saves read before today need one <strong>Refresh</strong> first. The numbers are for the party as a whole, because a save doesn&rsquo;t say which player was you.
+                </p>
+                <p>
+                  <strong>Right now, and pings.</strong> A line under Play shows how many players are looking on <strong>Stable</strong>, on <strong>Beta</strong> and in a party. Turn on pings and your browser tells you when you&rsquo;re matched, and when someone starts looking (at most once every half hour), even with the tab closed. Your place in line holds for 10 minutes after you close it. On an iPhone, add SpireVault to your Home Screen first. Where pings can&rsquo;t work, including the Windows app, keep the page open and you&rsquo;ll hear a chime.
+                </p>
+                <p>
+                  What Play keeps:
+                </p>
                 <ul class="news-bullets">
-                  <li>While you&rsquo;re in line or in a party: your Steam ID and name, the climber and game version you picked, and whether you&rsquo;ve added the others on Steam. A party is cleared within four hours.</li>
+                  <li>In line or in a party: your Steam ID, name and avatar, climber, game version and whether you&rsquo;ve added the others on Steam. A party is cleared within four hours.</li>
                   <li>When your party starts its run: one line in your co-op history saying when, and whether you hosted.</li>
-                  <li>If you turn pings on: your browser&rsquo;s notification address, until you turn pings off.</li>
-                  <li>Daily totals for me (how many taps, matches and how long people waited), plus which accounts tapped Play that day so each person counts once. Those are deleted after 90 days.</li>
+                  <li>With pings on: your browser&rsquo;s notification address, until you turn them off.</li>
+                  <li>Daily totals for me (how many taps, matches and how long people waited), plus which accounts tapped Play that day so each person counts once. Deleted after 90 days.</li>
                 </ul>
 
+                <h4 class="news-post-section">Smaller things</h4>
+                <ul class="news-bullets">
+                  <li>Milestone cards come one per import at most, so importing old runs no longer stacks a dozen.</li>
+                  <li>Browser tabs name the page you&rsquo;re on, like &ldquo;Overview &middot; SpireVault&rdquo;.</li>
+                  <li>The Fool has art in every character slot, and every new v0.113 card and relic shows its real name and art.</li>
+                  <li>In the new look, the Relics tab&rsquo;s top three and each relic&rsquo;s page use the game&rsquo;s own 256px icons, and cards open into sharp, larger faces.</li>
+                  <li>On phones, nothing you tap is smaller than 44px.</li>
+                  <li>Every <strong>Sign in with Steam</strong> button shows the Steam logo. It was the Windows logo.</li>
+                </ul>
+
+                <h4 class="news-post-section">What isn&rsquo;t done yet</h4>
                 <p>
-                  Matching is open to anyone, with no filters beyond the game version. If that turns out to be the wrong call, tell me with the link below.
+                  The in-game overlay and older browsers stay on classic, and the standalone pages (Watch, Race, Tournaments, Coach) keep the old look for now. The desktop apps get the crest icon with their next build, and old tab icons and link previews may linger a while.
+                </p>
+                <p>
+                  The Mac app&rsquo;s Co-op tab is still its own who&rsquo;s-online list; Play is in the browser and the Windows app. Your co-op climbs only counts runs a browser read from your save folder. On a phone, in the Windows app, or anywhere your runs came from your Steam account, it shows an example for now. And a shared link doesn&rsquo;t hold a seat: Play puts your friend into the oldest party still gathering on that version, which right now is usually yours, as long as it&rsquo;s still in its first 15 minutes.
+                </p>
+                <p>
+                  If something looks wrong, the report link below comes straight to me. A screenshot and which look you were on is all I need. Keep climbing.
                 </p>
 
                 <p class="news-post-signoff">
@@ -1158,6 +1226,7 @@
               <footer class="news-post-foot">
                 <div class="news-post-foot-meta">
                   <span class="news-post-tag">Update</span>
+                  <span class="news-post-tag">New look</span>
                   <span class="news-post-tag">Co-op</span>
                 </div>
                 <div class="news-post-foot-actions">
@@ -1254,104 +1323,6 @@
               </footer>
             </article>
 
-            <!-- ====== Post 013 — Nov 11 2026 — New look beta (opt-in, classic stays default) ====== -->
-            <!-- The two [data-action="ui-set"] buttons are live controls: script.js       -->
-            <!-- (setUiVariant) switches this device between the classic layout and the    -->
-            <!-- new look, and syncUiSwitchButtons() disables whichever one is a no-op.    -->
-            <!-- Banner is a real screenshot of the new Overview; both files ship in the   -->
-            <!-- same deploy as this markup (see the post-007 cache-key note below).       -->
-            <article class="news-post" id="news-013" data-news-id="013" data-news-eyebrow="Beta · November 11, 2026" data-news-tags="Beta,New look,Themes" aria-labelledby="news-013-title">
-              <figure class="news-post-banner">
-                <picture>
-                  <source media="(max-width: 720px)" srcset="/assets/news/post-013-banner-1x.webp?v=1" />
-                  <img loading="lazy" src="/assets/news/post-013-banner.webp?v=1" alt="The new SpireVault Overview. An inked night scene runs across the top: a spire with its windows lit, a row of torches, and the Ironclad seated facing the Architect. Below it, a win-rate ring, five character cards in one row, and a fanned hand of stat cards." decoding="async" />
-                </picture>
-              </figure>
-              <header class="news-post-head">
-                <span class="news-post-eyebrow">Beta &middot; November 11, 2026</span>
-                <h3 class="news-post-title" id="news-013-title">The new look is ready to try &mdash; on your terms</h3>
-                <p class="news-post-byline">
-                  Corey
-                  <span class="news-post-byline-sep">&middot;</span>
-                  <span class="news-post-byline-meta">~2 min read</span>
-                </p>
-              </header>
-
-              <div class="news-post-body">
-                <div class="news-feature-block news-post-replaced">
-                  <h5><span class="news-feature-tag">Update</span> The new look is now the default</h5>
-                  <p>Since November 15 everyone starts on the new look. Prefer the classic look? Tap the palette button beside the logo and choose <strong>Classic</strong>, or use the button further down this post. Your choice is saved on that device, and you can switch back the same way.</p>
-                </div>
-                <p class="news-lede">
-                  SpireVault is being redrawn. Not replaced &mdash; every number you rely on is still here &mdash; but the app finally looks like it belongs next to the game: inked outlines, bold colour, and a header that actually tells you something. It&rsquo;s a beta, it&rsquo;s <strong>off by default</strong>, and nothing changes for you unless you flip the switch below. There are 117 of you now. I&rsquo;m not rearranging your furniture without asking.
-                </p>
-
-                <h4 class="news-post-section">Turn it on</h4>
-                <p>
-                  One click. The page reloads once and you land on the new Overview.
-                </p>
-                <p>
-                  <button class="btn-primary" type="button" data-action="ui-set" data-ui="next" data-source="news" data-active-label="The new look is on">Turn on the new look</button>
-                </p>
-                <p>
-                  Other ways in: the palette button next to the logo (on a phone, the last chip in the tab strip), <strong>Settings &rarr; New look &rarr; Try the new look</strong>, the card at the top of the <strong>Beta</strong> tab (once you&rsquo;re signed in), or open <code>app.spirevault.app/?ui=next</code>. The choice is saved per device, so your laptop can run the new look while your phone stays classic.
-                </p>
-
-                <h4 class="news-post-section">What&rsquo;s different</h4>
-                <p>
-                  <strong>Overview, redrawn.</strong> Your win rate sits in one ring with the totals beside it, all five characters fit across a single row, and the six headline stats &mdash; recent form, streak, best streak, best floor, fastest win, this week &mdash; are dealt out as a hand of cards. The win-rate trend is finally tall enough to read, and &ldquo;where your climbs end&rdquo; now shows victories rising and defeats falling from the same line.
-                </p>
-                <p>
-                  <strong>Every other tab, too.</strong> Characters are a row of banners, and each one opens a codex page with how to play them. Ascensions is a tower you climb, A0 at the bottom, with the levels you haven&rsquo;t touched still dark. Relics and cards stand on a podium with their real art. Every run gets a Victory or Defeat stamp, and opening one draws your path through each act as a map, with a mark where it ended. Co-op, Highlights, News and Settings are redrawn to match.
-                </p>
-                <p>
-                  <strong>A header that keeps score.</strong> The spire&rsquo;s windows light up to your highest ascension. The row of torches is your last ten runs &mdash; a lit one is a win. Your climber squares off against the Architect, both re-inked to match the rest of the app. Click the climber to swap characters; click the speech bubble for a new line.
-                </p>
-                <p>
-                  <strong>Themes, instantly.</strong> Eight of them: Inked Codex (the default), Ember Vault if you want the classic ember-and-gold on the new layout, one for each character, and Auto, which follows whoever you play most. Hit the palette button next to the logo or press <kbd>T</kbd>. No reload.
-                </p>
-                <p>
-                  <strong>The small stuff.</strong> The sidebar stays put while you scroll. On a phone, Overview, Characters, Runs and Co-op sit in a bar at the bottom of the screen, where your thumb already is, and everything else is one tap away under More.
-                </p>
-
-                <h4 class="news-post-section">Same numbers, same saves</h4>
-                <p>
-                  Nothing about your data changes. Same runs, same stats, same co-op, no re-import. Both looks read the same saves, so you can flip back and forth as often as you like and lose nothing.
-                </p>
-
-                <h4 class="news-post-section">Go back whenever</h4>
-                <p>
-                  <button class="btn-ghost" type="button" data-action="ui-set" data-ui="classic" data-source="news" data-active-label="You&rsquo;re on the classic look">Go back to the classic look</button>
-                </p>
-                <p>
-                  Or: the palette button &rarr; <strong>Back to the classic look</strong>, the same link under <strong>Settings &rarr; Appearance</strong>, the card on the <strong>Beta</strong> tab (signed in), or open <code>app.spirevault.app/?ui=classic</code>. One reload and you&rsquo;re back on the tab you left.
-                </p>
-
-                <h4 class="news-post-section">What isn&rsquo;t done yet</h4>
-                <p>
-                  This is a real beta, so here&rsquo;s the honest state. <strong>Every tab in the app is redrawn.</strong> The standalone pages (Watch, Race, Tournaments, Coach) and the share images keep their current look for now. It has had the most testing in a regular browser; the Mac and Windows apps load this same page, so the switch is there too, but treat that as extra-beta.
-                </p>
-                <p>
-                  If something looks wrong, the report link below comes straight to me &mdash; a screenshot and which theme you were on is all I need. Once you&rsquo;ve had time to break it, the new look becomes the default, with the classic look still one click away for a while after. Until then: try it, pick a theme, tell me what&rsquo;s ugly.
-                </p>
-
-                <p class="news-post-signoff">
-                  &mdash; Corey
-                </p>
-              </div>
-
-              <footer class="news-post-foot">
-                <div class="news-post-foot-meta">
-                  <span class="news-post-tag">Beta</span>
-                  <span class="news-post-tag">New look</span>
-                  <span class="news-post-tag">Themes</span>
-                </div>
-                <div class="news-post-foot-actions">
-                  <a class="action-link" href="https://github.com/c3rooks/SpireVault/issues/new" target="_blank" rel="noopener">Report an issue &rarr;</a>
-                </div>
-              </footer>
-            </article>
-
             <article class="news-post" id="news-012" data-news-id="012" data-news-eyebrow="Update · September 2, 2026" data-news-tags="Update,Retention,Saves,Co-op" aria-labelledby="news-012-title">
               <header class="news-post-head">
                 <span class="news-post-eyebrow">Update &middot; September 2, 2026</span>
@@ -1366,7 +1337,7 @@
               <div class="news-post-body">
                 <div class="news-feature-block news-post-replaced">
                   <h5><span class="news-feature-tag">Replaced</span> Co-op works differently now</h5>
-                  <p>Scheduling is gone. In November 2026 Co-op became one Play button, and pings let you close the tab while you wait in line. <a href="#news-015">Read about Play &rarr;</a></p>
+                  <p>Scheduling is gone. In November 2026 Co-op became one Play button, and with pings on you can close the tab for up to 10 minutes while you wait in line. <a href="#news-015">Read about Play &rarr;</a></p>
                 </div>
                 <p class="news-lede">
                   If you&rsquo;re here from Discord: welcome. The whole product now bends around one promise &mdash; <strong>find your save folder once, see your stats in under a minute, and never redo that dance.</strong> Overview stays clean: your numbers live in one place, not four.
@@ -1433,7 +1404,7 @@
               <div class="news-post-body">
                 <div class="news-feature-block news-post-replaced">
                   <h5><span class="news-feature-tag">Replaced</span> Co-op works differently now</h5>
-                  <p>&ldquo;When are you free?&rdquo; is gone. In November 2026 Co-op became one Play button, and pings let you close the tab while you wait in line. <a href="#news-015">Read about Play &rarr;</a></p>
+                  <p>&ldquo;When are you free?&rdquo; is gone. In November 2026 Co-op became one Play button, and with pings on you can close the tab for up to 10 minutes while you wait in line. <a href="#news-015">Read about Play &rarr;</a></p>
                 </div>
                 <p class="news-lede">
                   Today's release is the biggest one since launch, and before anything else: <strong>thank you.</strong> There are 84 of you now, and some of you open this thing every single day &mdash; I see the same names come back morning after morning, and honestly that's the whole reason this update exists. Everything below was built for the people who kept showing up.
@@ -1645,7 +1616,7 @@
               <div class="news-post-body">
                 <div class="news-feature-block news-post-replaced">
                   <h5><span class="news-feature-tag">Replaced</span> Co-op works differently now</h5>
-                  <p>The lobby is gone. Nobody used it, so in November 2026 Co-op became one Play button: tap it and you&rsquo;re matched with the next player who does. <a href="#news-015">Read about Play &rarr;</a></p>
+                  <p>The lobby is gone. Nobody used it, so in November 2026 Co-op became one Play button: tap it and you join a party already gathering, or the next player who taps it. <a href="#news-015">Read about Play &rarr;</a></p>
                 </div>
                 <p class="news-lede">
                   Open the Co-op tab today and you&rsquo;ll land on the new lobby surface instead of the live roster. Same Steam OpenID sign-in, same friend-gated invite at the end &mdash; the middle is what changed. The big bet: a co-op tool earns its real estate by doing things the Slay the Spire 2 Discord <em>can&rsquo;t</em> do, not by being a prettier version of the same thing. Eight of those landed today, in two back-to-back releases (v0.10.0 and v0.11.0). The biggest of them &mdash; <strong>verified co-op reputation</strong> &mdash; is the first SpireVault feature that&rsquo;s strictly impossible without the save data we already have, and it&rsquo;s the start of the lock-in.
@@ -2304,7 +2275,7 @@
           <span class="tab-lock-badge" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M17 9V7a5 5 0 00-10 0v2H5v12h14V9h-2zm-8-2a3 3 0 016 0v2H9V7zm3 10.5a2 2 0 110-4 2 2 0 010 4z"/></svg></span>
           <p class="tab-lock-eyebrow">Beta &middot; signed-in players</p>
           <h2 class="tab-lock-title" id="tab-lock-beta-title">Sign in to try beta features</h2>
-          <p class="tab-lock-text">Run Coach and other early features are for signed-in players.</p>
+          <p class="tab-lock-text">Run Coach and other early features are for signed&#8209;in players.</p>
           <button class="btn-primary tab-lock-cta" type="button" data-action="signin-cta" data-analytics-cta="tab-lock-beta">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2a10 10 0 0 0-9.96 9.04l5.35 2.21a2.83 2.83 0 0 1 1.6-.49l2.39-3.46v-.05a3.78 3.78 0 1 1 3.78 3.78h-.09l-3.4 2.43a2.84 2.84 0 0 1-5.62.6L2.3 14.5A10 10 0 1 0 12 2Zm-4.73 15.17-1.23-.51a2.13 2.13 0 1 0 1.17-2.9l1.27.52a1.57 1.57 0 1 1-1.2 2.9Zm10.04-7.72a2.52 2.52 0 1 0-2.52 2.52 2.52 2.52 0 0 0 2.52-2.52Zm-4.4 0a1.89 1.89 0 1 1 1.89 1.89 1.89 1.89 0 0 1-1.9-1.89Z"/></svg>
             <span>Sign in with Steam</span>
@@ -2492,7 +2463,7 @@
     <div class="footer-inner">
       <div>
         <strong>SpireVault · Web</strong>
-        <p>Built by <a href="https://coreycrooks.com" target="_blank" rel="noopener">Corey Crooks</a>. Free, open source, fan-made. Not affiliated with Mega Crit Games.</p>
+        <p>Built by <a href="https://coreycrooks.com" target="_blank" rel="noopener">Corey Crooks</a>. Free, open source, fan&#8209;made. Not affiliated with Mega&nbsp;Crit&nbsp;Games.</p>
       </div>
       <div class="footer-links">
         <a href="https://spirevault.app">Marketing site</a>
@@ -2558,7 +2529,7 @@
     });
   })();
   </script>
-  <script src="/run-coach.js?v=3" defer></script>
-  <script src="/script.js?v=231" type="module"></script>
+  <script src="/run-coach.js?v=5" defer></script>
+  <script src="/script.js?v=243" type="module"></script>
 </body>
 </html>

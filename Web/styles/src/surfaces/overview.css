@@ -13,6 +13,8 @@
 .v-ov {
   display: flex;
   flex-direction: column;
+  /* The column's width, for the hand's fan steps (components/cards.css). */
+  container: v-ov / inline-size;
 }
 .v-ov-top {
   display: grid;
@@ -285,13 +287,27 @@
   margin-bottom: 22px;
   color: var(--v-ink);
 }
+/* Each banner is its own container, so its name and record size to the
+   banner: at 1200–1300 a banner is only 76–85px wide. */
+.v-char {
+  container: v-char / inline-size;
+}
+/* "Necrobinder" is about 5.85em wide. On a narrow banner the name steps
+   down (never under 11px) and may use the banner's side padding, so it is
+   always whole instead of "Necrobin…". */
 .v-char-name {
-  max-width: 100%;
+  max-width: calc(100% + 2 * var(--char-bleed));
+  margin-inline: calc(-1 * var(--char-bleed));
   overflow: hidden;
-  font-size: var(--v-text-sm);
+  font-size: clamp(11px, 17cqi, var(--v-text-sm));
   font-weight: 800;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.v-char-name,
+.v-char-rec {
+  /* How far a line may reach into the banner's 8px side padding. */
+  --char-bleed: 6px;
 }
 .v-char-wr {
   font-family: var(--v-font-display);
@@ -304,11 +320,29 @@
 .v-char-wr small {
   font-size: 0.5em;
 }
+/* The record always takes two lines on a banner ("15W · 16L" over "31 runs"):
+   at 1280–1440 a banner is about 85px wide, too narrow for one line, and
+   every banner wrapping the same way keeps the bars level. */
 .v-char-rec {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  max-width: calc(100% + 2 * var(--char-bleed));
+  min-height: calc(2 * 1.25em);
+  margin-inline: calc(-1 * var(--char-bleed));
   color: var(--v-text-2);
-  font-size: var(--v-text-xs);
+  font-size: clamp(11px, 18cqi, var(--v-text-xs));
   font-weight: 600;
+  line-height: 1.25;
   white-space: nowrap;
+}
+.v-char-rec > span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.v-char-rec > .v-char-rec-sep {
+  display: none;
 }
 .v-char-bar {
   width: 100%;
@@ -495,7 +529,16 @@
   }
   .v-char-name,
   .v-char-rec {
+    --char-bleed: 0px;
     grid-column: 2;
+  }
+  /* A row has room for the record on one line again. */
+  .v-char-rec {
+    display: block;
+    min-height: 0;
+  }
+  .v-char-rec > .v-char-rec-sep {
+    display: inline;
   }
   .v-char-bar {
     display: none;

@@ -3,8 +3,10 @@
 // It does not cache anything and does not touch page loads: there is no
 // "fetch" handler. Its one job is to turn an (empty) Web Push from the
 // co-op Worker into a notification. Pushes carry no payload, so it asks
-// /api/coop/play — with the player's own cookie — what happened, and writes
-// the notification from that answer.
+// /api/coop/play/peek — with the player's own cookie — what happened, and
+// writes the notification from that answer. It must be the peek, not the
+// poll: a poll counts as the player being back, which would end the five
+// minutes they are given to return after being matched while away.
 
 // The crest (scripts/build-brand-icons.mjs). Android draws the badge from its
 // alpha alone, so it is a plain white shield.
@@ -16,7 +18,7 @@ self.addEventListener("activate", (event) => event.waitUntil(self.clients.claim(
 
 async function describe() {
   try {
-    const resp = await fetch("/api/coop/play", { credentials: "include", cache: "no-store" });
+    const resp = await fetch("/api/coop/play/peek", { credentials: "include", cache: "no-store" });
     const data = resp.ok ? await resp.json() : null;
     if (data && data.state === "matched" && data.match) {
       const others = (data.match.members || []).filter((m) => !m.isYou).map((m) => m.name);
@@ -62,10 +64,11 @@ self.addEventListener("notificationclick", (event) => {
   event.waitUntil(
     self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((wins) => {
       const open = wins.find((w) => new URL(w.url).origin === self.location.origin);
-      if (open) {
-        return open.focus().then((w) => (w && "navigate" in w ? w.navigate(url) : w));
-      }
-      return self.clients.openWindow(url);
+      if (!open) return self.clients.openWindow(url);
+      // A tab this worker does not control (a hard reload, a tab older than the
+      // worker) can be focused but not navigated: open the party in a new one.
+      const openNew = () => self.clients.openWindow(url);
+      return open.focus().then((w) => (w && "navigate" in w ? w.navigate(url).catch(openNew) : openNew()), openNew);
     }),
   );
 });

@@ -119,6 +119,15 @@
   background: #1b2838;
   color: #e9f6ff;
 }
+/* Share to Discord keeps Discord's blurple in every theme, inked like the rest. */
+.cp-btn--discord {
+  background: var(--cp-discord);
+  color: #fff;
+}
+.cp-btn--discord:hover,
+.cp-btn--discord:active {
+  background: var(--cp-discord-press);
+}
 .cp-btn--quiet {
   background: transparent;
   color: var(--v-text-2);
@@ -187,4 +196,74 @@
 }
 .cp-float--found {
   background: var(--v-accent);
+}
+
+/* ---- Under the card -------------------------------------------------------------
+   The panels are quieter than the Play card (a thinner, softer outline). The
+   post is a parchment note in ink, the party chips are paper, and the numbers
+   take the display face. */
+.cp-panel {
+  border-width: 2px;
+  border-color: var(--v-line);
+  background: var(--v-surface-1);
+}
+.cp-panel-title {
+  font-weight: 800;
+  letter-spacing: 0.01em;
+}
+.cp-post {
+  border: 2px solid var(--v-ink);
+  border-left-width: 6px;
+  border-left-color: var(--cp-discord);
+  background: var(--v-paper);
+  color: var(--v-ink);
+  box-shadow: var(--v-shadow-sm);
+}
+.cp-post-cap,
+.cp-post-line {
+  color: var(--v-ink);
+}
+/* On parchment the link takes a blurple dark enough to read as ink. */
+.cp-post-link {
+  color: var(--cp-discord-press);
+}
+.cp-post-embed {
+  border: 2px solid var(--v-ink);
+  background: var(--v-surface-2);
+}
+.cp-post-art {
+  border: 2px solid var(--v-ink);
+}
+.cp-stat dd {
+  font-weight: var(--v-display-weight, 800);
+  text-shadow: var(--v-title-shadow, none);
+}
+.cp-result {
+  border: 2px solid var(--v-ink);
+  color: var(--v-ink);
+}
+.cp-result--won {
+  background: var(--v-win);
+  color: var(--v-ink);
+}
+.cp-result--lost {
+  background: var(--v-loss, #ff8f8f);
+  color: var(--v-ink);
+}
+.cp-result--abandoned {
+  background: var(--v-surface-2);
+  color: var(--v-text-2);
+  border-color: var(--v-line);
+}
+/* The room in "Your co-op climbs" is inked like the Play card's. */
+.cp-best > .cp-scene {
+  border-width: 3px;
+}
+.cp-example-tag {
+  border: 2px solid var(--v-ink);
+  background: var(--v-gold);
+  color: var(--v-ink);
+}
+.cp-climbs-note {
+  border: 2px dashed var(--v-line);
 }

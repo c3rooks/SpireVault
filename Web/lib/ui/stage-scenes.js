@@ -25,7 +25,7 @@
 
 import { esc } from "./html.js?v=1";
 import { STAGE_SCENES } from "./stage-scene-list.js?v=1";
-import { lifeHtml, lifeNearHtml } from "./stage-life.js?v=1";
+import { lifeHtml, lifeNearHtml } from "./stage-life.js?v=2";
 import { hex, num, pct, round, sequence } from "./stage-num.js?v=1";
 
 /** Every scene id, in list order. */

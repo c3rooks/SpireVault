@@ -263,7 +263,8 @@
   .run-share-btn::after {
     content: "";
     position: absolute;
-    inset: -4px;
+    /* From the padding box: 34px inside the 1px border, so -5px makes 44. */
+    inset: -5px;
   }
   /* Picking runs to compare: the whole row is the control, so its two buttons
      step aside. That also gives back the width the checkbox takes, which on

@@ -23,6 +23,20 @@ body {
   overflow-x: clip;
 }
 
+/* Prose never leaves one word alone on its last line ("average.", "end",
+   "Games."). The longhand on purpose: the text-wrap shorthand also sets the
+   wrap mode, and from this layer it would undo every white-space: nowrap in
+   the legacy sheet. Inherited, so spans and small print inside get it too;
+   short labels that read better split evenly set balance on themselves. */
+p,
+li,
+dd,
+dt,
+figcaption,
+blockquote {
+  text-wrap-style: pretty;
+}
+
 html {
   color-scheme: dark;
   scroll-padding-top: var(--v-space-5);

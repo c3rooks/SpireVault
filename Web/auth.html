@@ -7,7 +7,7 @@
   <link rel="icon" type="image/png" sizes="16x16" href="/assets/brand/crest-favicon-16-v1.png" />
   <link rel="icon" type="image/png" sizes="32x32" href="/assets/brand/crest-favicon-32-v1.png" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/styles.css?v=163" />
+  <link rel="stylesheet" href="/styles.css?v=165" />
 
   <!-- Google tag (gtag.js) — same stream as the main app. We track the
        Steam OpenID return as its own page_view so the funnel tab in
@@ -20,7 +20,9 @@
     function gtag(){ dataLayer.push(arguments); }
     window.gtag = gtag;
     gtag('js', new Date());
-    gtag('config', 'G-09LEQ247HN', { anonymize_ip: true });
+    // Report the page without its query: Steam sends the session token here
+    // in the URL, and the token must never reach analytics.
+    gtag('config', 'G-09LEQ247HN', { anonymize_ip: true, page_location: location.origin + location.pathname });
   </script>
 </head>
 <body>
@@ -106,6 +108,9 @@
     const avatar   = params.get("avatar")   ?? "";
     const session  = params.get("session")  ?? "";
     const nonce    = params.get("nonce")    ?? "";
+    // Take the token out of the address bar and history now that it is read,
+    // so the page we go to next never sees it in its referrer either.
+    try { history.replaceState(null, "", location.pathname); } catch { /* keep going without it */ }
 
     const expectedNonce = sessionStorage.getItem("vault.auth.nonce");
     sessionStorage.removeItem("vault.auth.nonce");

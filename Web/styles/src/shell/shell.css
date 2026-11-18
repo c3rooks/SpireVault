@@ -320,6 +320,22 @@
   box-shadow: var(--v-shadow-pressed);
   background: var(--v-surface-2);
 }
+/* On Settings, which opens from this card, the card is lit like the active
+   rail row (script.js switchTab sets .is-here). A guest's card lights its
+   Settings link instead. */
+.me-pill.is-here:not(.me-pill-guest) {
+  background: var(--v-title);
+  color: var(--v-ink);
+}
+.me-pill.is-here:not(.me-pill-guest) .me-pill-meta span,
+.me-pill.is-here:not(.me-pill-guest) .me-pill-caret {
+  color: color-mix(in srgb, var(--v-ink) 72%, var(--v-title));
+}
+.me-pill-guest.is-here .me-pill-guest-settings {
+  color: var(--v-title);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
 .me-pill-caret svg {
   transition: transform var(--v-dur-2) var(--v-ease-out);
 }
@@ -665,8 +681,13 @@
     border: var(--v-outline);
     border-radius: 50%;
   }
+  /* The name takes whatever room the bar has and is cut only when the bar
+     is full. A fixed 12ch cap cut a 15-letter Steam name ("NecroBind…") on
+     every phone and tablet width, even with room to spare beside it. */
   .me-pill-mini strong {
-    max-width: 12ch;
+    min-width: 0;
+    /* none, not unset: the legacy layer caps it at 120px (80px under 380px). */
+    max-width: none;
     overflow: hidden;
     color: var(--v-text);
     text-overflow: ellipsis;
@@ -833,24 +854,27 @@
   .content {
     padding-bottom: var(--v-space-5);
   }
-  /* Whatever the app anchors to the bottom edge — toasts, the compare bar,
-     the folder-access nudge — floats above the tab bar instead of on it. */
+  /* Whatever the app anchors to the bottom edge — toasts, the compare bar —
+     floats above the tab bar instead of on it. */
   .toast,
-  .compare-bar,
-  .vault-no-fsa-nudge {
+  .compare-bar {
     bottom: calc(var(--v-tabbar-h) + 12px + env(safe-area-inset-bottom));
   }
 }
 
-/* Mid-size phones keep the wordmark (a size down); a guest's placeholder
-   avatar, "Guest" label and status dot give way so "Sign in with Steam" fits
-   inside the bar's padding (it ran 11–19px past the edge at 360px). A
-   signed-in player has no sign-in button and keeps all three. */
-@media (max-width: 400px) {
+/* A guest's placeholder avatar, "Guest" label and status dot give way so
+   "Sign in with Steam" fits inside the bar's padding (it ran 11–19px past
+   the edge at 360px). They need the bar to be 434px wide, so they go below
+   440px: at 401–433px "Guest" was squeezed to "G…" and then to a 2px stub.
+   A signed-in player has no sign-in button and keeps all three. */
+@media (max-width: 440px) {
   .mobile-account-row:has(.mobile-signin-cta:not([hidden])) .me-pill-mini,
   .mobile-account-row:has(.mobile-signin-cta:not([hidden])) .status-dot {
     display: none;
   }
+}
+/* Mid-size phones keep the wordmark, a size down. */
+@media (max-width: 400px) {
   .sidebar-wordmark {
     font-size: 1.25rem;
   }
@@ -882,6 +906,15 @@
     max-width: var(--v-content-max);
     padding-inline: var(--v-gutter);
   }
+}
+/* A link never breaks inside its label; when the row is too narrow (890-930px
+   beside the rail) it wraps between links instead. */
+.footer-links {
+  flex-wrap: wrap;
+  row-gap: 6px;
+}
+.footer-links a {
+  white-space: nowrap;
 }
 @media (max-width: 880px) {
   .footer-links {

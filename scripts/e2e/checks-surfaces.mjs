@@ -54,13 +54,13 @@ export async function surfaceChecks(ctx) {
     await page.selectOption("#h-sort-select", "recent");
   });
 
-  await check("9b. news: every post opens (013 beta and 014 included) with its own URL hash", async ({ expect, use, note }) => {
+  await check("9b. news: every post opens (015 release and 014 included) with its own URL hash", async ({ expect, use, note }) => {
     use(page);
     await gotoTab(page, "news");
     const ids = await page.$$eval("#news-list .news-list-item", (els) => els.map((el) => el.dataset.newsId));
     const posts = await page.$$eval("#news-detail .news-post[data-news-id]", (els) => els.map((el) => el.dataset.newsId));
     expect(ids.length === posts.length && ids.length > 0, `list has ${ids.length} items, ${posts.length} posts`);
-    expect(ids.includes("013") && ids.includes("014"), `posts 013/014 missing from the list: [${ids.join(", ")}]`);
+    expect(ids.includes("015") && ids.includes("014"), `posts 015/014 missing from the list: [${ids.join(", ")}]`);
     for (const id of ids) {
       await page.click(`#news-list .news-list-item[data-news-id="${id}"]`);
       await settle(page, 200);
@@ -80,10 +80,10 @@ export async function surfaceChecks(ctx) {
     // which also clears the #news- hash (bootShellFirstPaint). Reload
     // persistence of the News tab and post is checked on a production-style
     // host in 9e; here only record what the local reload does.
-    await page.click('#news-list .news-list-item[data-news-id="013"]');
+    await page.click('#news-list .news-list-item[data-news-id="015"]');
     await reload(page);
     const after = await page.evaluate(() => ({ tab: window.SpireVault.activeTab(), hash: location.hash }));
-    note(`local dev host: reload on post 013 lands on tab "${after.tab}" with hash "${after.hash}" (known localhost first-paint quirk)`);
+    note(`local dev host: reload on post 015 lands on tab "${after.tab}" with hash "${after.hash}" (known localhost first-paint quirk)`);
     await gotoTab(page, "news");
   });
 
@@ -101,7 +101,7 @@ export async function surfaceChecks(ctx) {
       const local = await pg.evaluate(() => document.documentElement.classList.contains("vault-local-dev"));
       expect(!local, "the production-style host was still treated as local dev");
       await gotoTab(pg, "news");
-      for (const id of ["013", "014"]) {
+      for (const id of ["015", "014"]) {
         await pg.click(`#news-list .news-list-item[data-news-id="${id}"]`);
         await settle(pg, 300);
         await reload(pg);

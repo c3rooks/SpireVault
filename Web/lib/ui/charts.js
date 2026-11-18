@@ -19,6 +19,19 @@ const MAX_X_LABELS = 5;
 const MAX_TABLE_ROWS = 60;
 /** Share of the plot height above the baseline in the floors chart. */
 const FLOOR_BASELINE_RATIO = 0.36;
+/** Share of the trend plot's width, from the right, under the "avg" chip
+ *  (a phone is the narrow case: about 70px of a 300px plot). */
+const AVG_LABEL_SPAN = 0.25;
+/** An average this close to the top or bottom of the plot keeps its label
+ *  on the inside, so the label is never cut off by the plot's edge. */
+const AVG_LABEL_EDGE = 0.15;
+/** How far the "avg" chip reaches off the dashed line, as a share of the
+ *  plot (chip + gap + half the inked line on the 160px phone plot). */
+const AVG_LABEL_BAND = 0.18;
+/** The chip may step this far off the dashed line to clear a spike (about
+ *  12px on a phone); further than that it would stop reading as the
+ *  line's label, so it stays put and the spike passes behind it. */
+const AVG_LABEL_MAX_LIFT = 0.08;
 
 /** @param {number} value 0..1 → y in viewBox units */
 function yFor(value) {
@@ -33,6 +46,61 @@ function topPct(value) {
 /** @param {number} value */
 function pct(value) {
   return `${Math.round(value * 100)}%`;
+}
+
+/**
+ * Which side of the dashed average line the "avg" label sits on: the side
+ * where fewer runs at the right end would pass behind the label, and on a
+ * tie away from where the line mostly runs. The label is an opaque chip
+ * (charts.css), so a spike that still reaches it goes behind it, not
+ * through the text.
+ * @param {ReadonlyArray<number>} values  0..1, oldest → newest
+ * @param {number} lifetime               0..1
+ * @returns {"above"|"below"}
+ */
+function avgLabelSide(values, lifetime) {
+  if (lifetime > 1 - AVG_LABEL_EDGE) return "below";
+  if (lifetime < AVG_LABEL_EDGE) return "above";
+  const tail = labelTail(values);
+  const hitsAbove = tail.filter((value) => value > lifetime && value <= lifetime + AVG_LABEL_BAND).length;
+  const hitsBelow = tail.filter((value) => value < lifetime && value >= lifetime - AVG_LABEL_BAND).length;
+  if (hitsAbove !== hitsBelow) return hitsAbove < hitsBelow ? "above" : "below";
+  const above = tail.filter((value) => value > lifetime).length;
+  return above > tail.length / 2 ? "below" : "above";
+}
+
+/**
+ * The runs under the "avg" chip: the right-hand end of the plot.
+ * @param {ReadonlyArray<number>} values
+ * @returns {ReadonlyArray<number>}
+ */
+function labelTail(values) {
+  return values.slice(Math.floor(values.length * (1 - AVG_LABEL_SPAN)));
+}
+
+/**
+ * The value the "avg" chip sits against: the average itself, or, when a
+ * spike at the right end would reach into the chip, just past the highest
+ * (lowest, below the line) such spike, so the chip clears the line instead
+ * of sitting on it. Never more than AVG_LABEL_MAX_LIFT off the average.
+ * @param {ReadonlyArray<number>} values  0..1, oldest → newest
+ * @param {number} lifetime               0..1
+ * @param {"above"|"below"} side
+ * @returns {number}
+ */
+function avgLabelAnchor(values, lifetime, side) {
+  const dir = side === "above" ? 1 : -1;
+  const tail = labelTail(values);
+  let anchor = lifetime;
+  for (;;) {
+    const reach = tail
+      .map((value) => (value - anchor) * dir)
+      .filter((step) => step > 0 && step <= AVG_LABEL_BAND);
+    if (reach.length === 0) return anchor;
+    const next = anchor + dir * Math.max(...reach);
+    if (Math.abs(next - lifetime) > AVG_LABEL_MAX_LIFT) return lifetime;
+    anchor = next;
+  }
 }
 
 /**
@@ -69,6 +137,7 @@ export function trendChartHtml(data, order = 0) {
     .join(" ");
   const area = `${line} L${VIEW_W} ${VIEW_H} L0 ${VIEW_H} Z`;
   const last = values[count - 1];
+  const labelSide = avgLabelSide(values, lifetime);
   const grid = [0, 0.5, 1]
     .map((tick) => `<line class="v-chart-grid" x1="0" x2="${VIEW_W}" y1="${yFor(tick)}" y2="${yFor(tick)}"/>`)
     .join("");
@@ -109,7 +178,7 @@ export function trendChartHtml(data, order = 0) {
             <path class="v-chart-ink" d="${line}"/>
             <path class="v-chart-line" d="${line}" pathLength="1"/>
           </svg>
-          <span class="v-chart-avg-label" style="top:${topPct(lifetime).toFixed(2)}%">avg ${pct(lifetime)}</span>
+          <span class="v-chart-avg-label" data-side="${labelSide}" style="top:${topPct(avgLabelAnchor(values, lifetime, labelSide)).toFixed(2)}%">avg ${pct(lifetime)}</span>
           <span class="v-chart-cross"></span>
           <span class="v-chart-dot" style="left:100%;top:${topPct(last).toFixed(2)}%"></span>
         </div>

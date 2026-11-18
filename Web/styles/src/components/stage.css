@@ -44,7 +44,12 @@
      the figure, never behind it: open ground between the tower and the
      fight, so nobody looks perched on it. */
   --spire-clear: 56px;
-  --spire-right: calc(var(--duel-climber-right) + var(--duel-climber-w) + var(--spire-clear));
+  /* It stands beside the WIDEST climber whoever is dealt, so it keeps one
+     place on every tab and through a re-roll (beside the one dealt, it slid
+     up to 40px between tabs). --climber-hw-max comes from
+     Stage.syncDuelGeometry(); the fallback is the widest climber's share. */
+  --duel-climber-w-max: calc(var(--v-stage-h) * var(--climber-hw-max, 0.5828) * var(--duel-scale));
+  --spire-right: calc(var(--duel-climber-right) + var(--duel-climber-w-max) + var(--spire-clear));
   /* Its top stays below the toolbar row, so no button ever covers it.
      --spire-fit-w is set by Stage.fitStages() when the gap between the
      title and the climber is narrower than the tower. */
@@ -247,6 +252,9 @@
    starts. */
 .v-stage--march .v-torches {
   --torch-step: var(--torch-step-fit, 23.2px);
+  /* Out on the open ground there is always room either side (the title's
+     40px gap at least), so the caption is simply centred. */
+  --cap-shift: -50%;
   /* Out on the open ground, feet on the ledge's edge like the tower's. */
   --torches-bottom: calc(var(--v-ledge-h) - 6px);
   left: var(--torches-left, var(--stage-gutter));
@@ -471,11 +479,16 @@
    caption, and each torch's hover plate that takes its place, is centred
    under the row, as the tower's is under the tower (each post stands
    centred in its step, so the box's centre is the row's). Where it is wider
-   than the row (a short history, a narrow phone, a long plate) it stops
-   flush with the first post, the title's edge, instead of running off the
-   header: the translate never moves its left edge left of that post. */
+   than the row (a short history, a phone, a long plate) it starts where the
+   title and subtitle above it start, never further left: the translate
+   stops its first letter on the text's edge (less its 0.1em of letter
+   room). It used to stop 4px inside the header's edge, 3px left of the
+   text on a phone. */
 .v-torches {
-  --cap-shift: max(-50%, calc(var(--torch-inset) - var(--torch-count, 10) * var(--torch-step) / 2));
+  --cap-shift: max(
+    -50%,
+    calc(var(--torch-inset) - 0.1em - var(--torch-count, 10) * var(--torch-step) / 2)
+  );
 }
 .v-torches .v-stage-cap {
   left: var(--torch-inset);
@@ -489,7 +502,9 @@
 .v-spire-cap {
   right: calc(var(--spire-right) + var(--spire-w) / 2);
   bottom: var(--stage-cap-bottom);
-  translate: 50% 0;
+  /* --spire-cap-shift: Stage.fitStages() steps it left, off-centre, only
+     where it would reach the climber standing beside the tower. */
+  translate: calc(50% + var(--spire-cap-shift, 0px)) 0;
 }
 
 /* ---- The duel ------------------------------------------------------------------ */
@@ -757,6 +772,10 @@
   font-weight: 700;
   line-height: 1.3;
   text-align: left;
+  /* A line that wraps splits evenly ("Cursed to fight / forever, aren't
+     you?", not "…aren't / you?"); fitBalloon (stage.js) then draws the
+     balloon only as wide as its widest line. */
+  text-wrap: balance;
   pointer-events: auto;
   cursor: pointer;
   transition: transform var(--v-dur-2) var(--v-ease-spring);
@@ -931,7 +950,9 @@
   }
   .v-torches {
     --torch-step: 15px;
-    --torches-bottom: calc(var(--v-ledge-h) - 6px);
+    /* On the ledge's top edge: the title block ends well above it here, and
+       the 11px caption below gets its air. */
+    --torches-bottom: calc(var(--v-ledge-h) - 4px);
   }
   /* The small row is one button (it opens Runs): a full fingertip tall. It
      grows upward from its feet; the torches stay on the ground. */
@@ -961,6 +982,14 @@
 
 /* ---- Phones --------------------------------------------------------------------- */
 @media (max-width: 599px) {
+  /* No tower on a phone, on any tab. There is room for it only beside the
+     narrowest climbers, so it stood on one tab and not the next, and where
+     it stood its caption had no room. */
+  .v-spire,
+  .v-spire-cap,
+  .v-spire-beacon {
+    display: none;
+  }
   .panel-head.v-has-stage {
     --duel-scale: 0.64;
     --duel-boss-right: calc(var(--stage-gutter) - 4px);
@@ -969,12 +998,8 @@
     --bubble-max: min(52%, 230px);
   }
 }
-/* The narrowest phones: the title needs the room the spire would take. */
+/* The narrowest phones. */
 @media (max-width: 360px) {
-  .v-spire,
-  .v-spire-cap {
-    display: none;
-  }
   .panel-head.v-has-stage {
     --bubble-max: 44%;
     --duel-scale: 0.58;

@@ -130,16 +130,30 @@
   font-size: var(--v-text-xs);
   font-weight: 700;
 }
+/* An outlined chip, opaque, so a spike that reaches it passes behind the
+   chip instead of touching the text (at 390px "avg 48%" met a 50% spike). */
 .v-chart-avg-label {
   position: absolute;
   right: 0;
-  padding: 0 6px;
+  padding: 1px 8px;
+  border: var(--v-outline);
   border-radius: var(--v-radius-pill);
-  background: var(--v-surface-1);
+  background: var(--v-bg-deep);
   color: var(--v-text-2);
   font-size: var(--v-text-xs);
   font-weight: 800;
+  line-height: 1.3;
+  white-space: nowrap;
   translate: 0 -50%;
+}
+/* Just off the dashed line, on the side fewer runs at the right end reach
+   (charts.js avgLabelSide), stepped past a spike that would touch it
+   (avgLabelAnchor). 5px clears the 7px inked trend line at the anchor. */
+.v-chart-avg-label[data-side="above"] {
+  translate: 0 calc(-100% - 5px);
+}
+.v-chart-avg-label[data-side="below"] {
+  translate: 0 5px;
 }
 .v-chart-dot,
 .v-chart-cross {
@@ -219,8 +233,64 @@
   background: var(--c);
 }
 
+/* ---- Win-rate colour key (Top Relics, Cards) -------------------------------------
+   lib/ui/tone-legend.js. The swatches match the win-rate bars: tone is the
+   win rate against the player's own average (script.js winrateTone). */
+.v-tone-legend {
+  --tone: var(--v-text-2);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.v-tone-legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 3px 10px;
+  border: var(--v-outline);
+  border-radius: var(--v-radius-pill);
+  background: var(--v-bg-deep);
+  color: var(--v-text);
+  font-size: 0.75rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.v-tone-legend [data-tone="win"] { --tone: var(--v-win); }
+.v-tone-legend [data-tone="gold"] { --tone: var(--v-gold); }
+.v-tone-legend [data-tone="accent"] { --tone: var(--v-text-2); }
+.v-tone-legend i {
+  width: 18px;
+  height: 8px;
+  border-radius: var(--v-radius-pill);
+  background: var(--tone);
+  box-shadow: 0 0 0 1.5px var(--v-outline-color);
+}
+.v-tone-legend .is-low i {
+  background: repeating-linear-gradient(-45deg, var(--v-text-2) 0 3px, transparent 3px 6px);
+}
+/* The average the colours are measured against: plain text, not a chip. */
+.v-tone-legend li.v-tone-legend-base {
+  padding-inline: 2px 4px;
+  border: 0;
+  background: none;
+  color: var(--v-text-2);
+}
+.v-tone-legend-base b {
+  color: var(--v-text);
+  font-weight: 800;
+}
+
 @media (max-width: 720px) {
   .v-chart {
     --plot-h: 160px;
+  }
+}
+@media (max-width: 640px) {
+  .v-tone-legend li {
+    padding: 3px 9px;
   }
 }

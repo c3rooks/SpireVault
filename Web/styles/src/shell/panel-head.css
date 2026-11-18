@@ -207,6 +207,35 @@
 .v-has-stage .panel-sub,
 .v-has-stage .panel-pulse {
   text-shadow: 1px 1px 0 var(--v-ink);
+  /* No word left alone on a second line where the narrow column wraps. */
+  text-wrap: pretty;
+}
+/* The community line ("2 climbers active this week"), in Overview's toolbar
+   row: one line that gives way before the row would ever wrap, so the row,
+   and the stage under it, keep one height. */
+@media (min-width: 600px) {
+  /* With the line showing, the left group takes the free space and never
+     wraps: the line shortens (an ellipsis) instead of growing the row. */
+  .app-toolbar-left:has(> .toolbar-pulse:not([hidden])) {
+    flex: 1 1 0;
+    flex-wrap: nowrap;
+  }
+}
+.toolbar-pulse {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--v-gold);
+  font-size: var(--v-text-xs);
+  font-weight: 700;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  text-shadow: 1px 1px 0 var(--v-ink);
+  white-space: nowrap;
+}
+/* Too narrow for all of it (script.js watchToolbarPulseFit): not shown. */
+.toolbar-pulse.is-clipped {
+  visibility: hidden;
 }
 
 /* Icon-only toolbar buttons once the row gets tight: saves ~140px and keeps
@@ -244,8 +273,33 @@
     display: none;
   }
 }
+/* A phone's toolbar row has room for the saves pill and the buttons only.
+   The row stays on one line, the pill takes all the room the three buttons
+   leave, and its words wrap, evenly, rather than being cut: "Saves read just
+   now" needs 111px and a 320px phone leaves it 87px (it was capped at 22vw,
+   70px, and read "Saves read…"). Two lines stay inside the buttons' 44px. */
+@media (max-width: 599px) {
+  .toolbar-pulse {
+    display: none;
+  }
+  .panel-head-toprow {
+    flex-wrap: nowrap;
+  }
+  .panel-head-toprow .app-toolbar-left {
+    flex: 1 1 auto;
+  }
+  .panel-head-toprow .app-toolbar-right {
+    flex: none;
+  }
+  .sync-pill-text {
+    max-width: none;
+    overflow: visible;
+    line-height: 1.2;
+    white-space: normal;
+    text-wrap: balance;
+  }
+}
 @media (max-width: 380px) {
-  .sync-pill-text,
   .app-toolbar-empty-text {
     max-width: 22vw;
   }

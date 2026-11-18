@@ -190,6 +190,24 @@ await step("the two sign-out calls drop the subscription and leave the line", as
   assert.equal(after.data.pings.looking, false);
 });
 
+await step("peek reads your view and needs a session", async () => {
+  const anonymous = await call("GET", "/coop/play/peek");
+  assert.equal(anonymous.status, 401);
+  const r = await call("GET", "/coop/play/peek", { token: corey });
+  assert.equal(r.status, 200, JSON.stringify(r.data));
+  assert.equal(r.data.state, "in_game");
+  assert.equal(r.data.match.members.some((m) => m.isYou), true);
+});
+
+await step("leaving the line and changing pings are rate limited like every other call", async () => {
+  const weird = await sessionFor("local-iamweird");
+  const cancels = await Promise.all(Array.from({ length: 70 }, () => call("DELETE", "/coop/play", { token: weird })));
+  assert.ok(cancels.some((r) => r.status === 429), "70 cancels in a row hit the limit");
+  const push = await call("DELETE", "/coop/play/push", { token: weird });
+  assert.equal(push.status, 429, "and the same budget covers the push settings");
+  assert.equal(push.data.error, "rate_limited");
+});
+
 await step("house rooms no longer appear or count on /coop/rooms", async () => {
   const r = await call("GET", "/coop/rooms");
   assert.equal(r.status, 200);

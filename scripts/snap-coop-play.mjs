@@ -7,6 +7,7 @@
  *
  *   node scripts/snap-coop-play.mjs            → docs/screenshots/coop-play/*.png
  *   node scripts/snap-coop-play.mjs --out DIR
+ *   node scripts/snap-coop-play.mjs --only searching,party-host   (just those states)
  */
 
 import { chromium } from "playwright";
@@ -16,10 +17,13 @@ import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
-const PORT = 8784;
+/** SNAP_COOP_PORT moves the page server when 8784 is taken by something else. */
+const PORT = Number(process.env.SNAP_COOP_PORT) || 8784;
 const BASE = `http://127.0.0.1:${PORT}`;
 const outIndex = process.argv.indexOf("--out");
 const OUT = resolve(outIndex > -1 ? process.argv[outIndex + 1] : join(REPO_ROOT, "docs", "screenshots", "coop-play"));
+const onlyIndex = process.argv.indexOf("--only");
+const ONLY = onlyIndex > -1 ? new Set(String(process.argv[onlyIndex + 1] || "").split(",").filter(Boolean)) : null;
 
 const ME = "76561198000000001";
 const SESSION = { steamID: ME, personaName: "c3rooks", sessionToken: "snap-token", signedInAt: "2026-11-01T00:00:00.000Z" };
@@ -60,10 +64,42 @@ function view(state) {
   }
 }
 
+/**
+ * Saves for "Your co-op climbs", in the shape the run parser produces. `party`
+ * lists every player's climber; a solo run is a party of one.
+ */
+function savedRun(n, party, extra = {}) {
+  const ended = new Date(Date.UTC(2026, 10, 1 + n, 21, 0, 0));
+  return {
+    id: `snap-${n}`, character: party[0], party, partySize: party.length, ascension: 5, seed: `SNAP${n}`, won: false,
+    floorReached: 24, playTimeSeconds: 2400, startedAt: new Date(ended.getTime() - 2400_000).toISOString(), endedAt: ended.toISOString(),
+    relics: [], deckAtEnd: [], cardPicks: [], pathByAct: [], sourceFile: `snap-${n}.run`, schemaVersion: 11, gameMode: "standard",
+    wasAbandoned: false, modifiers: [], inProgress: false, ...extra,
+  };
+}
+const SOLO_SAVES = [
+  savedRun(1, ["silent"], { won: true, floorReached: 51 }),
+  savedRun(2, ["ironclad"]),
+  savedRun(3, ["defect"], { won: true, floorReached: 51 }),
+];
+const COOP_SAVES = [
+  ...SOLO_SAVES,
+  savedRun(4, ["fool", "necrobinder"], { ascension: 3, floorReached: 20 }),
+  savedRun(6, ["ironclad", "silent"], { won: true, ascension: 7, floorReached: 51 }),
+  savedRun(9, ["defect", "regent", "silent"], { ascension: 5, floorReached: 12, wasAbandoned: true }),
+  savedRun(12, ["ironclad", "silent"], { ascension: 9, floorReached: 33 }),
+  savedRun(14, ["silent", "ironclad"], { won: true, ascension: 8, floorReached: 51 }),
+];
+
 const SHOTS = [
   ["idle-empty", "idle", "/coop"],
   ["idle-live", "idle", "/coop"],
+  // Under the card: saves with no co-op runs yet, then with some.
+  ["idle-solo-saves", "idle", "/coop", "solo-saves"],
+  ["idle-coop-saves", "idle", "/coop", "coop-saves"],
   ["searching", "searching", "/coop"],
+  // Right after Share to Discord is tapped: the button says so, and the toast.
+  ["searching-shared", "searching", "/coop", "share"],
   ["party-host", "matched", "/coop"],
   ["party-joiner", "matched", "/coop"],
   ["party-full", "matched", "/coop"],
@@ -95,13 +131,14 @@ async function main() {
   try {
     for (const [look, query] of LOOKS) {
       for (const [sizeName, viewport] of SIZES) {
-        for (const [fixture, state, path] of SHOTS) {
+        for (const [fixture, state, path, tap] of SHOTS) {
+          if (ONLY && !ONLY.has(fixture)) continue;
           const context = await browser.newContext({ viewport, deviceScaleFactor: 2 });
           await context.addInitScript((value) => {
             try { localStorage.setItem("vault.web.session", value); } catch { /* ignore */ }
           }, JSON.stringify(SESSION));
           await context.route((url) => url.hostname !== "127.0.0.1", (route) => route.abort());
-          const answer = view(fixture === "ended" ? "idle-empty" : fixture);
+          const answer = view(fixture === "ended" || /-saves$/.test(fixture) ? "idle-empty" : fixture.replace(/-shared$/, ""));
           await context.route("**/api/coop/play**", (route) =>
             route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(answer) }),
           );
@@ -130,9 +167,33 @@ async function main() {
             const tier = document.getElementById("me-pill-tier");
             if (tier) tier.textContent = "Steam connected";
           });
+          if (tap === "solo-saves" || tap === "coop-saves") {
+            // Loading saves takes the app to Overview; come back to Co-op.
+            await page.evaluate((runs) => window.SpireVault.ingestDesktopRuns(runs), tap === "coop-saves" ? COOP_SAVES : SOLO_SAVES);
+            await page.waitForFunction(() => window.SpireVault.activeTab() === "overview", null, { timeout: 8000 });
+            await page.evaluate(() => window.SpireVault.switchTab("coop"));
+            await page.waitForSelector(tap === "coop-saves" ? "#coop-play-root .cp-climbs:not(.is-example) .cp-stats" : '#coop-play-root .cp-climbs-note [data-cp="refresh-saves"]', { timeout: 8000 });
+          }
+          if (tap === "share") {
+            await context.grantPermissions(["clipboard-read", "clipboard-write"], { origin: BASE });
+            await page.click('#coop-play-root .cp-card [data-cp="share"]');
+            await page.waitForSelector('#coop-play-root .cp-card [data-cp="share"].is-done', { timeout: 5000 });
+          }
           await page.waitForTimeout(400);
+          // Loading saves makes the app try its cloud copy, which this static
+          // server does not have; that error toast is not part of co-op.
+          // Hidden at once: left to fade, it shows through the shot as ghost text.
+          if (tap !== "share") {
+            await page.evaluate(() => {
+              const toast = document.getElementById("toast");
+              if (!toast) return;
+              toast.classList.remove("is-visible");
+              toast.style.transition = "none";
+              toast.style.visibility = "hidden";
+            });
+          }
           const file = join(OUT, `${look}-${sizeName}-${fixture}.png`);
-          await page.screenshot({ path: file, fullPage: sizeName === "phone" });
+          await page.screenshot({ path: file, fullPage: true });
           process.stdout.write(`  ${file}\n`);
           await context.close();
         }

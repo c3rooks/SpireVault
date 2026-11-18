@@ -23,7 +23,7 @@
 // follows the pointer. Markup only, apart from the scheduler.
 
 import { esc } from "./html.js?v=1";
-import { reduced } from "./motion.js?v=1";
+import { reduced } from "./motion.js?v=2";
 import { LIFE_SPRITES } from "./stage-life-sprites.js?v=1";
 import { STAGE_LIFE } from "./stage-life-list.js?v=1";
 import { hex, num, pct, round, sequence } from "./stage-num.js?v=1";

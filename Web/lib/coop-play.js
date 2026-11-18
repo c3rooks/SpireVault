@@ -7,10 +7,17 @@
 // Backend/src/coop-play-core.ts. The server is the source of truth: every
 // action returns the full view, and the card is re-rendered from it.
 
-import * as View from "/lib/coop-play-view.js?v=1";
-import * as Alerts from "/lib/coop-play-alerts.js?v=1";
+import * as View from "/lib/coop-play-view.js?v=7";
+import * as More from "/lib/coop-play-more.js?v=5";
+import * as Alerts from "/lib/coop-play-alerts.js?v=2";
+import * as Share from "/lib/coop-play-share.js?v=4";
+import { summarizeCoopClimbs } from "/lib/coop-climbs.js?v=2";
 
 const PREFS_KEY = "vault.coop.play.v1";
+/** The game version from a shared link. script.js writes it at boot (same key). */
+const INVITE_KEY = "vault.coop.invite.v1";
+/** How long the Share button says "Post copied" after a tap. */
+const SHARE_FLASH_MS = 2500;
 const POLL_MS = Object.freeze({
   idle: 20_000,
   searching: 5_000,
@@ -31,6 +38,9 @@ const STEAM_ID = /^\d{17}$/;
  * @property {(view: object | null) => void} [onChange]
  * @property {() => void} [onAuthFailure]
  * @property {string | null} [partyId]    from a /party/<id> deep link
+ * @property {() => object[]} [runs]      the player's loaded runs (not the sample set), for "Your co-op climbs"
+ * @property {() => void} [refreshSaves]  read the linked save folder again (the app's own Refresh)
+ * @property {() => void} [importSaves]   pick a save folder (the app's own Import)
  */
 
 /** @type {{ root: HTMLElement, float: HTMLElement, deps: CoopPlayDeps } | null} */
@@ -46,17 +56,39 @@ let lastHtml = "";
 let lastFloatHtml = "";
 /** @type {{ supported: boolean, on: boolean, reason?: string }} */
 let push = { supported: false, on: false };
+/** What a share button just did, shown on it for a moment. @type {"" | "copied" | "shared" | "link"} */
+let shared = "";
+let shareTimer = 0;
+/** True while a share sheet or copy is in flight, so a second tap waits. */
+let sharing = false;
+/** The co-op numbers, and the run list they were worked out from. */
+let climbs = null;
+let climbsRuns = null;
 
 // MARK: - Prefs
 
+/** A friend's shared link names their game version; it is used once. */
+function takeInvite() {
+  try {
+    const branch = Share.inviteBranch(localStorage.getItem(INVITE_KEY));
+    localStorage.removeItem(INVITE_KEY);
+    return branch;
+  } catch {
+    return null;
+  }
+}
+
 function readPrefs() {
+  const invited = takeInvite();
   try {
     const raw = JSON.parse(localStorage.getItem(PREFS_KEY) || "{}");
-    const branch = raw.branch === "beta" ? "beta" : "stable";
+    const branch = invited ?? (raw.branch === "beta" ? "beta" : "stable");
     const valid = View.CLIMBERS.some((c) => c.id === raw.character && (!c.beta || branch === "beta"));
-    return { character: valid ? raw.character : undefined, branch };
+    const next = { character: valid ? raw.character : undefined, branch };
+    if (invited) writePrefs(next);
+    return next;
   } catch {
-    return { character: undefined, branch: "stable" };
+    return { character: undefined, branch: invited ?? "stable" };
   }
 }
 
@@ -177,7 +209,7 @@ function cardHtml() {
   // markup only changes when the state does and polls don't redraw the card.
   const s = ctx?.deps.session;
   const me = { sid: s?.steamID, name: s?.personaName || "You", avatar: s?.avatarURL };
-  const stable = { view, me, prefs, push, busy, now: view.ticket?.createdAt ?? 0 };
+  const stable = { view, me, prefs, push, busy, shared, now: view.ticket?.createdAt ?? 0 };
   if (view.state === "searching") return View.searchingHtml(stable);
   if (view.state === "matched") return View.partyHtml(stable);
   if (view.state === "in_game") return View.inGameHtml(stable);
@@ -185,18 +217,73 @@ function cardHtml() {
   return View.idleHtml(stable);
 }
 
+/** The Discord post for the state you are in (null for a full party or a run under way). */
+function currentPost() {
+  if (!ctx || !view) return null;
+  return Share.discordPost({ view, me: { name: ctx.deps.session?.personaName }, prefs, climberName: View.climberName });
+}
+
+/** Co-op numbers from the loaded saves; worked out again only when the run list changes. */
+function coopClimbs() {
+  const runs = ctx?.deps.runs?.() ?? [];
+  if (runs !== climbsRuns) {
+    climbsRuns = runs;
+    climbs = summarizeCoopClimbs(runs);
+  }
+  return { climbs, hasRuns: runs.length > 0 };
+}
+
+/** Under the card: who is around, the invite panel, your co-op climbs. */
+function belowHtml() {
+  if (!view) return "";
+  return More.moreHtml({ view, post: currentPost(), shared, ...coopClimbs() });
+}
+
+// Name tags are sized by script to the room they stand in, so they are fitted
+// again whenever that could have changed: a room resizes (also when only the
+// room does, as the "Most wins together" room stretching to its neighbour's
+// height), the tab shows (a hidden tab measures 0), or a font finishes
+// loading (a face that lands late widens every name without resizing anything).
+
+/** @type {ResizeObserver | null} */
+let roomWatch = null;
+let fitQueued = false;
+
+/** Fit the name tags on the next frame; any number of reasons in one frame cost one fit. */
+function queueFit() {
+  if (fitQueued || !ctx) return;
+  fitQueued = true;
+  requestAnimationFrame(() => {
+    fitQueued = false;
+    if (ctx) View.fitPartyTags(ctx.root);
+  });
+}
+
+/** Every render makes new rooms: watch those, and the card they stand in. */
+function watchRooms() {
+  if (!roomWatch || !ctx) return;
+  roomWatch.disconnect();
+  roomWatch.observe(ctx.root);
+  for (const room of ctx.root.querySelectorAll(".cp-scene")) roomWatch.observe(room);
+}
+
 function render() {
   if (!ctx) return;
-  const html = `<section class="cp" data-cp-state="${View.esc(view?.state ?? "loading")}" aria-labelledby="cp-title">${cardHtml()}</section>`;
+  const html = `<section class="cp" data-cp-state="${View.esc(view?.state ?? "loading")}" aria-labelledby="cp-title">${cardHtml()}${belowHtml()}</section>`;
   if (html !== lastHtml) {
-    const focusKey = document.activeElement?.closest?.(".cp")
-      ? document.activeElement.getAttribute("data-cp") || document.activeElement.getAttribute("data-cp-pick")
-      : null;
+    // Remember which control had focus. Share appears twice (card and panel),
+    // so the key alone is not enough: keep its place among its namesakes.
+    const active = document.activeElement?.closest?.(".cp") ? document.activeElement : null;
+    const focusKey = active ? active.getAttribute("data-cp") || active.getAttribute("data-cp-pick") : null;
+    const sameKey = focusKey === null ? "" : `[data-cp="${CSS.escape(focusKey)}"], [data-cp-pick="${CSS.escape(focusKey)}"]`;
+    const focusIndex = sameKey ? [...ctx.root.querySelectorAll(sameKey)].indexOf(active) : -1;
     ctx.root.innerHTML = html;
     lastHtml = html;
     View.fitPartyTags(ctx.root);
-    if (focusKey !== null) {
-      const again = ctx.root.querySelector(`[data-cp="${CSS.escape(focusKey)}"], [data-cp-pick="${CSS.escape(focusKey)}"]`);
+    watchRooms();
+    if (sameKey) {
+      const namesakes = ctx.root.querySelectorAll(sameKey);
+      const again = namesakes[focusIndex] ?? namesakes[0];
       if (again instanceof HTMLElement) again.focus({ preventScroll: true });
     }
   }
@@ -289,6 +376,64 @@ async function togglePing(on) {
   render();
 }
 
+/**
+ * Share to Discord: copy a ready-made post (or open the phone's share sheet)
+ * so friends can take the open seats.
+ */
+async function share() {
+  if (!ctx || !view || sharing) return;
+  const post = currentPost();
+  if (!post) return;
+  sharing = true;
+  let outcome;
+  try {
+    outcome = await Share.sendPost(post);
+  } finally {
+    sharing = false;
+  }
+  track("coop_share", { state: view?.state ?? "", outcome });
+  if (!ctx || outcome === "cancelled") return;
+  if (outcome === "failed") {
+    ctx.deps.toast(`Couldn't copy the post. Share this link instead: ${post.url}`);
+    return;
+  }
+  if (outcome === "copied") ctx.deps.toast("Discord post copied. Paste it into your channel.");
+  flashShared(outcome);
+}
+
+/** Copy just the link, for anywhere that is not Discord. */
+async function copyLink() {
+  if (!ctx || sharing) return;
+  const post = currentPost();
+  if (!post) return;
+  sharing = true;
+  let copied = false;
+  try {
+    copied = await Share.copyText(post.url);
+  } finally {
+    sharing = false;
+  }
+  track("coop_copy_link", { state: view?.state ?? "", copied });
+  if (!ctx) return;
+  if (!copied) {
+    ctx.deps.toast(`Couldn't copy. The link is ${post.url}`);
+    return;
+  }
+  ctx.deps.toast("Link copied.");
+  flashShared("link");
+}
+
+/** Show on the button what it just did, then put its label back. */
+function flashShared(what) {
+  shared = what;
+  render();
+  window.clearTimeout(shareTimer);
+  shareTimer = window.setTimeout(() => {
+    shared = "";
+    render();
+  }, SHARE_FLASH_MS);
+}
+
 function onClick(ev) {
   const el = ev.target instanceof Element ? ev.target.closest("[data-cp], [data-cp-pick], [data-cp-branch]") : null;
   if (!el || !ctx) return;
@@ -324,6 +469,20 @@ function onClick(ev) {
       break;
     case "ping-on":
       void togglePing(true);
+      break;
+    case "share":
+      void share();
+      break;
+    case "copy-link":
+      void copyLink();
+      break;
+    case "refresh-saves":
+      track("coop_climbs_refresh");
+      ctx.deps.refreshSaves?.();
+      break;
+    case "import-saves":
+      track("coop_climbs_import");
+      ctx.deps.importSaves?.();
       break;
     case "steam-add":
       void addOnSteam(el.getAttribute("data-sid") || "");
@@ -405,10 +564,9 @@ export function mountCoopPlay(root, deps) {
   ctx = { root, float, deps: { ...deps } };
   const support = Alerts.pushSupport();
   push = { supported: support.supported, on: false, reason: support.reason };
-  // Name tags are sized to the room they stand in: fit them again when the
-  // tab shows (a hidden tab measures 0), the window resizes or fonts land.
-  if (typeof ResizeObserver === "function") new ResizeObserver(() => View.fitPartyTags(root)).observe(root);
-  document.fonts?.ready?.then(() => View.fitPartyTags(root));
+  if (typeof ResizeObserver === "function") roomWatch = new ResizeObserver(queueFit);
+  document.fonts?.ready?.then(queueFit);
+  document.fonts?.addEventListener?.("loadingdone", queueFit);
   root.addEventListener("click", onClick);
   root.addEventListener("change", onChange);
   float.addEventListener("click", onClick);
@@ -428,6 +586,11 @@ export function setCoopTabVisible(on) {
     renderFloat();
     schedule();
   }
+}
+
+/** The player's runs changed (an import, a cloud sync): redraw "Your co-op climbs". */
+export function refreshClimbs() {
+  render();
 }
 
 /** The current server view (or null before the first answer). */

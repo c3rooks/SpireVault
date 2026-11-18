@@ -6,6 +6,7 @@
  *   GET    /coop/play/push/config  VAPID public key for the browser
  *   POST   /coop/play              tap Play  {character?, branch?, push?}
  *   GET    /coop/play              poll / keep-alive
+ *   GET    /coop/play/peek         the same view, read without a keep-alive (the service worker's)
  *   DELETE /coop/play              leave the queue
  *   POST   /coop/play/cancel       same, for navigator.sendBeacon on page close
  *   POST   /coop/play/action       {action: steam_add|hosting|in_game|leave}
@@ -97,6 +98,8 @@ export async function handleCoopPlayRoute(
     }
     if (method === "DELETE") return reply(await play.cancel(sid));
   }
+
+  if (method === "GET" && pathname === "/coop/play/peek") return reply(await play.peek(sid));
 
   if (method === "POST" && pathname === "/coop/play/cancel") return reply(await play.cancel(sid));
 

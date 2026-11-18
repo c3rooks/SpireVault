@@ -83,6 +83,17 @@ preflight:
 	@# different tokens, which for ES modules silently creates two module
 	@# instances with two copies of module state.
 	@node scripts/check-asset-versions.mjs || { echo "✘ asset version check failed — aborting deploy"; exit 1; }
+	@# The same contract for tokens already in a commit: a file changed under
+	@# a committed token stays old for a year in any browser that ran that
+	@# commit, local testing included (the torches kept their old layout for
+	@# the owner on 2026-11-16 after three fixes under one token).
+	@node scripts/check-served-tokens.mjs || { echo "✘ served-token check failed — bump the listed tokens"; exit 1; }
+	@# Co-op "Share to Discord": the post text, name safety, and the link
+	@# preview tags the /coop function serves (offline, no browser).
+	@node scripts/verify-coop-share.mjs || { echo "✘ co-op share check failed"; exit 1; }
+	@# "Your co-op climbs": the run parser keeps every player in a save, and
+	@# the co-op numbers count only runs with a party.
+	@node scripts/verify-coop-climbs.mjs || { echo "✘ co-op climbs check failed"; exit 1; }
 	@# Game-data drift guard. Cross-references labels.json, relic-info.js,
 	@# ascension-info.js, demo-runs.js, script.js's boss/roster enums and
 	@# the Swift AI glossary so a tooltip can never describe a card the

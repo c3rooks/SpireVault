@@ -27,6 +27,8 @@
   --cp-win: var(--win, #6dd97c);
   --cp-steam: #1b2838;
   --cp-steam-hi: #66c0f4;
+  --cp-discord: #5865f2;
+  --cp-discord-press: #4752c4;
   --cp-title-color: var(--cp-text);
   --cp-radius: var(--radius, 12px);
   --cp-radius-sm: 8px;
@@ -78,6 +80,17 @@
   min-width: 0;
   position: sticky;
   top: 16px;
+}
+/* Before a match the controls are the taller column. The room then grows to
+   the foot of the card instead of leaving the space under it empty. */
+.cp-card--idle > .cp-side,
+.cp-card--searching > .cp-side {
+  align-self: stretch;
+  position: static;
+}
+.cp-card--idle > .cp-side > .cp-scene,
+.cp-card--searching > .cp-side > .cp-scene {
+  flex: 1 0 auto;
 }
 
 /* ---- Heading ------------------------------------------------------------------ */
@@ -138,6 +151,39 @@
 @keyframes cp-beat {
   0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--cp-win) 55%, transparent); }
   80%, 100% { box-shadow: 0 0 0 9px transparent; }
+}
+
+/* No line of copy on this tab ends on one word alone ("does.", "closed",
+   "again.", "Steam"). Sentences wrap pretty; the short labels (the step
+   pills, the link card's title, panel titles, party names) wrap balanced.
+   text-wrap inherits, so it reaches the spans inside each of these. */
+.cp-live,
+.cp-sub,
+.cp-hint,
+.cp-notice,
+.cp-ping,
+.cp-step-text,
+.cp-climbs-note p,
+.cp-post-line,
+.cp-post-embed-text span,
+.cp-help p {
+  text-wrap: pretty;
+}
+.cp-title,
+.cp-step-title,
+.cp-help summary,
+.cp-howto li,
+.cp-post-embed-text b,
+.cp-panel-title,
+.cp-recent-meta {
+  text-wrap: balance;
+}
+/* Party names wrap pretty, not balanced: WebKit balancing the nowrap
+   "Name +" spans (coop-play-more.js) pushed a line up to 3px past its column.
+   Each name keeps its "+" with it, so a line only breaks between names, and
+   pretty keeps one name from standing alone on the last line. */
+.cp-recent-names {
+  text-wrap: pretty;
 }
 
 .cp-notice {
@@ -212,13 +258,42 @@
   color: var(--cp-text);
   box-shadow: inset 0 0 0 1px var(--cp-accent);
 }
+/* A name is never cut, and never touches its tile's edge: one that cannot fit
+   breaks at its soft hyphen ("Necro-binder", set in coop-play-view.js) and
+   takes a second line. */
 .cp-pick-name {
   max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
   line-height: 1.1;
+  letter-spacing: -0.01em;
   text-align: center;
+}
+/* "Necrobinder" needs a tile about 71px wide (74px with room to spare). A
+   row of six such tiles needs 474px, seven need 554px.
+   Where the picker is narrower than that (the two-column card at about
+   1130-1190px wide in the new look and 1170-1270px in classic, with the
+   wider controls column below; and the beta branch's seven on small
+   tablets) the climbers stand in two even rows, as on phones, so every
+   name stays on one line. */
+.cp-field--pick {
+  container: cp-pick / inline-size;
+}
+@container cp-pick (max-width: 473.9px) {
+  html:not([data-ui="next"]) .cp-pick {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+/* The new look's Figtree sets "Necrobinder" 62px wide (classic's Inter: 66px),
+   so its six tiles fit down to 456px. */
+@container cp-pick (max-width: 455.9px) {
+  html[data-ui="next"] .cp-pick {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+@container cp-pick (max-width: 553.9px) {
+  .cp-pick[data-cp-n="7"] {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
 }
 
 .cp-figure-blank {
@@ -244,7 +319,7 @@
 }
 .cp-branch-opt {
   appearance: none;
-  min-height: 38px;
+  min-height: 44px;
   padding: 0 16px;
   border: 0;
   border-radius: 999px;
@@ -339,6 +414,35 @@
   border-color: color-mix(in srgb, var(--cp-steam-hi) 45%, var(--cp-steam));
   color: #e9f6ff;
 }
+/* Share to Discord (lib/coop-play-share.js). Discord's own blurple: white on
+   it measures 4.6:1, enough for this bold label. */
+.cp-btn--discord {
+  display: inline-grid;
+  background: var(--cp-discord);
+  border-color: color-mix(in srgb, white 28%, var(--cp-discord));
+  color: #fff;
+}
+/* The label and the "Post copied" face share one cell, so the button never
+   changes width when it flips between them. */
+.cp-share-face {
+  grid-area: 1 / 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+.cp-btn--discord.is-done > .cp-share-face:not(.cp-share-face--done) {
+  visibility: hidden;
+}
+.cp-btn--discord:hover,
+.cp-btn--discord:active {
+  background: var(--cp-discord-press);
+  border-color: color-mix(in srgb, white 45%, var(--cp-discord));
+}
+/* In a party the button sits under "Up to N more can join". */
+.cp-invite {
+  margin-top: 8px;
+}
 .cp-btn--quiet {
   background: transparent;
   border-color: var(--cp-line-soft);
@@ -371,8 +475,11 @@
   display: flex;
   align-items: center;
   gap: 12px;
+  /* The whole row is the toggle's label, so it is the tap target. */
+  min-height: 44px;
   margin: 0;
-  max-width: 520px;
+  /* Wide enough for the whole sentence on one line beside the toggle. */
+  max-width: 660px;
   color: var(--cp-text-2);
   font-size: 0.88rem;
   line-height: 1.4;
@@ -419,19 +526,25 @@
 .cp-ping-input:checked + .cp-ping-switch::after {
   transform: translateX(18px);
 }
+/* Toggle, bell and words share one centre line, however many lines the words take. */
 .cp-ping-text {
   display: inline-flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 8px;
 }
 .cp-ping-text svg {
   flex: none;
-  margin-top: 2px;
 }
 
 /* ---- The room: your party standing in a real game room ---------------------------- */
 .cp-scene {
   position: relative;
+  /* The room is always as wide as its column; the ratio sets only its height.
+     Without a set width WebKit carries min-height through aspect-ratio into a
+     minimum width (220px x 16/8 = 440px), so in Safari the room ran past its
+     card and off the page on phones. */
+  width: 100%;
+  min-width: 0;
   aspect-ratio: 16 / 8;
   min-height: 220px;
   overflow: hidden;
@@ -469,6 +582,8 @@
   bottom: calc((1 - var(--cp-foot, 0.75)) * 100% - 6%);
   display: flex;
   align-items: flex-end;
+  /* The group stands in the middle: as much bare ground on its left as on its right. */
+  justify-content: center;
   gap: 3%;
   container-type: size;
 }
@@ -607,7 +722,8 @@
   place-items: center;
   background: var(--cp-accent);
   color: var(--cp-on-accent);
-  font-size: 0.7rem;
+  /* 0.75rem keeps the initial at 11px or more on the new look's 15px root. */
+  font-size: 0.75rem;
 }
 
 /* Empty places in the party. */
@@ -619,7 +735,8 @@
   aspect-ratio: 0.58;
   border: 2px dashed rgba(255, 241, 207, 0.4);
   border-radius: 42% 42% 12px 12px;
-  background: rgba(10, 6, 22, 0.3);
+  /* Dark enough that a lantern or a crate behind the seat reads as background. */
+  background: rgba(10, 6, 22, 0.6);
   color: rgba(255, 241, 207, 0.7);
 }
 .cp-seat-mark {
@@ -744,21 +861,126 @@
   color: var(--cp-win);
 }
 
+/* A Steam name can be 32 characters: its button stays inside the step. */
+.cp-step-actions .cp-btn {
+  min-width: 0;
+  max-width: 100%;
+}
+.cp-step-actions .cp-btn > span:not(.cp-btn-done) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cp-step-actions .cp-btn > svg {
+  flex: none;
+}
+
 .cp-help {
   border-radius: var(--cp-radius-sm);
   border: var(--cp-border) dashed var(--cp-line-soft);
-  padding: 10px 14px;
   color: var(--cp-text-2);
   font-size: 0.88rem;
 }
+/* The padding is on the line itself, so the whole 44px line opens it. */
 .cp-help summary {
+  box-sizing: border-box;
+  min-height: 44px;
+  padding: 12px 14px;
   cursor: pointer;
   font-weight: 700;
+  line-height: 1.5;
   color: var(--cp-text);
 }
 .cp-help p {
-  margin: 8px 0 0;
+  margin: 0;
+  padding: 0 14px 12px;
   line-height: 1.5;
+}
+/* The end of the party card: help, then Leave party. */
+.cp-foot {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* ---- A party, on a wide card ----------------------------------------------------------
+   The heading and the room share the top row, the three steps stand side by
+   side under them, and the help line and Leave party close the card: nothing
+   is left empty under the room. .cp-main dissolves so its children can be
+   placed on the card's own grid. Narrower cards stack them (see "Narrow
+   screens" below). */
+@container cp (min-width: 861px) {
+  .cp-card--party {
+    row-gap: 18px;
+  }
+  .cp-card--party > .cp-main {
+    display: contents;
+  }
+  .cp-card--party > .cp-main > * {
+    grid-column: 1 / -1;
+    order: 3;
+  }
+  .cp-card--party > .cp-main > .cp-notice {
+    order: 0;
+  }
+  /* The heading is the shorter of the two: it stands level with the middle of the room. */
+  .cp-card--party > .cp-main > .cp-head {
+    grid-column: 1;
+    order: 1;
+    align-self: center;
+  }
+  .cp-card--party > .cp-side {
+    grid-column: 2;
+    order: 2;
+    position: static;
+  }
+  /* The foot: the help line takes the width, Leave party stands at its right
+     end. The button's box is as tall as the closed help line, so it sits on
+     that line's centre and stays put when the help opens. */
+  .cp-card--party .cp-foot {
+    flex-direction: row;
+    align-items: flex-start;
+    order: 4;
+  }
+  .cp-card--party .cp-foot > .cp-help {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .cp-card--party .cp-foot > .cp-actions {
+    flex: none;
+    min-height: calc(44px + 2 * var(--cp-border));
+  }
+  .cp-card--party .cp-steps {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+  }
+  /* In a column the number sits beside the title and the words and buttons
+     get the step's whole width. Buttons stand on the step's floor, so the
+     three steps' buttons share one line whatever the length of the words. */
+  .cp-card--party .cp-step {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-rows: auto 1fr auto auto;
+    align-items: center;
+    gap: 8px 12px;
+  }
+  .cp-card--party .cp-step-body {
+    display: contents;
+  }
+  .cp-card--party .cp-step-text {
+    grid-column: 1 / -1;
+    align-self: start;
+  }
+  .cp-card--party .cp-step-status {
+    grid-column: 1 / -1;
+    grid-row: 3;
+  }
+  .cp-card--party .cp-step-actions {
+    grid-column: 1 / -1;
+    grid-row: 4;
+  }
 }
 
 /* ---- Pill on other tabs ------------------------------------------------------------- */
@@ -816,6 +1038,420 @@
 }
 .cp-float [data-cp-timer] {
   font-variant-numeric: tabular-nums;
+}
+
+/* ---- Under the card: right now, bring someone, your co-op climbs ------------------ */
+.cp-more {
+  display: grid;
+  gap: 16px;
+  margin-top: 20px;
+}
+
+/* Right now: one quiet line of counts, not a card. */
+.cp-now {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 20px;
+  margin: 0;
+  padding: 0 4px;
+  list-style: none;
+  color: var(--cp-text-2);
+  font-size: 0.9rem;
+}
+.cp-now-label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--cp-text-2);
+}
+.cp-now-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+.cp-now-item b {
+  color: var(--cp-text);
+  font-variant-numeric: tabular-nums;
+}
+.cp-now .cp-live-dot {
+  transform: none;
+}
+.cp-now-item.is-on .cp-live-dot {
+  background: var(--cp-win);
+}
+
+/* Two panels of unequal weight: the invite leads, the numbers sit beside it. */
+.cp-more-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  gap: 16px;
+  align-items: stretch;
+}
+.cp-more--solo .cp-more-grid {
+  grid-template-columns: minmax(0, 1fr);
+}
+.cp-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+  padding: clamp(16px, 2.4vw, 28px);
+  border: var(--cp-border) solid var(--cp-line-soft);
+  border-radius: var(--cp-radius);
+  background: var(--cp-card);
+}
+.cp-panel-head {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.cp-panel-title {
+  margin: 0;
+  font-family: var(--cp-font-heading);
+  font-size: 1.4rem;
+  line-height: 1.15;
+  color: var(--cp-text);
+}
+
+/* The post, drawn the way it will read in a channel, with the link's card. */
+.cp-post {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 14px 16px;
+  border: var(--cp-border) solid var(--cp-line-soft);
+  border-left: 4px solid var(--cp-discord);
+  border-radius: var(--cp-radius-sm);
+  background: var(--cp-raised);
+  font-size: 0.92rem;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.cp-post-cap {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 4px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--cp-text-2);
+}
+.cp-post-cap svg {
+  width: 15px;
+  height: 15px;
+  color: var(--cp-discord);
+}
+.cp-post-line {
+  margin: 0;
+  color: var(--cp-text);
+}
+.cp-post-link {
+  color: var(--cp-steam-hi);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+/* The link's card as Discord draws it: its words, then the picture across
+   the width. Beside "Your co-op climbs" the picture is the part that grows,
+   so this panel is filled to its foot too. */
+.cp-bring > .cp-post {
+  flex: 1 1 auto;
+}
+.cp-post-embed {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+  margin-top: 10px;
+  padding: 12px;
+  border-radius: var(--cp-radius-sm);
+  background: color-mix(in srgb, var(--cp-card) 72%, black);
+}
+.cp-post-art {
+  display: block;
+  flex: 1 0 auto;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1200 / 630;
+  border-radius: 6px;
+  /* When it grows taller than its shape, keep the left (the words on it). */
+  object-fit: cover;
+  object-position: left center;
+}
+.cp-post-embed-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin: 0;
+  font-size: 0.82rem;
+  line-height: 1.4;
+  color: var(--cp-text-2);
+}
+.cp-post-embed-text b {
+  font-size: 0.88rem;
+  color: var(--cp-text);
+}
+/* Copy link flips to "Link copied" at the same width, like Share. */
+.cp-btn--flip {
+  display: inline-grid;
+}
+.cp-btn--flip.is-done > .cp-share-face:not(.cp-share-face--done),
+.cp-btn--flip:not(.is-done) > .cp-share-face--done {
+  visibility: hidden;
+}
+
+/* Your co-op climbs. The panel is as tall as its neighbour: the numbers on
+   top, the latest runs at the foot, and between them the party standing in
+   a room, which is the part that grows to fill the height. */
+.cp-climbs-body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 14px;
+  min-height: 0;
+}
+.cp-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+.cp-stat {
+  display: flex;
+  flex-direction: column-reverse;
+  /* Number first, label under it, packed to the top of the row, so the
+     numbers line up even when one label takes two lines ("CO-OP / RUNS"). */
+  justify-content: flex-end;
+  gap: 4px;
+  min-width: 0;
+}
+.cp-stat dt {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--cp-text-2);
+}
+.cp-stat dd {
+  margin: 0;
+  font-family: var(--cp-font-display);
+  font-size: clamp(1.6rem, 1.2rem + 1.2vw, 2.2rem);
+  line-height: 1;
+  color: var(--cp-title-color);
+  font-variant-numeric: tabular-nums;
+}
+.cp-best {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+}
+.cp-best-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 2px 12px;
+  margin: 0;
+  font-size: 0.88rem;
+}
+.cp-best-label {
+  font-weight: 700;
+  color: var(--cp-text);
+}
+.cp-best-detail {
+  color: var(--cp-text-2);
+}
+/* Here a tag names a climber, not a player, so it needs no avatar chip. */
+.cp-best .cp-avatar {
+  display: none;
+}
+.cp-best .cp-tag {
+  padding: 3px 9px;
+}
+/* The room takes whatever height is left; its climbers scale with it. */
+.cp-best > .cp-scene {
+  flex: 1 1 150px;
+  min-height: 150px;
+  aspect-ratio: auto;
+}
+.cp-recent {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+/* Two lines a run: who and how it ended, then when and how far. */
+.cp-recent-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-areas:
+    "minis names result"
+    "minis meta result";
+  align-items: center;
+  gap: 0 12px;
+  padding: 8px 0;
+  border-top: 1px solid var(--cp-line-soft);
+  font-size: 0.86rem;
+}
+.cp-minis {
+  grid-area: minis;
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 2px;
+  min-width: 0;
+}
+.cp-minis .cp-mini {
+  display: block;
+  width: auto;
+  height: 36px;
+}
+.cp-minis .cp-figure-blank.cp-mini {
+  width: 24px;
+  height: 32px;
+  font-size: 0.9rem;
+}
+/* A party's names are never cut: when the column is narrow (phones) they
+   take a second line, breaking only after a " +" (each name and the "+"
+   after it are one nowrap span, from coop-play-more.js), balanced.
+   .cp-nowrap keeps "co-op" whole in the example note. */
+.cp-party-name,
+.cp-nowrap {
+  white-space: nowrap;
+}
+.cp-recent-names {
+  grid-area: names;
+  align-self: end;
+  font-weight: 600;
+  color: var(--cp-text);
+  overflow-wrap: break-word;
+}
+.cp-recent-meta {
+  grid-area: meta;
+  align-self: start;
+  color: var(--cp-text-2);
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+}
+.cp-result {
+  grid-area: result;
+  justify-self: end;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+/* One set of columns for the whole list, so every run starts its names on the
+   same left edge whether two or four climbers stand in front of them. */
+@supports (grid-template-columns: subgrid) {
+  .cp-recent {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    column-gap: 12px;
+  }
+  .cp-recent-row {
+    grid-column: 1 / -1;
+    grid-template-columns: subgrid;
+  }
+}
+.cp-result--won {
+  background: color-mix(in srgb, var(--cp-win) 22%, transparent);
+  color: var(--cp-win);
+}
+.cp-result--lost {
+  background: color-mix(in srgb, var(--cp-loss, #e5484d) 22%, transparent);
+  color: var(--cp-loss-text, #ff9a9a);
+}
+.cp-result--abandoned {
+  background: color-mix(in srgb, var(--cp-text-2) 18%, transparent);
+  color: var(--cp-text-2);
+}
+/* No co-op runs to show yet: the same panel on sample numbers, marked as an
+   example in words (the tag and the note) and dimmed so it cannot pass for
+   the player's own. */
+.cp-example-tag {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: var(--cp-gold);
+  color: #1a1305;
+  font-family: var(--cp-font);
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  vertical-align: middle;
+}
+.cp-climbs-note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  padding: 12px 14px;
+  border: 1px dashed var(--cp-line);
+  border-radius: var(--cp-radius-sm);
+  color: var(--cp-text);
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+.cp-climbs-note p {
+  flex: 1 1 220px;
+  margin: 0;
+}
+.cp-climbs.is-example .cp-climbs-body {
+  opacity: 0.72;
+  filter: saturate(0.75);
+}
+@container cp (max-width: 860px) {
+  .cp-more-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  /* Stacked, nothing needs to stretch: the room goes back to a fixed shape. */
+  .cp-best > .cp-scene {
+    flex: none;
+    aspect-ratio: 16 / 7;
+    min-height: 160px;
+  }
+}
+@container cp (max-width: 520px) {
+  .cp-panel {
+    padding: 16px;
+  }
+  .cp-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px 8px;
+  }
+  .cp-minis .cp-mini {
+    height: 32px;
+  }
+  .cp-climbs-note .cp-btn {
+    flex: 1 1 100%;
+    justify-content: center;
+  }
+}
+
+/* ---- The Play card's columns where the card is narrow --------------------------- */
+/* From 861px of co-op width the room stands beside the controls (laptops and
+   up). Below about 1044px the even split left the controls column too narrow
+   for six climbers in a row (.cp-field--pick), so the picker took two rows,
+   the card grew ~90px and the room, which grows to the card's foot, became a
+   tall slice drawn at 1.6x. Giving the controls the larger share keeps the
+   climbers in one row at most of these widths; the room keeps reaching the
+   foot of the card. */
+@container cp (min-width: 861px) and (max-width: 1043.9px) {
+  .cp-card--idle,
+  .cp-card--searching {
+    grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+  }
 }
 
 /* ---- Narrow screens --------------------------------------------------------------- */
@@ -898,6 +1534,11 @@
   .cp-play {
     max-width: none;
   }
+  /* Share takes the whole row; the quieter buttons share the next one. */
+  .cp-btn--discord {
+    flex: 1 1 100%;
+    justify-content: center;
+  }
 }
 @media (max-width: 560px) {
   .cp-float-wrap {
@@ -912,6 +1553,18 @@
     animation: none !important;
     transition: none !important;
   }
+}
+
+/* Classic: this tab's head holds nothing to see (its toolbar is hidden here
+   and its heading is for assistive tech), so it takes no room. Without this
+   it is an empty bar with a rule, pinned over the card while you scroll. */
+html[data-ui="classic"] .tab-panel[data-tab="coop"] > .panel-head {
+  position: static;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  backdrop-filter: none;
 }
 
 /* Panel heading kept for assistive tech; the card shows its own title. */

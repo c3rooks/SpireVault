@@ -67,13 +67,19 @@
   }
 }
 
-/* ---- Intro + legend ------------------------------------------------------------ */
+/* ---- Intro: section title, how the list is ranked, colour key ------------------ */
+/* Same shape as Cards: title with its rule, the note under it, then the key
+   (.v-tone-legend, components/charts.css). */
 .v-rl-intro {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: var(--v-space-3) var(--v-space-5);
+}
+.v-rl-intro > .v-rl-title {
+  flex: 1 0 100%;
+  margin: 0;
 }
 .v-rl-lede {
   max-width: 62ch;
@@ -82,41 +88,11 @@
   font-size: var(--v-text-sm);
   font-weight: 600;
   line-height: 1.5;
+  text-wrap: pretty;
 }
 .v-rl-lede strong {
   color: var(--v-text);
   font-weight: 800;
-}
-.v-rl-legend {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-.v-rl-legend li {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  padding: 3px 10px;
-  border: var(--v-outline);
-  border-radius: var(--v-radius-pill);
-  background: var(--v-bg-deep);
-  color: var(--v-text);
-  font-size: var(--rl-small);
-  font-weight: 700;
-  white-space: nowrap;
-}
-.v-rl-legend i {
-  width: 18px;
-  height: 8px;
-  border-radius: var(--v-radius-pill);
-  background: var(--tone);
-  box-shadow: 0 0 0 1.5px var(--v-outline-color);
-}
-.v-rl-legend .is-low i {
-  background: repeating-linear-gradient(-45deg, var(--v-text-2) 0 3px, transparent 3px 6px);
 }
 
 /* ---- Podium ------------------------------------------------------------------ */
@@ -479,6 +455,10 @@
   border: 1.5px dashed var(--v-text-2);
   background: transparent;
   color: var(--v-text-2);
+}
+/* Holds the tag line on a relic with no rarity (views-relics.js ledgerRow). */
+.v-rl-tag.is-empty {
+  visibility: hidden;
 }
 .v-rl-counts {
   display: grid;
@@ -893,9 +873,6 @@
   .v-rl {
     gap: var(--v-space-4);
   }
-  .v-rl-legend li {
-    padding: 3px 9px;
-  }
   /* Podium: still three across, tighter. Rarity moves to the page. */
   .v-rl-podium {
     grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1019,12 +996,13 @@
     width: 44px;
     height: 44px;
   }
+  /* The tag always sits under the name, as on desktop. Letting it wrap
+     beside the name put it inline on short names and on its own line on
+     long ones, so rows came out different heights for no reason. */
   .v-rl-id {
     grid-area: id;
-    flex-direction: row;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 4px 8px;
+    align-items: flex-start;
+    gap: 4px;
   }
   .v-rl-name {
     flex: 0 1 auto;

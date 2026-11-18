@@ -167,7 +167,7 @@
                 ${s.apiKey ? '<button type="button" class="btn-ghost sm" data-rc-action="clear-key" title="Forget key">Clear</button>' : ""}
               </div>
               <span class="beta-hint">
-                Stored in your browser only (<code>localStorage</code>). Calls go directly from this tab to ${s.provider === "anthropic" ? "Anthropic" : "OpenAI"} — Vault never sees the request or the key.
+                Stored in your browser only (<code>localStorage</code>). Calls go directly from this tab to ${s.provider === "anthropic" ? "Anthropic" : "OpenAI"} — SpireVault never sees the request or the key.
               </span>
             </label>
           </div>
@@ -184,7 +184,7 @@
               <span class="beta-toggle-track" aria-hidden="true"></span>
               <span class="beta-toggle-text">
                 <strong>Include a screenshot with each question</strong>
-                <span>You'll be prompted by the browser to share your screen the first time. Disable this to use text-only chat.</span>
+                <span>You'll be prompted by the browser to share your screen the first time. Disable this to use text&#8209;only&nbsp;chat.</span>
               </span>
             </label>
           </div>
@@ -217,10 +217,10 @@
           </div>
           ${pip ? `
             <ul class="beta-trust-list">
-              <li><strong>Direct to provider.</strong> Your key + your prompts go straight to ${s.provider === "anthropic" ? "Anthropic" : "OpenAI"} from this tab. Vault never sees them.</li>
+              <li><strong>Direct to provider.</strong> Your key + your prompts go straight to ${s.provider === "anthropic" ? "Anthropic" : "OpenAI"} from this tab. SpireVault never sees them.</li>
               <li><strong>Screen captures stay local.</strong> Frames live in memory just long enough to upload to the model — no recording, no replay.</li>
               <li><strong>Streamer-safe?</strong> Not in the browser — the overlay window <em>is</em> visible to OBS / QuickTime. The macOS app hides itself from screen recordings; <a class="action-link" href="/" target="_blank" rel="noopener">grab the .dmg</a> if you stream.</li>
-              <li><strong>Closes with this tab.</strong> If you close this Vault tab, the overlay closes too.</li>
+              <li><strong>Closes with this tab.</strong> If you close this SpireVault tab, the overlay closes too.</li>
             </ul>
           ` : ""}
         </section>
@@ -241,7 +241,7 @@
           <p>${pip
             ? "We can't ask the browser to share your screen, so the coach would only see your text — no game vision."
             : "The Run Coach uses Document Picture-in-Picture, which Safari and Firefox don't ship yet."}</p>
-          <p>For the full experience, open Vault in <strong>Chrome, Edge, Brave, Opera, or Arc</strong>, or install the <a class="action-link" href="/" target="_blank" rel="noopener">macOS app</a> — it's the streamer-safe build.</p>
+          <p>For the full experience, open SpireVault in <strong>Chrome, Edge, Brave, Opera, or Arc</strong>, or install the <a class="action-link" href="/" target="_blank" rel="noopener">macOS app</a> — it's the streamer-safe build.</p>
         </div>
       </div>
     `;
@@ -562,7 +562,7 @@
   function buildSystemPrompt(s) {
     if (s.systemPrompt && s.systemPrompt.trim().length > 8) return s.systemPrompt.trim();
     return [
-      "You are 'Vault Run Coach', a Slay the Spire 2 expert advising the player live.",
+      "You are 'SpireVault Run Coach', a Slay the Spire 2 expert advising the player live.",
       "Speak in 1-3 short sentences. No bullet lists unless explicitly asked.",
       "Prioritize: 1) survival on this floor, 2) deck identity, 3) future scaling.",
       "When given a screenshot, extract the run state from it (HP, gold, deck composition, current node, current map fork) before answering.",
@@ -679,7 +679,7 @@
         </div>
         <div class="rc-log" id="rc-log" role="log" aria-live="polite">
           <div class="rc-msg rc-msg-system"><div class="rc-msg-bubble">
-            Tap a chip or type a question. Your screen + question go straight to your chosen provider — Vault doesn't see either.
+            Tap a chip or type a question. Your screen + question go straight to your chosen provider — SpireVault doesn't see either.
           </div></div>
         </div>
         <form class="rc-form" id="rc-form">

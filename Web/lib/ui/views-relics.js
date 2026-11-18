@@ -9,6 +9,8 @@
 // existing data-action="relic-expand" / "relic-collapse" contract).
 
 import { esc, fixed, clamp } from "./html.js?v=1";
+import { hdRelicSrc } from "./relic-art-hd.js?v=2";
+import { TONE_LABELS, toneKey, toneLegendHtml } from "./tone-legend.js?v=2";
 
 /** @typedef {"win"|"gold"|"accent"} RelicTone */
 
@@ -20,15 +22,16 @@ import { esc, fixed, clamp } from "./html.js?v=1";
  * @property {number} runs
  * @property {number} wins
  * @property {number} winratePct
- * @property {RelicTone} tone        Wilson lower-bound confidence band
+ * @property {RelicTone} tone        win rate against the player's average (tone-legend.js)
  * @property {string|null} rarity    starter | common | … | null when unknown
  */
 
 /**
  * @typedef {Object} RelicsModel
- * @property {ReadonlyArray<RelicEntry>} relics   ranked best first
+ * @property {ReadonlyArray<RelicEntry>} relics   ranked best first (Wilson lower bound)
  * @property {number} minRuns                      fewer runs than this are not listed
  * @property {number} lowSampleRuns                fewer runs than this are flagged
+ * @property {number} baselinePct                  the player's overall win rate, 0..100
  */
 
 /**
@@ -43,13 +46,6 @@ import { esc, fixed, clamp } from "./html.js?v=1";
  */
 
 const PODIUM_SIZE = 3;
-
-/** What each confidence band means, in words a player can act on. */
-const TONE_LABELS = Object.freeze({
-  win: "Proven winner",
-  gold: "Above baseline",
-  accent: "Not proven yet",
-});
 
 const KNOWN_RARITIES = new Set(["starter", "common", "uncommon", "rare", "ancient", "shop", "event", "boss"]);
 
@@ -84,11 +80,6 @@ function rarityLabel(rarity) {
   const key = rarityKey(rarity);
   if (key === "unknown") return "";
   return key.charAt(0).toUpperCase() + key.slice(1);
-}
-
-/** @param {RelicTone} tone */
-function toneKey(tone) {
-  return tone === "win" || tone === "gold" ? tone : "accent";
 }
 
 /**
@@ -133,7 +124,7 @@ function podiumItem(entry, rank, lowSampleRuns) {
       <button class="v-rl-top${isLow ? " is-low" : ""}" type="button" data-tone="${toneKey(entry.tone)}"
               data-action="relic-expand" data-relic-key="${esc(entry.key)}" aria-controls="relic-detail-slot"
               aria-label="${esc(tileLabel(entry, rank, isLow))}">
-        <span class="v-rl-top-art" aria-hidden="true">${relicArt(entry.src)}</span>
+        <span class="v-rl-top-art" aria-hidden="true">${relicArt(hdRelicSrc(entry.src))}</span>
         <span class="v-rl-top-plate">
           <span class="v-rl-top-band">
             <span class="v-rl-top-rank">${ordinal(rank)}</span>
@@ -159,10 +150,12 @@ function podiumItem(entry, rank, lowSampleRuns) {
 function ledgerRow(entry, rank, lowSampleRuns) {
   const isLow = entry.runs < lowSampleRuns;
   const rarity = rarityLabel(entry.rarity);
+  // A row with no tag keeps an invisible one, so every row is the same
+  // height (on a phone a tagless row came out 74px against 99px).
   const tags = [
     rarity ? `<span class="v-rl-tag" data-rarity="${rarityKey(entry.rarity)}">${esc(rarity)}</span>` : "",
     isLow ? '<span class="v-rl-tag is-low">Low sample</span>' : "",
-  ].join("");
+  ].join("") || '<span class="v-rl-tag is-empty" aria-hidden="true">&nbsp;</span>';
   return `
     <li>
       <button class="v-rl-row${isLow ? " is-low" : ""}" type="button" data-tone="${toneKey(entry.tone)}"
@@ -172,9 +165,9 @@ function ledgerRow(entry, rank, lowSampleRuns) {
         <span class="v-rl-orb" aria-hidden="true">${relicArt(entry.src)}</span>
         <span class="v-rl-id">
           <span class="v-rl-name">${esc(entry.label)}</span>
-          ${tags ? `<span class="v-rl-tags">${tags}</span>` : ""}
+          <span class="v-rl-tags">${tags}</span>
         </span>
-        <span class="v-rl-counts"><span><b>${entry.runs}</b> ${entry.runs === 1 ? "run" : "runs"}</span><span><b>${entry.wins}</b> ${entry.wins === 1 ? "win" : "wins"}</span></span>
+        <span class="v-rl-counts"><span><b>${entry.wins}</b> ${entry.wins === 1 ? "win" : "wins"}</span><span><b>${entry.runs}</b> ${entry.runs === 1 ? "run" : "runs"}</span></span>
         ${meter(entry.winratePct)}
         <span class="v-rl-wr">${fixed(entry.winratePct)}<small>%</small></span>
         ${CHEVRON}
@@ -182,20 +175,22 @@ function ledgerRow(entry, rank, lowSampleRuns) {
     </li>`;
 }
 
-/** @param {RelicsModel} model */
+/**
+ * Section title, how the list is ranked, and the colour key. The ranking is
+ * the Wilson lower bound (stats-engine.js relicBuckets); the tab subtitle
+ * says "weighted by runs" (otherwise 81.8% above 83.3% reads as a sorting
+ * bug), so the lede says why instead of saying it again.
+ * @param {RelicsModel} model
+ */
 function intro(model) {
   return `
     <header class="v-rl-intro">
+      <div class="v-section-title v-rl-title"><h3>Best relics</h3></div>
       <p class="v-rl-lede">
-        Sorted by win rate, with a minimum-sample filter (${model.minRuns}+ runs) applied to suppress one-run flukes.
-        <strong>Tap any relic for details.</strong>
+        A relic you've had in only a few runs counts for less, so one lucky run can't top the list.
+        It needs ${model.minRuns}+ runs to show. <strong>Tap any relic for details.</strong>
       </p>
-      <ul class="v-rl-legend" aria-label="How to read the bars">
-        <li data-tone="win"><i aria-hidden="true"></i>${TONE_LABELS.win}</li>
-        <li data-tone="gold"><i aria-hidden="true"></i>${TONE_LABELS.gold}</li>
-        <li data-tone="accent"><i aria-hidden="true"></i>${TONE_LABELS.accent}</li>
-        <li class="is-low"><i aria-hidden="true"></i>Under ${model.lowSampleRuns} runs</li>
-      </ul>
+      ${toneLegendHtml({ baselinePct: model.baselinePct, lowSampleRuns: model.lowSampleRuns, lowSampleNoun: "runs" })}
     </header>`;
 }
 
@@ -225,7 +220,7 @@ export function relicsTabHtml(model) {
     ? `
       <section class="v-panel v-rl-ledger" data-reveal style="--r:3" aria-label="Relics ranked ${PODIUM_SIZE + 1} to ${relics.length}">
         <div class="v-rl-head" aria-hidden="true">
-          <span>#</span><span></span><span>Relic</span><span class="v-rl-head-counts"><span>Runs</span><span>Wins</span></span><span class="v-rl-head-wr">Win rate</span>
+          <span>#</span><span></span><span>Relic</span><span class="v-rl-head-counts"><span>Wins</span><span>Runs</span></span><span class="v-rl-head-wr">Win rate</span>
         </div>
         <ol class="v-rl-list" start="${PODIUM_SIZE + 1}">
           ${rest.map((entry, index) => ledgerRow(entry, PODIUM_SIZE + 1 + index, lowSampleRuns)).join("")}
@@ -307,7 +302,7 @@ export function relicDetailHtml(model) {
     <article class="v-rl-page" data-relic-detail="${esc(model.key)}" data-rarity="${rarityKey(model.rarity)}"
              aria-labelledby="v-rl-page-title">
       <header class="v-rl-page-band">
-        <span class="v-rl-page-orb" aria-hidden="true">${relicArt(model.src)}</span>
+        <span class="v-rl-page-orb" aria-hidden="true">${relicArt(hdRelicSrc(model.src))}</span>
         <div class="v-rl-page-titles">
           <p class="v-rl-page-kicker">${esc(kicker)}</p>
           <h3 class="v-rl-page-name" id="v-rl-page-title">${esc(model.label)}</h3>

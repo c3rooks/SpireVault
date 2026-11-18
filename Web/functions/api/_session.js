@@ -13,9 +13,12 @@
  *
  *   GET  /api/_session
  *     Reads the cookie, asks the worker /me for the bound profile,
- *     returns it. Used on cold boot so a returning user lands signed in
- *     even though localStorage was wiped by ITP. 401 if no cookie or
- *     the worker rejects the bearer.
+ *     returns it and re-issues the cookie with a fresh Max-Age, so the
+ *     cookie slides with use instead of dying 30 days after sign-in.
+ *     Used on cold boot so a returning user lands signed in even though
+ *     localStorage was wiped by ITP. 401 `no_cookie` if there is no
+ *     cookie (the client may then POST a bearer it still holds), 401
+ *     `expired` (and a cleared cookie) if the worker rejects the bearer.
  *
  *   DELETE /api/_session
  *     Clears the cookie AND tells the worker to invalidate the session
@@ -104,6 +107,18 @@ export async function onRequest(context) {
   }
 
   if (method === "POST") {
+    // Only this site's own pages may set the session (login CSRF): a plain
+    // form from another site can post text/plain without asking first, so
+    // demand JSON (which makes a browser ask) and a same-origin request.
+    const type = request.headers.get("content-type") || "";
+    if (!type.toLowerCase().startsWith("application/json")) {
+      return json({ error: "unsupported_media_type" }, { status: 415 });
+    }
+    const site = request.headers.get("sec-fetch-site");
+    const origin = request.headers.get("origin");
+    if ((site && site !== "same-origin") || (origin && origin !== new URL(request.url).origin)) {
+      return json({ error: "cross_site" }, { status: 403 });
+    }
     let body = null;
     try {
       body = await request.json();
@@ -137,7 +152,16 @@ export async function onRequest(context) {
     const token = readSessionCookie(request);
     if (!token) return json({ error: "no_cookie" }, { status: 401 });
     const result = await rehydrate(token, workerOrigin);
-    if (result.ok) return json(result.profile);
+    if (result.ok) {
+      // Re-issue the cookie with a fresh Max-Age on every live check.
+      // The worker slides the bearer's KV TTL while the player is active,
+      // but a cookie set once at sign-in still dies 30 days later, and
+      // the next boot then reads as signed out. Renewing it here, on the
+      // one call every boot makes, keeps the two lifetimes in step.
+      return json(result.profile, {
+        headers: { "set-cookie": buildSetCookie(token, undefined, request) },
+      });
+    }
 
     if (result.definitive) {
       // Worker said this token is genuinely dead (401/403/404).

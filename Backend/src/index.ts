@@ -151,9 +151,9 @@ export default {
 
   /**
    * Cron entry point — Cloudflare invokes this on every trigger
-   * listed under `[triggers]` in wrangler.toml. The current schedule
-   * is `*\/15 * * * *` (every 15 minutes) which is the SpireVault
-   * House Lobby renewer cadence.
+   * listed under `[triggers]` in wrangler.toml. That list is empty since
+   * 2026-11-14 (co-op moved to one-tap Play); the House Lobby renewer it
+   * used to run every 15 minutes (`*\/15 * * * *`) stays here, switched off.
    *
    * The renewer is wrapped in `ctx.waitUntil` so the runtime keeps
    * the promise alive for the full pass; Cloudflare otherwise tears
@@ -168,8 +168,9 @@ export default {
     env: Env,
     ctx: ExecutionContext,
   ): Promise<void> {
-    // House rooms are off unless explicitly re-enabled; the cron trigger was
-    // removed from wrangler.toml at the same time.
+    // House rooms are off unless explicitly re-enabled. wrangler.toml carries
+    // an empty `crons = []`, which is what removes the old schedule from the
+    // live Worker on deploy; this guard covers a trigger that still fires.
     if (env.HOUSE_LOBBIES_ENABLED !== "1") {
       console.log(`[house-lobbies] skipped (disabled) cron=${event.cron}`);
       return;

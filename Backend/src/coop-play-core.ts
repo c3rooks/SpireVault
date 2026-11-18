@@ -618,6 +618,16 @@ export function poll(state0: PlayState, sid: string, ctx: Ctx): Result {
   return { state: ticked.state, view: viewFor(ticked.state, sid), events: ticked.events };
 }
 
+/**
+ * Your view, read without being seen: no keep-alive and no housekeeping, so
+ * the state is left exactly as it was. For the service worker, which asks
+ * "what happened?" when a push arrives while the player is away. A poll
+ * there would mark them as back and end the longer grace they are owed.
+ */
+export function peek(state: PlayState, sid: string): PlayView {
+  return viewFor(state, sid);
+}
+
 /** Leave the queue. Leaving a match goes through `act(…, "leave")`. */
 export function cancel(state0: PlayState, sid: string, ctx: Ctx): Result {
   const ticked = tick(state0, ctx.now, ctx.newId);

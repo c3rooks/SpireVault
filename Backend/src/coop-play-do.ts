@@ -21,6 +21,7 @@ import {
   cancel,
   emptyState,
   isQuiet,
+  peek,
   play,
   poll,
   pulse,
@@ -86,9 +87,20 @@ export class CoopPlayDO extends DurableObject<Env> {
     return { ok: true, view: r.view };
   }
 
+  /**
+   * Read-only: no keep-alive, no storage write, and outside the rate limit,
+   * so a push arriving for an away player costs them nothing.
+   */
+  async peek(sid: string): Promise<PlayCallResult> {
+    return { ok: true, view: peek(this.state, sid) };
+  }
+
   async cancel(sid: string): Promise<PlayCallResult> {
+    if (this.limited(sid)) return { ok: false, error: "rate_limited" };
+    const hadTicket = Boolean(this.state.tickets[sid]);
     const r = cancel(this.state, sid, this.coreCtx());
-    await this.apply(r, true);
+    // Leaving a line you were not in is not worth a storage write of its own.
+    await this.apply(r, hadTicket);
     return { ok: true, view: r.view };
   }
 
@@ -113,6 +125,7 @@ export class CoopPlayDO extends DurableObject<Env> {
     looking: boolean,
     branch: Branch,
   ): Promise<PlayCallResult> {
+    if (this.limited(sid)) return { ok: false, error: "rate_limited" };
     if (sub) await this.ctx.storage.put(`sub:${sid}`, sub);
     else await this.ctx.storage.delete(`sub:${sid}`);
     const flagged = setPushFlag(this.state, sid, Boolean(sub));

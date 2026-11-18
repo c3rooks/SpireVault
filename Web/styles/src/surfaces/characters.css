@@ -218,6 +218,19 @@
   font-size: 0.8125rem;
   font-weight: 700;
   line-height: 1.3;
+  text-wrap: balance;
+}
+/* A trait never splits across lines (views-characters.js roleHtml). */
+.v-cb-trait {
+  white-space: nowrap;
+}
+/* The "·" between traits is a dot painted on a widened space. Where the
+   line wraps, that space collapses to nothing, and so does its dot: no line
+   ends (or starts) on a lone "·". */
+.v-cb-sep {
+  word-spacing: 0.55em;
+  /* Sized and set like the font's own "·" (as in "15W · 16L"). */
+  background: radial-gradient(circle at 50% 56%, currentColor 1.05px, transparent 1.55px) no-repeat;
 }
 /* Narrow banners drop the role line; the codex page carries it. */
 @container (max-width: 150px) {

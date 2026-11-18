@@ -114,6 +114,22 @@ function meter(pct, className) {
 }
 
 /**
+ * The role line ("Strength · Block · Self-damage") with each trait kept whole,
+ * so a narrow banner breaks between traits, never as "Self-" / "damage". The
+ * dot between traits is painted on a plain space (characters.css .v-cb-sep):
+ * a space at the end or start of a line collapses away, so a wrapped line
+ * never ends or starts with a stray "·".
+ * @param {string} role
+ * @returns {string}
+ */
+function roleHtml(role) {
+  return role
+    .split(" · ")
+    .map((trait) => `<span class="v-cb-trait">${esc(trait)}</span>`)
+    .join('<span class="v-cb-sep"> </span>');
+}
+
+/**
  * @param {CharacterBanner} row
  * @param {number} index
  */
@@ -141,7 +157,7 @@ function banner(row, index) {
         ${portrait(row, "eager")}
       </span>
       <span class="v-cb-name">${esc(row.label)}</span>
-      ${row.role ? `<span class="v-cb-role">${esc(row.role)}</span>` : ""}
+      ${row.role ? `<span class="v-cb-role">${roleHtml(row.role)}</span>` : ""}
       <span class="v-cb-stats">
         <span class="v-cb-wr">${played ? `${fixed(row.winratePct)}<small>%</small>` : "—"}</span>
         ${meter(played ? row.winratePct : 0, "v-cb-meter")}

@@ -180,6 +180,8 @@
   color: var(--v-text-2);
   font-size: var(--v-text-sm);
   line-height: 1.5;
+  /* No one-word last line ("back.") under a card head. */
+  text-wrap: pretty;
 }
 .settings-card-sub strong {
   color: var(--v-text);
@@ -287,6 +289,8 @@
   color: var(--v-text-2);
   font-size: 0.8125rem;
   line-height: 1.5;
+  /* No one-word last line ("on.") under a field. */
+  text-wrap: pretty;
 }
 .beta-hint code {
   padding: 1px 5px;
@@ -340,6 +344,8 @@
   color: var(--v-text);
   font-size: var(--v-text-md);
   font-weight: 800;
+  /* No last word alone on a phone ("…with each / question"). */
+  text-wrap: pretty;
   transition: color var(--v-dur-1) ease;
 }
 .settings-pref .muted,
@@ -347,6 +353,8 @@
   color: var(--v-text-2);
   font-size: var(--v-text-sm);
   line-height: 1.45;
+  /* No one-word last line ("chat.") under a toggle. */
+  text-wrap: pretty;
 }
 .settings-pref:hover strong,
 .beta-toggle:hover .beta-toggle-text strong {
@@ -398,9 +406,40 @@
   color: var(--v-text-2);
   font-size: 0.8rem;
   font-weight: 600;
+  text-wrap: pretty;
 }
 .settings-action-row {
   gap: var(--v-space-2);
+}
+/* Save data's four buttons: one row of four when the card has room for four
+   whole labels ("Link save folder" is about 142px), otherwise two rows of
+   two — never three and "Export CSV" on its own. The card is the container
+   because its width, not the window's, decides (it is half the grid on wide
+   screens and the whole grid below 940px). */
+.settings-card:has([data-action="upload"]) {
+  container: save-card / inline-size;
+}
+.settings-card:has([data-action="upload"]) > .settings-action-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+/* 4 × 142px labels + 3 gaps, with a little air in each. */
+@container save-card (min-width: 620px) {
+  .settings-card:has([data-action="upload"]) > .settings-action-row {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+/* Small phones (360px): a little less side padding keeps two to a row. */
+@container save-card (max-width: 330px) {
+  .settings-card:has([data-action="upload"]) > .settings-action-row > * {
+    padding-inline: 8px;
+  }
+}
+/* 320px phones: two whole labels no longer fit side by side. */
+@container save-card (max-width: 284px) {
+  .settings-card:has([data-action="upload"]) > .settings-action-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 .settings-danger-row {
   justify-content: flex-start;
@@ -451,10 +490,6 @@
   border: var(--v-outline);
   background: var(--v-bg-deep);
   box-shadow: var(--v-shadow-sm);
-}
-.settings-avatar--placeholder {
-  color: var(--v-text-2);
-  font-family: var(--v-font-display);
 }
 .settings-account-meta strong {
   overflow: hidden;

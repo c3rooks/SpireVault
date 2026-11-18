@@ -17,7 +17,7 @@ sky, a small flame at its tip and one lit window. The owner picked it on
 - the Windows app: `WindowsApp/src-tauri/icons/*`, `WindowsApp/ui/emblem.png`
 
 `node scripts/build-brand-og.mjs` then renders the app's link preview
-(`Web/assets/og-v2.png`): the crest and wordmark over the campfire scene.
+(`Web/assets/og-crest-v1.png`): the crest and wordmark over the campfire scene.
 
 Web files have versioned names because `/assets` is cached as immutable.
 When a master changes, bump `VERSION` in the build script and every

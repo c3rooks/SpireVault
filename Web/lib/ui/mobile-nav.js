@@ -13,8 +13,8 @@
 // this module sets, so until it runs phones keep the old scrolling strip.
 
 import { esc } from "./html.js?v=1";
-import { reduced } from "./motion.js?v=1";
-import { THEMES, getTheme, getThemePreference, lookSwitchHtml, onThemeChange, setTheme, themeSwatchesHtml } from "./theme.js?v=4";
+import { reduced } from "./motion.js?v=2";
+import { THEMES, getTheme, getThemePreference, lookSwitchHtml, onThemeChange, setTheme, themeSwatchesHtml } from "./theme.js?v=5";
 
 const PHONE_QUERY = "(max-width: 880px)";
 const SHEET_ID = "v-mnav-sheet";

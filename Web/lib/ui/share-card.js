@@ -11,7 +11,7 @@
 // player sees around it. script.js builds the model from the run and loads
 // the images; the classic layout keeps its own card and never loads this.
 
-import { STAGE_ACTOR_ART } from "./stage-actors.js?v=1";
+import { STAGE_ACTOR_ART } from "./stage-actors.js?v=2";
 import { STAGE_BACKDROPS } from "./stage-backdrops.js?v=1";
 
 /** Logical size, and the pixel scale the canvas is drawn at. */

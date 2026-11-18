@@ -286,6 +286,37 @@ main.main-public,
   background: var(--card-raised);
   border-color: rgba(212,175,55,0.4);
 }
+/* Classic had no disabled ghost style, so a disabled button looked live
+ * and still lit up gold on hover. Dim it like .btn-primary:disabled and
+ * keep the resting look under the pointer. */
+html:not([data-ui="next"]) .btn-ghost:disabled { opacity: 0.55; cursor: not-allowed; }
+html:not([data-ui="next"]) .btn-ghost:disabled:hover {
+  color: var(--text-2);
+  background: var(--card);
+  border-color: var(--border);
+}
+/* The same for every other classic control that has a disabled state: it
+ * keeps its resting look under the pointer and when pressed. A disabled
+ * .btn-primary still lifted 1px with a bigger glow; a disabled chip (The
+ * Fool on Recent Runs, no runs yet) dropped its fill and brightened its
+ * text. Enabled controls keep their hover and press states. */
+html:not([data-ui="next"]) .btn-primary:disabled:is(:hover, :active) {
+  transform: none;
+  box-shadow: 0 6px 20px -6px rgba(255,107,26,0.55);
+}
+html:not([data-ui="next"]) .chart-chip:disabled:is(:hover, :active) {
+  color: var(--text-2);
+  background: rgba(255, 255, 255, 0.04);
+}
+html:not([data-ui="next"]) .btn-link-danger:disabled:hover { color: #ff8c8c; background: transparent; }
+html:not([data-ui="next"]) .sync-pill-refresh:disabled:hover { color: #6fe091; background: rgba(95, 224, 154, 0.15); }
+html:not([data-ui="next"]) .h-react-trigger:disabled:hover {
+  color: var(--text-2, #c8c0d8);
+  background: rgba(255,255,255,0.04);
+  border-color: rgba(255,255,255,0.10);
+}
+html:not([data-ui="next"]) :is(.h-reaction-chip, .h-react-popover-item):disabled:hover { transform: none; }
+html:not([data-ui="next"]) .news-notify-btn:disabled:hover { filter: none; }
 
 /* Destructive action button — used on Close Room buttons in the edit
  * modal and on the Beta party-finder lobby card. Reads as a soft red,
@@ -831,6 +862,17 @@ main.main-public,
 .footer-inner p { margin: 2px 0 0; font-size: 11px; color: var(--text-3); }
 .footer-links { display: flex; gap: 22px; font-size: 13px; }
 .footer-links a { color: var(--text-2); }
+/* Classic: the links shrank instead of wrapping, so at 881-1012px three
+ * broke mid-label ("Marketing / site", "About the Companion mod /
+ * (future)"). Each link stays on one line and the row wraps between
+ * links. The studio's name never breaks (index.html), so the credit line
+ * no longer ends on "Games." alone. */
+html:not([data-ui="next"]) .footer-links {
+  flex-wrap: wrap;
+  row-gap: 6px;
+}
+html:not([data-ui="next"]) .footer-links a { white-space: nowrap; }
+html:not([data-ui="next"]) .footer-inner p { text-wrap: pretty; }
 .footer-links a:hover { color: var(--text); }
 /* D02 fix: the profile dock (.sidebar-footer) is position:fixed at the
    bottom-left, 248px wide, on desktop (≥881px) — including for guests
@@ -874,6 +916,42 @@ main.main-public,
      Mobile (≤880px) zeroes this back out — see "Mobile shell"
      near the bottom of this file. */
   padding-bottom: 112px;
+}
+/* Classic, desktop: the rail never stuck. `overflow-x: hidden` on html and
+ * body makes <body> a scroll container that never scrolls, so `sticky`
+ * had nothing to stick to and the rail scrolled away with the page while
+ * its fixed profile dock stayed put: at the bottom of any tab the dock sat
+ * alone beside the page footer (907-1132px below the rail's end). Pinned
+ * to the window like its dock, the rail runs top to bottom at every scroll
+ * position, and its rows scroll inside it when a short window cannot show
+ * them all above the dock. (Phones get `overflow-x: clip` in
+ * styles.mobile.css instead; turning that on here would pin every panel
+ * header too.) The Mac app hides the rail. */
+@media (min-width: 881px) {
+  html:not([data-ui="next"]):not(.is-desktop-host) .app-shell > .sidebar {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 248px;
+    height: auto;
+    /* `start` (from the grid days) would shrink a fixed box to its
+       content in browsers that align positioned boxes. */
+    align-self: stretch;
+    box-sizing: border-box;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: none;
+    /* Room for the dock, which is 198px for a guest (Sign in with Steam,
+       its note, Settings and the status line): the last row scrolls clear
+       of it. On a window tall enough for the rail the spacer absorbs it. */
+    padding-bottom: 212px;
+  }
+  html:not([data-ui="next"]):not(.is-desktop-host) .app-shell > .sidebar::-webkit-scrollbar { display: none; }
+  /* Out of flow, the rail no longer fills the first column: keep the page
+     in the second. */
+  html:not([data-ui="next"]):not(.is-desktop-host) .app-shell > .content { grid-column: 2; }
 }
 /* Hide the mobile-only account row on tablet+ (it's a duplicate of
    the desktop sidebar-footer markup). The actual mobile-on rules live
@@ -1385,6 +1463,34 @@ html:not([data-ui="next"]) .tab-lock-note {
 .me-pill-button[aria-expanded="true"] {
   background: rgba(255,255,255,0.06);
   border-color: rgba(255,255,255,0.10);
+}
+/* Settings has no rail row; it opens from this card, so on Settings the
+ * card is lit like the active rail row (.nav-row.is-active): the same
+ * orange wash and gilded notch. script.js switchTab sets .is-here. A
+ * guest's card lights its Settings link instead. */
+html:not([data-ui="next"]) #me-pill.is-here:not(.me-pill-guest) {
+  background: linear-gradient(90deg, rgba(255, 122, 26, 0.16), rgba(255, 122, 26, 0.03) 78%, transparent);
+  border-color: rgba(255, 122, 26, 0.18);
+}
+html:not([data-ui="next"]) #me-pill.is-here:not(.me-pill-guest)::before {
+  content: "";
+  position: absolute;
+  left: -2px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 22px;
+  background: linear-gradient(180deg, var(--gold), var(--accent));
+  border-radius: 2px;
+  box-shadow: 0 0 8px rgba(255, 160, 92, 0.6);
+}
+html:not([data-ui="next"]) #me-pill.is-here:not(.me-pill-guest) .me-pill-meta span {
+  color: var(--text-2);
+}
+html:not([data-ui="next"]) #me-pill.me-pill-guest.is-here .me-pill-guest-settings {
+  color: var(--accent-hi);
+  background: rgba(255, 122, 26, 0.12);
+  font-weight: 700;
 }
 .me-pill-caret {
   margin-left: auto;
@@ -2538,6 +2644,154 @@ html:not([data-ui="next"]) .tab-lock-note {
     max-width: min(60%, 400px);
   }
 }
+/* Classic, laptop widths: the title, the Overview plaques (or the
+ * Ascensions climb) and the duel do not fit on one row below 1440px.
+ * Centred in the space left over, the crest spilled both ways, over the
+ * subtitle and the climber. Below that width the crest sits under the
+ * title, beside the duel, so nothing overlaps and the header keeps its
+ * height (the duel is the tallest thing in it). Under 1000px even that
+ * column is narrower than the plaques, so the crest goes as it does on
+ * phones; the page below repeats its numbers (win rate, best streak and
+ * highest ascension on Overview, the per-level chart on Ascensions). */
+@media (min-width: 901px) and (max-width: 999px) {
+  html:not([data-ui="next"]) .tab-panel[data-tab="overview"]   > .panel-head .head-crest,
+  html:not([data-ui="next"]) .tab-panel[data-tab="ascensions"] > .panel-head .head-crest {
+    display: none;
+  }
+  /* With the crest gone the title gets its room back, as at 900px and below. */
+  html:not([data-ui="next"]) .tab-panel[data-tab="overview"]   > .panel-head .panel-head-title-wrap,
+  html:not([data-ui="next"]) .tab-panel[data-tab="ascensions"] > .panel-head .panel-head-title-wrap {
+    max-width: min(60%, 400px);
+  }
+}
+@media (min-width: 1000px) and (max-width: 1439px) {
+  html:not([data-ui="next"]) .tab-panel[data-tab="overview"]   > .panel-head > .panel-head-stage,
+  html:not([data-ui="next"]) .tab-panel[data-tab="ascensions"] > .panel-head > .panel-head-stage {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-rows: 1fr auto;
+    column-gap: 18px;
+    row-gap: 8px;
+    align-items: end;
+  }
+  html:not([data-ui="next"]) .tab-panel[data-tab="overview"]   > .panel-head .panel-head-title-wrap,
+  html:not([data-ui="next"]) .tab-panel[data-tab="ascensions"] > .panel-head .panel-head-title-wrap {
+    grid-column: 1;
+    grid-row: 1;
+    max-width: 420px;
+  }
+  html:not([data-ui="next"]) .tab-panel[data-tab="overview"]   > .panel-head .head-crest,
+  html:not([data-ui="next"]) .tab-panel[data-tab="ascensions"] > .panel-head .head-crest {
+    grid-column: 1;
+    grid-row: 2;
+    justify-content: flex-start;
+  }
+  html:not([data-ui="next"]) .tab-panel[data-tab="overview"]   > .panel-head .panel-head-stage > .companion-slot,
+  html:not([data-ui="next"]) .tab-panel[data-tab="ascensions"] > .panel-head .panel-head-stage > .companion-slot {
+    grid-column: 2;
+    grid-row: 1 / -1;
+  }
+}
+/* From 1440px the one-row layout has room, and the crest never shrinks
+ * below its own width: the title column wraps instead of the crest
+ * spilling onto it. */
+@media (min-width: 1440px) {
+  html:not([data-ui="next"]) .tab-panel[data-tab="overview"]   > .panel-head .head-crest,
+  html:not([data-ui="next"]) .tab-panel[data-tab="ascensions"] > .panel-head .head-crest {
+    min-width: max-content;
+  }
+}
+/* Classic Characters: the six portraits need 536px and the title 168px.
+ * From 901px to about 1030px the header had less than that, so the rail
+ * spilled both ways: The Fool past the window's edge (the page grew a
+ * sideways scroll) and Ironclad's name under CHARACTERS. The crest now
+ * measures its own room (a size container, so the title keeps its natural
+ * width) and the portraits give way inside it: first the gaps close from
+ * 16px to 8px, then each portrait narrows from 76px, its arched frame
+ * keeping its shape, and the names tighten their tracking so NECROBINDER
+ * and THE FOOL still read as two names (8px apart at 901px, 61px
+ * portraits). At 486px of room and more nothing changes. */
+html:not([data-ui="next"]) .tab-panel[data-tab="characters"] > .panel-head .head-crest {
+  container: classic-heroes / inline-size;
+}
+html:not([data-ui="next"]) .tab-panel[data-tab="characters"] .crest-heroes {
+  gap: clamp(8px, calc((100cqi - 456px) / 5), 16px);
+  max-width: 100%;
+}
+html:not([data-ui="next"]) .tab-panel[data-tab="characters"] .crest-hero {
+  flex: 0 1 76px;
+  width: auto;
+  min-width: 0;
+}
+html:not([data-ui="next"]) .tab-panel[data-tab="characters"] .crest-hero-name {
+  white-space: nowrap;
+  letter-spacing: clamp(0.3px, calc(0.95px - (496px - 100cqi) * 0.0075), 0.95px);
+}
+html:not([data-ui="next"]) .tab-panel[data-tab="characters"] .crest-hero-frame {
+  width: min(62px, calc(100% - 2px));
+  height: auto;
+  aspect-ratio: 62 / 66;
+}
+/* 58 x 62 in the full-size frame, as before. */
+html:not([data-ui="next"]) .tab-panel[data-tab="characters"] .crest-hero-frame img {
+  width: calc(100% - 2px);
+  height: calc(100% - 2px);
+}
+html:not([data-ui="next"]) .tab-panel[data-tab="characters"] .crest-hero-bar {
+  width: min(56px, calc(100% - 4px));
+}
+/* Classic Top Relics: title, shelf (269px) and duel side by side need a
+ * 1019px stage. Below that the shelf, centred in what was left, ran over
+ * the subtitle ("Best relics by win rate," into Lantern), TOP RELICS broke
+ * onto two lines and Art of War stood on the climber. As on Overview and
+ * Ascensions, the shelf then moves under the title, beside the duel, which
+ * is the tallest thing in the header, so its height does not change. The
+ * header measures itself (a size container: the query reads its content
+ * box, which is the stage's width), so a window with a visible scrollbar
+ * gets the same layout as one without; it switches at 1044px, keeping
+ * 25px to spare. */
+@media (min-width: 901px) {
+  /* Phones and tablets (900px and under) keep their stacked header and no
+     crest: this only re-arranges the desktop row. */
+  html:not([data-ui="next"]) .tab-panel[data-tab="relics"] > .panel-head {
+    container: classic-relics-head / inline-size;
+  }
+  @container classic-relics-head (max-width: 1043px) {
+    html:not([data-ui="next"]) .tab-panel[data-tab="relics"] > .panel-head > .panel-head-stage {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      grid-template-rows: 1fr auto;
+      column-gap: 18px;
+      row-gap: 8px;
+      align-items: end;
+    }
+    html:not([data-ui="next"]) .tab-panel[data-tab="relics"] > .panel-head .panel-head-title-wrap {
+      grid-column: 1;
+      grid-row: 1;
+      max-width: 420px;
+    }
+    html:not([data-ui="next"]) .tab-panel[data-tab="relics"] > .panel-head .head-crest {
+      grid-column: 1;
+      grid-row: 2;
+      justify-content: flex-start;
+    }
+    html:not([data-ui="next"]) .tab-panel[data-tab="relics"] > .panel-head .crest-shelf {
+      gap: 18px;
+    }
+    html:not([data-ui="next"]) .tab-panel[data-tab="relics"] > .panel-head .panel-head-stage > .companion-slot {
+      grid-column: 2;
+      grid-row: 1 / -1;
+    }
+  }
+}
+/* Classic Cards: the fanned hand hung 17px below its crest, whose
+ * `overflow: hidden` cut the outer cards on a straight line 10px above the
+ * header's frame (worst at 901px, but at every width). The hand stands
+ * 24px higher instead, inside the crest, with the header's height
+ * unchanged (the crest has 62px of room above it). */
+html:not([data-ui="next"]) .tab-panel[data-tab="cards"] .crest-fan {
+  padding-bottom: 24px;
+}
 /* Lift every direct child of the themed panel-head above the
  * gradient overlay so titles, the diorama slot, and the Import
  * button all stay clickable and visible. */
@@ -2554,6 +2808,10 @@ html:not([data-ui="next"]) .tab-lock-note {
   flex: 0 1 auto;
   padding-bottom: 2px;
 }
+/* Classic: those 2px made the Recent Runs header 2px taller than the
+ * Settings, Beta and News headers (title and subtitle are the same size),
+ * so its filter panel sat 2px lower than their first panel (131 vs 129). */
+html:not([data-ui="next"]) .panel-head-stage--text-only { padding-bottom: 0; }
 .tab-panel[data-tab="runs"] > .panel-head,
 .tab-panel[data-tab="coop"] > .panel-head {
   flex-direction: column;
@@ -2570,6 +2828,24 @@ html:not([data-ui="next"]) .tab-lock-note {
   gap: 12px;
   flex-wrap: wrap;
   width: 100%;
+}
+/* Classic Highlights: the head holds two rows, the title row and the
+ * filter + sort row (.h-controls). As a flex row they sat side by side:
+ * the chips were squeezed into a right-hand column under a stray rule,
+ * Refresh fell under the subtitle and the title dropped as the chips
+ * wrapped. Stacked, the title sits where every other tab has it, Refresh
+ * stays on the title row and the chips get the full width below. */
+html:not([data-ui="next"]) .tab-panel[data-tab="highlights"] > .panel-head {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+html:not([data-ui="next"]) .tab-panel[data-tab="highlights"] .panel-head-coop-row > :first-child {
+  flex: 1 1 320px;
+  min-width: 0;
+}
+html:not([data-ui="next"]) .tab-panel[data-tab="highlights"] .h-controls {
+  margin-top: 4px;
 }
 /* (Legacy gradient-only panel-head rule was removed here — themed
  * panel-heads now paint the actual scene image as their background
@@ -2614,6 +2890,40 @@ html:not([data-ui="next"]) .tab-lock-note {
   color: var(--text);
 }
 .panel-sub { margin: 0; color: var(--text-2); font-size: 13px; }
+/* Classic copy wraps without leaving one word alone on its last line
+ * ("runs." under the Relics subtitle at 1280, "STS2." and "too." on Beta):
+ * every tab's header, and all of Beta, Settings and News, where the prose
+ * lives. text-wrap inherits, so it reaches every paragraph inside; labels
+ * that set their own white-space keep it. */
+html:not([data-ui="next"]) .panel-head :is(h2, p),
+html:not([data-ui="next"]) .tab-panel:is([data-tab="beta"], [data-tab="settings"], [data-tab="news"]) {
+  text-wrap: pretty;
+}
+/* The same for the rest of the classic prose that ended on one word: the
+ * Overview captions ("ascension", "average.", "counts.", "red).", "runs"),
+ * the notes under Top Relics and Recent Runs ("details.", "marked."), the
+ * sign-in screens ("together.", "in."), the empty Highlights feed
+ * ("community.") and the sample-data notice ("visit."). Short lines that
+ * read as a unit (a sign-in screen's title, a speech balloon) balance
+ * instead, so "Sign in to see community / highlights" and "Bash first.
+ * Talk / never." split evenly. Where a browser's `pretty` still leaves a
+ * word alone, the copy keeps its last two words together. */
+html:not([data-ui="next"]) :is(.kpi-card-sub, .chart-panel-sub, .hero-best-text, .tab-lock, .highlights-empty, .demo-strip-text),
+html:not([data-ui="next"]) :is(#relics-body, #runs-body) > p {
+  text-wrap: pretty;
+}
+html:not([data-ui="next"]) :is(.tab-lock-title, .tab-lock-eyebrow, .tab-lock-text, .tab-lock-note, .scene-bubble-text) {
+  text-wrap: balance;
+}
+/* Short captions in narrow cards, where Chromium's `pretty` still left
+ * "ascension", "runs", "community." or "automatically." alone: two even
+ * lines instead. */
+html:not([data-ui="next"]) :is(.kpi-card-sub, .hero-best-text, .highlights-empty p, .settings-pref .muted) {
+  text-wrap: balance;
+}
+/* "Nov 13, 2026" never breaks inside (script.js wraps it in .news-list-date),
+ * so a narrow News card wraps its eyebrow after the "·". */
+html:not([data-ui="next"]) .news-list-date { white-space: nowrap; }
 .panel-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
 .panel-body { padding: 24px 32px 60px; }
 
@@ -2753,7 +3063,26 @@ html:not([data-ui="next"]) .tab-lock-note {
    * (200/250 ≈ 0.8) is tighter than v53 (160/250 ≈ 0.64) but the
    * boss still visually dominates because of its taller silhouette. */
   grid-template-columns: 200px 250px;
-  grid-template-rows: auto 1fr;
+  /* The balloon's type and vertical padding (.scene-bubble), set here so
+   * row 1 can hold room for it: */
+  --scene-bubble-font: 13.5px;
+  --scene-bubble-leading: 1.35;
+  --scene-bubble-pad-top: 14px;
+  --scene-bubble-pad-bottom: 16px;
+  /* the most lines any line wraps to at this size. Every line takes at
+   * most 2 here and 3 in the narrower balloons below (measured line by
+   * line on both sides); at 1100px and under classic widens the climber's
+   * balloon so it is 2 there too (see after the 1100px block). */
+  --scene-bubble-lines: 2;
+  /* Its 3px borders and 16px margin, which no breakpoint changes. */
+  --scene-bubble-chrome: 22px;
+  /* Row 1 holds the balloon and keeps room for its longest line, so a
+   * re-roll never changes the header's height (it grew 18px when a line
+   * wrapped). A shorter line sits at the row's foot, by its speaker. */
+  grid-template-rows:
+    minmax(calc(var(--scene-bubble-lines) * var(--scene-bubble-font) * var(--scene-bubble-leading)
+      + var(--scene-bubble-pad-top) + var(--scene-bubble-pad-bottom) + var(--scene-bubble-chrome)), auto)
+    1fr;
   justify-content: center;
   align-items: end;
   justify-items: center;
@@ -3004,7 +3333,8 @@ html:not([data-ui="next"]) .tab-lock-note {
   align-self: end;
   min-width: 200px;
   max-width: 340px;
-  padding: 14px 22px 16px;
+  /* Type and vertical padding come from .scene, which reserves the row. */
+  padding: var(--scene-bubble-pad-top, 14px) 22px var(--scene-bubble-pad-bottom, 16px);
   margin-bottom: 16px;
   background:
     radial-gradient(ellipse at 50% 0%, rgba(255, 255, 255, 0.55) 0%, transparent 55%),
@@ -3013,9 +3343,9 @@ html:not([data-ui="next"]) .tab-lock-note {
   border: 3px solid var(--bubble-border);
   border-radius: 24px;
   font-family: 'Inter', sans-serif;
-  font-size: 13.5px;
+  font-size: var(--scene-bubble-font, 13.5px);
   font-weight: 700;
-  line-height: 1.35;
+  line-height: var(--scene-bubble-leading, 1.35);
   letter-spacing: -0.005em;
   text-align: center;
   cursor: pointer;
@@ -3370,11 +3700,15 @@ html:not([data-ui="next"]) .tab-lock-note {
 /* Tail: outer (border color) and inner (fill color) triangle stacked
  * so the tail reads as a continuation of the bubble's stroked outline.
  * Both colors are character-themed via the shared bubble-* vars. */
+/* Where the tail stands: --tail-x is the outer triangle's left edge,
+ * set by aimClassicBubbleTails() in script.js so the point lands on the
+ * speaker's head (the old fixed 32px missed it by 40-60px). Until that
+ * runs, the bubble's middle: it is centred over the speaker's column. */
 .scene-bubble::after {
   content: "";
   position: absolute;
   bottom: -12px;
-  left: 32px;
+  left: var(--tail-x, calc(50% - 11px));
   width: 0;
   height: 0;
   border-left: 11px solid transparent;
@@ -3386,21 +3720,13 @@ html:not([data-ui="next"]) .tab-lock-note {
   content: "";
   position: absolute;
   bottom: -8px;
-  left: 34px;
+  left: calc(var(--tail-x, calc(50% - 11px)) + 2px);
   width: 0;
   height: 0;
   border-left: 9px solid transparent;
   border-right: 9px solid transparent;
   border-top: 11px solid var(--bubble-bg-bottom);
   z-index: 1;
-}
-.scene-bubble-boss::after {
-  left: auto;
-  right: 32px;
-}
-.scene-bubble-boss::before {
-  left: auto;
-  right: 34px;
 }
 .scene-bubble-climber { grid-column: 1; grid-row: 1; }
 .scene-bubble-boss    { grid-column: 2; grid-row: 1; }
@@ -3541,6 +3867,10 @@ html:not([data-ui="next"]) .tab-lock-note {
     min-height: 118px;
     padding: 0 4px 4px;
     column-gap: 10px;
+    --scene-bubble-font: 12px;
+    --scene-bubble-pad-top: 8px;
+    --scene-bubble-pad-bottom: 9px;
+    --scene-bubble-lines: 3;
   }
   .scene-figure-climber {
     max-width: 92px;
@@ -3551,7 +3881,20 @@ html:not([data-ui="next"]) .tab-lock-note {
     height: 124px;
   }
   .scene-figure-boss .scene-art { --boss-scale: 1; }
-  .scene-bubble   { font-size: 12px; padding: 8px 14px 9px; min-width: 130px; max-width: 240px; -webkit-line-clamp: 3; }
+  .scene-bubble   { padding-inline: 14px; min-width: 130px; max-width: 240px; -webkit-line-clamp: 3; }
+}
+/* Classic, 1100px and under: row 1 reserved three lines because the
+ * climber's balloon, held to its narrow column, wrapped 11 of the 88 lines
+ * to three; every other balloon needs at most two. That left ~50px of empty
+ * sky above a one-line balloon at 390. Drawn 150px wide (148 below 720px,
+ * as wide as the boss's), the climber's takes two as well, so the row holds
+ * two lines: the header is 16px shorter and still never moves on a re-roll
+ * (all 88 lines measured on both sides, 320-1100px, none touching the
+ * title, toolbar or figures; the closest, a two-line balloon under the
+ * toolbar from 881px, keeps the 10px it keeps on desktop). */
+@media (max-width: 1100px) {
+  html:not([data-ui="next"]) .scene { --scene-bubble-lines: 2; }
+  html:not([data-ui="next"]) .scene-bubble-climber { min-width: 150px; }
 }
 
 /* Mobile: panel-head wraps to a stacked layout. Title stays
@@ -3566,6 +3909,9 @@ html:not([data-ui="next"]) .tab-lock-note {
     min-height: 108px;
     padding: 0 0 4px;
     column-gap: 8px;
+    --scene-bubble-font: 11.5px;
+    --scene-bubble-pad-top: 7px;
+    --scene-bubble-pad-bottom: 8px;
   }
   .scene-figure-climber {
     max-width: 84px;
@@ -3576,7 +3922,9 @@ html:not([data-ui="next"]) .tab-lock-note {
     height: 112px;
   }
   .scene-figure-boss .scene-art { --boss-scale: 1; }
-  .scene-bubble   { font-size: 11.5px; padding: 7px 12px 8px; min-width: 120px; max-width: 220px; -webkit-line-clamp: 3; }
+  .scene-bubble   { padding-inline: 12px; min-width: 120px; max-width: 220px; -webkit-line-clamp: 3; }
+  /* Two lines at the smaller type too, as wide as the boss's column. */
+  html:not([data-ui="next"]) .scene-bubble-climber { min-width: 148px; }
   .companion-picker { left: auto; right: 0; }
 }
 
@@ -4675,6 +5023,73 @@ html:not([data-ui="next"]) .tab-lock-note {
 .card-row-pct-accent { color: var(--accent); }
 .card-row-pct-loss   { color: var(--loss); }
 
+/* ─── Win-rate colour key (Cards, Top Relics, Ascensions breakdown) ──
+ * script.js classicToneKeyHtml(): says in words what the winrateTone()
+ * colours mean, in the new look's words. Quiet on purpose: small type
+ * under the section title, one short bar per colour in the list's own
+ * colours (relic cards draw "at or below" grey, the rest orange). */
+.tone-key {
+  --tone: var(--accent);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 16px;
+  margin: -6px 0 14px;
+  padding: 0;
+  list-style: none;
+  color: var(--text-2);
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+.tone-key li {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+.tone-key i {
+  flex: none;
+  width: 14px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--tone);
+}
+.tone-key [data-tone="win"]    { --tone: var(--win); }
+.tone-key [data-tone="gold"]   { --tone: var(--gold); }
+.tone-key [data-tone="accent"] { --tone: var(--accent); }
+.tone-key.is-below-muted [data-tone="accent"] { --tone: var(--text-2); }
+.tone-key-base b {
+  color: var(--text);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+/* The key's own wrapper is the container its layout reads, so it breaks by
+ * the room it has, not the window: wrapping freely left the last chip alone
+ * on a second line (3 + 1 at 500-640px and 900px). One line where all four
+ * fit (they need about 634px, a few more for a 100.0% average), else two
+ * by two (about 321px), else one under another. Without a "Your average"
+ * chip the three share a line from about 500px. */
+.tone-key-wrap {
+  container: tone-key / inline-size;
+  margin: -6px 0 14px;
+}
+.tone-key-wrap > .tone-key { margin: 0; }
+@container tone-key (max-width: 643px) {
+  .tone-key.has-base {
+    display: grid;
+    grid-template-columns: repeat(2, max-content);
+  }
+}
+@container tone-key (max-width: 519px) {
+  .tone-key:not(.has-base) {
+    display: grid;
+    grid-template-columns: max-content;
+  }
+}
+@container tone-key (max-width: 320px) {
+  .tone-key.has-base { grid-template-columns: max-content; }
+}
+
 /* ─── Recent Runs: row-cards (matches RunRow in DetailView.swift) ── */
 .run-list {
   display: flex;
@@ -4847,6 +5262,48 @@ html:not([data-ui="next"]) .tab-lock-note {
   outline: none;
 }
 .run-link-btn:active { transform: scale(0.94); }
+/* Classic run rows above the phone grid (styles.mobile.css lays rows out
+ * as a grid at 720px and below):
+ *   - both outcome pills share one width (VICTORY is the wider word), so
+ *     the duration beside them stops stepping 8px left on every win;
+ *   - the link and Share buttons share one height (they were 28 and ~33);
+ *   - on touch screens (tablets) each reaches 44px, as on phones. */
+@media (min-width: 721px) {
+  html:not([data-ui="next"]) .run-outcome {
+    min-width: 8.4em;
+    text-align: center;
+    box-sizing: border-box;
+  }
+  html:not([data-ui="next"]) .run-link-btn {
+    width: 32px;
+    height: 32px;
+  }
+  html:not([data-ui="next"]) .run-share-btn {
+    height: 32px;
+    box-sizing: border-box;
+  }
+}
+@media (min-width: 721px) and (pointer: coarse), (min-width: 721px) and (max-width: 880px) and (max-height: 480px) {
+  /* (and on a phone on its side, which is this wide but may not report a
+     coarse pointer) */
+  html:not([data-ui="next"]) .run-link-btn,
+  html:not([data-ui="next"]) .run-share-btn {
+    position: relative;
+  }
+  html:not([data-ui="next"]) .run-link-btn::after,
+  html:not([data-ui="next"]) .run-share-btn::after {
+    content: "";
+    position: absolute;
+    /* From the padding box: 30px inside the 1px border, plus 7px a side. */
+    inset: -7px;
+  }
+}
+/* Phones (styles.mobile.css draws these at 36px): the hit area there was
+ * 42px, not 44, because its 4px are measured from inside the 1px border. */
+@media (max-width: 720px) {
+  html:not([data-ui="next"]) .run-link-btn::after,
+  html:not([data-ui="next"]) .run-share-btn::after { inset: -5px; }
+}
 
 /* ─── Recent Runs hover preview ────────────────────────────────────
    Floats next to a hovered or focused row showing relic count, deck
@@ -5134,6 +5591,17 @@ html:not([data-ui="next"]) .tab-lock-note {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* Classic: on a 320-348px phone the name column is 97px and long names
+ * were cut ("Centennial …", "Bag of Marb…", "Bronze Scal…"). A name that
+ * does not fit takes a second, balanced line instead; one that fits is
+ * unchanged. */
+html:not([data-ui="next"]) .relic-card-name {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  overflow-wrap: break-word;
+  text-wrap: balance;
+}
 .relic-card-pills { display: flex; gap: 6px; flex-wrap: wrap; }
 .relic-card-pct {
   display: flex;
@@ -5262,6 +5730,17 @@ html:not([data-ui="next"]) .tab-lock-note {
   .asc-bar-stack { max-width: 32px; }
   .asc-bar-label { font-size: 9px; letter-spacing: 0.02em; }
 }
+/* Classic phones: the chart scrolled sideways by 36-40px with nothing to
+ * scroll to. Each bar's hidden hover label (opacity 0, centred over its
+ * bar) still counted as content, so the last bar's label made the row
+ * wider than the panel, and with an A10 bar that hid A10 behind the
+ * scroll with no cue. Eleven bars fit at 320px; the labels now only take
+ * part in layout while one is shown. */
+@media (max-width: 600px) {
+  html:not([data-ui="next"]) .asc-bar-tooltip { display: none; }
+  html:not([data-ui="next"]) .asc-bar-col:hover .asc-bar-tooltip,
+  html:not([data-ui="next"]) .asc-bar-col:focus-within .asc-bar-tooltip { display: block; }
+}
 
 .asc-detail-panel {
   background: var(--card);
@@ -5285,7 +5764,11 @@ html:not([data-ui="next"]) .tab-lock-note {
   list-style: none;
   cursor: pointer;
   display: grid;
-  grid-template-columns: 40px auto 1fr 60px 90px 20px;
+  /* Each row is its own grid, so an `auto` badge column sized per row and
+   * every bar started at a different x. A fixed column (wide enough for
+   * the longest modifier, "Start with an Ascender's Bane") lines the bars
+   * up so their lengths compare. */
+  grid-template-columns: 40px minmax(0, 216px) 1fr 60px 90px 20px;
   align-items: center;
   gap: 14px;
   padding: 12px 18px;
@@ -5314,6 +5797,17 @@ html:not([data-ui="next"]) .tab-lock-note {
   background: var(--tier-accent, var(--gold));
   opacity: 0.85;
 }
+/* Classic: the win-rate key above this list says what green, gold and orange
+ * mean ("proven above your average"...), so the level number stops wearing
+ * its tier's colour beside it: A0 in green read as "proven". The level is
+ * set in plain ink and its notch in quiet grey. The tier is still shown
+ * where it was already: the "Difficulty tiers" legend just above (its
+ * colours and level ranges) and the row's tooltip (script.js). */
+html:not([data-ui="next"]) .asc-detail-key { color: var(--text); }
+html:not([data-ui="next"]) .asc-detail-key::before {
+  background: var(--text-3);
+  opacity: 0.6;
+}
 .asc-mod-badge {
   font-size: 10px;
   font-weight: 800;
@@ -5325,6 +5819,13 @@ html:not([data-ui="next"]) .tab-lock-note {
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 999px;
   white-space: nowrap;
+  /* Hugs its text at the start of the fixed column; a longer future
+   * modifier ends in an ellipsis instead of pushing the bar. */
+  justify-self: start;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  box-sizing: border-box;
 }
 .asc-mod-badge-plain {
   color: var(--text-3);
@@ -5441,6 +5942,46 @@ html:not([data-ui="next"]) .tab-lock-note {
   font-weight: 700;
   color: var(--tier-accent, var(--text-2));
   font-variant-numeric: tabular-nums;
+}
+
+/* Tablet, classic: styles.mobile.css sets the badge in 11px type here, and
+ * "Start with an Ascender's Bane" needs 228px, so the 216px column cut it
+ * off. The column widens to fit it, and where the window is too narrow
+ * for that the badge wraps to a second line instead of losing words.
+ * Every row still shares one template, so the bars start at one x.
+ * The bar keeps at least 150px (it was 96px here, and 35-150px from 881
+ * to 1000px under the desktop template): the record ("3w / 12r") stands
+ * under the win rate in one 64px column instead of a half-empty 90px one
+ * beside it. From 1024px the desktop template has room for both. */
+@media (min-width: 561px) and (max-width: 1023px) {
+  html:not([data-ui="next"]) .asc-detail-row > summary {
+    grid-template-columns: 40px minmax(0, 232px) minmax(150px, 1fr) 64px 20px;
+    grid-template-rows: auto auto;
+    column-gap: 10px;
+    row-gap: 1px;
+  }
+  html:not([data-ui="next"]) .asc-detail-row > summary > :is(.asc-detail-key, .asc-mod-badge, .asc-detail-bar, .asc-detail-chevron) {
+    grid-row: 1 / span 2;
+  }
+  html:not([data-ui="next"]) .asc-detail-row > summary > .asc-detail-pct {
+    grid-column: 4;
+    grid-row: 1;
+    align-self: end;
+    line-height: 1.25;
+  }
+  html:not([data-ui="next"]) .asc-detail-row > summary > .asc-detail-record {
+    grid-column: 4;
+    grid-row: 2;
+    align-self: start;
+    line-height: 1.25;
+  }
+  html:not([data-ui="next"]) .asc-mod-badge {
+    white-space: normal;
+    text-wrap: balance;
+    /* A pill's full round would bite into a two-line badge's text. */
+    border-radius: 12px;
+    line-height: 1.3;
+  }
 }
 
 /* Mobile: collapse the mod badge and tighten the summary grid so the
@@ -6091,6 +6632,50 @@ select#me-note option { background: var(--bg-deep); color: var(--text); }
     box-shadow: 0 0 0 rgba(255, 107, 26, 0);
   }
   .mobile-account-row .mobile-signin-cta svg { flex: 0 0 auto; }
+  /* Settings on phones and tablets. The desktop opens it from the account
+   * card in the sidebar footer, which is hidden here, so nothing on screen
+   * led to it. script.js (mountClassicSettingsButton) puts this gear before
+   * Sign in / Sign out, classic only. Drawn like Sign out; lit like the
+   * active tab chip while Settings shows (switchTab sets .is-here). The word
+   * shows where the row has room for it. */
+  html:not([data-ui="next"]) .mobile-account-row .mobile-settings-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-width: 44px;
+    min-height: 44px;
+    margin-right: 8px;
+    padding: 6px 12px;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid var(--border);
+    color: var(--text-2);
+    font-size: 12px;
+    font-weight: 700;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: background-color 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+  }
+  html:not([data-ui="next"]) .mobile-account-row .mobile-settings-btn svg { flex: 0 0 auto; }
+  html:not([data-ui="next"]) .mobile-account-row .mobile-settings-btn:hover {
+    color: var(--text);
+    background: rgba(255, 255, 255, 0.07);
+  }
+  html:not([data-ui="next"]) .mobile-account-row .mobile-settings-btn:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  html:not([data-ui="next"]) .mobile-account-row .mobile-settings-btn.is-here {
+    background: rgba(255, 107, 26, 0.15);
+    border-color: rgba(255, 107, 26, 0.55);
+    color: var(--text);
+  }
+  html:not([data-ui="next"]) .mobile-account-row .mobile-settings-btn.is-here svg { color: var(--accent-hi); }
+  @media (max-width: 599px) {
+    html:not([data-ui="next"]) .mobile-account-row .mobile-settings-btn { padding: 0; }
+    html:not([data-ui="next"]) .mobile-account-row .mobile-settings-btn span { display: none; }
+  }
   /* Narrow screens still have room for the tagline, but on very small
    * phones collapse the subtitle and persona label to keep the CTA
    * unclipped. */
@@ -6102,6 +6687,92 @@ select#me-note option { background: var(--bg-deep); color: var(--text); }
     .mobile-account-row .status-dot { display: none; }
     .mobile-account-row .me-pill-mini strong { max-width: 80px; }
   }
+}
+
+/* Classic account row on phones and tablets (styles.mobile.css holds it at
+ * 56px, one row). Measured with Steam names of 4 to 24 characters and every
+ * status line, 320-880px:
+ *   - "Sign out" and the gear never shrink: Sign out had wrapped to "Sign" /
+ *     "out" beside the gear (51px against 44px) for names of 15+ characters.
+ *   - The status line is never cut ("Live on the fe…", "Sign in to keep s…"):
+ *     the name gives way first, and only an absurdly long one ends in "…".
+ *   - Under 560px the name and the status stack beside the portrait, so
+ *     both get the width left of the buttons instead of sharing one line;
+ *     the row keeps its 56px.
+ *   - A guest's ordinary "Browsing as guest" only repeats the name, and
+ *     still gives way at 430px and under. "Sign in to keep syncing" (runs
+ *     from an account whose sign-in lapsed) always shows: at 400px and
+ *     under it cannot fit on one line beside "Sign in with Steam", so the
+ *     row grows a line for it (74px) and the sticky tab strip is offset to
+ *     match. */
+@media (max-width: 880px) {
+  html:not([data-ui="next"]) .mobile-account-row .mobile-account-action { flex: 0 0 auto; }
+  html:not([data-ui="next"]) .mobile-account-row .status-signout { white-space: nowrap; }
+  html:not([data-ui="next"]) .mobile-account-row .me-pill-mini { flex: 0 1 auto; }
+  html:not([data-ui="next"]) .mobile-account-row .me-pill-mini strong { max-width: none; }
+  html:not([data-ui="next"]) .mobile-account-row .status-dot { flex: 0 0 auto; }
+  html:not([data-ui="next"]) .mobile-account-row .muted-status {
+    flex: 0 0 auto;
+    max-width: none;
+    overflow: visible;
+  }
+}
+@media (max-width: 559px) {
+  /* Rows 2 and 3 hold the name and the status; the outer two share the
+     spare height, so the pair is centred and a lone name sits mid-row. */
+  html:not([data-ui="next"]) .mobile-account-row {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-rows: 1fr auto auto 1fr;
+    column-gap: 8px;
+    row-gap: 0;
+  }
+  html:not([data-ui="next"]) .mobile-account-row .me-pill-mini { display: contents; }
+  html:not([data-ui="next"]) .mobile-account-row .me-pill-mini img { grid-area: 1 / 1 / -1 / 2; align-self: center; }
+  html:not([data-ui="next"]) .mobile-account-row .me-pill-mini strong {
+    grid-area: 2 / 2;
+    min-width: 0;
+    line-height: 1.35;
+  }
+  html:not([data-ui="next"]) .mobile-account-row .status-dot {
+    display: block;
+    grid-area: 3 / 2;
+    justify-self: start;
+    align-self: start;
+    margin-top: 5px;
+  }
+  html:not([data-ui="next"]) .mobile-account-row .muted-status {
+    display: block;
+    grid-area: 3 / 2;
+    min-width: 0;
+    margin-top: 1px;
+    padding-left: 13px;
+    white-space: normal;
+    line-height: 1.3;
+    text-wrap: balance;
+  }
+  html:not([data-ui="next"]) .mobile-account-row .mobile-account-action {
+    grid-area: 1 / 3 / -1 / 4;
+    align-self: center;
+    margin-left: 0;
+  }
+}
+@media (max-width: 430px) {
+  html:not([data-ui="next"]) .mobile-account-row.is-guest .status-dot:not([data-state="expired"]),
+  html:not([data-ui="next"]) .mobile-account-row.is-guest .status-dot:not([data-state="expired"]) + .muted-status { display: none; }
+}
+@media (max-width: 400px) {
+  html:not([data-ui="next"]) .sidebar:has(.mobile-account-row.is-guest .status-dot[data-state="expired"]) {
+    --phone-account-row: 74px;
+  }
+  html:not([data-ui="next"]) .mobile-account-row.is-guest:has(.status-dot[data-state="expired"]) {
+    grid-template-rows: 1fr 44px auto 1fr;
+  }
+  html:not([data-ui="next"]) .mobile-account-row.is-guest:has(.status-dot[data-state="expired"]) .me-pill-mini img,
+  html:not([data-ui="next"]) .mobile-account-row.is-guest:has(.status-dot[data-state="expired"]) .mobile-account-action { grid-row: 2; }
+  html:not([data-ui="next"]) .mobile-account-row.is-guest:has(.status-dot[data-state="expired"]) .me-pill-mini strong { align-self: center; }
+  html:not([data-ui="next"]) .mobile-account-row.is-guest:has(.status-dot[data-state="expired"]) .status-dot,
+  html:not([data-ui="next"]) .mobile-account-row.is-guest:has(.status-dot[data-state="expired"]) .muted-status { grid-column: 2 / -1; }
 }
 
 /* =====================================================================
@@ -6989,6 +7660,27 @@ select#me-note option { background: var(--bg-deep); color: var(--text); }
     min-height: 44px;
   }
 }
+/* Classic, the rest of the touch floor. The floor above stops at 600px, so
+ * a phone on its side (844 x 390, 740 x 360) still had 34.6px buttons: Share
+ * this run, Copy link and Close in run details, Refresh on Highlights, Sign
+ * out in Settings. On every phone and tablet the Beta API key field (39px)
+ * and the header's speech balloon (a button that re-rolls the line, 39.2px
+ * when it holds one line) reach 44px too; the balloon's row is reserved for
+ * two lines, so the header does not move. */
+@media (max-width: 880px) and (max-height: 480px) {
+  html:not([data-ui="next"]) .btn-primary,
+  html:not([data-ui="next"]) .btn-ghost,
+  html:not([data-ui="next"]) .btn-sm {
+    min-height: 44px;
+  }
+}
+@media (max-width: 880px) {
+  html:not([data-ui="next"]) .beta-input { min-height: 44px; }
+  html:not([data-ui="next"]) .scene-bubble {
+    min-height: 44px;
+    -webkit-box-pack: center;
+  }
+}
 
 /* Respect users who prefer reduced motion — disable transform/translate
  * animations, but keep color transitions (those don't induce motion
@@ -7051,6 +7743,13 @@ select#me-note option { background: var(--bg-deep); color: var(--text); }
 }
 @media (max-width: 900px) {
   .beta-grid { grid-template-columns: 1fr; padding: 16px; }
+}
+/* Classic: .panel-body already pads the tab, so the grid's own side and
+ * top padding put the Beta and Settings cards 24px (16px on phones) in
+ * from the title and every other tab's content. Keep only the bottom. */
+html:not([data-ui="next"]) .beta-grid,
+html:not([data-ui="next"]) .settings-grid {
+  padding: 0 0 32px;
 }
 .beta-card {
   background: rgba(255,255,255,0.025);
@@ -7389,6 +8088,40 @@ select#me-note option { background: var(--bg-deep); color: var(--text); }
   gap: 8px;
   align-items: center;
 }
+/* Classic Save data's four buttons, as the new look does it: a row of four
+ * where the card has room for four whole labels, else two rows of two, never
+ * 1 + 2 + 1 or 3 + 1 (390, 900, 1440px). The card is the container because
+ * its width decides: half the grid on wide screens, all of it below 900px.
+ * Four natural widths (168 + 146 + 147 + 138px) and gaps need ~623px; two
+ * equal halves need 2 x 168px, or 2 x 146px with tighter padding below
+ * 344px; under ~300px two whole labels cannot share a row, so they stack. */
+html:not([data-ui="next"]) .settings-card:has([data-action="upload"]) {
+  container: classic-save-card / inline-size;
+}
+html:not([data-ui="next"]) .settings-card:has([data-action="upload"]) > .settings-action-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+html:not([data-ui="next"]) .settings-card:has([data-action="upload"]) > .settings-action-row > * {
+  justify-content: center;
+  white-space: nowrap;
+}
+@container classic-save-card (min-width: 630px) {
+  html:not([data-ui="next"]) .settings-card:has([data-action="upload"]) > .settings-action-row {
+    grid-template-columns: repeat(4, auto);
+  }
+}
+@container classic-save-card (max-width: 343px) {
+  html:not([data-ui="next"]) .settings-card:has([data-action="upload"]) > .settings-action-row > * {
+    gap: 6px;
+    padding-inline: 8px;
+  }
+}
+@container classic-save-card (max-width: 299px) {
+  html:not([data-ui="next"]) .settings-card:has([data-action="upload"]) > .settings-action-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
 .settings-danger-row {
   display: flex;
   justify-content: flex-end;
@@ -7530,6 +8263,9 @@ select#me-note option { background: var(--bg-deep); color: var(--text); }
   font-size: 12.5px;
   color: var(--text-2, #c8c0d8);
 }
+/* A short line in a narrow cell splits evenly ("close any modal / or
+ * popover"), not with its last word alone, which pretty leaves at 1920. */
+html:not([data-ui="next"]) .settings-shortcut-list li > span { text-wrap: balance; }
 .settings-shortcut-list kbd {
   display: inline-block;
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
@@ -8000,6 +8736,16 @@ html.prefer-compact-density .h-stat-num { font-size: 18px; }
   padding: 7px 14px;
   font-size: 12px;
 }
+/* Classic: the close (×) floats in the strip's top-right corner, and the
+ * row ran underneath it: over "Pick files" whenever the buttons ended the
+ * first line (690-880px and from 1140px), over the pitch where it did
+ * (430-680px; "folder" was hidden at 500px). The row keeps the corner
+ * free instead: the button's 8px inset, its width (26px, 44px on phones
+ * and tablets) and 8px of air. */
+html:not([data-ui="next"]) .demo-banner.is-compact .demo-strip-row { padding-right: 42px; }
+@media (max-width: 880px) {
+  html:not([data-ui="next"]) .demo-banner.is-compact .demo-strip-row { padding-right: 60px; }
+}
 /* The Help toggle is a normal `<details>` whose summary acts as a
  * compact "Where are my saves?" button. Open state expands the full
  * platform-aware path block, deep-path explainer, and FAQ list — same
@@ -8187,11 +8933,46 @@ html.prefer-compact-density .h-stat-num { font-size: 18px; }
  * — streak, recent form, weekly cadence, PB floor, fastest win,
  * highest ascension. Cards are uniform width and snap-scrollable on
  * mobile so they don't reflow into a huge stacked column. */
+/* The wrapper is the container the column count below reads. */
+.kpi-strip-wrap {
+  container: kpi-strip / inline-size;
+  margin: 0 0 18px;
+}
+/* Six across, or two even rows of three. Fitting as many 168px cards as
+ * the width allowed left "Runs this week" alone on a second row at 1280
+ * (5 + 1) and broke 4 + 2 at 1024. */
 .kpi-strip {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(168px, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
-  margin: 0 0 18px;
+  margin: 0;
+}
+/* Six across only where every label fits on one line. "Longest win streak"
+ * needs about 159px beside its icon, so cards of 195px or more: six, and
+ * five 10px gaps, is ~1220px; 1240 leaves a little air. From 1058px the
+ * cards were 168-189px (1440 window) and two labels wrapped. */
+@container kpi-strip (min-width: 1240px) {
+  .kpi-strip { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+}
+/* The cards of a row share their label, number and caption tracks
+ * (subgrid), so the big numbers in a row sit at one height even when a
+ * label or caption wraps (they sat 17px apart, cards 137 vs 103px). The
+ * label sits on its number. Not on the phone rail below, which scrolls. */
+@media (min-width: 721px) {
+  @supports (grid-template-rows: subgrid) {
+    html:not([data-ui="next"]) .kpi-strip > .kpi-card {
+      display: grid;
+      grid-row: span 3;
+      grid-template-rows: subgrid;
+      row-gap: 4px;
+    }
+    html:not([data-ui="next"]) .kpi-strip > .kpi-card > .kpi-card-label { align-self: end; }
+  }
+  /* Three cards under ~196px (881-916px windows): "Recent form" and
+   * "Longest win streak" wrapped beside their icons. The icons give way. */
+  @container kpi-strip (max-width: 609px) {
+    html:not([data-ui="next"]) .kpi-card-label svg { display: none; }
+  }
 }
 /* Phone snap rail: one-row horizontal scroll with snap so the strip
  * reads as a "swipeable snapshot" instead of six full-width tiles
@@ -8209,11 +8990,11 @@ html.prefer-compact-density .h-stat-num { font-size: 18px; }
     -webkit-overflow-scrolling: touch;
     overscroll-behavior-x: contain;
     gap: 10px;
-    margin: 0 0 14px;
     padding: 2px 0 8px;
     scrollbar-width: thin;
     max-width: 100%;
   }
+  .kpi-strip-wrap { margin-bottom: 14px; }
   .kpi-strip::-webkit-scrollbar { height: 4px; }
   .kpi-strip::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 4px; }
   .kpi-strip > .kpi-card {
@@ -8330,6 +9111,16 @@ html.prefer-compact-density .h-stat-num { font-size: 18px; }
 .kpi-card-spark .pt {
   fill: currentColor;
 }
+/* The spark sits in the label's row, so the label stops short of it
+ * (48px spark + its 12px inset - the card's 16px padding + a 6px gap)
+ * and wraps instead of running under the line on narrow cards. */
+.kpi-card--spark .kpi-card-label { padding-right: 50px; }
+/* currentColor alone is the card's text colour (near-white); give the
+ * line the same tone as the value it sits beside. */
+.kpi-card[data-tone="win"]    .kpi-card-spark { color: #6fe091; }
+.kpi-card[data-tone="loss"]   .kpi-card-spark { color: #ff8888; }
+.kpi-card[data-tone="gold"]   .kpi-card-spark { color: var(--gold, #ffc65c); }
+.kpi-card[data-tone="accent"] .kpi-card-spark { color: var(--accent, #ffa05c); }
 
 /* ── Chart panel (winrate-over-time + floor-death histogram) ──────── */
 .chart-panel {
@@ -8421,6 +9212,23 @@ html.prefer-compact-density .h-stat-num { font-size: 18px; }
   height: 100%;
   display: block;
   overflow: visible;
+}
+/* Classic Overview charts drawn at their box's own size by
+ * fitClassicCharts() in script.js: no aspect ratio to keep, a real plot
+ * height (CLASSIC_CHART_MIN_H) and, in the two-up Trends row, the rest of
+ * the panel's height so both plots end on the same line. One SVG unit is
+ * one CSS pixel, so these label sizes are what the eye gets. */
+.chart-svg-wrap.chart-svg-wrap--fit {
+  aspect-ratio: auto;
+  max-height: none;
+  min-height: 132px;
+  flex: 1 1 auto;
+}
+.chart-svg-wrap--fit .chart-svg .axis-label,
+.chart-svg-wrap--fit .chart-svg .bar-label { font-size: 11px; }
+@media (max-width: 720px) {
+  .chart-svg-wrap--fit .chart-svg .axis-label,
+  .chart-svg-wrap--fit .chart-svg .bar-label { font-size: 12px; }
 }
 .chart-panel-chips {
   display: flex;
@@ -8559,6 +9367,20 @@ html.prefer-compact-density .h-stat-num { font-size: 18px; }
 }
 .run-filter-summary strong { color: var(--text-1); font-weight: 700; }
 
+/* Classic: a group was one unwrappable line whose chips shrank instead. At
+ * 881-949px (sidebar beside the page) the Character row did not fit, so
+ * "The Fool" broke onto two lines and stuck out 17-26px past the filter
+ * panel. Chips keep their one-line labels and wrap to a second line, lined
+ * up under the first chip, with the caption on the first line's baseline
+ * (script.js wraps each group's chips in .run-filter-chips). */
+html:not([data-ui="next"]) .run-filter-group { align-items: baseline; }
+html:not([data-ui="next"]) .run-filter-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+html:not([data-ui="next"]) .run-filter-chips .chart-chip { white-space: nowrap; }
 /* Make filter chips reuse .chart-chip styling for consistency. */
 .run-filter-group .chart-chip[data-char] {
   display: inline-flex;
@@ -8814,6 +9636,26 @@ html.prefer-compact-density .h-stat-num { font-size: 18px; }
   .app-toolbar-empty-text {
     /* Truncate harder on mobile so the right-side actions don't wrap. */
     max-width: 200px;
+  }
+  /* Classic: that cap cut the sample-data pill to "Showing sample data —
+   * link yo…" at every width up to 880px, by 166px at 320. The message now
+   * shows whole: beside the buttons where it fits (600px and up), on its
+   * own row above them where it does not, and on two balanced lines there
+   * under about 440px. Its height does not depend on the header's balloon,
+   * so the header keeps one height across re-rolls. */
+  html:not([data-ui="next"]) .app-toolbar-empty {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+    border-radius: 15px;
+  }
+  html:not([data-ui="next"]) .app-toolbar-empty-text {
+    max-width: none;
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+    line-height: 1.35;
+    text-wrap: pretty;
   }
   /* Hide button labels on small screens; icons remain. Saves ~140px
    * of horizontal space which lets the toolbar stay one line. */
@@ -9338,6 +10180,38 @@ html.prefer-compact-density .h-stat-num { font-size: 18px; }
   .path-act-flag { margin-left: 0; margin-top: 2px; }
   .path-legend-grid { grid-template-columns: repeat(auto-fit, minmax(95px, 1fr)); }
 }
+/* Classic run details on phones and tablets (880px and under; a phone on
+ * its side included). Stat captions, act summaries, DIED HERE, the legend
+ * caption, floor numbers and relic and card names were 9-10px: all 11px
+ * now. The close (×) was a 30 x 30 target and the act rows 39.6px tall:
+ * both reach 44px. The section title and the act summaries balance their
+ * two lines ("…the path you / took", "…1 unknown · 1 / boss"; script.js
+ * also keeps each count with its noun) and the note above them no longer
+ * ends on "visited." alone. */
+@media (max-width: 880px) {
+  html:not([data-ui="next"]) .run-detail-stat-label,
+  html:not([data-ui="next"]) .path-act-meta,
+  html:not([data-ui="next"]) .path-act-flag,
+  html:not([data-ui="next"]) .path-legend-title,
+  html:not([data-ui="next"]) .path-node-floor,
+  html:not([data-ui="next"]) .run-detail-card-name,
+  html:not([data-ui="next"]) .run-detail-relic-name {
+    font-size: 11px;
+  }
+  html:not([data-ui="next"]) .modal-close {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 44px;
+    min-height: 44px;
+  }
+  html:not([data-ui="next"]) .path-act-summary { min-height: 44px; }
+}
+html:not([data-ui="next"]) .run-detail-section-title,
+html:not([data-ui="next"]) .path-act-meta { text-wrap: balance; }
+/* A summary that wraps keeps to the right edge, like the ones that fit. */
+html:not([data-ui="next"]) .path-act-meta { text-align: right; }
+html:not([data-ui="next"]) .run-detail-section-sub { text-wrap: pretty; }
 
 /* =========================================================================
  * Relic drill-down — opens below the Top Relics grid when a card
@@ -9619,7 +10493,7 @@ html.prefer-compact-density .h-stat-num { font-size: 18px; }
   flex: 0 0 auto;
   color: var(--gold, #ffc65c);
 }
-.private-mode-text { flex: 1; min-width: 0; }
+.private-mode-text { flex: 1; min-width: 0; text-wrap: pretty; }
 .private-mode-text strong { color: var(--text-1); margin-right: 4px; }
 .session-expired-notice .session-expired-link {
   display: inline-block;
@@ -9936,144 +10810,6 @@ html.prefer-compact-density .h-stat-num { font-size: 18px; }
 }
 
 /* =========================================================================
- * No-FSA refresh nudge — surfaces on Safari/Firefox (no File System
- * Access API) when the user returns to the tab after probably playing
- * a run in STS2. One-click CTA opens the file picker so they don't
- * have to dig through the panel-head Refresh dropdown.
- *
- * Floats bottom-center so it doesn't fight the sidebar persona pill
- * or the top auto-refresh banner. Dismiss arrow on the right keeps it
- * polite — a single click makes it go away for 5 minutes per the
- * NUDGE_THROTTLE_MS in script.js.
- * ========================================================================= */
-.vault-no-fsa-nudge {
-  position: fixed;
-  left: 50%;
-  bottom: 24px;
-  z-index: 96;
-  transform: translateX(-50%);
-  max-width: min(520px, calc(100vw - 32px));
-  border: 1px solid color-mix(in srgb, var(--accent) 50%, transparent);
-  border-radius: 14px;
-  background: linear-gradient(
-    180deg,
-    color-mix(in srgb, var(--accent) 18%, var(--surface) 82%),
-    color-mix(in srgb, var(--accent) 6%, var(--surface) 94%)
-  );
-  color: var(--text);
-  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.45);
-  animation: vault-no-fsa-nudge-in 280ms cubic-bezier(0.2, 0.85, 0.3, 1.05) both;
-}
-.vault-no-fsa-nudge-body {
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  align-items: center;
-  gap: 12px;
-  padding: 12px 14px;
-}
-.vault-no-fsa-nudge-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  background: color-mix(in srgb, var(--accent) 32%, transparent);
-  color: var(--accent);
-  font-size: 18px;
-  font-weight: 700;
-  flex-shrink: 0;
-}
-.vault-no-fsa-nudge-text {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  font-size: 13px;
-  line-height: 1.4;
-}
-.vault-no-fsa-nudge-text strong {
-  color: var(--text);
-  font-weight: 600;
-}
-.vault-no-fsa-nudge-sub {
-  color: var(--muted);
-  font-size: 12px;
-}
-.vault-no-fsa-nudge-actions {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-.vault-no-fsa-nudge-go {
-  appearance: none;
-  border: 0;
-  border-radius: 8px;
-  padding: 8px 14px;
-  font: inherit;
-  font-weight: 600;
-  font-size: 13px;
-  background: var(--accent);
-  color: var(--bg);
-  cursor: pointer;
-  transition: filter 120ms ease, transform 120ms ease;
-  white-space: nowrap;
-}
-.vault-no-fsa-nudge-go:hover { filter: brightness(1.08); }
-.vault-no-fsa-nudge-go:active { transform: translateY(1px); }
-.vault-no-fsa-nudge-go:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-.vault-no-fsa-nudge-dismiss {
-  appearance: none;
-  border: 0;
-  background: transparent;
-  color: var(--muted);
-  font-size: 22px;
-  line-height: 1;
-  width: 30px;
-  height: 30px;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: background 120ms ease, color 120ms ease;
-}
-.vault-no-fsa-nudge-dismiss:hover {
-  background: rgba(255, 255, 255, 0.06);
-  color: var(--text);
-}
-.vault-no-fsa-nudge-dismiss:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-@keyframes vault-no-fsa-nudge-in {
-  from { opacity: 0; transform: translate(-50%, 10px); }
-  to   { opacity: 1; transform: translate(-50%, 0); }
-}
-@media (max-width: 540px) {
-  .vault-no-fsa-nudge {
-    bottom: 12px;
-    max-width: calc(100vw - 16px);
-  }
-  .vault-no-fsa-nudge-body {
-    grid-template-columns: auto 1fr;
-    grid-template-rows: auto auto;
-    gap: 8px 10px;
-    padding: 11px 12px;
-  }
-  .vault-no-fsa-nudge-actions {
-    grid-column: 1 / -1;
-    grid-row: 2;
-    justify-content: flex-end;
-  }
-  .vault-no-fsa-nudge-go {
-    flex: 1;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .vault-no-fsa-nudge { animation: none; }
-}
-
-/* =========================================================================
  * Import recovery banner — surfaces when an interactive import lands
  * with suspiciously few runs (signal that the user picked a wrong
  * subfolder). Top-of-content position so it can't be missed. Red-ish
@@ -10257,9 +10993,10 @@ html.prefer-compact-density .h-stat-num { font-size: 18px; }
  *     scanable. The full-bleed banner pre-cap stretches edge-to-edge
  *     for cinematic feel.
  * ========================================================================= */
-.news-panel .panel-body {
-  padding-top: 0;
-}
+/* The body keeps the shell's top padding: the old `padding-top: 0` (from
+ * the single-feed layout, whose banner ran up to the header) left the post
+ * list and article flush against the header rule. Classic only: the new
+ * look reverts .panel-body and sets its own (community.css). */
 .news-feed {
   display: flex;
   flex-direction: column;
@@ -10282,7 +11019,9 @@ html.prefer-compact-density .h-stat-num { font-size: 18px; }
   gap: 24px;
   align-items: flex-start;
   max-width: 1180px;
-  margin: 0 auto;
+  /* Starts under the title like every other tab's content; centred, it
+   * drifted right of the title on wide screens (x 495 vs 280 at 1920). */
+  margin: 0;
 }
 .news-list {
   position: sticky;

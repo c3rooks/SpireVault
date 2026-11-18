@@ -4,7 +4,7 @@
 // Styles: styles/src/surfaces/overview.css, components/cards.css.
 
 import { esc, fixed, clamp } from "./html.js?v=1";
-import { trendChartHtml, floorChartHtml } from "./charts.js?v=1";
+import { trendChartHtml, floorChartHtml } from "./charts.js?v=2";
 
 /**
  * @typedef {Object} CharacterRow
@@ -186,13 +186,17 @@ function characterBanner(row) {
   const art = row.portraitSrc
     ? `<img${row.isPortraitInked ? ' class="is-inked"' : ""} src="${esc(row.portraitSrc)}" alt="" loading="lazy" decoding="async" draggable="false">`
     : row.iconHtml;
+  const winLoss = `${row.wins}W · ${row.runs - row.wins}L`;
+  const runCount = plural(row.runs, "run");
+  // Two parts, so a narrow banner stacks "15W · 16L" over "31 runs" instead
+  // of clipping the line at both edges (overview.css .v-char-rec).
   const record = played
-    ? `${row.wins}W · ${row.runs - row.wins}L · ${plural(row.runs, "run")}`
-    : "No runs yet";
+    ? `<span>${winLoss}</span><span class="v-char-rec-sep" aria-hidden="true"> · </span><span>${runCount}</span>`
+    : "<span>No runs yet</span>";
   return `
     <button class="v-char${played ? "" : " is-unplayed"}" type="button" data-char="${esc(row.key)}"
             data-action="goto-tab" data-tab="characters"
-            aria-label="${esc(row.label)}: ${played ? `${fixed(row.winratePct)} percent win rate, ${record}` : "no runs yet"}. Open Characters.">
+            aria-label="${esc(row.label)}: ${played ? `${fixed(row.winratePct)} percent win rate, ${winLoss} · ${runCount}` : "no runs yet"}. Open Characters.">
       <span class="v-char-art">${art}</span>
       <span class="v-char-name">${esc(row.label)}</span>
       <span class="v-char-wr">${played ? `${fixed(row.winratePct)}<small>%</small>` : "—"}</span>
@@ -248,9 +252,12 @@ function handCard(card, index, count) {
   const arrow = hasArrow ? `<i class="v-card-trend is-${card.trend}" aria-hidden="true"></i>` : "";
   const plain = `${card.value}${card.unit || ""}`.replace(/<[^>]+>/g, "");
   const long = plain.length + (hasArrow ? 1 : 0) > LONG_VALUE_LENGTH;
+  // The fan goes in as --fan-rot / --fan-lift, not --rot / --lift: an inline
+  // --rot would beat the stylesheet, so hover could never straighten a card
+  // and phones (cards.css, 880px) could never lay the hand flat.
   return `
     <article class="v-card" role="listitem" tabindex="0" data-tilt data-tone="${esc(card.tone)}"
-             data-reveal style="--r:${index};--rot:${rot.toFixed(2)}deg;--lift:${lift.toFixed(1)}px">
+             data-reveal style="--r:${index};--fan-rot:${rot.toFixed(2)}deg;--fan-lift:${lift.toFixed(1)}px">
       <span class="v-card-orb">${icon(card.icon)}</span>
       <header class="v-card-band">${esc(card.title)}</header>
       <div class="v-card-art">
@@ -279,7 +286,7 @@ function relicTile(row) {
       <span class="v-relic-orb">${art}</span>
       <span class="v-relic-name">${esc(row.label)}</span>
       <span class="v-relic-wr">${fixed(row.winratePct)}%</span>
-      <span class="v-relic-meta">${row.runs} seen · ${row.wins} won</span>
+      <span class="v-relic-meta">${plural(row.wins, "win")} · ${plural(row.runs, "run")}</span>
     </button>`;
 }
 
@@ -287,7 +294,7 @@ function relicTile(row) {
 function relics(model) {
   if (model.relics.length === 0) return "";
   return `
-    <div class="v-section-title"><h3>Top relics</h3><p>by win rate</p></div>
+    <div class="v-section-title"><h3>Top relics</h3><p>by win rate, weighted by runs</p></div>
     <div class="v-relics" data-reveal style="--r:10">
       ${model.relics.map(relicTile).join("")}
     </div>`;

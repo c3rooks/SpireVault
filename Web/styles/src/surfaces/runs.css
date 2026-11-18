@@ -10,6 +10,14 @@
    are legacy markup, restyled here.
    ========================================================================== */
 
+/* ---- Head: lined up with the other text-only tabs ---------------------------- */
+/* Beta and Settings start their first panel straight under the subtitle;
+   the text-only stage's 8px foot (stage.css) put the filter panel 8px lower
+   (117px against 109px at 1440), so the content jumped between tabs. */
+.tab-panel[data-tab="runs"] > .panel-head > .panel-head-stage--text-only {
+  padding-bottom: 0;
+}
+
 /* ---- Stamps: inked rubber stamps, double rule, slightly askew ---------------- */
 .v-stamp {
   --stamp: var(--v-loss);
@@ -176,8 +184,12 @@
   flex-wrap: wrap;
   gap: var(--v-space-3) var(--v-space-5);
 }
+/* Label and track share a line when they fit; when they do not (the
+   Character group's seven chips beside the sidebar at 881–940px), the track
+   drops under its label instead of running past the panel. */
 .v-runs-group {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 10px;
   min-width: 0;
@@ -189,9 +201,13 @@
   letter-spacing: 0.12em;
   text-transform: uppercase;
 }
-/* A segmented track: one chip of each group is always the pressed one. */
+/* A segmented track: one chip of each group is always the pressed one.
+   Never wider than its group: in a column too narrow for even the track on
+   its own line, its chips wrap inside it rather than poke out. */
 .v-runs-chips {
   display: flex;
+  flex-wrap: wrap;
+  max-width: 100%;
   gap: 3px;
   padding: 3px;
   border: var(--v-outline);
@@ -391,10 +407,13 @@
   gap: 2px;
   min-width: 0;
 }
+/* The ascension badge drops under the name when the two do not fit side by
+   side ("Necrobinder A0" ran 20px into the result stamp at 320px). */
 .v-run-name {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: 2px 8px;
   min-width: 0;
   font-size: var(--v-text-lg);
   font-weight: 800;
@@ -1764,16 +1783,23 @@ body:has(#run-compare-modal:not([hidden])) .compare-bar {
   .v-runs-title::after {
     display: none;
   }
+  /* nowrap again: a wrapping column stretches its items to the widest
+     one's own width, so the swipe track would grow to all its chips and
+     never scroll. */
   .v-runs-group {
     flex-direction: column;
+    flex-wrap: nowrap;
     align-items: stretch;
     gap: 6px;
   }
   .v-runs-group-label {
     font-size: 0.75rem;
   }
-  /* Each group is one swipeable line of full-size chips. */
+  /* Each group is one swipeable line of full-size chips, bleeding 12px past
+     the group on both sides (so no width cap and no wrap here). */
   .v-runs-chips {
+    flex-wrap: nowrap;
+    max-width: none;
     gap: 6px;
     margin: -5px -12px;
     padding: 5px 12px 6px;
@@ -1976,10 +2002,14 @@ body:has(#run-compare-modal:not([hidden])) .compare-bar {
     font-size: 0.8125rem;
   }
 }
-/* Phones: each run becomes two lines —
+/* Narrow lists: each run becomes two lines —
      [sigil] name  A9                 STAMP
-             date  floor ▬▬  time    [link][share] */
-@media (max-width: 640px) {
+             date  floor ▬▬  time    [link][share]
+   Keyed to the list's own width, not the window's: the one-line row needs
+   about 673px of list for "Necrobinder A10" beside its floor, and beside the
+   sidebar the list is that narrow up to a 946px window (the name printed
+   over the floor number at 641–685px and 885–895px). */
+@container v-runs (width < 700px) {
   .v-run,
   .v-runs.is-comparing .v-run {
     grid-template-columns: 48px minmax(0, 1fr) auto;

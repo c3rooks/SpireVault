@@ -306,6 +306,33 @@ await check("someone matched while away gets a push and a longer grace", () => {
   assert.equal(b.state, "searching", "a never came back; b re-queued");
 });
 
+// The service worker asks "what happened?" when a push arrives. That read
+// must not count as the player coming back, or it cuts their grace short.
+await check("a peek shows your party without marking you as back", () => {
+  const w = world();
+  w.play("a", { push: true });
+  w.advance(2 * MIN); // a closed the tab
+  w.play("b"); // matched while away: a gets a push and five minutes to return
+  const before = JSON.stringify(w.state);
+  const seen = P.peek(w.state, "a");
+  assert.equal(seen.state, "matched");
+  assert.equal(seen.match.members.length, 2);
+  assert.equal(JSON.stringify(w.state), before, "peeking changes nothing");
+  w.advance(4 * MIN);
+  w.poll("b");
+  assert.equal(P.peek(w.state, "a").state, "matched", "four minutes on, a still has the seat");
+
+  // The same story with a poll at the moment of the push, which is what the
+  // service worker used to do: the shorter three-minute clock starts.
+  const polled = world();
+  polled.play("a", { push: true });
+  polled.advance(2 * MIN);
+  polled.play("b");
+  polled.poll("a");
+  polled.advance(4 * MIN);
+  assert.equal(polled.poll("b").state, "searching", "a was dropped after three minutes and b went back in line");
+});
+
 await check("nobody gets a push while they are watching", () => {
   const w = world();
   w.play("a", { push: true });

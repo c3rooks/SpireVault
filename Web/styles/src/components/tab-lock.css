@@ -182,3 +182,12 @@ html[data-steam="out"] .nav-row[data-steam-lock] .nav-lock {
     font-size: var(--v-text-xl);
   }
 }
+/* A phone on its side: the icon sits beside its label, so the mark moves
+   to the icon's shoulder with the badges (shell/mobile-nav.css) instead
+   of landing on the label ("Co🔒op"). */
+@media (max-width: 880px) and (max-height: 480px) {
+  .sidebar-nav[data-v-mnav] .nav-lock {
+    top: 1px;
+    left: 26px;
+  }
+}
