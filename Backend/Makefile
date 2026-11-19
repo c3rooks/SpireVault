@@ -17,9 +17,13 @@ dev:
 # that quietly reports 0% retention because the denominator includes users who
 # signed up yesterday looks exactly like a product failure. These run before
 # every deploy so that never ships.
+#
+# verify-presence-burst covers the heartbeat route: an empty body must not
+# crash it, and a repeat inside a second must cost no KV writes.
 preflight:
 	npx tsc --noEmit -p tsconfig.json
 	node scripts/verify-offline.mjs
+	node scripts/verify-presence-burst.mjs
 	node scripts/verify-coop-play.mjs
 
 # Ship to production.

@@ -11,7 +11,9 @@
  *   state            PlayState (tickets, matches, ping prefs)
  *   c:<YYYYMMDD>     daily counters { play_tap: n, matched: n, … }
  *   u:<YYYYMMDD>     Steam IDs that tapped Play that day (unique players)
- *   sub:<steamID>    Web Push subscription
+ *   dev:<steamID>    the devices that can ping this player (coop-play-devices.ts)
+ *   sub:<steamID>    the single Web Push subscription saved before device lists;
+ *                    turned into a one-device list the first time it is read
  *   pushq            pings still to send (coop-play-pushq.ts): one batch goes
  *                    out in the call that queued them, the alarm drains the
  *                    rest, so no invocation passes the subrequest cap
@@ -24,6 +26,7 @@ import {
   cancel,
   emptyState,
   isQuiet,
+  leaveEverything,
   peek,
   play,
   poll,
@@ -41,6 +44,16 @@ import {
   type PlayView,
   type Result,
 } from "./coop-play-core";
+import {
+  deviceIdFor,
+  deviceViews,
+  findDevice,
+  legacyDevice,
+  removeDevice,
+  upsertDevice,
+  type Device,
+  type DeviceView,
+} from "./coop-play-devices";
 import { sendPush, type PushSubscriptionRecord } from "./coop-play-push";
 import {
   enqueuePushes,
@@ -50,6 +63,7 @@ import {
   type PushBatchDeps,
   type PushKind,
   type PushQueue,
+  type PushTarget,
 } from "./coop-play-pushq";
 import { appendCoopHistory } from "./coop-reputation";
 
@@ -89,14 +103,18 @@ export class CoopPlayDO extends DurableObject<Env> {
 
   async play(who: PlayerProfile, req: PlayRequest): Promise<PlayCallResult> {
     if (this.limited(who.sid)) return { ok: false, error: "rate_limited" };
-    const r = play(this.state, who, req, this.coreCtx());
+    // Pings are on if any device can be pinged, whatever this browser says:
+    // queueing from a laptop without pings still reaches the phone.
+    const push = req.push === true || (await this.devices(who.sid)).length > 0;
+    const r = play(this.state, who, { ...req, push }, this.coreCtx());
     await this.apply(r, true);
     return { ok: true, view: r.view };
   }
 
-  async poll(sid: string): Promise<PlayCallResult> {
+  /** `visible` is false for a tab in the background: it keeps the place but doesn't count as being back. */
+  async poll(sid: string, visible = true): Promise<PlayCallResult> {
     if (this.limited(sid)) return { ok: false, error: "rate_limited" };
-    const r = poll(this.state, sid, this.coreCtx());
+    const r = poll(this.state, sid, this.coreCtx(), visible);
     await this.apply(r, false);
     return { ok: true, view: r.view };
   }
@@ -118,9 +136,10 @@ export class CoopPlayDO extends DurableObject<Env> {
     return { ok: true, view: r.view };
   }
 
-  async act(sid: string, action: PlayAction): Promise<PlayCallResult> {
+  /** `visible` is false when the step comes from a ping's button (the service worker). */
+  async act(sid: string, action: PlayAction, visible = true): Promise<PlayCallResult> {
     if (this.limited(sid)) return { ok: false, error: "rate_limited" };
-    const r = act(this.state, sid, action, this.coreCtx());
+    const r = act(this.state, sid, action, this.coreCtx(), visible);
     await this.apply(r, true);
     return { ok: true, view: r.view };
   }
@@ -130,26 +149,58 @@ export class CoopPlayDO extends DurableObject<Env> {
   }
 
   /**
-   * Save (or drop) a push subscription and the "someone's looking" choice.
-   * Someone already waiting keeps their ticket; it only gains or loses pings.
+   * Turn pings on for one device (or refresh it), with the "someone's
+   * looking" choice. Someone already waiting keeps their ticket; it only
+   * gains pings. Other devices on the account are untouched.
    */
-  async setPush(
-    sid: string,
-    sub: PushSubscriptionRecord | null,
-    looking: boolean,
-    branch: Branch,
-  ): Promise<PlayCallResult> {
+  async addDevice(sid: string, device: Device, looking: boolean, branch: Branch): Promise<PlayCallResult> {
     if (this.limited(sid)) return { ok: false, error: "rate_limited" };
-    if (sub) await this.ctx.storage.put(`sub:${sid}`, sub);
-    else await this.ctx.storage.delete(`sub:${sid}`);
-    const flagged = setPushFlag(this.state, sid, Boolean(sub));
-    const r = setLookingPings(flagged, sid, Boolean(sub) && looking, branch, this.coreCtx());
+    await this.saveDevices(sid, upsertDevice(await this.devices(sid), device));
+    const flagged = setPushFlag(this.state, sid, true);
+    const r = setLookingPings(flagged, sid, looking, branch, this.coreCtx());
     await this.apply(r, true);
     return { ok: true, view: r.view };
   }
 
+  /**
+   * Turn pings off for one device (`id`), or for all of them (`null`, what
+   * clients from before device lists send). Pings stay on while any device
+   * is left.
+   */
+  async removeDevices(sid: string, id: string | null): Promise<PlayCallResult & { devicesLeft?: number }> {
+    if (this.limited(sid)) return { ok: false, error: "rate_limited" };
+    const left = await this.dropDevices(sid, id);
+    const r = this.withPings(sid, left.length > 0);
+    await this.apply(r, true);
+    return { ok: true, view: r.view, devicesLeft: left.length };
+  }
+
+  /**
+   * Sign-out on one device: forget that device. Only when no device can ping
+   * the player any more do they leave the line and any party that has not
+   * started, so signing out of a laptop doesn't cancel the search their phone
+   * is watching.
+   */
+  async signOut(sid: string, id: string | null): Promise<PlayCallResult & { devicesLeft?: number }> {
+    if (this.limited(sid)) return { ok: false, error: "rate_limited" };
+    const left = id ? await this.dropDevices(sid, id) : await this.devices(sid);
+    if (left.length > 0) {
+      const r = this.withPings(sid, true);
+      await this.apply(r, true);
+      return { ok: true, view: r.view, devicesLeft: left.length };
+    }
+    const flagged = this.withPings(sid, false);
+    const r = leaveEverything(flagged.state, sid, this.coreCtx());
+    await this.apply({ state: r.state, events: [...flagged.events, ...r.events] }, true);
+    return { ok: true, view: r.view, devicesLeft: 0 };
+  }
+
   async hasPush(sid: string): Promise<boolean> {
-    return Boolean(await this.ctx.storage.get(`sub:${sid}`));
+    return (await this.devices(sid)).length > 0;
+  }
+
+  async listDevices(sid: string): Promise<DeviceView[]> {
+    return deviceViews(await this.devices(sid));
   }
 
   /** Daily counters for /admin/stats, newest first. */
@@ -187,6 +238,45 @@ export class CoopPlayDO extends DurableObject<Env> {
     await this.apply(tick(this.state, Date.now()), true, { drain: false, schedule: false });
     if (this.pushQueue.length > 0) await this.drainOneBatch();
     await this.scheduleAlarm();
+  }
+
+  // MARK: - Devices
+
+  /**
+   * The player's device list. A subscription saved before device lists
+   * existed (`sub:<sid>`) becomes a one-device list the first time it is read.
+   */
+  private async devices(sid: string): Promise<Device[]> {
+    const list = await this.ctx.storage.get<Device[]>(`dev:${sid}`);
+    if (list) return list;
+    const legacy = await this.ctx.storage.get<PushSubscriptionRecord>(`sub:${sid}`);
+    if (!legacy) return [];
+    const migrated = [legacyDevice(legacy, await deviceIdFor(legacy.endpoint), Date.now())];
+    await this.ctx.storage.put(`dev:${sid}`, migrated);
+    await this.ctx.storage.delete(`sub:${sid}`);
+    return migrated;
+  }
+
+  private async saveDevices(sid: string, list: readonly Device[]): Promise<void> {
+    if (list.length > 0) await this.ctx.storage.put(`dev:${sid}`, list);
+    else await this.ctx.storage.delete(`dev:${sid}`);
+  }
+
+  /** Removes one device (or every device for `null`) and returns what is left. */
+  private async dropDevices(sid: string, id: string | null): Promise<Device[]> {
+    const left = id ? removeDevice(await this.devices(sid), id) : [];
+    await this.saveDevices(sid, left);
+    return left;
+  }
+
+  /**
+   * The state with the player's ping flag set. Losing the last device also
+   * turns off "ping me when someone's looking", which has nowhere to go.
+   */
+  private withPings(sid: string, on: boolean): Result {
+    const flagged = setPushFlag(this.state, sid, on);
+    if (on) return { state: flagged, view: peek(flagged, sid), events: [] };
+    return setLookingPings(flagged, sid, false, "stable", this.coreCtx());
   }
 
   // MARK: - Internals
@@ -275,14 +365,23 @@ export class CoopPlayDO extends DurableObject<Env> {
       }
     }
 
-    const pushTargets: Array<[string, PushKind]> = [];
+    const pinged: Array<[string, PushKind]> = [];
     for (const e of events) {
-      if (e.type === "push_matched") pushTargets.push([e.sid, "matched"]);
-      if (e.type === "push_looking") for (const sid of e.sids) pushTargets.push([sid, "looking"]);
+      if (e.type === "push_matched") pinged.push([e.sid, "matched"]);
+      if (e.type === "push_ended") pinged.push([e.sid, "ended"]);
+      if (e.type === "push_looking") for (const sid of e.sids) pinged.push([sid, "looking"]);
     }
-    if (pushTargets.length > 0) {
-      this.pushQueue = enqueuePushes(this.pushQueue, pushTargets);
-      await this.ctx.storage.put("pushq", this.pushQueue);
+    if (pinged.length > 0) {
+      // One queue entry per device, so a batch counts real requests. Storage
+      // reads keep the input gate closed: nothing else runs in between.
+      const targets: PushTarget[] = [];
+      for (const [sid, kind] of pinged) {
+        for (const d of await this.devices(sid)) targets.push([sid, kind, d.id]);
+      }
+      if (targets.length > 0) {
+        this.pushQueue = enqueuePushes(this.pushQueue, targets);
+        await this.ctx.storage.put("pushq", this.pushQueue);
+      }
     }
   }
 
@@ -310,9 +409,23 @@ export class CoopPlayDO extends DurableObject<Env> {
 
   private pushDeps(): PushBatchDeps {
     return {
-      getSub: (sid) => this.ctx.storage.get<PushSubscriptionRecord>(`sub:${sid}`),
-      deleteSub: async (sid) => {
-        await this.ctx.storage.delete(`sub:${sid}`);
+      getSub: async (sid, device) => {
+        const list = await this.devices(sid);
+        // Entries queued before device lists have no device: the most recent one.
+        return (device ? findDevice(list, device) : list[0])?.sub;
+      },
+      deleteSub: async (sid, device) => {
+        const list = await this.devices(sid);
+        const gone = device ?? list[0]?.id;
+        if (!gone) return;
+        const left = removeDevice(list, gone);
+        await this.saveDevices(sid, left);
+        // The last device is gone: their place in line goes back to the
+        // short clock, since nothing can reach them any more.
+        if (left.length === 0) {
+          this.state = setPushFlag(this.state, sid, false);
+          await this.ctx.storage.put("state", this.state);
+        }
       },
       send: (sub) => sendPush(this.env, sub),
     };

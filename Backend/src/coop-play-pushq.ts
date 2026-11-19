@@ -10,11 +10,17 @@
  * invocation.
  *
  * Rules:
- *   - a player is queued once; a later "looking" for them changes nothing
- *   - "matched" pings are time-critical: they sit ahead of every "looking"
- *     ping, and a player already queued as "looking" is upgraded and moved up
+ *   - one entry per device (a player with pings on in two places is queued
+ *     twice), so a batch counts requests, not players
+ *   - a device is queued once; a later, less urgent ping for it changes nothing
+ *   - "matched" pings are time-critical: they sit ahead of everything, then
+ *     "ended" (your search ran out), then "looking"; a device already queued
+ *     for something less urgent is upgraded and moved up
  *   - a batch is at most PUSH_BATCH_SIZE requests: under the Free cap, with
  *     room for the few other requests the same invocation may make
+ *
+ * Entries queued before device lists existed have no `device`; they go to the
+ * player's most recent device.
  *
  * Pure functions with injected storage and sender, so the offline suite
  * (scripts/verify-coop-play.mjs) can drive them without a Durable Object.
@@ -22,11 +28,16 @@
 
 import type { PushOutcome, PushSubscriptionRecord } from "./coop-play-push";
 
-export type PushKind = "matched" | "looking";
+export type PushKind = "matched" | "ended" | "looking";
+
+/** Lower is more urgent. */
+const URGENCY: Readonly<Record<PushKind, number>> = { matched: 0, ended: 1, looking: 2 };
 
 export interface QueuedPush {
   readonly sid: string;
   readonly kind: PushKind;
+  /** Device id (coop-play-devices.ts); missing on entries queued before device lists. */
+  readonly device?: string;
 }
 
 export type PushQueue = ReadonlyArray<QueuedPush>;
@@ -38,10 +49,15 @@ export const PUSH_BATCH_SIZE = 40;
 export const PUSH_DRAIN_EVERY_MS = 1_000;
 
 export interface PushBatchDeps {
-  getSub(sid: string): Promise<PushSubscriptionRecord | null | undefined>;
-  deleteSub(sid: string): Promise<void>;
+  /** The subscription for that device (or, with no device, the player's most recent one). */
+  getSub(sid: string, device?: string): Promise<PushSubscriptionRecord | null | undefined>;
+  /** The push service said the subscription is gone: forget that device. */
+  deleteSub(sid: string, device?: string): Promise<void>;
   send(sub: PushSubscriptionRecord): Promise<PushOutcome>;
 }
+
+/** A target for enqueuePushes: player, kind, and the device (omitted only by old callers). */
+export type PushTarget = readonly [sid: string, kind: PushKind, device?: string];
 
 export interface PushBatchResult {
   sent: number;
@@ -51,21 +67,22 @@ export interface PushBatchResult {
 }
 
 /**
- * Returns a new queue with the targets added: deduplicated by player, every
- * "matched" ping ahead of every "looking" one, arrival order kept within each.
+ * Returns a new queue with the targets added: deduplicated by device, the
+ * most urgent kind kept, sorted matched → ended → looking with arrival order
+ * kept within each.
  */
-export function enqueuePushes(queue: PushQueue, targets: Iterable<readonly [string, PushKind]>): PushQueue {
-  const kinds = new Map<string, PushKind>();
-  const order: string[] = [];
-  const add = (sid: string, kind: PushKind) => {
-    const had = kinds.get(sid);
-    if (had === undefined) order.push(sid);
-    if (had !== "matched") kinds.set(sid, kind);
+export function enqueuePushes(queue: PushQueue, targets: Iterable<PushTarget>): PushQueue {
+  const entries = new Map<string, QueuedPush>();
+  const add = (sid: string, kind: PushKind, device?: string) => {
+    const key = `${sid}\u0000${device ?? ""}`;
+    const had = entries.get(key);
+    if (had === undefined) entries.set(key, device === undefined ? { sid, kind } : { sid, kind, device });
+    else if (URGENCY[kind] < URGENCY[had.kind]) entries.set(key, { ...had, kind });
   };
-  for (const e of queue) add(e.sid, e.kind);
-  for (const [sid, kind] of targets) add(sid, kind);
-  const all = order.map((sid) => ({ sid, kind: kinds.get(sid) as PushKind }));
-  return [...all.filter((e) => e.kind === "matched"), ...all.filter((e) => e.kind === "looking")];
+  for (const e of queue) add(e.sid, e.kind, e.device);
+  for (const [sid, kind, device] of targets) add(sid, kind, device);
+  // Array.prototype.sort is stable, so arrival order holds within a kind.
+  return [...entries.values()].sort((a, b) => URGENCY[a.kind] - URGENCY[b.kind]);
 }
 
 /** Splits off at most one batch from the front of the queue. */
@@ -74,14 +91,15 @@ export function takeBatch(queue: PushQueue, size: number = PUSH_BATCH_SIZE): { b
 }
 
 /**
- * Sends one batch, one request per player who still has a subscription.
- * A gone subscription (404/410) is deleted; one failing push never stops the
- * rest. Payload-free: the service worker asks /coop/play/peek what happened.
+ * Sends one batch, one request per device that still has a subscription.
+ * A gone subscription (404/410) deletes only that device; one failing push
+ * never stops the rest. Payload-free: the service worker asks
+ * /coop/play/peek what happened.
  */
 export async function sendPushBatch(batch: PushQueue, deps: PushBatchDeps): Promise<PushBatchResult> {
   const result: PushBatchResult = { sent: 0, gone: 0, skipped: 0, failed: 0 };
-  for (const { sid } of batch) {
-    const sub = await deps.getSub(sid);
+  for (const { sid, device } of batch) {
+    const sub = await deps.getSub(sid, device);
     if (!sub) {
       result.skipped++;
       continue;
@@ -91,7 +109,7 @@ export async function sendPushBatch(batch: PushQueue, deps: PushBatchDeps): Prom
       if (outcome === "sent") result.sent++;
       else if (outcome === "gone") {
         result.gone++;
-        await deps.deleteSub(sid);
+        await deps.deleteSub(sid, device);
       } else result.failed++;
     } catch {
       result.failed++;

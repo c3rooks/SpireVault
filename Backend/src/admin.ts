@@ -765,19 +765,22 @@ export function computeIngestFunnel(diag: Record<string, number>): IngestFunnel 
  *    · lobby TTL refresh is now margin-gated to roughly once per 25 min
  *  → 120 beats/hr × 1 + 40 presence writes/hr ≈ 162/hr, round to 165.
  *
- *  Classic presence — POST /presence, cadence 180s (Web/script.js). Per beat:
- *    · 1 write  rate limiter
- *    · 1 write  presence:roster (full blob rewrite, unconditional)
- *  → 20 beats/hr × 2 = 40/hr.
+ *  Classic presence — POST /presence, cadence 180s (Web/script.js). A beat
+ *  that changes nothing writes nothing (presence.ts acceptHeartbeat):
+ *    · 1 write  presence:roster, once the player's row is an hour old
+ *    · the rate limiter is only asked (1 write) when a player joins the roster
+ *  → 1/hr. Checked by scripts/verify-presence-burst.mjs.
  *
- *  Fixed per user per day: seen:<day>:<id> + the user-meta lastSeen touch = 2.
+ *  Fixed per user per day: seen:<day>:<id> + the user-meta lastSeen touch,
+ *  and the daily session renewal (session:<token> + session-profile:<id>,
+ *  auth.ts renewSessionIfDue) = 4.
  *
  *  Cron: house-lobby renewer every 15 min = 96 passes/day; each pass writes at
  *  most the 2 lobbies plus a mutex, and is a no-op outside peak hours.
  */
 const WRITES_PER_COOP_USER_HOUR = 165;
-const WRITES_PER_CLASSIC_USER_HOUR = 40;
-const WRITES_PER_USER_DAY_FIXED = 2;
+const WRITES_PER_CLASSIC_USER_HOUR = 1;
+const WRITES_PER_USER_DAY_FIXED = 4;
 // House-room cron removed 2026-11-14 (coop Play replaced it).
 const CRON_WRITES_PER_DAY = 0;
 const FREE_DAILY_WRITES = 1000;

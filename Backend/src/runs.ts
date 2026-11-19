@@ -45,15 +45,44 @@ export interface RunSummary {
   killedBy?: string;
   relics: string[];
   deckAtEnd: string[];
-  /** Optional card-pick history: list of `{ floor, picked, skipped }`. Capped
-   *  at 60 entries server-side to keep stored size bounded. */
+  /** Card-pick history as objects: `{ floor, picked, skipped }`, capped at
+   *  60 entries. No web build ever filled it (the upload read a field its
+   *  runs never had), and web builds since 2026-11-18 send `picks` instead;
+   *  kept for any client that does send it. */
   cardChoices?: Array<{ floor: number; picked?: string; skipped?: string[] }>;
   neowBonus?: string;
-  /** STS2 `game_mode`, lower-cased. The web client only sends the beta
-   *  modes ("blitz", "dread") whose ascension is off the standard ladder,
-   *  so a cloud copy keeps them out of another device's Ascension stats. */
+  /** STS2 `game_mode`, lower-cased ("standard", "daily", "blitz", …). Web
+   *  builds before 2026-11-18 sent only the beta modes ("blitz", "dread")
+   *  whose ascension is off the standard ladder; later ones send every mode. */
   gameMode?: string;
+  // ---- Run detail, sent by web builds since 2026-11-18 --------------------
+  // A player's other devices show nothing but this copy, so it carries what
+  // the tabs show. All optional: older clients neither send nor read them.
+  /** Every card reward of the run as one string: screens joined by ";",
+   *  each `floor:picked|skipped,skipped` (nothing before "|" when the reward
+   *  was skipped). One string, not `cardChoices` objects, because every
+   *  upload parses and re-writes the player's whole copy inside the Worker's
+   *  processor budget: 8,000 reward screens as objects more than doubled that
+   *  work for a 726-run library, and a string adds almost none. */
+  picks?: string;
+  /** The player quit the run: shown as Abandoned, not as a defeat. */
+  wasAbandoned?: boolean;
+  /** Daily-run modifier slugs. */
+  modifiers?: string[];
+  /** The rooms walked, one string per act and one letter per room
+   *  (Web/lib/cloud-run-wire.js holds the letters). */
+  path?: string[];
+  /** Players in the run's save file; 1 for a solo run. */
+  partySize?: number;
+  /** A co-op party's characters, in the save's order; "" for one that could
+   *  not be read. Left out for a solo run. */
+  party?: string[];
 }
+
+/** The fields one record of a run may lack because the client that sent it
+ *  predates them. When two records of a run meet, values for these survive
+ *  from whichever has them (see withDetailFrom). */
+const DETAIL_FIELDS = ["picks", "gameMode", "wasAbandoned", "modifiers", "path", "partySize", "party"] as const;
 
 interface RunsBlob {
   runs: RunSummary[];
@@ -77,6 +106,24 @@ export const MAX_RUNS_PER_USER = 2_000;
  *  but corrupt save files have been seen with multi-thousand entries.
  *  Truncate to keep stored size bounded. */
 const MAX_CARD_CHOICES = 60;
+/** Cards kept per `cardChoices` entry besides the picked one. */
+const MAX_SKIPPED_PER_CHOICE = 8;
+/** Length of one run's `picks`. A long real run (31 reward screens, one of
+ *  them a 30-card offer) is about 1,500 characters. */
+const MAX_PICKS_CHARS = 8_000;
+/** `picks` is card ids (percent-escaped where an id is not plain) and its
+ *  four separators, nothing else. */
+const PICKS_PATTERN = /^[A-Za-z0-9_+.%:|,;-]*$/;
+/** Size of one player's stored copy, in characters. Workers KV refuses a
+ *  value over 25 MiB and a character is at most 3 bytes, so this always
+ *  fits. A real 2,000-run library with card picks is about 3 million. */
+const MAX_BLOB_CHARS = 8_000_000;
+const MAX_MODIFIERS = 16;
+const MAX_ACTS = 12;
+const MAX_ROOMS_PER_ACT = 80;
+const MAX_PARTY = 8;
+/** One act of `path`: lower-case room letters only. */
+const ACT_PATH_PATTERN = /^[a-z]*$/;
 
 function clampString(v: unknown, max: number, fallback = ""): string {
   if (typeof v !== "string") return fallback;
@@ -98,6 +145,43 @@ function clampStringArr(v: unknown, max: number): string[] {
     .filter((x): x is string => typeof x === "string")
     .slice(0, max)
     .map((x) => x.slice(0, 64));
+}
+
+/** A non-empty clamped string list, or undefined so nothing is stored. */
+function optionalStringArr(v: unknown, max: number): string[] | undefined {
+  const list = clampStringArr(v, max);
+  return list.length > 0 ? list : undefined;
+}
+
+/** The rooms walked, or undefined. One act that is not plain room letters
+ *  drops the whole path: keeping the rest would shift every floor number. */
+function sanitizePath(v: unknown): string[] | undefined {
+  if (!Array.isArray(v) || v.length === 0) return undefined;
+  const acts = v.slice(0, MAX_ACTS);
+  if (!acts.every((act) => typeof act === "string" && ACT_PATH_PATTERN.test(act))) return undefined;
+  return (acts as string[]).map((act) => act.slice(0, MAX_ROOMS_PER_ACT));
+}
+
+/** One run's card picks, or undefined. Too long is cut at the last whole
+ *  reward screen; any character outside the format drops the lot. */
+function sanitizePicks(v: unknown): string | undefined {
+  if (typeof v !== "string" || v.length === 0 || v.length > MAX_PICKS_CHARS * 4) return undefined;
+  if (!PICKS_PATTERN.test(v)) return undefined;
+  if (v.length <= MAX_PICKS_CHARS) return v;
+  const lastWholeScreen = v.lastIndexOf(";", MAX_PICKS_CHARS);
+  return lastWholeScreen > 0 ? v.slice(0, lastWholeScreen) : undefined;
+}
+
+function sanitizePartySize(v: unknown): number | undefined {
+  if (typeof v !== "number" || !Number.isFinite(v) || v < 1) return undefined;
+  return Math.min(MAX_PARTY, Math.floor(v));
+}
+
+/** A co-op party's characters. Entries stay in place ("" for one the client
+ *  could not read) so a party of three keeps three entries. */
+function sanitizeParty(v: unknown): string[] | undefined {
+  if (!Array.isArray(v) || v.length < 2) return undefined;
+  return v.slice(0, MAX_PARTY).map((climber) => clampString(climber, 32));
 }
 
 /** Trust nothing the client sends — coerce every field to its expected
@@ -128,14 +212,61 @@ function sanitizeRun(raw: unknown): RunSummary | null {
       return {
         floor: clampNumber(cc.floor, 0),
         picked: cc.picked ? clampString(cc.picked, 64) : undefined,
-        skipped: clampStringArr(cc.skipped, 8),
+        skipped: clampStringArr(cc.skipped, MAX_SKIPPED_PER_CHOICE),
       };
     }),
     neowBonus: r.neowBonus ? clampString(r.neowBonus, 96) : undefined,
     gameMode: typeof r.gameMode === "string" && r.gameMode
       ? clampString(r.gameMode.toLowerCase(), 24) || undefined
       : undefined,
+    picks: sanitizePicks(r.picks),
+    wasAbandoned: r.wasAbandoned === true ? true : undefined,
+    modifiers: optionalStringArr(r.modifiers, MAX_MODIFIERS),
+    path: sanitizePath(r.path),
+    partySize: sanitizePartySize(r.partySize),
+    party: sanitizeParty(r.party),
   };
+}
+
+/** `kept` is the record of a run that stays (the later ending; the upload
+ *  on a tie) and `other` is the one it replaces. Both describe one run and
+ *  differ in how much of it the client sent: web builds before 2026-11-18
+ *  send no card picks and none of DETAIL_FIELDS, browsers keep those builds
+ *  cached for a while, and a run with no end time is stamped with the upload
+ *  time, so the thinner record is often the "later" one. Taking it whole
+ *  would empty the Cards tab on every other device again. So whatever `kept`
+ *  lacks, it takes from `other`. Returns `kept` itself when it lacks nothing. */
+function withDetailFrom(kept: RunSummary, other: RunSummary): RunSummary {
+  const filled: Partial<RunSummary> = {};
+  for (const field of DETAIL_FIELDS) {
+    if (kept[field] === undefined && other[field] !== undefined) {
+      Object.assign(filled, { [field]: other[field] });
+    }
+  }
+  if ((kept.cardChoices?.length ?? 0) === 0 && (other.cardChoices?.length ?? 0) > 0) {
+    filled.cardChoices = other.cardChoices;
+  }
+  return Object.keys(filled).length > 0 ? { ...kept, ...filled } : kept;
+}
+
+const EMPTY_BLOB_TEXT = JSON.stringify({ runs: [], updatedAt: new Date(0).toISOString(), count: 0 });
+
+/** The stored copy exactly as KV holds it, for GET /runs. The copy is
+ *  already the JSON the client wants, and parsing it only to write it out
+ *  again was the Worker's most expensive request (3 to 4 ms of its 10 ms
+ *  processor budget for a 726-run library, measured live on 2026-11-18,
+ *  before card picks made the copy larger). Anything that does not look
+ *  like a copy this module wrote goes through getRuns instead. */
+export async function getRunsText(env: Env, steamID: string): Promise<string> {
+  const raw = await env.LOBBIES.get(RUNS_KEY_PREFIX + steamID);
+  if (!raw) return EMPTY_BLOB_TEXT;
+  if (raw.startsWith('{"runs":[') && raw.endsWith("}")) return raw;
+  try {
+    const parsed = JSON.parse(raw) as RunsBlob;
+    return parsed && Array.isArray(parsed.runs) ? JSON.stringify(parsed) : EMPTY_BLOB_TEXT;
+  } catch {
+    return EMPTY_BLOB_TEXT;
+  }
 }
 
 export async function getRuns(env: Env, steamID: string): Promise<RunsBlob> {
@@ -211,36 +342,46 @@ export async function uploadRuns(
       added++;
       byId.set(r.id, r);
     } else {
-      // Last-write-wins by endedAt
+      // Last-write-wins by endedAt: the later ending is the record that
+      // stays (the upload on a tie). Detail it lacks is kept from the other.
       const a = Date.parse(prev.endedAt);
       const b = Date.parse(r.endedAt);
-      if (Number.isFinite(b) && (!Number.isFinite(a) || b >= a)) {
-        byId.set(r.id, r);
-      }
+      const takeUpload = Number.isFinite(b) && (!Number.isFinite(a) || b >= a);
+      byId.set(r.id, takeUpload ? withDetailFrom(r, prev) : withDetailFrom(prev, r));
     }
   }
 
-  // Sort newest-first so truncation drops the oldest runs.
-  const merged = Array.from(byId.values()).sort((a, b) => {
-    const da = Date.parse(a.endedAt) || 0;
-    const db = Date.parse(b.endedAt) || 0;
-    return db - da;
-  });
-  const truncated = merged.length > MAX_RUNS_PER_USER;
-  const final = truncated ? merged.slice(0, MAX_RUNS_PER_USER) : merged;
+  // Sort newest-first so truncation drops the oldest runs. Each end time is
+  // read once, not on every comparison.
+  const endedAtMs = new Map<string, number>();
+  for (const r of byId.values()) endedAtMs.set(r.id, Date.parse(r.endedAt) || 0);
+  const merged = Array.from(byId.values()).sort(
+    (a, b) => (endedAtMs.get(b.id) ?? 0) - (endedAtMs.get(a.id) ?? 0),
+  );
+  const withinCount = merged.length > MAX_RUNS_PER_USER ? merged.slice(0, MAX_RUNS_PER_USER) : merged;
 
-  const blob: RunsBlob = {
-    runs: final,
-    updatedAt: new Date().toISOString(),
-    count: final.length,
+  const updatedAt = new Date().toISOString();
+  const blobFor = (runs: RunSummary[]): RunsBlob => ({
+    runs,
+    updatedAt,
+    count: runs.length,
     source: source && typeof source === "string" ? source.slice(0, 16) : undefined,
-  };
-  await env.LOBBIES.put(RUNS_KEY_PREFIX + steamID, JSON.stringify(blob), {
+  });
+  // A copy too large for KV would fail every upload from then on. Real
+  // libraries are nowhere near; this only bounds a pathological one, by
+  // dropping its oldest runs a fifth at a time.
+  let kept = withinCount;
+  let text = JSON.stringify(blobFor(kept));
+  while (text.length > MAX_BLOB_CHARS && kept.length > 1) {
+    kept = kept.slice(0, Math.max(1, Math.floor(kept.length * 0.8)));
+    text = JSON.stringify(blobFor(kept));
+  }
+  await env.LOBBIES.put(RUNS_KEY_PREFIX + steamID, text, {
     expirationTtl: RUNS_TTL_SECONDS,
   });
   return {
     ok: true,
-    result: { count: final.length, updatedAt: blob.updatedAt, added, truncated },
+    result: { count: kept.length, updatedAt, added, truncated: kept.length < merged.length },
   };
 }
 

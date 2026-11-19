@@ -31,12 +31,13 @@ async function step(label, fn) {
   }
 }
 
-async function call(method, path, { token, body } = {}) {
+async function call(method, path, { token, body, ua } = {}) {
   const resp = await fetch(BASE + path, {
     method,
     headers: {
       "content-type": "application/json",
       ...(token ? { authorization: `Bearer ${token}` } : {}),
+      ...(ua ? { "user-agent": ua } : {}),
     },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
@@ -180,7 +181,80 @@ if (pushEnabled) {
   console.log("  skip pings switched on mid-search upgrade the waiting ticket (no VAPID keys on this worker)");
 }
 
-await step("the two sign-out calls drop the subscription and leave the line", async () => {
+// Pings on every device: queue on the desk, walk away, hear it on the phone.
+const DESK_UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+const PHONE_UA = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1";
+const deskSub = { endpoint: "https://fcm.googleapis.com/fcm/send/verify-flow-desk", keys: { p256dh: "p", auth: "a" } };
+const phoneSub = { endpoint: "https://web.push.apple.com/verify-flow-phone", keys: { p256dh: "p", auth: "a" } };
+if (pushEnabled) {
+  let phoneId = "";
+  await step("two devices turn pings on and both are kept (the phone no longer replaces the desk)", async () => {
+    // Start clean: the step above left mako in line with one device.
+    await call("DELETE", "/coop/play/push", { token: mako });
+    await call("DELETE", "/coop/play", { token: mako });
+    const desk = await call("POST", "/coop/play/push", { token: mako, ua: DESK_UA, body: { subscription: deskSub, looking: false, branch: "beta" } });
+    assert.equal(desk.status, 200, JSON.stringify(desk.data));
+    assert.match(desk.data.deviceId, /^[0-9a-f]{16}$/);
+    const phone = await call("POST", "/coop/play/push", { token: mako, ua: PHONE_UA, body: { subscription: phoneSub, looking: false, branch: "beta" } });
+    phoneId = phone.data.deviceId;
+    const list = await call("GET", "/coop/play/devices", { token: mako });
+    assert.equal(list.status, 200);
+    assert.deepEqual(list.data.devices.map((d) => d.label).sort(), ["Chrome on Mac", "Safari on iPhone"]);
+    assert.ok(list.data.devices.every((d) => !("sub" in d) && !("endpoint" in d)), "no endpoints in the list");
+  });
+
+  await step("pings off on the desk leave the phone's on; a bad endpoint is refused, not 'all devices'", async () => {
+    const bad = await call("DELETE", "/coop/play/push", { token: mako, body: { endpoint: "https://evil.example/x" } });
+    assert.equal(bad.status, 400);
+    const still = await call("GET", "/coop/play/devices", { token: mako });
+    assert.equal(still.data.devices.length, 2, "nothing was removed");
+    const off = await call("DELETE", "/coop/play/push", { token: mako, body: { endpoint: deskSub.endpoint } });
+    assert.equal(off.status, 200, JSON.stringify(off.data));
+    assert.equal(off.data.pushOn, true, "the phone still pings");
+    const list = await call("GET", "/coop/play/devices", { token: mako });
+    assert.deepEqual(list.data.devices.map((d) => d.id), [phoneId]);
+  });
+
+  await step("Play from a browser without pings still gets them (the phone has them), with the chosen stay", async () => {
+    const play = await call("POST", "/coop/play", { token: mako, body: { branch: "beta", push: false, stay: 30 } });
+    assert.equal(play.data.state, "searching", JSON.stringify(play.data));
+    assert.equal(play.data.ticket.push, true, "the phone can be pinged, so the ticket has pings");
+    assert.equal(play.data.ticket.stayMs, 30 * 60_000);
+    const hidden = await call("GET", "/coop/play?visible=0", { token: mako });
+    assert.equal(hidden.data.state, "searching");
+  });
+
+  await step("signing out of the desk keeps the search the phone is watching", async () => {
+    const out = await call("POST", "/coop/play/signout", { token: mako, body: { endpoint: deskSub.endpoint } });
+    assert.equal(out.status, 200, JSON.stringify(out.data));
+    assert.equal(out.data.devicesLeft, 1);
+    assert.equal(out.data.state, "searching");
+  });
+
+  await step("'On my way' is an accepted party step", async () => {
+    const r = await call("POST", "/coop/play/action", { token: mako, body: { action: "omw", visible: false } });
+    assert.equal(r.status, 200, JSON.stringify(r.data));
+  });
+
+  await step("forgetting the last device turns pings off; a bad device id is refused", async () => {
+    const bad = await call("DELETE", "/coop/play/devices/abc", { token: mako });
+    assert.equal(bad.status, 400);
+    const gone = await call("DELETE", `/coop/play/devices/${phoneId}`, { token: mako });
+    assert.equal(gone.status, 200, JSON.stringify(gone.data));
+    assert.equal(gone.data.pushOn, false);
+    assert.equal(gone.data.ticket.push, false, "back on the short clock");
+  });
+
+  await step("signing out with no device left leaves the line", async () => {
+    const out = await call("POST", "/coop/play/signout", { token: mako, body: {} });
+    assert.equal(out.data.devicesLeft, 0);
+    assert.equal(out.data.state, "idle");
+  });
+} else {
+  console.log("  skip two-device pings (no VAPID keys on this worker; start a second local worker with test keys)");
+}
+
+await step("old clients' two sign-out calls still drop pings and leave the line", async () => {
   await call("DELETE", "/coop/play/push", { token: mako });
   const left = await call("DELETE", "/coop/play", { token: mako });
   assert.equal(left.data.state, "idle");

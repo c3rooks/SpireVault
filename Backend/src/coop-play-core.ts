@@ -18,14 +18,25 @@ import { COOP_CHARACTERS, type CoopCharacter } from "./coop-types";
 export const MAX_PARTY = 4;
 /** A waiting player who stops polling is dropped after this long. */
 export const TICKET_TTL_MS = 90_000;
-/** …unless they turned on push pings, in which case they can close the tab. */
-export const TICKET_TTL_PUSH_MS = 10 * 60_000;
+/**
+ * …unless they turned on pings. Then they choose how long to keep looking
+ * after they last had the page in front of them (STAY_CHOICES_MIN), and a
+ * hidden tab that keeps polling does not stretch it.
+ */
+export const STAY_CHOICES_MIN: readonly number[] = [30, 60, 120];
+export const DEFAULT_STAY_MIN = 60;
+export const TICKET_TTL_PUSH_MS = DEFAULT_STAY_MIN * 60_000;
 /** A matched member who stops polling before the run starts is dropped. */
 export const MEMBER_TIMEOUT_MS = 3 * 60_000;
-/** Extra time for someone matched while away (they were pinged). */
+/**
+ * Someone matched while away (they were pinged) has this long from the match,
+ * or from tapping "On my way", to come back to the page.
+ */
 export const MEMBER_AWAY_GRACE_MS = 5 * 60_000;
-/** A member is "away" at match time if their last poll is older than this. */
+/** A member is "away" at match time if they have not had the page in view for this long. */
 export const AWAY_AFTER_MS = 20_000;
+/** "Your search ended" stays readable (for the service worker's peek) this long. */
+export const ENDED_NOTICE_MS = 15 * 60_000;
 /** New players can join a gathering party for this long after it formed. */
 export const MATCH_JOIN_WINDOW_MS = 15 * 60_000;
 /** Matches are forgotten after this long, whatever their state. */
@@ -50,8 +61,13 @@ export interface Ticket extends PlayerProfile {
   character?: CoopCharacter;
   branch: Branch;
   push: boolean;
+  /** With pings on: how long to keep looking after the page was last in view. */
+  stayMs?: number;
   createdAt: number;
+  /** Any poll, visible or not. Keeps a ticket without pings alive. */
   lastSeenAt: number;
+  /** A poll from a page in view (missing on state saved before this existed). */
+  lastVisibleAt?: number;
   /** Set when a match fell apart and this player was put back in line. */
   notice?: Notice;
 }
@@ -61,12 +77,19 @@ export type MemberStatus = "joined" | "in_game" | "left";
 export interface Member extends PlayerProfile {
   character?: CoopCharacter;
   push: boolean;
+  stayMs?: number;
   /** When this player first tapped Play — decides host and queue order. */
   queuedAt: number;
   joinedAt: number;
   lastSeenAt: number;
-  /** Was not polling when the match formed (got a push instead). */
+  lastVisibleAt?: number;
+  /**
+   * Did not have the page in view when the match formed (got a push instead).
+   * Cleared when they look at the page again.
+   */
   awayAtMatch: boolean;
+  /** Tapped "On my way" on the ping: the party is told, the grace restarts. */
+  comingAt?: number;
   steamAdded: boolean;
   status: MemberStatus;
 }
@@ -95,6 +118,8 @@ export interface PlayState {
   pings: Record<string, PingPref>;
   /** Last "someone's looking" fan-out per sender. */
   fanouts: Record<string, number>;
+  /** When a pinged player's search ran out (missing on state saved before this existed). */
+  ended?: Record<string, number>;
 }
 
 export type Notice = "partner_left" | "host_changed" | "expired";
@@ -120,6 +145,7 @@ export type PlayEvent =
   | { type: "player"; sid: string }
   | { type: "push_matched"; sid: string; matchId: string }
   | { type: "push_looking"; sids: string[] }
+  | { type: "push_ended"; sid: string }
   | { type: "history"; sid: string; role: "host" | "member"; matchId: string };
 
 export type ViewState = "idle" | "searching" | "matched" | "in_game";
@@ -133,6 +159,8 @@ export interface MemberView {
   isYou: boolean;
   steamAdded: boolean;
   status: MemberStatus;
+  /** Pinged while away and tapped "On my way": the others see them coming. */
+  coming: boolean;
 }
 
 export interface PlayView {
@@ -141,7 +169,16 @@ export interface PlayView {
   playingCount: number;
   lookingByBranch: Record<Branch, number>;
   pings: { looking: boolean };
-  ticket?: { createdAt: number; character?: CoopCharacter; branch: Branch; push: boolean };
+  ticket?: {
+    createdAt: number;
+    character?: CoopCharacter;
+    branch: Branch;
+    push: boolean;
+    /** With pings on: how long the search lasts after you last had the page in view. */
+    stayMs?: number;
+  };
+  /** Your pinged search ran out this long ago (shown on the "search ended" ping). */
+  endedAt?: number;
   match?: {
     matchId: string;
     branch: Branch;
@@ -166,15 +203,29 @@ export interface PlayRequest {
   character?: unknown;
   branch?: unknown;
   push?: unknown;
+  /** Minutes to keep looking with pings on: one of STAY_CHOICES_MIN. */
+  stay?: unknown;
 }
 
-export type PlayAction = "steam_add" | "hosting" | "in_game" | "leave";
-export const PLAY_ACTIONS: readonly PlayAction[] = ["steam_add", "hosting", "in_game", "leave"];
+/** "omw" = "On my way", tapped on a ping. "Pass" on a ping is "leave". */
+export type PlayAction = "steam_add" | "hosting" | "in_game" | "leave" | "omw";
+export const PLAY_ACTIONS: readonly PlayAction[] = ["steam_add", "hosting", "in_game", "leave", "omw"];
 
 // MARK: - Small helpers
 
 export function emptyState(): PlayState {
-  return { tickets: {}, matches: {}, pings: {}, fanouts: {} };
+  return { tickets: {}, matches: {}, pings: {}, fanouts: {}, ended: {} };
+}
+
+/** Minutes from the client → milliseconds; anything not offered falls back to the default. */
+export function sanitizeStay(raw: unknown): number {
+  const min = typeof raw === "number" ? raw : typeof raw === "string" ? Number(raw) : NaN;
+  return (STAY_CHOICES_MIN.includes(min) ? min : DEFAULT_STAY_MIN) * 60_000;
+}
+
+/** When the page was last in view. State saved before visibility existed only has lastSeenAt. */
+function seenVisible(x: { lastSeenAt: number; lastVisibleAt?: number }): number {
+  return x.lastVisibleAt ?? x.lastSeenAt;
 }
 
 export function sanitizeCharacter(raw: unknown): CoopCharacter | undefined {
@@ -210,25 +261,48 @@ function waitBucket(ms: number): CounterKey {
   return "wait_gt10m";
 }
 
-function ticketTtl(t: Ticket): number {
-  return t.push ? TICKET_TTL_PUSH_MS : TICKET_TTL_MS;
+/**
+ * Without pings a ticket lives while something polls. With pings it lives for
+ * the chosen stay after the page was last in view: a hidden tab polling in the
+ * background does not keep someone in line all night.
+ */
+function ticketExpired(t: Ticket, now: number): boolean {
+  if (!t.push) return now - t.lastSeenAt > TICKET_TTL_MS;
+  return now - seenVisible(t) > (t.stayMs ?? TICKET_TTL_PUSH_MS);
 }
 
-function memberTimeout(m: Member): number {
-  return m.awayAtMatch ? MEMBER_AWAY_GRACE_MS : MEMBER_TIMEOUT_MS;
+/**
+ * A member pinged while away must come back (or tap "On my way") within the
+ * grace, counted from the match: a hidden tab that keeps polling does not hold
+ * the seat. Once they have looked, any poll keeps the seat, because a player
+ * who tabs out to Steam or the game must not lose it.
+ *
+ * Someone without pings was never told, so the old rule holds for them: any
+ * poll, hidden or not, keeps the seat, with the longer grace if they were
+ * away. That also covers pings turned off after the match.
+ */
+function memberSilent(m: Member, now: number): boolean {
+  if (m.awayAtMatch && m.push) return now - Math.max(m.joinedAt, m.comingAt ?? 0) > MEMBER_AWAY_GRACE_MS;
+  if (m.awayAtMatch) return now - m.lastSeenAt > MEMBER_AWAY_GRACE_MS;
+  return now - m.lastSeenAt > MEMBER_TIMEOUT_MS;
 }
 
 function memberFromTicket(t: Ticket, now: number): Member {
-  const away = now - t.lastSeenAt > AWAY_AFTER_MS;
+  // With pings, "away" means the page was not in view (they get a ping).
+  // Without, it keeps its old meaning, no poll at all lately, so a player
+  // tabbed out to the game with the page still polling is not "away".
+  const away = now - (t.push ? seenVisible(t) : t.lastSeenAt) > AWAY_AFTER_MS;
   return {
     sid: t.sid,
     name: t.name,
     avatar: t.avatar,
     character: t.character,
     push: t.push,
+    stayMs: t.stayMs,
     queuedAt: t.createdAt,
     joinedAt: now,
     lastSeenAt: now,
+    lastVisibleAt: away ? seenVisible(t) : now,
     awayAtMatch: away,
     steamAdded: false,
     status: "joined",
@@ -236,6 +310,7 @@ function memberFromTicket(t: Ticket, now: number): Member {
 }
 
 function ticketFromMember(m: Member, branch: Branch, now: number, notice: Notice): Ticket {
+  const lastSeenAt = Math.max(m.lastSeenAt, now - AWAY_AFTER_MS);
   return {
     sid: m.sid,
     name: m.name,
@@ -243,8 +318,12 @@ function ticketFromMember(m: Member, branch: Branch, now: number, notice: Notice
     character: m.character,
     branch,
     push: m.push,
+    stayMs: m.stayMs,
     createdAt: m.queuedAt,
-    lastSeenAt: Math.max(m.lastSeenAt, now - AWAY_AFTER_MS),
+    lastSeenAt,
+    // Someone who never came back to the page keeps the clock they had; the
+    // rest start a fresh stay from now.
+    lastVisibleAt: m.awayAtMatch ? seenVisible(m) : lastSeenAt,
     notice,
   };
 }
@@ -306,6 +385,7 @@ export function viewFor(state: PlayState, sid: string): PlayView {
           isYou: m.sid === sid,
           steamAdded: m.steamAdded,
           status: m.status,
+          coming: m.awayAtMatch && m.comingAt !== undefined,
         })),
       },
     };
@@ -322,10 +402,12 @@ export function viewFor(state: PlayState, sid: string): PlayView {
         character: ticket.character,
         branch: ticket.branch,
         push: ticket.push,
+        ...(ticket.push ? { stayMs: ticket.stayMs ?? TICKET_TTL_PUSH_MS } : {}),
       },
     };
   }
-  return base;
+  const endedAt = state.ended?.[sid];
+  return endedAt === undefined ? base : { ...base, endedAt };
 }
 
 // MARK: - Housekeeping
@@ -341,14 +423,23 @@ export function tick(
 ): { state: PlayState; events: PlayEvent[] } {
   const events: PlayEvent[] = [];
   let tickets = { ...state.tickets };
+  let ended = Object.fromEntries(
+    Object.entries(state.ended ?? {}).filter(([, at]) => now - at <= ENDED_NOTICE_MS),
+  );
   for (const t of Object.values(tickets)) {
-    if (now - t.lastSeenAt > ticketTtl(t)) {
+    if (ticketExpired(t, now)) {
       tickets = omit(tickets, t.sid);
       events.push({ type: "count", key: "expired" });
+      // Someone who left with pings on is told their search is over, so they
+      // never think they are still in line.
+      if (t.push) {
+        ended = { ...ended, [t.sid]: now };
+        events.push({ type: "push_ended", sid: t.sid });
+      }
     }
   }
 
-  let next: PlayState = { ...state, tickets };
+  let next: PlayState = { ...state, tickets, ended };
   for (const match of Object.values(state.matches)) {
     if (now - match.createdAt > MATCH_MAX_AGE_MS) {
       next = { ...next, matches: omit(next.matches, match.matchId) };
@@ -356,7 +447,7 @@ export function tick(
     }
     if (match.locked) continue;
     const active = activeMembers(match);
-    const silent = active.filter((m) => now - m.lastSeenAt > memberTimeout(m));
+    const silent = active.filter((m) => memberSilent(m, now));
     if (silent.length === 0) continue;
     if (silent.length === active.length) {
       next = { ...next, matches: omit(next.matches, match.matchId) };
@@ -534,13 +625,19 @@ export function play(state0: PlayState, who: PlayerProfile, req: PlayRequest, ct
     character,
     branch,
     push,
+    ...(push ? { stayMs: sanitizeStay(req.stay) } : {}),
     createdAt: prior && prior.branch === branch ? prior.createdAt : now,
     lastSeenAt: now,
+    lastVisibleAt: now,
   };
   const othersWaiting = Object.values(state.tickets).filter(
     (t) => t.branch === branch && t.sid !== who.sid,
   ).length;
-  state = { ...state, tickets: { ...state.tickets, [who.sid]: ticket } };
+  state = {
+    ...state,
+    tickets: { ...state.tickets, [who.sid]: ticket },
+    ended: omit(state.ended ?? {}, who.sid),
+  };
 
   const made = matchmake(state, now, who.sid, ctx.newId);
   state = made.state;
@@ -599,22 +696,38 @@ function lookingFanout(
   };
 }
 
-function touch(state: PlayState, sid: string, now: number): PlayState {
+/**
+ * Mark a player as seen. `visible` is false for a poll from a tab in the
+ * background and for a ping's action button: either keeps a ticket or seat
+ * alive, but only a page in view counts as the player being back.
+ */
+function touch(state: PlayState, sid: string, now: number, visible = true): PlayState {
   const ticket = state.tickets[sid];
   if (ticket) {
-    return { ...state, tickets: { ...state.tickets, [sid]: { ...ticket, lastSeenAt: now } } };
+    // A hidden poll on a ticket saved before visibility existed pins its
+    // "last in view" to the old lastSeenAt first, or the poll would stretch it.
+    const seen = visible
+      ? { lastSeenAt: now, lastVisibleAt: now }
+      : { lastSeenAt: now, lastVisibleAt: seenVisible(ticket) };
+    return { ...state, tickets: { ...state.tickets, [sid]: { ...ticket, ...seen } } };
   }
   const match = findMatchFor(state, sid);
   if (!match) return state;
-  const members = match.members.map((m) =>
-    m.sid === sid ? { ...m, lastSeenAt: now, awayAtMatch: false } : m,
-  );
+  const members = match.members.map((m) => {
+    if (m.sid !== sid) return m;
+    return visible
+      ? { ...m, lastSeenAt: now, lastVisibleAt: now, awayAtMatch: false }
+      : { ...m, lastSeenAt: now, lastVisibleAt: seenVisible(m) };
+  });
   return { ...state, matches: { ...state.matches, [match.matchId]: { ...match, members } } };
 }
 
-/** Poll: keeps your ticket or seat alive and returns the current view. */
-export function poll(state0: PlayState, sid: string, ctx: Ctx): Result {
-  const ticked = tick(touch(state0, sid, ctx.now), ctx.now, ctx.newId);
+/**
+ * Poll: keeps your ticket or seat alive and returns the current view. Clients
+ * that predate visibility send nothing, which counts as in view (the old rule).
+ */
+export function poll(state0: PlayState, sid: string, ctx: Ctx, visible = true): Result {
+  const ticked = tick(touch(state0, sid, ctx.now, visible), ctx.now, ctx.newId);
   return { state: ticked.state, view: viewFor(ticked.state, sid), events: ticked.events };
 }
 
@@ -640,14 +753,26 @@ export function cancel(state0: PlayState, sid: string, ctx: Ctx): Result {
   return { state, view: viewFor(state, sid), events };
 }
 
-/** Party steps: Steam add, "I'm hosting", "We're in", leave. */
-export function act(state0: PlayState, sid: string, action: PlayAction, ctx: Ctx): Result {
+/**
+ * Party steps: Steam add, "I'm hosting", "We're in", leave, and "On my way".
+ * `visible` is false when the step comes from a ping's button (the service
+ * worker), which must not count as the player being back at the page.
+ */
+export function act(state0: PlayState, sid: string, action: PlayAction, ctx: Ctx, visible = true): Result {
   const { now } = ctx;
-  const ticked = tick(touch(state0, sid, now), now, ctx.newId);
+  const ticked = tick(touch(state0, sid, now, visible), now, ctx.newId);
   const events: PlayEvent[] = [...ticked.events];
   let state = ticked.state;
   const match = findMatchFor(state, sid);
   if (!match) return { state, view: viewFor(state, sid), events };
+
+  if (action === "omw") {
+    // The party sees "coming", and the player gets a fresh grace to get there,
+    // once: tapping again doesn't hold the seat any longer.
+    const members = match.members.map((m) => (m.sid === sid ? { ...m, comingAt: m.comingAt ?? now } : m));
+    state = { ...state, matches: { ...state.matches, [match.matchId]: { ...match, members } } };
+    return { state, view: viewFor(state, sid), events };
+  }
 
   if (action === "leave") {
     const r = leaveMatch(state, match, sid, now);
@@ -715,10 +840,11 @@ export function setLookingPings(
 }
 
 /**
- * Pings were switched on or off (a push subscription saved or dropped). A
- * player already in line keeps their place: the waiting ticket, or party
- * seat, just takes the new flag, so the ticket lives 10 minutes with pings
- * and 90 s without, and a match made while they are away can reach them.
+ * Pings were switched on or off (a device added or dropped). A player already
+ * in line keeps their place: the waiting ticket, or party seat, just takes the
+ * new flag, so the ticket lives for the stay (the default hour, since this
+ * ticket never chose one) with pings and 90 s without, and a match made while
+ * they are away can reach them.
  */
 export function setPushFlag(state: PlayState, sid: string, push: boolean): PlayState {
   const ticket = state.tickets[sid];
@@ -729,6 +855,19 @@ export function setPushFlag(state: PlayState, sid: string, push: boolean): PlayS
   if (!match) return state;
   const members = match.members.map((m) => (m.sid === sid ? { ...m, push } : m));
   return { ...state, matches: { ...state.matches, [match.matchId]: { ...match, members } } };
+}
+
+/**
+ * Signed out on the last device that could ping them: leave the line and any
+ * party that has not started, so nobody waits for someone who is gone. A run
+ * already under way is left as it is.
+ */
+export function leaveEverything(state0: PlayState, sid: string, ctx: Ctx): Result {
+  const cancelled = cancel(state0, sid, ctx);
+  const match = findMatchFor(cancelled.state, sid);
+  if (!match || match.locked) return cancelled;
+  const left = act(cancelled.state, sid, "leave", ctx, false);
+  return { state: left.state, view: left.view, events: [...cancelled.events, ...left.events] };
 }
 
 /** True when nothing time-based is pending, so the DO can skip its alarm. */

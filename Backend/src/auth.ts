@@ -173,6 +173,8 @@ export async function steamAuthCallback(req: Request, env: Env, ctx: ExecutionCo
   const session = newSessionToken();
   await env.LOBBIES.put(`session:${session}`, steamID, {
     expirationTtl: SESSION_TTL_SECONDS,
+    // Just minted: nothing to renew for a day (see renewSessionIfDue).
+    metadata: { renewedAt: Date.now() },
   });
 
   // Stamp the verified persona/avatar onto a sibling KV record so the
@@ -258,31 +260,55 @@ function isSessionSteamId(env: Env, sid: string): boolean {
   return sandboxOn && /^local-[a-z0-9_-]+$/i.test(sid);
 }
 
-export async function steamIDForRequest(req: Request, env: Env): Promise<string | null> {
+/** Kept as KV metadata on `session:<token>`, so it arrives with the session read itself. */
+interface SessionMeta {
+  /** When the session's 30 days were last restarted (epoch ms). */
+  renewedAt?: number;
+}
+
+/** The verified session a request carried. */
+export interface RequestSession {
+  steamID: string;
+  /**
+   * When the session's 30 days were last restarted (epoch ms); see
+   * `renewSessionIfDue`. Absent on a session that has never been renewed.
+   */
+  renewedAt?: number;
+}
+
+async function sessionForRequest(req: Request, env: Env): Promise<RequestSession | null> {
   const token = bearerTokenFromRequest(req) ?? cookieSessionToken(req);
   if (!token) return null;
-  const sid = await env.LOBBIES.get(`session:${token}`);
-  return sid && isSessionSteamId(env, sid) ? sid : null;
+  // One KV read, the same as a plain get: the metadata comes with the value.
+  const held = await env.LOBBIES.getWithMetadata<SessionMeta>(`session:${token}`);
+  const sid = held.value;
+  if (!sid || !isSessionSteamId(env, sid)) return null;
+  const renewedAt = held.metadata?.renewedAt;
+  return typeof renewedAt === "number" ? { steamID: sid, renewedAt } : { steamID: sid };
+}
+
+export async function steamIDForRequest(req: Request, env: Env): Promise<string | null> {
+  return (await sessionForRequest(req, env))?.steamID ?? null;
 }
 
 /**
  * Convenience: enforce auth and (optionally) that the asserted SteamID
  * inside the request body matches the session. Returns a `Response` to send
- * back if the check fails, or `null` if the request can proceed.
+ * back if the check fails, or the session if the request can proceed.
  */
 export async function requireSession(
   req: Request,
   env: Env,
   assertedSteamID?: string
-): Promise<{ steamID: string } | Response> {
-  const sid = await steamIDForRequest(req, env);
-  if (!sid) {
+): Promise<RequestSession | Response> {
+  const session = await sessionForRequest(req, env);
+  if (!session) {
     return new Response("Unauthorized — sign in with Steam first.", { status: 401 });
   }
-  if (assertedSteamID && assertedSteamID !== sid) {
+  if (assertedSteamID && assertedSteamID !== session.steamID) {
     return new Response("SteamID in body does not match your session.", { status: 403 });
   }
-  return { steamID: sid };
+  return session;
 }
 
 function newSessionToken(): string {
@@ -291,36 +317,61 @@ function newSessionToken(): string {
   return [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
+/** A session is renewed at most this often. */
+const SESSION_RENEW_INTERVAL_MS = 24 * 60 * 60 * 1000;
+
+function isRenewalDue(renewedAt: number | undefined, now: number): boolean {
+  return typeof renewedAt !== "number" || Math.abs(now - renewedAt) >= SESSION_RENEW_INTERVAL_MS;
+}
+
 /**
- * Sliding-window session refresh.
+ * Sliding-window session renewal.
  *
  * Active users should never be signed out just because the clock ticked past
- * the original 30-day TTL. Every authenticated heartbeat re-writes both
- * `session:<token>` and `session-profile:<steamID>` with a fresh TTL, so an
- * actively-heartbeating session lives forever (within the 30-day window from
- * the most recent heartbeat) and only an explicit sign-out (or a 30-day
- * absence) actually expires it.
+ * the original 30-day TTL. KV has no "just bump the TTL" verb, so renewing
+ * means re-writing both `session:<token>` and `session-profile:<steamID>`:
+ * two KV writes out of about 1,000 a day for everyone. Doing that on every
+ * heartbeat and every page load (as this did until November 2026) spent most
+ * of that budget on sessions that were nowhere near expiring.
  *
- * We do this only on the heartbeat path, not on every read-only authenticated
- * request, so the cost is bounded by the heartbeat cadence (~1 per 3 minutes
- * per active user) instead of the inbox-poll cadence (~1 per 30 seconds).
+ * So a session is renewed at most once a day, and when that last happened is
+ * kept in the session key's own metadata. A session lives 30 days from its
+ * last renewal, which is never more than a day before its last use: only an
+ * explicit sign-out, or a month away (29 days at the least), ends it.
  *
- * Best-effort: KV write failures are swallowed by the caller. Worst case the
- * session expires at the original deadline, which matches pre-fix behavior.
+ * Callers may ask on every authenticated request. Pass the `renewedAt` that
+ * `requireSession` returned: while that is under a day old this costs
+ * nothing, not even a read. Otherwise the session is read once more first,
+ * because another request may have renewed it, or signed it out, since.
+ *
+ * Returns whether it renewed. Best-effort: callers swallow KV write failures.
+ * Worst case the session expires at the deadline it already had.
  */
-export async function refreshSessionTTL(
+export async function renewSessionIfDue(
   env: Env,
   token: string,
-  steamID: string
-): Promise<void> {
+  steamID: string,
+  knownRenewedAt?: number
+): Promise<boolean> {
+  const now = Date.now();
+  if (!isRenewalDue(knownRenewedAt, now)) return false;
+
   const sessionKey = `session:${token}`;
   const profileKey = `session-profile:${steamID}`;
 
-  // Read the existing profile in parallel with the session re-put. We need
-  // the profile body because KV.put doesn't have a "just bump TTL" verb,
-  // it has to re-write the whole value.
+  const held = await env.LOBBIES.getWithMetadata<SessionMeta>(sessionKey);
+  // Signed out since the request was authenticated (or not this player's
+  // session): never write a session back into existence.
+  if (held.value !== steamID) return false;
+  if (!isRenewalDue(held.metadata?.renewedAt, now)) return false;
+
+  // The profile is read alongside the session re-put: its body is needed
+  // because the only way to restart a TTL is to write the whole value again.
   const [, existingProfile] = await Promise.all([
-    env.LOBBIES.put(sessionKey, steamID, { expirationTtl: SESSION_TTL_SECONDS }),
+    env.LOBBIES.put(sessionKey, steamID, {
+      expirationTtl: SESSION_TTL_SECONDS,
+      metadata: { renewedAt: now } satisfies SessionMeta,
+    }),
     env.LOBBIES.get(profileKey),
   ]);
 
@@ -329,12 +380,13 @@ export async function refreshSessionTTL(
       expirationTtl: SESSION_TTL_SECONDS,
     });
   }
+  return true;
 }
 
 /**
  * Pull the bearer token out of the Authorization header. Returns null on
  * malformed or missing headers. Lives next to `steamIDForRequest` so callers
- * that need the token explicitly (e.g. for `refreshSessionTTL`) don't have
+ * that need the token explicitly (e.g. for `renewSessionIfDue`) don't have
  * to re-implement the same regex.
  */
 export function bearerTokenFromRequest(req: Request): string | null {

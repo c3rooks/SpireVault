@@ -1,6 +1,7 @@
-import type { Env, PresenceUpsert } from "./types";
+import type { Env } from "./types";
 import {
-  upsertPresence,
+  acceptHeartbeat,
+  storeDeferredHeartbeat,
   deletePresence,
   listPresence,
   listPresencePublic,
@@ -10,7 +11,7 @@ import {
   steamAuthStart,
   steamAuthCallback,
   requireSession,
-  refreshSessionTTL,
+  renewSessionIfDue,
   bearerTokenFromRequest,
   cookieSessionToken,
 } from "./auth";
@@ -33,7 +34,7 @@ import {
 } from "./invites";
 import { unpair } from "./pairs";
 import {
-  getRuns,
+  getRunsText,
   uploadRuns,
   deleteRuns,
 } from "./runs";
@@ -381,33 +382,50 @@ async function handle(
         const auth = await requireSession(req, env);
         if (auth instanceof Response) return auth;
 
-        // Per-IP write throttle. Legit clients heartbeat every 180 s and pulse
-        // a few extra times when the user toggles status / edits a note. 30
-        // writes/min from one IP is ~10x normal; anything more is a script.
-        const ipLimit = await ipWriteLimit(env, req, "presence-write", 30, 60);
-        if (!ipLimit.ok) return ipLimit.resp;
+        // An empty or cut-off body reads as "", which is turned away below
+        // with a 400 instead of crashing into the catch-all 500.
+        const rawBody = await req.text().catch(() => "");
+        const outcome = await acceptHeartbeat(env, auth.steamID, rawBody, async () => {
+          // Per-IP write throttle: 30 a minute from one IP is ~10x normal,
+          // anything more is a script. It is asked when a heartbeat adds a
+          // player or changes their row, not for the hourly refresh of an
+          // unchanged row (see acceptHeartbeat): asking is itself a KV write.
+          const ipLimit = await ipWriteLimit(env, req, "presence-write", 30, 60);
+          return ipLimit.ok ? null : ipLimit.resp;
+        });
+        if (outcome.kind === "invalid") return badRequest("invalid presence body");
+        if (outcome.kind === "refused") return outcome.refusal;
 
-        const body = (await req.json()) as PresenceUpsert;
-        if (!body || typeof body !== "object") {
-          return badRequest("invalid presence body");
-        }
-        const result = await upsertPresence(env, auth.steamID, body);
         // Best-effort: refresh today's DAU marker. Non-fatal if it fails.
         bg(ctx, recordHeartbeat(env, auth.steamID));
         // Mark roster-first-seen for funnel attribution. Idempotent (read-
         // first-skip), so a frequent heartbeater only pays the read cost.
         bg(ctx, recordRosterFirstSeen(env, auth.steamID));
-        // Sliding-window session refresh. An active user heartbeating every
-        // 3 minutes never gets logged out for stale-session reasons; only an
-        // explicit sign-out, or a true 30-day absence, can expire them.
+        // Sliding-window session renewal. An active user never gets logged
+        // out for stale-session reasons; only an explicit sign-out, or a
+        // month away, can expire them. Asked on every heartbeat, whether or
+        // not it stored anything (a second device's heartbeat usually stores
+        // nothing); it reads and writes KV at most once a day per session.
         const token = bearerTokenFromRequest(req);
         if (token) {
-          bg(ctx, refreshSessionTTL(env, token, auth.steamID));
+          bg(ctx, renewSessionIfDue(env, token, auth.steamID, auth.renewedAt));
         }
-        // So the next GET /presence from anyone sees this user immediately
-        // instead of waiting out the edge-cache window (up to 15 s).
-        await purgePresenceFeedCache();
-        return json(result);
+        if (outcome.write === "stored") {
+          // So the next GET /presence from anyone sees this user immediately
+          // instead of waiting out the edge-cache window (up to 15 s).
+          await purgePresenceFeedCache();
+        }
+        if (outcome.write === "deferred") {
+          // KV had just taken another roster write. Store this row a second
+          // from now, after the response, and drop the cached feed if it went in.
+          bg(
+            ctx,
+            storeDeferredHeartbeat(env, outcome.entry).then((stored) =>
+              stored ? purgePresenceFeedCache() : undefined
+            )
+          );
+        }
+        return json(outcome.entry);
       }
       if (method === "DELETE" && pathname === "/presence") {
         const auth = await requireSession(req, env);
@@ -451,14 +469,15 @@ async function handle(
       if (method === "GET" && pathname === "/me") {
         const auth = await requireSession(req, env);
         if (auth instanceof Response) return auth;
-        // Sliding TTL on every /me hit so any active client (desktop tab
-        // open, mobile background poll) keeps the session warm without
-        // having to wait for a presence heartbeat. Token can come from
-        // either the bearer header (legacy clients, native app, proxy)
-        // or a cookie when the request hits the worker directly.
+        // Sliding session renewal on /me as well, so any active client
+        // (desktop tab open, mobile background poll) keeps the session warm
+        // without having to wait for a presence heartbeat. It reads and
+        // writes KV at most once a day per session. Token can come from
+        // either the bearer header (legacy clients, native app, proxy) or a
+        // cookie when the request hits the worker directly.
         const token = bearerTokenFromRequest(req) ?? cookieSessionToken(req);
         if (token) {
-          bg(ctx, refreshSessionTTL(env, token, auth.steamID));
+          bg(ctx, renewSessionIfDue(env, token, auth.steamID, auth.renewedAt));
         }
         const profile = await getSessionProfile(env, auth.steamID);
         return json({
@@ -586,7 +605,11 @@ async function handle(
       if (pathname === "/runs" && method === "GET") {
         const auth = await requireSession(req, env);
         if (auth instanceof Response) return auth;
-        return json(await getRuns(env, auth.steamID));
+        // The stored copy is already the response body: pass it through
+        // rather than parse and re-write up to a megabyte of JSON.
+        return new Response(await getRunsText(env, auth.steamID), {
+          headers: { "content-type": "application/json" },
+        });
       }
       if (pathname === "/runs" && method === "POST") {
         const auth = await requireSession(req, env);

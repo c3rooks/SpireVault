@@ -25,7 +25,8 @@ writeFileSync(
   entry,
   `export * from ${JSON.stringify(join(SRC, "coop-play-core"))};\n` +
     `export * as Push from ${JSON.stringify(join(SRC, "coop-play-push"))};\n` +
-    `export * as PushQ from ${JSON.stringify(join(SRC, "coop-play-pushq"))};\n`,
+    `export * as PushQ from ${JSON.stringify(join(SRC, "coop-play-pushq"))};\n` +
+    `export * as Dev from ${JSON.stringify(join(SRC, "coop-play-devices"))};\n`,
 );
 const bundle = join(workDir, "bundle.mjs");
 execFileSync(
@@ -71,11 +72,22 @@ function world() {
     poll(sid) {
       return w.run(P.poll(w.state, sid, w.ctx()));
     },
+    /** A tab in the background polling (document.visibilityState === "hidden"). */
+    hiddenPoll(sid) {
+      return w.run(P.poll(w.state, sid, w.ctx(), false));
+    },
     cancel(sid) {
       return w.run(P.cancel(w.state, sid, w.ctx()));
     },
     act(sid, action) {
       return w.run(P.act(w.state, sid, action, w.ctx()));
+    },
+    /** A ping's button, sent by the service worker: not a page in view. */
+    pingAct(sid, action) {
+      return w.run(P.act(w.state, sid, action, w.ctx(), false));
+    },
+    leaveEverything(sid) {
+      return w.run(P.leaveEverything(w.state, sid, w.ctx()));
     },
     pings(sid, on, branch = "stable") {
       return w.run(P.setLookingPings(w.state, sid, on, branch, w.ctx()));
@@ -178,8 +190,8 @@ await check("stable and beta players never match", () => {
   assert.equal(w.play("c", { branch: "beta" }).match.hostSid, "b");
 });
 
-// 6. Tickets expire after 90 s without a poll, or 10 minutes with push on.
-await check("waiting players expire: 90 s without push, 10 min with push", () => {
+// 6. Tickets expire after 90 s without a poll, or after the chosen stay with pings on.
+await check("waiting players expire: 90 s without push, the default hour with push", () => {
   const w = world();
   w.play("a");
   w.play("p", { branch: "beta", push: true });
@@ -190,8 +202,10 @@ await check("waiting players expire: 90 s without push, 10 min with push", () =>
   w.advance(91 * SEC);
   assert.equal(w.poll("x").lookingCount, 1, "a expired, p still waiting");
   assert.ok(!w.state.tickets.a);
-  w.advance(10 * MIN);
-  assert.equal(w.poll("x").lookingCount, 0, "p expired after 10 min");
+  w.advance(P.DEFAULT_STAY_MIN * MIN - 5 * MIN); // 58.5 minutes since p tapped Play
+  assert.equal(w.poll("x").lookingCount, 1, "p is still in line just before the hour");
+  w.advance(3 * MIN);
+  assert.equal(w.poll("x").lookingCount, 0, "p expired after the default hour");
   assert.equal(w.count("expired"), 2);
 });
 
@@ -598,6 +612,336 @@ await check("one failing push does not stop the rest of its batch", async () => 
   const out = await P.PushQ.sendPushBatch(P.PushQ.enqueuePushes([], [["s1", "looking"], ["s2", "looking"]]), deps);
   assert.deepEqual(w.sent, ["s2"]);
   assert.deepEqual(out, { sent: 1, gone: 0, skipped: 0, failed: 1 });
+});
+
+// ---- Walking away: visible presence, the chosen stay, "On my way" ----------
+// The case Corey named: queue on desktop, walk away, find out on the phone.
+// A tab in the background keeps polling, so "away" has to mean "the page is
+// not in view", not "no poll lately".
+
+await check("a hidden tab holds the place, and the match still pings the player", () => {
+  const w = world();
+  w.play("a", { push: true });
+  w.advance(30 * SEC);
+  w.hiddenPoll("a"); // a walked away with the tab open behind other windows
+  assert.equal(w.hiddenPoll("a").state, "searching");
+  w.play("b");
+  const pushes = w.events.filter((e) => e.type === "push_matched");
+  assert.deepEqual(pushes.map((p) => p.sid), ["a"], "a is pinged even though the tab still polls");
+});
+
+await check("a page in view is never pinged, hidden polls or not", () => {
+  const w = world();
+  w.play("a", { push: true });
+  w.advance(10 * SEC);
+  w.poll("a");
+  w.play("b");
+  assert.equal(w.events.filter((e) => e.type === "push_matched").length, 0);
+});
+
+await check("hidden polls don't stretch a pinged search past the stay; it ends with one ping", () => {
+  const w = world();
+  w.play("a", { push: true, stay: 30 });
+  assert.equal(w.poll("a").ticket.stayMs, 30 * MIN);
+  for (let t = 0; t < 29; t++) {
+    w.advance(MIN);
+    w.hiddenPoll("a");
+  }
+  assert.equal(w.hiddenPoll("a").state, "searching", "29 minutes after the last look: still in line");
+  w.advance(2 * MIN);
+  const after = w.hiddenPoll("a");
+  assert.equal(after.state, "idle", "31 minutes after the last look: the search is over");
+  assert.equal(after.endedAt, w.now, "the view says when it ended");
+  const ended = w.events.filter((e) => e.type === "push_ended");
+  assert.deepEqual(ended.map((e) => e.sid), ["a"], "exactly one 'search ended' ping");
+  assert.equal(P.peek(w.state, "a").endedAt, w.now, "the service worker's peek sees it too");
+  w.advance(P.ENDED_NOTICE_MS + MIN);
+  w.poll("x");
+  assert.equal(P.peek(w.state, "a").endedAt, undefined, "the notice is forgotten after a while");
+});
+
+await check("tapping Play again clears 'search ended'", () => {
+  const w = world();
+  w.play("a", { push: true, stay: 30 });
+  w.advance(31 * MIN);
+  w.poll("x");
+  assert.ok(P.peek(w.state, "a").endedAt);
+  const again = w.play("a", { push: true });
+  assert.equal(again.state, "searching");
+  assert.equal(again.endedAt, undefined);
+});
+
+await check("looking at the page restarts the stay", () => {
+  const w = world();
+  w.play("a", { push: true, stay: 30 });
+  w.advance(25 * MIN);
+  w.poll("a"); // came back to the desk and looked
+  w.advance(25 * MIN);
+  assert.equal(w.hiddenPoll("a").state, "searching", "50 minutes in, 25 after the last look");
+});
+
+await check("without pings a background tab keeps the ticket, and nothing pings when it lapses", () => {
+  const w = world();
+  w.play("a");
+  for (let t = 0; t < 10; t++) {
+    w.advance(MIN);
+    w.hiddenPoll("a");
+  }
+  assert.equal(w.hiddenPoll("a").state, "searching", "the old rule: any poll keeps a ticket without pings");
+  w.advance(91 * SEC);
+  w.poll("x");
+  assert.ok(!w.state.tickets.a);
+  assert.equal(w.events.filter((e) => e.type === "push_ended").length, 0, "no pings were on, so no ping");
+});
+
+await check("only the offered stays are accepted; anything else is the default hour", () => {
+  for (const min of P.STAY_CHOICES_MIN) assert.equal(P.sanitizeStay(min), min * MIN);
+  assert.equal(P.sanitizeStay("120"), 120 * MIN);
+  for (const bad of [0, 5, 59, 1e9, -30, "lots", null, undefined, {}]) {
+    assert.equal(P.sanitizeStay(bad), P.DEFAULT_STAY_MIN * MIN, `rejects ${JSON.stringify(bad)}`);
+  }
+  const w = world();
+  assert.equal(w.play("a", { push: true, stay: 1e9 }).ticket.stayMs, P.DEFAULT_STAY_MIN * MIN);
+  assert.equal(w.play("b2", { branch: "beta" }).ticket.stayMs, undefined, "no pings, no stay");
+});
+
+await check("pinged while away: hidden polls don't hold the seat past the grace", () => {
+  const w = world();
+  w.play("a", { push: true });
+  w.advance(MIN);
+  w.hiddenPoll("a");
+  w.play("b"); // matched while a's tab is in the background
+  for (let t = 0; t < 14; t++) {
+    w.advance(20 * SEC);
+    w.hiddenPoll("a");
+    w.poll("b");
+  }
+  assert.equal(w.poll("b").state, "matched", "4 min 40 s in: a still has the grace");
+  w.advance(40 * SEC);
+  w.hiddenPoll("a");
+  const b = w.poll("b");
+  assert.equal(b.state, "searching", "5 min 20 s and a never looked: b goes back in line instead of waiting all night");
+});
+
+await check("without pings, a hidden tab still holds the seat after a match made while it was hidden", () => {
+  const w = world();
+  w.play("a"); // no pings
+  w.advance(30 * SEC);
+  w.hiddenPoll("a"); // tabbed out to the game, page still polling
+  w.play("b");
+  assert.equal(w.events.filter((e) => e.type === "push_matched").length, 0, "nobody to ping");
+  for (let t = 0; t < 30; t++) {
+    w.advance(20 * SEC);
+    w.hiddenPoll("a");
+    w.poll("b");
+  }
+  assert.equal(w.poll("b").state, "matched", "ten minutes of hidden polls: a was never told, so a keeps the seat");
+});
+
+await check("On my way restarts the grace once, not every tap", () => {
+  const w = world();
+  w.play("a", { push: true });
+  w.advance(2 * MIN);
+  w.play("b");
+  w.advance(4 * MIN);
+  w.poll("b");
+  w.pingAct("a", "omw");
+  w.advance(4 * MIN);
+  w.poll("b");
+  w.pingAct("a", "omw"); // again, hoping to hold the seat longer
+  w.advance(2 * MIN);
+  assert.equal(w.poll("b").state, "searching", "6 minutes after the first On my way: dropped");
+});
+
+await check("a hidden poll on a ticket saved before visibility doesn't stretch its stay", () => {
+  const old = {
+    tickets: { a: { sid: "a", name: "A", branch: "stable", push: true, createdAt: T0, lastSeenAt: T0 } },
+    matches: {},
+    pings: {},
+    fanouts: {},
+  };
+  const ctx = (now) => ({ now, newId: () => "m".padEnd(32, "0") });
+  const polled = P.poll(old, "a", ctx(T0 + 30 * MIN), false);
+  assert.equal(polled.state.tickets.a.lastVisibleAt, T0, "last in view stays at the old lastSeenAt");
+  const later = P.poll(polled.state, "a", ctx(T0 + 61 * MIN), false);
+  assert.equal(later.view.state, "idle", "the hour ran from the last real look, not from the hidden poll");
+});
+
+await check("someone who looked keeps the seat while tabbed out to Steam or the game", () => {
+  const w = world();
+  w.play("a", { push: true });
+  w.advance(5 * SEC);
+  w.play("b");
+  w.poll("a"); // both had the page in view at the match
+  for (let t = 0; t < 30; t++) {
+    w.advance(20 * SEC);
+    w.hiddenPoll("a"); // launching the game, adding friends on Steam
+    w.poll("b");
+  }
+  assert.equal(w.poll("b").state, "matched", "ten minutes of hidden polls: a's seat holds");
+});
+
+await check("On my way: the party sees it and the grace starts again", () => {
+  const w = world();
+  w.play("a", { push: true });
+  w.advance(2 * MIN); // a closed the tab
+  w.play("b");
+  w.advance(4 * MIN);
+  w.poll("b");
+  const omw = w.pingAct("a", "omw");
+  assert.equal(omw.state, "matched");
+  const seenByB = w.poll("b").match.members.find((m) => m.sid === "a");
+  assert.equal(seenByB.coming, true, "b sees a coming");
+  w.advance(4 * MIN);
+  assert.equal(w.poll("b").state, "matched", "8 minutes after the match, 4 after On my way: still a party");
+  const back = w.poll("a"); // a reached the desk
+  assert.equal(back.match.members.find((m) => m.sid === "a").coming, false, "back at the page: no longer 'coming'");
+  w.advance(4 * MIN);
+  assert.equal(w.poll("b").state, "searching", "a looked once and then went silent for 4 minutes: dropped, b back in line");
+});
+
+await check("Pass on a ping gives the seat back at once", () => {
+  const w = world();
+  w.play("a", { push: true });
+  w.advance(2 * MIN);
+  w.play("b");
+  const passed = w.pingAct("a", "leave");
+  assert.equal(passed.state, "idle", "a is out");
+  assert.equal(w.poll("b").state, "searching", "b is back in line right away, not after five minutes");
+});
+
+await check("signed out everywhere: out of line and out of an unstarted party, a run under way untouched", () => {
+  const w = world();
+  w.play("a");
+  assert.equal(w.leaveEverything("a").state, "idle");
+  assert.ok(!w.state.tickets.a);
+
+  w.play("b");
+  w.play("c");
+  w.leaveEverything("b");
+  assert.equal(w.poll("c").state, "searching", "the party dissolved and c went back in line");
+
+  w.play("d");
+  w.act("c", "in_game");
+  assert.equal(w.poll("c").state, "in_game");
+  w.leaveEverything("c");
+  assert.equal(w.poll("d").state, "in_game", "a run already under way is left as it is");
+});
+
+await check("state saved before visibility existed still behaves (lastSeenAt stands in, no 'ended' map)", () => {
+  const old = {
+    tickets: { a: { sid: "a", name: "A", branch: "stable", push: true, createdAt: T0, lastSeenAt: T0 } },
+    matches: {},
+    pings: {},
+    fanouts: {},
+  };
+  const kept = P.poll(old, "x", { now: T0 + 30 * MIN, newId: () => "m".padEnd(32, "0") });
+  assert.equal(kept.view.lookingCount, 1, "an old pinged ticket gets the default hour");
+  const gone = P.poll(old, "x", { now: T0 + 61 * MIN, newId: () => "m".padEnd(32, "0") });
+  assert.equal(gone.view.lookingCount, 0);
+  assert.ok(gone.state.ended.a, "the ended map is created on the fly");
+});
+
+// ---- Devices: every place a player turned pings on ------------------------
+
+const sub = (n) => ({ endpoint: `https://fcm.googleapis.com/fcm/send/dev-${n}`, keys: {}, savedAt: new Date(T0).toISOString() });
+async function device(n, seenAt = T0) {
+  return { id: await P.Dev.deviceIdFor(sub(n).endpoint), kind: "webpush", sub: sub(n), label: `Device ${n}`, createdAt: seenAt, lastSeenAt: seenAt };
+}
+
+await check("a device id is a stable 16-hex hash of its endpoint", async () => {
+  const a1 = await P.Dev.deviceIdFor(sub(1).endpoint);
+  assert.match(a1, /^[0-9a-f]{16}$/);
+  assert.equal(await P.Dev.deviceIdFor(sub(1).endpoint), a1, "same endpoint, same id");
+  assert.notEqual(await P.Dev.deviceIdFor(sub(2).endpoint), a1);
+  assert.equal(P.Dev.isDeviceId(a1), true);
+  assert.equal(P.Dev.isDeviceId("../../etc"), false);
+  assert.equal(P.Dev.isDeviceId(a1 + "0"), false);
+});
+
+await check("turning pings on twice in one browser refreshes it; a second browser is added", async () => {
+  const desk = await device(1, T0);
+  let list = P.Dev.upsertDevice([], desk);
+  const frozen = JSON.stringify(list);
+  const again = P.Dev.upsertDevice(list, { ...desk, label: "Chrome on Mac", lastSeenAt: T0 + MIN, createdAt: T0 + MIN });
+  assert.equal(again.length, 1, "same endpoint: still one device");
+  assert.equal(again[0].createdAt, T0, "first-seen time kept");
+  assert.equal(again[0].label, "Chrome on Mac");
+  assert.equal(JSON.stringify(list), frozen, "the old list is never edited");
+  list = P.Dev.upsertDevice(again, await device(2, T0 + 2 * MIN));
+  assert.equal(list.length, 2);
+  assert.equal(list[0].label, "Device 2", "most recently seen first");
+  assert.equal(P.Dev.removeDevice(list, list[0].id).length, 1);
+  assert.equal(P.Dev.findDevice(list, again[0].id).label, "Chrome on Mac");
+});
+
+await check("past eight devices the one seen longest ago falls off", async () => {
+  let list = [];
+  for (let n = 0; n < P.Dev.MAX_DEVICES + 2; n++) list = P.Dev.upsertDevice(list, await device(n, T0 + n * MIN));
+  assert.equal(list.length, P.Dev.MAX_DEVICES);
+  const labels = list.map((d) => d.label);
+  assert.ok(!labels.includes("Device 0") && !labels.includes("Device 1"), "the two oldest are gone");
+  assert.ok(labels.includes(`Device ${P.Dev.MAX_DEVICES + 1}`));
+});
+
+await check("the old single subscription becomes the first device", async () => {
+  const legacy = { endpoint: "https://web.push.apple.com/abc", keys: {}, savedAt: new Date(T0 - 3 * 86_400_000).toISOString() };
+  const d = P.Dev.legacyDevice(legacy, "0123456789abcdef", T0);
+  assert.equal(d.createdAt, T0 - 3 * 86_400_000);
+  assert.equal(d.kind, "webpush");
+  assert.equal(P.Dev.legacyDevice({ ...legacy, savedAt: "garbage" }, "0123456789abcdef", T0).createdAt, T0);
+});
+
+await check("the Devices list never shows endpoints or keys", async () => {
+  const views = P.Dev.deviceViews([await device(1)]);
+  assert.deepEqual(Object.keys(views[0]).sort(), ["createdAt", "id", "kind", "label", "lastSeenAt"]);
+});
+
+await check("device names come from the browser, short and never the raw User-Agent", () => {
+  const cases = [
+    ["Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1", "Safari on iPhone"],
+    ["Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36", "Chrome on Mac"],
+    ["Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0", "Edge on Windows"],
+    ["Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36", "Chrome on Android"],
+    ["Mozilla/5.0 (X11; Linux x86_64; rv:132.0) Gecko/20100101 Firefox/132.0", "Firefox on Linux"],
+    ["", "A browser"],
+    [null, "A browser"],
+  ];
+  for (const [ua, want] of cases) assert.equal(P.Dev.deviceLabel(ua), want, String(ua).slice(0, 40));
+});
+
+await check("a player with pings on in two places is queued once per device", () => {
+  let q = P.PushQ.enqueuePushes([], [["a", "looking", "desk"], ["a", "looking", "phone"], ["b", "looking", "phone"]]);
+  q = P.PushQ.enqueuePushes(q, [["a", "matched", "desk"], ["a", "matched", "phone"], ["c", "ended", "laptop"]]);
+  assert.deepEqual(
+    q.map((e) => `${e.sid}:${e.device}:${e.kind}`),
+    ["a:desk:matched", "a:phone:matched", "c:laptop:ended", "b:phone:looking"],
+    "matched first, then ended, then looking; one entry per device",
+  );
+  const again = P.PushQ.enqueuePushes(q, [["c", "looking", "laptop"], ["a", "looking", "phone"]]);
+  assert.equal(JSON.stringify(again), JSON.stringify(q), "a less urgent ping never downgrades a queued one");
+});
+
+await check("a batch counts requests (devices), so many devices never pass the cap", () => {
+  const targets = sidsN(30).flatMap((sid) => ["desk", "phone", "tablet"].map((d) => [sid, "looking", d]));
+  const q = P.PushQ.enqueuePushes([], targets);
+  assert.equal(q.length, 90);
+  assert.equal(P.PushQ.takeBatch(q).batch.length, P.PushQ.PUSH_BATCH_SIZE);
+});
+
+await check("a gone subscription forgets only that device", async () => {
+  const subs = new Map([["a|desk", sub("desk")], ["a|phone", sub("phone")]]);
+  const sent = [];
+  const deleted = [];
+  const deps = {
+    getSub: async (sid, d) => subs.get(`${sid}|${d}`) ?? null,
+    deleteSub: async (sid, d) => { subs.delete(`${sid}|${d}`); deleted.push(`${sid}|${d}`); },
+    send: async (s) => { sent.push(s.endpoint); return s.endpoint.endsWith("desk") ? "gone" : "sent"; },
+  };
+  const out = await P.PushQ.sendPushBatch(P.PushQ.enqueuePushes([], [["a", "matched", "desk"], ["a", "matched", "phone"]]), deps);
+  assert.deepEqual(out, { sent: 1, gone: 1, skipped: 0, failed: 0 });
+  assert.deepEqual(deleted, ["a|desk"]);
+  assert.ok(subs.has("a|phone"), "the phone still gets pings");
 });
 
 console.log(`coop-play: ${passed} checks passed${process.exitCode ? " (with failures above)" : ""}`);
