@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>SpireVault Sync</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <main class="popup" data-state="loading">
+    <header class="popup-head">
+      <img src="icons/icon-48.png" width="28" height="28" alt="">
+      <h1>SpireVault Sync</h1>
+    </header>
+    <p class="popup-status" id="status" role="status" aria-live="polite">Checking…</p>
+    <p class="popup-detail" id="detail" hidden></p>
+    <p class="popup-path" id="path" hidden></p>
+    <button class="popup-button" id="action" type="button" hidden></button>
+    <p class="popup-foot">Reads your Slay the Spire 2 save folder. Never changes it.</p>
+  </main>
+  <script src="popup.js" type="module"></script>
+</body>
+</html>

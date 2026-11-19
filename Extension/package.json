@@ -1,0 +1,10 @@
+{
+  "name": "spirevault-sync",
+  "private": true,
+  "type": "module",
+  "description": "SpireVault Sync browser extension. No dependencies and no build step: Chrome loads this folder as it is. This file only tells Node the .js files are ES modules, for the tests and the pack script.",
+  "scripts": {
+    "test": "node --test tests/*.test.mjs",
+    "pack": "node scripts/pack.mjs"
+  }
+}

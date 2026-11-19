@@ -1,0 +1,111 @@
+:root {
+  --popup-bg: #0c0a14;
+  --popup-card: #14111e;
+  --popup-line: #3a3450;
+  --popup-text: #f4eddc;
+  --popup-text-2: #b6abc4;
+  --popup-gold: #d4af37;
+  --popup-accent: #ff6b1a;
+  --popup-on-accent: #1a0d05;
+  --popup-live: #6dd97c;
+  --popup-space: 14px;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  width: 300px;
+  background: var(--popup-bg);
+  color: var(--popup-text);
+  font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+.popup {
+  padding: var(--popup-space);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+}
+
+.popup-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.popup-head h1 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  color: var(--popup-gold);
+}
+
+.popup-status {
+  margin: 0;
+  padding-left: 16px;
+  position: relative;
+  font-weight: 600;
+}
+
+.popup-status::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0.5em;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--popup-text-2);
+}
+
+.popup[data-state="on"] .popup-status::before { background: var(--popup-live); }
+.popup[data-state="off"] .popup-status::before { background: var(--popup-gold); }
+
+.popup-detail {
+  margin: 0;
+  color: var(--popup-text-2);
+  font-size: 13px;
+}
+
+/* The folder being read. A path has no spaces to break at, so it may break anywhere. */
+.popup-path {
+  margin: 0;
+  color: var(--popup-text-2);
+  font: 11px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  overflow-wrap: anywhere;
+}
+
+.popup-button {
+  appearance: none;
+  border: 0;
+  border-radius: 8px;
+  padding: 10px 12px;
+  min-height: 40px;
+  background: var(--popup-accent);
+  color: var(--popup-on-accent);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  transition: filter 150ms ease, transform 150ms ease;
+}
+
+.popup-button:hover { filter: brightness(1.08); }
+.popup-button:active { transform: translateY(1px); }
+.popup-button:focus-visible { outline: 2px solid var(--popup-gold); outline-offset: 2px; }
+
+.popup-foot {
+  margin: 0;
+  padding-top: 10px;
+  border-top: 1px solid var(--popup-line);
+  color: var(--popup-text-2);
+  font-size: 12px;
+}
+
+[hidden] { display: none !important; }
+
+@media (prefers-reduced-motion: reduce) {
+  .popup-button { transition: none; }
+}
