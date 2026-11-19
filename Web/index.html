@@ -157,14 +157,14 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link id="vault-legacy-fonts" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Playfair+Display:wght@700;900&family=Cinzel:wght@700;800;900&display=swap" rel="stylesheet" />
-  <link id="vault-legacy-css" rel="stylesheet" href="/styles.css?v=165" />
+  <link id="vault-legacy-css" rel="stylesheet" href="/styles.css?v=166" />
   <!-- Co-op Play card (structure + classic paint). The new look loads it again
        inside the legacy layer below and repaints it from styles.next.css. -->
-  <link id="vault-coop-play-css" rel="stylesheet" href="/lib/coop-play.css?v=8" />
+  <link id="vault-coop-play-css" rel="stylesheet" href="/lib/coop-play.css?v=11" />
   <!-- Phone fixes for the shared markup. The media attribute keeps it out of
        desktop rendering entirely (a non-matching sheet is fetched at idle
        priority and never applied). -->
-  <link id="vault-legacy-phone-css" rel="stylesheet" href="/styles.mobile.css?v=3" media="(max-width: 880px)" />
+  <link id="vault-legacy-phone-css" rel="stylesheet" href="/styles.mobile.css?v=4" media="(max-width: 880px)" />
   <!-- New-UI stylesheet swap. The classic layout keeps the two static links
        above exactly as they were. For next, the legacy sheets are loaded again
        INSIDE a cascade layer, so every rule in the new sheet outranks them
@@ -185,11 +185,11 @@
         '<link rel="preload" as="font" type="font/woff2" crossorigin href="/assets/fonts/grenze-gotisch-latin-var-v1.woff2">' +
         '<style id="vault-legacy-layer">' +
           '@layer v-override, legacy, v-reset, v-tokens, v-base, v-shell, v-components, v-surfaces, v-host, v-util;' +
-          '@import url("/styles.css?v=165") layer(legacy);' +
-          '@import url("/styles.mobile.css?v=3") layer(legacy) (max-width: 880px);' +
-          '@import url("/lib/coop-play.css?v=8") layer(legacy);' +
+          '@import url("/styles.css?v=166") layer(legacy);' +
+          '@import url("/styles.mobile.css?v=4") layer(legacy) (max-width: 880px);' +
+          '@import url("/lib/coop-play.css?v=11") layer(legacy);' +
         '</style>' +
-        '<link rel="stylesheet" href="/styles.next.css?v=16">' +
+        '<link rel="stylesheet" href="/styles.next.css?v=29">' +
         // The header is drawn by lib/ui, which script.js only imports once it
         // has itself loaded and run, and whose stage code sits four imports
         // deep: on a phone network each level was another round trip before
@@ -197,10 +197,10 @@
         // flattens that to one. The tokens must match the imports exactly
         // (check-asset-versions fails the build when one file is referenced
         // at two tokens).
-        '<link rel="modulepreload" href="/script.js?v=244">' +
-        '<link rel="modulepreload" href="/lib/stats-engine.js?v=7">' +
+        '<link rel="modulepreload" href="/script.js?v=263">' +
+        '<link rel="modulepreload" href="/lib/stats-engine.js?v=8">' +
         '<link rel="modulepreload" href="/lib/history-store.js?v=9">' +
-        '<link rel="modulepreload" href="/lib/ui/index.js?v=13">' +
+        '<link rel="modulepreload" href="/lib/ui/index.js?v=22">' +
         '<link rel="modulepreload" href="/lib/ui/stage.js?v=7">' +
         '<link rel="modulepreload" href="/lib/ui/stage-scenes.js?v=2">' +
         '<link rel="modulepreload" href="/lib/ui/stage-life.js?v=2">' +
@@ -1108,6 +1108,142 @@
             <!-- exactly what goes wrong if you reference a webp that isn't uploaded     -->
             <!-- yet (Cloudflare caches the SPA-fallback HTML at that path for a year).  -->
             <!-- Add the <figure class="news-post-banner"> block back once art ships.    -->
+            <!-- ====== Post 016, Nov 19 2026: arrange your Overview, stat filters, runs by date, pings on every device ====== -->
+            <!-- LATEST_NEWS_POST_ID in script.js: "post-016-2026-11-19-arrange-your-overview".   -->
+            <!-- UI_BETA_NEWS_POST_ID stays "015": every "What's new" button still opens the      -->
+            <!-- post that explains the new look.                                                  -->
+            <!-- Banner is a real screenshot of the new Overview in Arrange; its three files ship -->
+            <!-- in the same deploy as this markup (see the post-007 cache-key note below).       -->
+            <article class="news-post" id="news-016" data-news-id="016" data-news-eyebrow="Update · November 19, 2026" data-news-tags="Update,Overview,Stats,Co-op" aria-labelledby="news-016-title">
+              <figure class="news-post-banner">
+                <picture>
+                  <source media="(max-width: 720px)" srcset="/assets/news/post-016-phone-720-v1.webp 1x, /assets/news/post-016-phone-1440-v1.webp 2x" />
+                  <img loading="lazy" src="/assets/news/post-016-banner-v1.webp" alt="The new SpireVault Overview in Arrange. The Climb calendar widget shows every day climbed this year, with All, Solo and Co-op tabs. Each widget has a grip, size buttons and a remove button, and a bar along the bottom has Add widget, Reset, Clear all and Done." decoding="async" />
+                </picture>
+              </figure>
+              <header class="news-post-head">
+                <span class="news-post-eyebrow">Update &middot; November 19, 2026</span>
+                <h3 class="news-post-title" id="news-016-title">Arrange your own Overview, filter your stats, and find runs by date</h3>
+                <p class="news-post-byline">
+                  Corey
+                  <span class="news-post-byline-sep">&middot;</span>
+                  <span class="news-post-byline-meta">~4 min read</span>
+                </p>
+              </header>
+
+              <div class="news-post-body">
+                <p class="news-lede">
+                  The Overview is yours to arrange now. Your stats have new filters, Recent Runs has a calendar, and co-op pings reach every device you turn them on for. This post covers everything since November 17, and it all ships today.
+                </p>
+
+                <h4 class="news-post-section">Make the Overview yours</h4>
+                <p>
+                  <strong>Arrange.</strong> In the new look, Overview has an <strong>Arrange</strong> button. Drag a widget to move it and the others slide out of the way. Pick a size, open its settings, or remove it. <strong>Undo</strong> brings a widget back, <strong>Clear all</strong> empties the board, and <strong>Reset</strong> puts the default Overview back. It all works from the keyboard too. Your layout is saved on this device.
+                </p>
+                <p>
+                  <strong>Nine new widgets.</strong> <strong>Add widget</strong> opens a gallery, and every preview in it is drawn from your own climbs.
+                </p>
+                <ul class="news-bullets">
+                  <li><strong>Climb calendar.</strong> Every day you climbed this year, your streaks and your busiest day. Switch between solo and co-op.</li>
+                  <li><strong>Solo vs co-op.</strong> Your wins and losses climbing alone against climbing with a party.</li>
+                  <li><strong>The gauntlet.</strong> How far your climbs get, act by act, and what ends them: elites, bosses, monsters or quitting.</li>
+                  <li><strong>Play clock.</strong> The hours you climb and the hours you win, on a 24-hour dial.</li>
+                  <li><strong>Picks that win.</strong> The card picks that lift your win rate above your own average, and the ones that sink it.</li>
+                  <li><strong>Relic impact.</strong> The same for relics.</li>
+                  <li><strong>Ascension ladder.</strong> The next ascension to clear with each climber, and how many tries it has taken.</li>
+                  <li><strong>Stat tile.</strong> One number at a glance: climbs, hours, typical climb, highest win, wins this month or average floor.</li>
+                  <li><strong>Since your last visit.</strong> New climbs since you were last here, and this week&rsquo;s wins and losses.</li>
+                </ul>
+                <p>
+                  <strong>A short tour.</strong> The first time you open the new Overview, six steps point at each part. Tap <strong>Next</strong>, <strong>Back</strong> or <strong>Skip</strong>. <strong>Show me how</strong> in Arrange runs it again. Classic keeps the Overview it has today.
+                </p>
+
+                <h4 class="news-post-section">Win streaks and filters</h4>
+                <p>
+                  A player on Reddit asked for these. They work in both looks and on phones.
+                </p>
+                <p>
+                  <strong>Win streaks.</strong> In By character, a climber with two or more wins in a row shows it, like &ldquo;9 in a row&rdquo;.
+                </p>
+                <p>
+                  <strong>Filter By character.</strong> Pick one ascension level and the cards count only those runs. If your saves hold Blitz or Dread runs from the beta branch, a <strong>Mode</strong> choice appears too: All, Standard, Blitz or Dread.
+                </p>
+                <p>
+                  <strong>Filter the spire.</strong> On Ascensions, pick one climber. If you have Blitz runs, you can switch between the Standard and Blitz ladders.
+                </p>
+                <p>
+                  <strong>Mode on Recent Runs.</strong> The same Mode choice sits beside Ascension in the Runs filters.
+                </p>
+
+                <h4 class="news-post-section">Find runs by date</h4>
+                <p>
+                  In the new look, the Recent Runs filters have a <strong>Date</strong> chip that opens a small calendar. Days you climbed have a dot, and the dot is green if you won that day. Tap a day to see its runs, or tap a second day for a range. <strong>Today</strong>, <strong>Last 7 days</strong> and <strong>This month</strong> are one tap each and show how many runs they hold. The list gets a heading for each day, and the date works together with the other filters.
+                </p>
+                <p>
+                  The date isn&rsquo;t kept after a reload. A range left on overnight would hide the next day&rsquo;s runs.
+                </p>
+
+                <h4 class="news-post-section">Co-op pings on every device</h4>
+                <p>
+                  <strong>Every device keeps its pings.</strong> Pings used to live in one browser. Turning them on somewhere new switched the old one off. Now every browser you turn them on in stays on, up to eight, and a match pings all of them. Queue at your desk and find out on your phone. The Co-op card lists where your pings go, with <strong>Remove</strong> beside each.
+                </p>
+                <p>
+                  <strong>Step away and keep your place.</strong> With pings on, you choose how long your search keeps going after you leave the page: 30 minutes, 1 hour or 2 hours. It was 10 minutes. When the time runs out, one ping tells you the search ended.
+                </p>
+                <p>
+                  <strong>Matched while you were away.</strong> You have five minutes to come back. In Chrome, in Edge and on Android, the <strong>Party found!</strong> ping has two buttons. <strong>On my way</strong> tells your party you&rsquo;re coming and starts the five minutes again, once. <strong>Pass</strong> gives your seat back right away.
+                </p>
+                <p>
+                  <strong>Right now, in the room.</strong> Before a match, a sign in your room shows how many players are looking on your version, how many are in a party, and how many SpireVault players Steam shows in Slay the Spire 2, with their Steam pictures. It leaves you out of the count.
+                </p>
+
+                <h4 class="news-post-section">Your Steam copy holds the whole run</h4>
+                <p>
+                  Until November 18, the copy of your runs saved to your Steam account had no card picks. A phone, or a browser that never read your save folder, showed an empty Cards tab. The copy now carries each run&rsquo;s card picks, the rooms you visited, abandoned runs, game modes and your party. Open SpireVault once on the computer that reads your saves and the copy fills in.
+                </p>
+                <p>
+                  Signed-in tabs also check that copy when you come back to them, and every five minutes while they&rsquo;re open. Runs read on one device show up on the others without a reload.
+                </p>
+
+                <h4 class="news-post-section">Smaller things</h4>
+                <ul class="news-bullets">
+                  <li>Resting the mouse on the edge of a stat card in your hand no longer makes it bob.</li>
+                  <li>In co-op, names stand under the climbers, and the host&rsquo;s crown floats over the host.</li>
+                  <li>The player count on spirevault.app no longer says &ldquo;unavailable&rdquo; after one missed answer from the server.</li>
+                  <li>Fixed a server error on the online check-in that fired about once per page load.</li>
+                  <li>Spelling is American throughout.</li>
+                </ul>
+
+                <h4 class="news-post-section">What isn&rsquo;t done yet</h4>
+                <p>
+                  <strong>Refresh is still by hand.</strong> In a browser on a Mac or Windows PC, you still press <strong>Refresh</strong> after a run. Browsers won&rsquo;t let a web page keep reading the folder STS2 saves to, and I looked for every way around it. The one that works is a small extension for Chrome and Edge that reads new runs by itself. It is built and it works on my Mac. It is not in the Chrome Web Store yet, so there is nothing to install today. I&rsquo;ll post here when there is.
+                </p>
+                <p>
+                  Arrange and the Date calendar are in the new look only. The Mode filters only appear once your saves hold Blitz or Dread runs. And a layout is saved per device, so your phone and your computer each keep their own.
+                </p>
+                <p>
+                  If something looks wrong, the report link below comes straight to me. A screenshot and which look you were on is all I need. Keep climbing.
+                </p>
+
+                <p class="news-post-signoff">
+                  Corey
+                </p>
+              </div>
+
+              <footer class="news-post-foot">
+                <div class="news-post-foot-meta">
+                  <span class="news-post-tag">Update</span>
+                  <span class="news-post-tag">Overview</span>
+                  <span class="news-post-tag">Stats</span>
+                  <span class="news-post-tag">Co-op</span>
+                </div>
+                <div class="news-post-foot-actions">
+                  <a class="action-link" href="/">Open Overview &rarr;</a>
+                  <a class="action-link" href="https://github.com/c3rooks/SpireVault/issues/new" target="_blank" rel="noopener">Report an issue &rarr;</a>
+                </div>
+              </footer>
+            </article>
+
             <!-- ====== Post 015 — Nov 17 2026 — Release roll-up: new look for everyone, sign-in, co-op Play ====== -->
             <!-- Replaces the 013 (Nov 11) and 015 (Nov 15) drafts, which never went live.     -->
             <!-- Keeps id news-015, so the "Replaced" notes on posts 007, 011 and 012 still   -->
@@ -1263,13 +1399,13 @@
 
                 <h4 class="news-post-section">If you&rsquo;re on the beta (v0.113.0)</h4>
                 <p>
-                  <strong>The Fool.</strong> Fool runs import like any other character, and as of November 14 he stands with the other five for everyone: on the Characters tab, in the header&rsquo;s climber picker (Random can roll him too) and in the Recent Runs filters. Until you&rsquo;ve played him, his banner says Unplayed and his filter stays greyed out. All 90 of his cards show their real names in your decks and on the Cards tab.
+                  <strong>The Fool.</strong> Fool runs import like any other character, and as of November 14 he stands with the other five for everyone: on the Characters tab, in the header&rsquo;s climber picker (Random can roll him too) and in the Recent Runs filters. Until you&rsquo;ve played him, his banner says Unplayed and his filter stays grayed out. All 90 of his cards show their real names in your decks and on the Cards tab.
                 </p>
                 <p>
                   <strong>Blitz and Dread.</strong> Both get their own tag in Recent Runs, and neither counts toward your normal Ascension climb. Blitz has its own five levels shared across every character, and Dread turns every modifier on at once, so folding either into your A0&ndash;A10 numbers would make them wrong.
                 </p>
                 <p>
-                  <strong>New things show their real names.</strong> The relics from the new events &mdash; Wuppy, Obsidian Vice, Thumbscrew, Tormentous Collar, Mighty Wings, Bath Towel and Bath Robes &mdash; and the new cards &mdash; My Shinies, Dingy Dagger, Mighty Weapon and Mighty Shield &mdash; are labelled properly in your history. The beta&rsquo;s balance changes (Expect a Fight, Expertise and Memento Mori reworked; Salvo, Phantom Blades and CHARGE!! trimmed; Speedster buffed; Brilliant Scarf moved to the 6th card; Dowsing Rod down to 4 ? rooms) are tracked, but tooltips stay on main until those changes reach it.
+                  <strong>New things show their real names.</strong> The relics from the new events &mdash; Wuppy, Obsidian Vice, Thumbscrew, Tormentous Collar, Mighty Wings, Bath Towel and Bath Robes &mdash; and the new cards &mdash; My Shinies, Dingy Dagger, Mighty Weapon and Mighty Shield &mdash; are labeled properly in your history. The beta&rsquo;s balance changes (Expect a Fight, Expertise and Memento Mori reworked; Salvo, Phantom Blades and CHARGE!! trimmed; Speedster buffed; Brilliant Scarf moved to the 6th card; Dowsing Rod down to 4 ? rooms) are tracked, but tooltips stay on main until those changes reach it.
                 </p>
 
                 <h4 class="news-post-section">The Fool&rsquo;s cards, in short</h4>
@@ -1819,7 +1955,7 @@
                   The cloud version was getting all the love &mdash; character art, the architect, click-to-expand cards, the share-card canvas, the live recent-form chart, the run-detail modal. Reproducing all of that in SwiftUI was an entire parallel codebase that drifted further behind every web deploy. Embedding the canonical UI is what every serious cross-platform app does (Notion, Slack, Linear, Discord, Spotify) &mdash; one UI, one set of bugs, one rendering surface to QA. The desktop now ships every cloud feature the moment we deploy the web.
                 </p>
 
-                <h4 class="news-post-section">Streamers, no behaviour change</h4>
+                <h4 class="news-post-section">Streamers, no behavior change</h4>
 
                 <p>
                   Run Coach is still streamer-safe. The macOS overlay is still <code>NSPanel</code> + <code>sharingType=.none</code> and stays invisible to OBS / Zoom / QuickTime. Nothing about the embedded WebView changes that &mdash; the WebView is for stats, not the overlay.
@@ -2530,6 +2666,6 @@
   })();
   </script>
   <script src="/run-coach.js?v=5" defer></script>
-  <script src="/script.js?v=244" type="module"></script>
+  <script src="/script.js?v=263" type="module"></script>
 </body>
 </html>

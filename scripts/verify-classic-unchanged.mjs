@@ -37,7 +37,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
-const PORT = 8794;
+/** VERIFY_CLASSIC_PORT moves the test server when 8794 is taken (another session's run). */
+const PORT = Number(process.env.VERIFY_CLASSIC_PORT) || 8794;
 const BASE = `http://127.0.0.1:${PORT}`;
 const DEFAULT_WIDTH = 1440;
 const VIEWPORT_HEIGHT = 900;

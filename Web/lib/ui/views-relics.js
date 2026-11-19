@@ -10,7 +10,7 @@
 
 import { esc, fixed, clamp } from "./html.js?v=1";
 import { hdRelicSrc } from "./relic-art-hd.js?v=2";
-import { TONE_LABELS, toneKey, toneLegendHtml } from "./tone-legend.js?v=2";
+import { TONE_LABELS, toneKey, toneLegendHtml } from "./tone-legend.js?v=3";
 
 /** @typedef {"win"|"gold"|"accent"} RelicTone */
 

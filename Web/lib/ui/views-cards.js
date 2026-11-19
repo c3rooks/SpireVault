@@ -9,7 +9,7 @@
 // podium.
 
 import { esc, fixed, clamp } from "./html.js?v=1";
-import { toneKey, toneLegendHtml } from "./tone-legend.js?v=2";
+import { toneKey, toneLegendHtml } from "./tone-legend.js?v=3";
 
 /** @typedef {"win"|"gold"|"accent"} CardTone */
 
@@ -46,6 +46,7 @@ import { toneKey, toneLegendHtml } from "./tone-legend.js?v=2";
  * @property {boolean} hasOffers                    pick rate is meaningful
  * @property {number} lowSampleRuns
  * @property {number} baselinePct                   the player's overall win rate, 0..100
+ * @property {string} [emptyNote]                   why there are no card picks, when the app knows; else the plain line
  */
 
 const PODIUM_SIZE = 3;
@@ -248,7 +249,7 @@ function pickedSection(model) {
         ${title}
         <div class="v-cd-empty v-panel" data-reveal style="--r:0">
           <span class="v-cd-empty-art" aria-hidden="true">${CARD_GLYPH}</span>
-          <p>No card-pick data in your history yet.</p>
+          <p>${esc(model.emptyNote || "No card-pick data in your history yet.")}</p>
         </div>
       </section>`;
   }

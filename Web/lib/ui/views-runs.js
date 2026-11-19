@@ -43,10 +43,14 @@ import { esc } from "./html.js?v=1";
 
 /**
  * @typedef {Object} RunsModel
- * @property {{ outcome: string, ascensionTier: string, character: string, search: string }} filters
+ * @property {{ outcome: string, ascensionTier: string, mode: string, character: string, search: string }} filters
  * @property {ReadonlyArray<{ id: string, label: string }>} outcomes
- * @property {ReadonlyArray<{ id: string, label: string, title?: string }>} tiers   title: the tier's name (Early climb …)
+ * @property {ReadonlyArray<{ value: string, label: string, pressed: boolean, title: string }>} modes
+ *           All / Standard / Blitz / Dread; empty when every run is a standard one
+ * @property {ReadonlyArray<{ id: string, label: string, pressed: boolean, disabled: boolean, title?: string }>} tiers
+ *           title: the tier's name (Early climb …), or why it is off (Blitz and Dread are not on the ladder)
  * @property {ReadonlyArray<{ key: string, label: string, disabled?: boolean }>} characters   every climber; unplayed ones disabled
+ * @property {{ isSet: boolean, label: string, rangeText: string }} [date]   the Date chip: "Any date" / "Last 7 days" / "Nov 10 – 16"; rangeText for the count line
  * @property {number} total          runs before filters
  * @property {number} filteredCount  runs after filters
  * @property {boolean} isFiltered
@@ -126,6 +130,9 @@ const ICONS = Object.freeze({
   skull: '<path d="M12 3a8 8 0 0 0-8 8v3l2 2v4h12v-4l2-2v-3a8 8 0 0 0-8-8z"/><circle cx="9" cy="12" r="1.6" fill="currentColor" stroke="none"/><circle cx="15" cy="12" r="1.6" fill="currentColor" stroke="none"/>',
   crown: '<path d="m3 8 4 4 5-7 5 7 4-4-1 11H4z" fill="currentColor"/>',
   flag: '<path d="M5 21V4"/><path d="M5 4h11l-2 4 2 4H5"/>',
+  calendar: '<rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 10h17"/><path d="M8 3v4"/><path d="M16 3v4"/>',
+  caret: '<path d="m6 9 6 6 6-6"/>',
+  x: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
 });
 
 /** @param {keyof typeof ICONS} name */
@@ -177,13 +184,13 @@ function art(item, fallbackClass) {
  * @param {string} label
  * @param {boolean} pressed
  * @param {string} [charKey]
- * @param {boolean} [disabled]  shown but not clickable (a climber with no runs)
- * @param {string} [title]      tooltip, e.g. an ascension tier's name
+ * @param {boolean} [disabled]  shown but not clickable (a climber with no runs, a tier under Blitz)
+ * @param {string} [title]      tooltip, e.g. an ascension tier's name; for a disabled chip, why
  */
 function chip(kind, value, label, pressed, charKey, disabled = false, title = "") {
   const char = charKey ? ` data-char="${esc(charKey)}"` : "";
   const dot = charKey ? '<i class="v-runs-dot" aria-hidden="true"></i>' : "";
-  const tip = disabled ? ` disabled title="No runs as ${esc(label)} yet"` : title ? ` title="${esc(title)}"` : "";
+  const tip = disabled ? ` disabled title="${esc(title || `No runs as ${label} yet`)}"` : title ? ` title="${esc(title)}"` : "";
   return `<button class="v-runs-chip" type="button" data-filter-kind="${esc(kind)}" data-filter-value="${esc(value)}" aria-pressed="${pressed}"${char}${tip}>${dot}${esc(label)}</button>`;
 }
 
@@ -196,17 +203,39 @@ function chipGroup(label, chipsHtml) {
     </div>`;
 }
 
+/**
+ * The Date group: one chip that opens the mini calendar (lib/ui/runs-calendar.js),
+ * plus a clear button while a date is set.
+ * @param {RunsModel["date"]} date
+ */
+function dateGroup(date) {
+  const d = date || { isSet: false, label: "Any date", rangeText: "" };
+  const name = d.isSet ? `Date: ${d.label}. Change dates` : "Date: any date. Open the calendar";
+  const clear = d.isSet
+    ? `<button class="v-runs-chip v-runs-date-x" type="button" data-action="runs-date-clear" aria-label="Clear the date filter" title="Clear the date filter">${icon("x")}</button>`
+    : "";
+  return chipGroup("Date", `
+    <button class="v-runs-chip v-runs-date" type="button" data-action="runs-date-open" data-set="${d.isSet}"
+            aria-haspopup="dialog" aria-expanded="false" aria-controls="v-rcal" aria-label="${esc(name)}">
+      ${icon("calendar")}<span>${esc(d.label)}</span><svg class="v-runs-date-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS.caret}</svg>
+    </button>${clear}`);
+}
+
 /** @param {RunsModel} model */
 function filtersBar(model) {
   const { filters } = model;
   const outcome = model.outcomes.map((o) => chip("outcome", o.id, o.label, filters.outcome === o.id)).join("");
-  const tiers = model.tiers.map((t) => chip("ascensionTier", t.id, t.label, filters.ascensionTier === t.id, undefined, false, t.title)).join("");
+  const modes = model.modes.map((m) => chip("mode", m.value, m.label, m.pressed, undefined, false, m.title)).join("");
+  const tiers = model.tiers.map((t) => chip("ascensionTier", t.id, t.label, t.pressed, undefined, t.disabled, t.title)).join("");
   const chars = [
     chip("character", "all", "All", filters.character === "all"),
     ...model.characters.map((c) => chip("character", c.key, c.label, filters.character === c.key, c.key, c.disabled)),
   ].join("");
+  const when = model.date?.isSet && model.date.rangeText
+    ? `<span class="v-runs-summary-date"><span aria-hidden="true"> · </span>${esc(model.date.rangeText)}</span>`
+    : "";
   const summary = model.isFiltered
-    ? `Showing <b>${model.filteredCount}</b> of <b>${model.total}</b> runs
+    ? `Showing <b>${model.filteredCount}</b> of <b>${model.total}</b> runs${when}
        <button class="v-runs-clear" type="button" data-action="clear-filters">Clear filters</button>`
     : `All <b>${model.total}</b> runs`;
   return `
@@ -224,8 +253,10 @@ function filtersBar(model) {
       </div>
       <div class="v-runs-groups">
         ${chipGroup("Outcome", outcome)}
+        ${modes ? chipGroup("Mode", modes) : ""}
         ${chipGroup("Ascension", tiers)}
         ${chipGroup("Character", chars)}
+        ${dateGroup(model.date)}
       </div>
       <p class="v-runs-summary" aria-live="polite">${summary}</p>
     </section>`;

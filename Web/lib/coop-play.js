@@ -7,10 +7,10 @@
 // Backend/src/coop-play-core.ts. The server is the source of truth: every
 // action returns the full view, and the card is re-rendered from it.
 
-import * as View from "/lib/coop-play-view.js?v=7";
-import * as More from "/lib/coop-play-more.js?v=5";
-import * as Alerts from "/lib/coop-play-alerts.js?v=2";
-import * as Share from "/lib/coop-play-share.js?v=4";
+import * as View from "/lib/coop-play-view.js?v=10";
+import * as More from "/lib/coop-play-more.js?v=7";
+import * as Alerts from "/lib/coop-play-alerts.js?v=4";
+import * as Share from "/lib/coop-play-share.js?v=5";
 import { summarizeCoopClimbs } from "/lib/coop-climbs.js?v=2";
 
 const PREFS_KEY = "vault.coop.play.v1";
@@ -41,6 +41,8 @@ const STEAM_ID = /^\d{17}$/;
  * @property {() => object[]} [runs]      the player's loaded runs (not the sample set), for "Your co-op climbs"
  * @property {() => void} [refreshSaves]  read the linked save folder again (the app's own Refresh)
  * @property {() => void} [importSaves]   pick a save folder (the app's own Import)
+ * @property {() => Array<{ steamID?: string, personaName?: string, avatarURL?: string, inSTS2?: boolean }>} [roster]
+ *           the roster the app already polls (/presence/roster), for who is in STS2 right now
  */
 
 /** @type {{ root: HTMLElement, float: HTMLElement, deps: CoopPlayDeps } | null} */
@@ -54,8 +56,25 @@ let pollTimer = 0;
 let clockTimer = 0;
 let lastHtml = "";
 let lastFloatHtml = "";
-/** @type {{ supported: boolean, on: boolean, reason?: string }} */
-let push = { supported: false, on: false };
+/**
+ * Pings, in two senses now that every device keeps its own:
+ *   here    this browser is subscribed
+ *   account some device of yours can be pinged (the server's `pushOn`), which
+ *           decides whether closing this tab keeps your place in line
+ *   on      the card's switch: this browser, and the server knows it
+ * @type {{ supported: boolean, on: boolean, here: boolean, account: boolean, reason?: string }}
+ */
+let push = { supported: false, on: false, here: false, account: false };
+/**
+ * The devices that get your pings (GET /coop/play/devices), loaded when pings
+ * reach you somewhere, and this browser's id among them (a hash of its push
+ * endpoint, the same the Worker computes).
+ * @type {Array<{ id: string, label: string, kind: string, createdAt: number, lastSeenAt: number }>}
+ */
+let devices = [];
+let thisDevice = "";
+/** The devices fold-out stays open across redraws (a Remove redraws the card). */
+let devicesOpen = false;
 /** What a share button just did, shown on it for a moment. @type {"" | "copied" | "shared" | "link"} */
 let shared = "";
 let shareTimer = 0;
@@ -78,17 +97,22 @@ function takeInvite() {
   }
 }
 
+/** A saved "keep looking for" choice, or the default hour. */
+function sanitizeStay(raw) {
+  return View.STAY_CHOICES.some((c) => c.min === raw) ? raw : View.DEFAULT_STAY_MIN;
+}
+
 function readPrefs() {
   const invited = takeInvite();
   try {
     const raw = JSON.parse(localStorage.getItem(PREFS_KEY) || "{}");
     const branch = invited ?? (raw.branch === "beta" ? "beta" : "stable");
     const valid = View.CLIMBERS.some((c) => c.id === raw.character && (!c.beta || branch === "beta"));
-    const next = { character: valid ? raw.character : undefined, branch };
+    const next = { character: valid ? raw.character : undefined, branch, stay: sanitizeStay(raw.stay) };
     if (invited) writePrefs(next);
     return next;
   } catch {
-    return { character: undefined, branch: invited ?? "stable" };
+    return { character: undefined, branch: invited ?? "stable", stay: View.DEFAULT_STAY_MIN };
   }
 }
 
@@ -157,7 +181,12 @@ function adopt(resp) {
   }
   const before = view?.state;
   const { ok: _ok, pushOn, ...next } = resp.data;
-  if (typeof pushOn === "boolean") push = { ...push, on: pushOn };
+  if (typeof pushOn === "boolean") {
+    const was = push.account;
+    push = { ...push, account: pushOn, on: push.here && pushOn };
+    // Pings started or stopped reaching you somewhere: refresh the list.
+    if (pushOn !== was) void loadDevices();
+  }
   view = next;
   loadError = "";
   if (ctx?.deps.partyId && !endedParty) {
@@ -181,7 +210,9 @@ function onMatched() {
 
 async function refresh() {
   if (!ctx?.deps.session) return;
-  adopt(await api("/coop/play"));
+  // A tab in the background keeps your place but doesn't count as you being
+  // here, so a match still pings your other devices (Backend coop-play-core.ts).
+  adopt(await api(`/coop/play?visible=${document.visibilityState === "visible" ? 1 : 0}`));
   render();
   schedule();
 }
@@ -209,12 +240,36 @@ function cardHtml() {
   // markup only changes when the state does and polls don't redraw the card.
   const s = ctx?.deps.session;
   const me = { sid: s?.steamID, name: s?.personaName || "You", avatar: s?.avatarURL };
-  const stable = { view, me, prefs, push, busy, shared, now: view.ticket?.createdAt ?? 0 };
+  const stable = {
+    view, me, prefs, push, busy, shared, devices, thisDevice, devicesOpen,
+    now: view.ticket?.createdAt ?? 0,
+    around: aroundNow(),
+  };
   if (view.state === "searching") return View.searchingHtml(stable);
   if (view.state === "matched") return View.partyHtml(stable);
   if (view.state === "in_game") return View.inGameHtml(stable);
   if (endedParty) return View.endedHtml();
   return View.idleHtml(stable);
+}
+
+/**
+ * Who on the roster Steam shows in STS2 right now, besides you: their number
+ * and the first few faces, for the sign in the room's sky.
+ * @returns {{ inGame: number, faces: Array<{ name: string, avatar: string }> }}
+ */
+function aroundNow() {
+  const mine = ctx?.deps.session?.steamID;
+  const rows = ctx?.deps.roster?.() ?? [];
+  const inGame = (Array.isArray(rows) ? rows : []).filter((p) => p && p.inSTS2 && p.steamID !== mine);
+  return {
+    inGame: inGame.length,
+    faces: inGame.slice(0, 4).map((p) => ({ name: String(p.personaName || ""), avatar: String(p.avatarURL || "") })),
+  };
+}
+
+/** Before a match your room carries the live counts in its sky, so the strip under the card is left out. */
+function countsInRoom() {
+  return Boolean(view) && !endedParty && (view.state === "idle" || view.state === "searching");
 }
 
 /** The Discord post for the state you are in (null for a full party or a run under way). */
@@ -236,7 +291,7 @@ function coopClimbs() {
 /** Under the card: who is around, the invite panel, your co-op climbs. */
 function belowHtml() {
   if (!view) return "";
-  return More.moreHtml({ view, post: currentPost(), shared, ...coopClimbs() });
+  return More.moreHtml({ view, post: currentPost(), shared, countsInRoom: countsInRoom(), ...coopClimbs() });
 }
 
 // Name tags are sized by script to the room they stand in, so they are fitted
@@ -336,9 +391,12 @@ async function run(fn) {
 
 function play() {
   Alerts.unlockSound();
-  track("coop_play_tap", { branch: prefs.branch, character: prefs.character || "any", push: push.on });
+  track("coop_play_tap", { branch: prefs.branch, character: prefs.character || "any", push: push.account });
   return run(async () => {
-    adopt(await api("/coop/play", { method: "POST", body: { character: prefs.character, branch: prefs.branch, push: push.on } }));
+    adopt(await api("/coop/play", {
+      method: "POST",
+      body: { character: prefs.character, branch: prefs.branch, push: push.account, stay: prefs.stay },
+    }));
   });
 }
 
@@ -366,14 +424,47 @@ async function togglePing(on) {
   const result = on ? await Alerts.enablePush(api, prefs.branch) : await Alerts.disablePush(api);
   if (on && !result.ok) {
     ctx.deps.toast(result.message || "Couldn't turn pings on.");
-    push = { ...push, on: false };
+    push = { ...push, on: false, here: false };
+  } else if (on) {
+    push = { ...push, on: true, here: true, account: true };
+    thisDevice = (await Alerts.pushDeviceId()) || thisDevice;
+    ctx.deps.toast("Pings are on. We'll tell you when someone's looking or you're matched.");
   } else {
-    push = { ...push, on };
-    if (on) ctx.deps.toast("Pings are on. We'll tell you when someone's looking or you're matched.");
+    // Off for this browser only: another device (a phone) may still be pinged.
+    const account = typeof result.pushOn === "boolean" ? result.pushOn : push.account;
+    push = { ...push, on: false, here: false, account };
   }
   track("coop_ping_toggle", { on: push.on });
+  await loadDevices();
+}
+
+/** Read which devices get your pings; empty when none can. Redraws the card. */
+async function loadDevices() {
+  if (!ctx) return;
+  if (!push.account) {
+    devices = [];
+  } else {
+    const r = await api("/coop/play/devices");
+    if (r.ok && Array.isArray(r.data?.devices)) {
+      devices = r.data.devices.filter((d) => d && typeof d.id === "string" && typeof d.label === "string");
+    }
+  }
   lastHtml = "";
   render();
+}
+
+/** Remove one device from the list. Removing this browser is the same as switching pings off here. */
+async function removeDevice(id) {
+  if (!ctx || !id) return;
+  track("coop_device_remove", { here: id === thisDevice });
+  if (id === thisDevice) return togglePing(false);
+  const r = await api(`/coop/play/devices/${encodeURIComponent(id)}`, { method: "DELETE" });
+  if (!r.ok) {
+    ctx.deps.toast("Couldn't remove that device. Try again in a moment.");
+    return;
+  }
+  if (typeof r.data?.pushOn === "boolean") push = { ...push, account: r.data.pushOn, on: push.here && r.data.pushOn };
+  await loadDevices();
 }
 
 /**
@@ -435,9 +526,16 @@ function flashShared(what) {
 }
 
 function onClick(ev) {
-  const el = ev.target instanceof Element ? ev.target.closest("[data-cp], [data-cp-pick], [data-cp-branch]") : null;
+  const el = ev.target instanceof Element ? ev.target.closest("[data-cp], [data-cp-pick], [data-cp-branch], [data-cp-stay]") : null;
   if (!el || !ctx) return;
 
+  if (el.hasAttribute("data-cp-stay")) {
+    prefs = { ...prefs, stay: sanitizeStay(Number(el.getAttribute("data-cp-stay"))) };
+    writePrefs(prefs);
+    track("coop_stay_pick", { minutes: prefs.stay });
+    render();
+    return;
+  }
   if (el.hasAttribute("data-cp-pick")) {
     prefs = { ...prefs, character: el.getAttribute("data-cp-pick") || undefined };
     writePrefs(prefs);
@@ -447,7 +545,7 @@ function onClick(ev) {
   if (el.hasAttribute("data-cp-branch")) {
     const branch = el.getAttribute("data-cp-branch") === "beta" ? "beta" : "stable";
     const keepHero = View.CLIMBERS.some((c) => c.id === prefs.character && (!c.beta || branch === "beta"));
-    prefs = { branch, character: keepHero ? prefs.character : undefined };
+    prefs = { ...prefs, branch, character: keepHero ? prefs.character : undefined };
     writePrefs(prefs);
     render();
     return;
@@ -469,6 +567,9 @@ function onClick(ev) {
       break;
     case "ping-on":
       void togglePing(true);
+      break;
+    case "device-remove":
+      void removeDevice(el.getAttribute("data-device") || "");
       break;
     case "share":
       void share();
@@ -533,9 +634,13 @@ function onVisibility() {
   }
 }
 
-/** Without pings, leaving the page takes you out of line instead of leaving a ghost. */
+/**
+ * Without pings on any device, leaving the page takes you out of line instead
+ * of leaving a ghost. With pings on your phone, closing the desktop tab keeps
+ * your place.
+ */
 function onPageHide() {
-  if (view?.state !== "searching" || push.on || !ctx) return;
+  if (view?.state !== "searching" || push.account || !ctx) return;
   try {
     navigator.sendBeacon(`${ctx.deps.api}/coop/play/cancel`);
   } catch {
@@ -563,7 +668,20 @@ export function mountCoopPlay(root, deps) {
   document.body.appendChild(float);
   ctx = { root, float, deps: { ...deps } };
   const support = Alerts.pushSupport();
-  push = { supported: support.supported, on: false, reason: support.reason };
+  push = { supported: support.supported, on: false, here: false, account: false, reason: support.reason };
+  // Is this browser itself subscribed? The server's answer covers every device.
+  if (support.supported) {
+    void Alerts.pushDeviceId().then((id) => {
+      thisDevice = id;
+      push = { ...push, here: Boolean(id), on: Boolean(id) && push.account };
+      lastHtml = "";
+      render();
+    });
+  }
+  // "toggle" doesn't bubble, so listen in the capture phase.
+  root.addEventListener("toggle", (ev) => {
+    if (ev.target instanceof HTMLDetailsElement && ev.target.classList.contains("cp-devices")) devicesOpen = ev.target.open;
+  }, true);
   if (typeof ResizeObserver === "function") roomWatch = new ResizeObserver(queueFit);
   document.fonts?.ready?.then(queueFit);
   document.fonts?.addEventListener?.("loadingdone", queueFit);
@@ -590,6 +708,11 @@ export function setCoopTabVisible(on) {
 
 /** The player's runs changed (an import, a cloud sync): redraw "Your co-op climbs". */
 export function refreshClimbs() {
+  render();
+}
+
+/** The roster was polled again (script.js pullFeed): redraw the sign in the room's sky if it changed. */
+export function refreshRoster() {
   render();
 }
 

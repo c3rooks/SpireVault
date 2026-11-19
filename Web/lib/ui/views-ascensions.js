@@ -4,18 +4,22 @@
 // or touches the DOM.
 //
 // Every metric the classic tab shows is re-housed once:
+//   filters    → one climber, Standard or Blitz ladder (all three blocks follow)
 //   spire      → per-level win rate and runs (replaces the bar chart)
 //   tiers      → the difficulty-tier legend, with each tier's blurb + record
 //   breakdown  → per-level modifier detail as expandable rows (details[data-asc])
+// On the Blitz ladder (STS2 beta) the tiers and modifier breakdown give way to
+// one note: Blitz has its own levels and this app does not describe them.
 // Tier colours are never passed in: each element carries data-tier and the
 // colour is a token chosen in styles/src/surfaces/ascensions.css.
 
 import { esc, fixed, clamp } from "./html.js?v=1";
+import { segmentedHtml, summaryHtml } from "./filter-controls.js?v=1";
 
 /**
  * @typedef {Object} AscLevel
  * @property {number} level
- * @property {string} tierKey      standard | early | mid | expert | master | unknown
+ * @property {string} tierKey      standard | early | mid | expert | master | blitz | unknown
  * @property {string} tierLabel
  * @property {number} runs
  * @property {number} wins
@@ -36,18 +40,35 @@ import { esc, fixed, clamp } from "./html.js?v=1";
  */
 
 /**
+ * @typedef {Object} AscFilterModel
+ * @property {ReadonlyArray<import("./filter-controls.js").SegOption>} climbers
+ * @property {ReadonlyArray<import("./filter-controls.js").SegOption>|null} ladders  null without Blitz runs
+ * @property {string} label        "Ironclad · Blitz"; "" when nothing is filtered
+ * @property {number} shownRuns
+ * @property {number|null} totalRuns   runs on the ladder, all climbers; null when no climber is picked
+ */
+
+/**
  * @typedef {Object} AscensionsModel
  * @property {ReadonlyArray<AscLevel>} levels   A0 → cap, every level, played or not
  * @property {ReadonlyArray<AscTier>} tiers
  * @property {number} cap                        highest level the game has
  * @property {number} hiddenAbove                buckets above the cap that are not shown
  * @property {number|null} peak                  highest level with at least one run
+ * @property {"standard"|"blitz"} ladder
+ * @property {string} climber                    "Ironclad", or "" for every climber
+ * @property {{ runs: number, wins: number }} record   every run on the spire
+ * @property {AscFilterModel} filter
  */
 
 const ICONS = Object.freeze({
   chevron: '<path d="m6 9 6 6 6-6" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>',
   lock: '<rect x="5" y="10.5" width="14" height="10" rx="2" fill="currentColor"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5" fill="none" stroke="currentColor" stroke-width="2.4"/>',
 });
+
+/** The lowest storey narrow enough for the "Your peak" flag to fit beside
+ *  it (the tower tapers by --asc-taper per level, ascensions.css). */
+const FLAG_BESIDE_FROM = 7;
 
 /** @param {keyof typeof ICONS} name */
 function icon(name) {
@@ -66,11 +87,13 @@ function pct(wins, runs) {
 
 /**
  * One storey of the spire. A0 is the widest; every level up is narrower
- * (the taper is CSS: --i × --asc-taper).
+ * (the taper is CSS: --i × --asc-taper). A storey opens its modifier row;
+ * Blitz levels have none here, so their storeys are not buttons.
  * @param {AscLevel} level
  * @param {number|null} peak
+ * @param {boolean} jumps
  */
-function storey(level, peak) {
+function storey(level, peak, jumps) {
   const lit = level.runs > 0;
   const isPeak = peak === level.level;
   const spoken = lit
@@ -81,14 +104,20 @@ function storey(level, peak) {
        <span class="v-asc-st-wr">${fixed(level.winratePct)}<small>%</small></span>
        <span class="v-asc-st-runs">${plural(level.runs, "run")}</span>`
     : `<span class="v-asc-st-lock">${icon("lock")}<span>Unlit</span></span>`;
+  const face = jumps
+    ? `<button class="v-asc-st-btn" type="button" data-asc-jump="${level.level}"
+              aria-label="A${level.level}, ${esc(level.tierLabel)}: ${spoken}. Show the A${level.level} modifier.">`
+    : `<span class="v-asc-st-btn is-static" role="img" aria-label="${esc(level.tierLabel)} A${level.level}: ${spoken}.">`;
+  // Beside a wide (low) storey the flag would run past the panel, so it
+  // sits on the storey's top edge instead, as on phones.
+  const flagInside = isPeak && level.level < FLAG_BESIDE_FROM;
   return `
-    <li class="v-asc-st${lit ? " is-lit" : ""}${isPeak ? " is-peak" : ""}" data-tier="${esc(level.tierKey)}"
+    <li class="v-asc-st${lit ? " is-lit" : ""}${isPeak ? " is-peak" : ""}${flagInside ? " is-flag-in" : ""}" data-tier="${esc(level.tierKey)}"
         style="--i:${level.level};--wr:${clamp(level.winratePct, 0, 100).toFixed(1)}%">
-      <button class="v-asc-st-btn" type="button" data-asc-jump="${level.level}"
-              aria-label="A${level.level}, ${esc(level.tierLabel)}: ${spoken}. Show the A${level.level} modifier.">
+      ${face}
         <span class="v-asc-st-key">A${level.level}</span>
         ${body}
-      </button>
+      ${jumps ? "</button>" : "</span>"}
       ${isPeak ? '<span class="v-asc-st-flag" aria-hidden="true">Your peak</span>' : ""}
     </li>`;
 }
@@ -97,9 +126,12 @@ function storey(level, peak) {
 function spire(model) {
   const top = model.levels.slice().reverse();
   const litCount = model.levels.filter((level) => level.runs > 0).length;
+  const isBlitz = model.ladder === "blitz";
+  const who = [model.climber, isBlitz ? "Blitz" : ""].filter(Boolean).join(" · ");
+  const lit = `${litCount} of ${model.levels.length} levels lit${isBlitz ? "" : " · tap one for its modifier"}`;
   const sub = litCount > 0
-    ? `${litCount} of ${model.levels.length} storeys lit · tap one for its modifier`
-    : "No ascension runs yet — every storey is unlit";
+    ? (who ? `${who} · ${lit}` : lit)
+    : "No ascension runs yet — every level is unlit";
   return `
     <section class="v-panel v-asc-spire" data-reveal style="--r:0" aria-labelledby="v-asc-spire-h">
       <header class="v-asc-panel-head">
@@ -111,8 +143,8 @@ function spire(model) {
           <svg viewBox="0 0 120 80" preserveAspectRatio="none"><path d="M60 4 112 78H8z"/></svg>
           <span class="v-asc-roof-flag"></span>
         </span>
-        <ol class="v-asc-storeys" aria-label="Win rate by ascension level, highest first">
-          ${top.map((level) => storey(level, model.peak)).join("")}
+        <ol class="v-asc-storeys" aria-label="${esc(who ? `${who}: win rate` : "Win rate")} by ascension level, highest first">
+          ${top.map((level) => storey(level, model.peak, !isBlitz)).join("")}
         </ol>
         <span class="v-asc-plinth" aria-hidden="true"></span>
       </div>
@@ -185,21 +217,57 @@ function breakdown(model) {
 }
 
 /**
+ * Takes the tiers panel's place on the Blitz ladder.
+ * @param {AscensionsModel} model
+ */
+function blitzNote(model) {
+  const { runs, wins } = model.record;
+  const record = runs > 0
+    ? `<p class="v-asc-blitz-rec"><b>${fixed(pct(wins, runs))}%</b> · ${wins}W / ${plural(runs, "Blitz run")}</p>`
+    : "";
+  return `
+    <section class="v-panel v-asc-tiers v-asc-blitz" data-reveal style="--r:1" aria-labelledby="v-asc-blitz-h">
+      <header class="v-asc-panel-head">
+        <h3 id="v-asc-blitz-h">Blitz ladder</h3>
+        <p>Its own levels, apart from A0–A10</p>
+      </header>
+      ${record}
+      <p class="v-asc-blitz-text">Blitz has its own ascension levels, shared by every character, so these runs never count toward your standard climb. SpireVault does not describe Blitz modifiers yet; the in-game level select lists them.</p>
+    </section>`;
+}
+
+/** @param {AscFilterModel} filter */
+function filtersBar(filter) {
+  const ladders = filter.ladders ? segmentedHtml("spire.ladder", "Ladder", filter.ladders) : "";
+  const summary = filter.label ? summaryHtml("spire.clear", filter.label, filter.shownRuns, filter.totalRuns) : "";
+  return `
+    <section class="v-panel v-asc-filters" aria-label="Filter the ascension spire" data-reveal style="--r:0">
+      <div class="v-asc-filters-row">
+        ${segmentedHtml("spire.character", "Climber", filter.climbers)}
+        ${ladders}
+      </div>
+      ${summary}
+    </section>`;
+}
+
+/**
  * The Ascensions tab body.
  * @param {AscensionsModel} model
  * @returns {string}
  */
 export function ascensionsHtml(model) {
+  const isBlitz = model.ladder === "blitz";
   const hint = model.hiddenAbove > 0
     ? `<p class="v-asc-note"><strong>${model.hiddenAbove}</strong> additional level${model.hiddenAbove === 1 ? "" : "s"} detected above the Early Access cap of A${model.cap}. Hidden until we update this view.</p>`
     : "";
   return `
     <div class="v-asc">
+      ${filtersBar(model.filter)}
       ${hint}
       <div class="v-asc-top">
         ${spire(model)}
-        ${tiers(model)}
+        ${isBlitz ? blitzNote(model) : tiers(model)}
       </div>
-      ${breakdown(model)}
+      ${isBlitz ? "" : breakdown(model)}
     </div>`;
 }

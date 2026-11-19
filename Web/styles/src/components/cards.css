@@ -27,6 +27,11 @@
      inline) lets hover and the phone row below override --rot / --lift. */
   --rot: var(--fan-rot, 0deg);
   --lift: var(--fan-lift, 0px);
+  /* The pointer tilt (--rx / --ry, lib/ui/motion.js) is meant to stay within
+     9deg (TILT_MAX_DEG there), but it is worked out from the card's box, and
+     a pointer held just outside a lifted card would push it further. */
+  --tilt-x: clamp(-9deg, var(--rx, 0deg), 9deg);
+  --tilt-y: clamp(-9deg, var(--ry, 0deg), 9deg);
   position: relative;
   display: flex;
   flex: none;
@@ -45,7 +50,7 @@
   box-shadow: var(--v-shadow);
   color: var(--v-on-paper);
   text-align: center;
-  transform: translateY(var(--lift)) rotate(var(--rot)) rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg));
+  transform: translateY(var(--lift)) rotate(var(--rot)) rotateX(var(--tilt-x)) rotateY(var(--tilt-y));
   transform-origin: 50% 100%;
   transition:
     transform 260ms var(--v-ease-spring),
@@ -57,6 +62,39 @@
   --lift: -22px;
   z-index: 5;
   box-shadow: var(--v-shadow-lg);
+}
+/* Hovering straightens a card and lifts it, the end cards by up to 43px
+   (they rest 12.5deg off and 21px low in the fan). That could carry the edge
+   out from under a pointer resting near it: the card dropped back under the
+   pointer, lifted again, and bobbled for as long as the pointer stayed.
+   This invisible copy of the card always stands on the card's resting
+   outline, so a spot that starts the hover also holds it. It undoes the
+   card's own transform, in reverse order and with the same transition, so
+   it stays put while the card moves, then applies the fan's. At rest the
+   two cancel and it is the card exactly. Hovered it grows 10px: that covers
+   the corner orb (it stands 9px out) and the up to 5px that undoing the
+   pointer tilt inside the flat card is off by at a corner. Its insets are
+   measured from inside the card's border, so each one adds the border width
+   back; the turning point, 50% 100% of the card, is then the copy's own
+   bottom centre at rest and 10px above its bottom when hovered. */
+.v-card::after {
+  content: "";
+  position: absolute;
+  inset: calc(-1 * var(--v-outline-w));
+  z-index: -1;
+  border-radius: inherit;
+  transform:
+    rotateY(calc(-1 * var(--tilt-y))) rotateX(calc(-1 * var(--tilt-x)))
+    rotate(calc(-1 * var(--rot))) translateY(calc(var(--fan-lift, 0px) - var(--lift)))
+    rotate(var(--fan-rot, 0deg));
+  transform-origin: 50% 100%;
+  transition: transform 260ms var(--v-ease-spring);
+}
+.v-card:hover::after {
+  inset: calc(-10px - var(--v-outline-w));
+  /* Square corners: a rounded one trims the edge of the orb. */
+  border-radius: 0;
+  transform-origin: 50% calc(100% - 10px);
 }
 .v-card[data-tone="win"] { --tone: var(--v-win); }
 .v-card[data-tone="loss"] { --tone: var(--v-loss); }
@@ -234,6 +272,10 @@
     margin-inline: 0;
     scroll-snap-align: start;
   }
+  /* The row neither lifts nor turns a card, so nothing to hold. */
+  .v-card::after {
+    content: none;
+  }
 }
 @media (max-width: 880px) {
   .v-hand {
@@ -259,5 +301,9 @@
     height: 190px;
     margin-inline: 0;
     scroll-snap-align: start;
+  }
+  /* The row neither lifts nor turns a card, so nothing to hold. */
+  .v-card::after {
+    content: none;
   }
 }

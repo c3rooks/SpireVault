@@ -13,14 +13,18 @@
 //   Co-op (presence + canned-message invite system + Steam deep-links)
 // =========================================================================
 
-import * as Stats from "/lib/stats-engine.js?v=7";
+import * as Stats from "/lib/stats-engine.js?v=8";
+import * as Filters from "/lib/stat-filters.js?v=2";
 import * as HistoryStore from "/lib/history-store.js?v=9";
 import * as InviteAPI from "/lib/invites.js?v=4";
 import * as HighlightsAPI from "/lib/highlights.js?v=1";
 import * as AscInfo from "/lib/ascension-info.js?v=3";
+import * as RunDates from "/lib/run-dates.js?v=1";
 import * as CharInfo from "/lib/character-info.js?v=3";
 import * as RelicInfo from "/lib/relic-info.js?v=4";
 import * as OverlayEngine from "/lib/overlay-engine.js?v=1";
+import * as SyncBridge from "/lib/sync-bridge.js?v=1";
+import * as CloudWire from "/lib/cloud-run-wire.js?v=2";
 // Co-op is one-tap Play (lib/coop-play.js). The Play module is loaded on demand, for signed-in players only: it draws
 // the inked climbers from /lib/ui/, and signed-out visitors (classic look by
 // default) must not download any of the new UI.
@@ -30,7 +34,7 @@ let CoopPlay = null;
 let coopPlayLoading = null;
 function loadCoopPlay() {
   if (!coopPlayLoading) {
-    coopPlayLoading = import("/lib/coop-play.js?v=8").then((mod) => { CoopPlay = mod; return mod; });
+    coopPlayLoading = import("/lib/coop-play.js?v=11").then((mod) => { CoopPlay = mod; return mod; });
   }
   return coopPlayLoading;
 }
@@ -87,7 +91,7 @@ const STS2_APP_ID = "2868840";
  * on an old client — instruct hard refresh. If it DOES match, the
  * bug is real and we can stop chasing cache ghosts.
  */
-const VAULT_BUILD = "v244-2026-11-17-live-count";
+const VAULT_BUILD = "v263-2026-11-19-arrange-your-overview";
 
 /** True on wrangler pages dev / local loopback — not production hostnames. */
 function isLocalDevHost() {
@@ -548,11 +552,15 @@ function wireLastVisitTracking() {
   });
 }
 
-/** "Since you were last here" — only when something actually changed.
- *  Quiet "Saved on this device · N runs ready" was repeating the crest
- *  and teaching nothing. */
-function renderSinceLastVisitStrip(sortedByDate) {
-  if (isDemoMode || !sortedByDate?.length) return "";
+/**
+ * What changed since this browser last saw the app: runs that ended after
+ * the last visit, else how many more runs there are than last session.
+ * Nothing in sample data. Read by the classic strip below and by the new
+ * look's "Since your last visit" widget, so both count the same.
+ * @returns {{ newRuns: number, sinceSession: number, demo: boolean }}
+ */
+function lastVisitNews(sortedByDate) {
+  if (isDemoMode || !sortedByDate?.length) return { newRuns: 0, sinceSession: 0, demo: isDemoMode };
   let lastVisit = 0;
   let lastCount = 0;
   try {
@@ -562,17 +570,27 @@ function renderSinceLastVisitStrip(sortedByDate) {
   const newRuns = lastVisit > 0
     ? sortedByDate.filter((r) => r.endedAt && r.endedAt.getTime() > lastVisit).length
     : 0;
+  const sinceSession = newRuns === 0 && lastCount > 0 && sortedByDate.length > lastCount
+    ? sortedByDate.length - lastCount
+    : 0;
+  return { newRuns, sinceSession, demo: false };
+}
+
+/** "Since you were last here" — only when something actually changed.
+ *  Quiet "Saved on this device · N runs ready" was repeating the crest
+ *  and teaching nothing. */
+function renderSinceLastVisitStrip(sortedByDate) {
+  const { newRuns, sinceSession } = lastVisitNews(sortedByDate);
   if (newRuns > 0) {
     return `
       <div class="since-visit-strip since-visit-strip--new">
         <strong>${newRuns} new run${newRuns === 1 ? "" : "s"} since your last visit.</strong>
       </div>`;
   }
-  if (lastCount > 0 && sortedByDate.length > lastCount) {
-    const delta = sortedByDate.length - lastCount;
+  if (sinceSession > 0) {
     return `
       <div class="since-visit-strip since-visit-strip--new">
-        <strong>+${delta} run${delta === 1 ? "" : "s"} since last session.</strong>
+        <strong>+${sinceSession} run${sinceSession === 1 ? "" : "s"} since last session.</strong>
       </div>`;
   }
   return "";
@@ -905,6 +923,9 @@ const CLIMBER_LINES = [
 const POLL_FEED_MS          = 30_000;  // was 12_000
 const POLL_INBOX_MS         = 30_000;  // was 10_000
 const HEARTBEAT_MS          = 180_000; // was 90_000
+// The Worker stores nothing for a second heartbeat inside a minute, so one
+// is not sent (see pushNow).
+const PRESENCE_PUSH_MIN_GAP_MS = 60_000;
 
 const TABS_WITH_DATA = ["overview", "characters", "ascensions", "relics", "cards", "runs"];
 const KNOWN_TABS = ["overview", "characters", "ascensions", "relics", "cards", "runs", "coop", "news", "highlights", "settings", "overlay", "beta"];
@@ -1465,13 +1486,22 @@ let UI = null;
  *  below happens once per tab session, never in a loop. */
 const UI_RETRY_KEY = "vault.web.ui.retry";
 const uiReady = IS_UI_NEXT
-  ? import("/lib/ui/index.js?v=13")
+  ? import("/lib/ui/index.js?v=22")
       .then((mod) => {
         mod.bootUI({
           stageTabs: STAGE_TABS,
           track: (name, params) => vaultGtagEvent(name, params),
         });
         UI = mod;
+        // The Overview's Arrange mode borrows this file's data and toasts.
+        mod.Overview.initOverview({
+          context: () => overviewContext(Stats.summarize(parsedRuns)),
+          body: () => document.getElementById("overview-body"),
+          afterRender: (el) => mod.Motion.afterRender(el),
+          rerender: () => renderActiveTab(),
+          toast: (message) => toast(message),
+          track: (name, params) => vaultGtagEvent(name, params),
+        });
         try { sessionStorage.removeItem(UI_RETRY_KEY); } catch { /* private mode */ }
       })
       .catch((e) => {
@@ -1793,6 +1823,8 @@ let pushTimer           = null;
 // "the setInterval hasn't fired in a long time because the OS suspended us"
 // and force a heartbeat without waiting for the next scheduled tick.
 let lastSuccessfulHeartbeatAt = 0;
+// True while a presence push is on the wire (see pushNow).
+let presencePushInFlight = false;
 
 // IDs of pending invites we've already announced to the user. Lets us tell
 // "this invite just landed for the first time" from "we've been polling and
@@ -2995,6 +3027,7 @@ async function boot() {
   // immediately while preserving caret position in the search box.
   wireRunDetailModal();
   wireRunFilters();
+  wireStatFilters();
   wireCompareUI();
 
   // Load asset manifest in parallel with the message catalog. Both are
@@ -3144,6 +3177,20 @@ async function boot() {
   // includes runs the user hasn't seen since their last visit.
   refreshRunsBadge();
 
+  // SpireVault Sync: pulls the Steam copy again by itself (tab shown, every
+  // few minutes), and takes new runs from the browser extension when it is
+  // installed (lib/sync-bridge.js).
+  SyncBridge.start({
+    getSteamId: () => session?.steamID || "",
+    isSignedIn: () => Boolean(session?.steamID),
+    runCount: () => (isDemoMode ? 0 : parsedRuns.length),
+    ingest: (files) => ingestHistoryFiles(files, { silent: true, merge: true }),
+    pullCloud: () => hydrateFromCloudIfAvailable(),
+    toast,
+    onChange: () => { renderSyncPill(); renderToolbarEmptyPill(); },
+    isDesktopHost: IS_DESKTOP_HOST,
+  });
+
   // Cross-device sync. Two paths feed this same call:
   //   - boot with a cached IDB record: union any cloud-only runs in
   //   - boot fresh-device-signed-in: pull the cloud copy verbatim
@@ -3208,10 +3255,18 @@ async function boot() {
     pollFeedTimer   = setInterval(pullFeed,   POLL_FEED_MS);
     pollInboxTimer  = setInterval(pullInbox,  POLL_INBOX_MS);
     pollOutboxTimer = setInterval(pullOutbox, POLL_INBOX_MS);
-    heartbeatTimer  = setInterval(() => pushNow(true), HEARTBEAT_MS);
+    // The scheduled heartbeat and its watchdog rest while the tab is hidden,
+    // like the feed and inbox polls: a tab nobody is looking at is not
+    // activity, and the visibilitychange listener below sends one the moment
+    // it comes back into view.
+    const isTabHidden = () => document.visibilityState === "hidden";
+    heartbeatTimer  = setInterval(() => {
+      if (!isTabHidden()) pushNow(true);
+    }, HEARTBEAT_MS);
 
     // Watchdog: forces a heartbeat if the primary scheduler stalled.
     heartbeatWatchdog = setInterval(() => {
+      if (isTabHidden()) return;
       const since = Date.now() - lastSuccessfulHeartbeatAt;
       if (since > HEARTBEAT_MS * 1.5) {
         console.info(`heartbeat watchdog firing (${Math.round(since / 1000)}s since last success)`);
@@ -3313,21 +3368,10 @@ async function boot() {
     void autoReloadHistoryIfPermitted({ silent: true, bypassFingerprint: true });
   });
 
-  // Auth-only: tell the server we're going away so the roster decays.
-  // Guests aren't on the roster, so nothing to clean up.
-  if (session) {
-    window.addEventListener("beforeunload", () => {
-      try {
-        // Beacon goes through the same-origin proxy so the
-        // first-party `vault_session` cookie ships automatically.
-        // Cross-origin sendBeacon to vault-coop.* would NOT include
-        // the cookie (third-party) and the worker would reject as
-        // unauthenticated, defeating the unload signal.
-        const blob = new Blob([], { type: "text/plain" });
-        navigator.sendBeacon && navigator.sendBeacon(`${API_BASE}/presence`, blob);
-      } catch {}
-    });
-  }
+  // Nothing is sent when the page goes away. Players stay on the roster
+  // until they sign out, so there is nothing for the server to clean up;
+  // the empty beacon this used to send to /presence only made the Worker
+  // answer 500 once per page load.
   }; // end runBootSlowPath
 
   if (isLocalDevHost()) {
@@ -3617,7 +3661,7 @@ function switchTab(tab) {
  * thing I read still the latest thing published?" — without forcing
  * a chronological compare that could go wrong on a typo.
  */
-const LATEST_NEWS_POST_ID = "post-015-2026-11-17-roll-up";
+const LATEST_NEWS_POST_ID = "post-016-2026-11-19-arrange-your-overview";
 const STORAGE_NEWS_LAST_READ = "vault.web.news.lastRead";
 
 /** Show the "NEW" pill on the sidebar News button when the user
@@ -4173,12 +4217,32 @@ function savePathForPlatform() {
   return "";
 }
 
+/** When this browser last read the save folder (ms), or 0 if it never has. */
+function savesLastReadAt() {
+  try { return Number(localStorage.getItem(STORAGE_LAST_IMPORT_AT)) || 0; }
+  catch { return 0; /* private mode */ }
+}
+
+/** Why the Cards tab has nothing to show, when the reason is known: the
+ *  runs on screen came from the Steam copy and that copy holds no card
+ *  picks for them. True of every copy written before 2026-11-18, until the
+ *  browser that reads the save folder opens the app again and refills it.
+ *  "" otherwise, and the view says its plain "no data yet". */
+function cardPicksMissingNote() {
+  if (isDemoMode || parsedRuns.length === 0 || parsedRuns.some(CloudWire.hasCardPicks)) return "";
+  if (savesLastReadAt() || !lastCloudSyncAt) return "";
+  return "Card picks for these runs haven't synced yet. "
+    + "Open SpireVault once on the computer where you read your saves and they'll appear here.";
+}
+
 /** What the runs status says right now, or null when it should hide
  *  (sample data has its own pill). */
 function runsStatus() {
   if (isDemoMode || parsedRuns.length === 0) return null;
-  let readAt = 0;
-  try { readAt = Number(localStorage.getItem(STORAGE_LAST_IMPORT_AT)) || 0; } catch { /* private mode */ }
+  // SpireVault Sync is reading the save folder for this tab: say so.
+  const synced = SyncBridge.runsStatus({ count: parsedRuns.length });
+  if (synced) return synced;
+  const readAt = savesLastReadAt();
   const newest = newestRunEndedAt();
   const newestLabel = newest
     ? `newest run ${new Date(newest).toLocaleDateString(undefined, { month: "short", day: "numeric" })}`
@@ -4331,6 +4395,8 @@ function ensureCoopPlayMounted() {
       partyId: window.__VAULT_PARTY_ID || null,
       // "Your co-op climbs" reads the player's own runs, never the sample set.
       runs: () => (isDemoMode ? COOP_NO_RUNS : parsedRuns),
+      // Who Steam shows in STS2 right now, for the sign in the room's sky.
+      roster: () => lastFeed,
       // The panel's Refresh and Import buttons are the app's own.
       refreshSaves: () => void reloadSavedHistoryInteractive(),
       importSaves: () => void scanForHistory(),
@@ -4463,6 +4529,14 @@ async function pushNow(silent) {
   // even before the server round-trip completes.
   renderProfileDock();
   refreshProfilePopoverIfOpen();
+  // One page load asks for a push from several places inside a second (early
+  // boot, the slow boot path, the tab coming into view) and every push sends
+  // the same body, so one that is on the wire or landed moments ago answers
+  // for all of them. Each extra one cost the Worker up to four KV writes out
+  // of about 1,000 a day shared by every player.
+  if (presencePushInFlight) return;
+  if (Date.now() - lastSuccessfulHeartbeatAt < PRESENCE_PUSH_MIN_GAP_MS) return;
+  presencePushInFlight = true;
   if (!silent) showPushingPill(true);
   try {
     const resp = await fetchWithTimeout(`${API_BASE}/presence`, {
@@ -4504,6 +4578,7 @@ async function pushNow(silent) {
     console.warn(timedOut ? "presence push timed out" : "presence push error", e);
     setStatus("trouble", ...STATUS_TROUBLE_REACHING);
   } finally {
+    presencePushInFlight = false;
     if (!silent) setTimeout(() => showPushingPill(false), 400);
   }
 }
@@ -4520,6 +4595,7 @@ async function pullFeed() {
     const list = await fetchFeed();
     lastFeed = list;
     updateCoopBadge();
+    CoopPlay?.refreshRoster?.();
     const stamp = "Last updated " + new Date().toLocaleTimeString();
     const $lu = document.getElementById("last-updated");
     if ($lu) $lu.textContent = stamp;
@@ -6483,38 +6559,43 @@ async function dropCoopPushSubscription() {
   await sub?.unsubscribe();
 }
 
+/** This browser's co-op push endpoint (null if it never turned pings on). */
+async function coopPushEndpoint() {
+  try {
+    const reg = await navigator.serviceWorker?.getRegistration("/sw.js");
+    const sub = await reg?.pushManager?.getSubscription();
+    return sub?.endpoint ?? null;
+  } catch {
+    return null;
+  }
+}
+
 /** The longest sign-out waits for the co-op clean-up before moving on. */
 const COOP_SIGNOUT_WAIT_MS = 4000;
 
 async function signOut() {
   // Co-op Play goes first, while the session can still authorize it. Left
   // alone, the push subscription outlives the sign-out and this browser keeps
-  // getting "someone's looking" pings, and a player waiting in line stays
-  // there as a ghost. All three are no-ops without pings or a ticket.
-  // `keepalive` lets the requests finish even if the wait below runs out and
-  // the page reloads first.
+  // getting pings. One call tells the Worker which device is leaving: it
+  // forgets that device, and only if no other device (a phone, say) can
+  // still ping the player does it take them out of line and out of a party
+  // that hasn't started. A search the phone is watching survives signing out
+  // of the laptop. `keepalive` lets the request finish even if the wait
+  // below runs out and the page reloads first.
   const coopAuth = { authorization: `Bearer ${session.sessionToken || "__cookie__"}` };
-  const coopDelete = { method: "DELETE", credentials: "include", keepalive: true, headers: coopAuth };
-  const coopCalls = [
-    fetch(`${API_BASE}/coop/play/push`, coopDelete),
-    fetch(`${API_BASE}/coop/play`, coopDelete),
-    dropCoopPushSubscription(),
-  ];
-  // In a party that has not started its run: leave it, so the others get a
-  // new host or go back in line now instead of waiting out an empty seat. A
-  // run already under way is left as it is.
-  if (CoopPlay?.getView?.()?.state === "matched") {
-    coopCalls.push(
-      fetch(`${API_BASE}/coop/play/action`, {
+  const coopCleanup = (async () => {
+    const endpoint = await coopPushEndpoint();
+    await Promise.allSettled([
+      fetch(`${API_BASE}/coop/play/signout`, {
         method: "POST",
         credentials: "include",
         keepalive: true,
         headers: { ...coopAuth, "content-type": "application/json" },
-        body: JSON.stringify({ action: "leave" }),
+        body: JSON.stringify(endpoint ? { endpoint } : {}),
       }),
-    );
-  }
-  const coopCleanup = Promise.allSettled(coopCalls);
+      dropCoopPushSubscription(),
+    ]);
+  })();
   // Bounded, so a slow worker or push service can't hold the sign-out up.
   await Promise.race([coopCleanup, new Promise((resolve) => setTimeout(resolve, COOP_SIGNOUT_WAIT_MS))]);
 
@@ -7194,7 +7275,7 @@ async function scanForHistoryViaDirectoryPicker() {
         : platform === "linux" ? HISTORY_PATH_LINUX_FULL
         : HISTORY_PATH_MAC_FULL;
       toast(
-        `Picker was cancelled or blocked by the browser. If you saw "Can't open this folder because it contains system files", drag the SlayTheSpire2 folder onto this page instead — it bypasses that block. Your saves: ${where}`,
+        `Picker was canceled or blocked by the browser. If you saw "Can't open this folder because it contains system files", drag the SlayTheSpire2 folder onto this page instead — it bypasses that block. Your saves: ${where}`,
         { duration: 14000 }
       );
     } else {
@@ -7568,6 +7649,12 @@ async function autoReloadHistoryFromFileHandle({ silent, allowPermissionPrompt }
  * prompting for permission if the tab never got a persistent grant.
  */
 async function reloadSavedHistoryInteractive() {
+  // With SpireVault Sync connected, Refresh reads the whole save folder again
+  // through it: no folder picker.
+  if (SyncBridge.isConnected()) {
+    void SyncBridge.syncNow({ announce: true });
+    return;
+  }
   // Safari and Firefox never keep a way back into the folder. Decide before
   // any await: Safari only opens a picker inside the click's own task.
   if (!HistoryStore.supportsFSA()) {
@@ -8017,7 +8104,7 @@ async function parseOneFile(file) {
  * function now accepts the raw save format directly so anyone can drop
  * their STS2 save folder and see their stats.
  */
-async function ingestHistoryFiles(files, { silent = false } = {}) {
+async function ingestHistoryFiles(files, { silent = false, merge = false } = {}) {
   const list = Array.from(files || []).filter((f) => f && typeof f.size === "number");
   if (list.length === 0) {
     sendBeacon("ingest-files-empty", silent ? "silent" : "interactive");
@@ -8115,7 +8202,12 @@ async function ingestHistoryFiles(files, { silent = false } = {}) {
   }
 
   console.info(`[Vault] loaded ${runs.length} unique run(s) from ${okFiles}/${plausible.length} file(s)`);
-  const committed = await commitParsedRuns(runs, plausible[0]?.name || "save", { silent, fileCount: plausible.length });
+  // SpireVault Sync hands over only the files that are new on disk, and the
+  // commit below replaces the whole run set: the loaded runs ride along.
+  const runsToCommit = merge
+    ? SyncBridge.mergeWithLoaded(runs, { loaded: isDemoMode ? [] : parsedRuns, live: currentRun })
+    : runs;
+  const committed = await commitParsedRuns(runsToCommit, plausible[0]?.name || "save", { silent, fileCount: plausible.length, stayOnTab: merge });
 
   // Quality check: if a user picked a folder and we got back a tiny
   // number of runs, they almost certainly picked a wrong subfolder
@@ -8193,7 +8285,7 @@ async function ingestHistoryFile(file, { silent = false } = {}) {
  * is showing. Pulled into its own function so both single- and multi-
  * file ingest paths funnel through identical state management.
  */
-async function commitParsedRuns(runs, sourceName, { silent, fileCount = 1 }) {
+async function commitParsedRuns(runs, sourceName, { silent, fileCount = 1, stayOnTab = false }) {
   // Diff against the previously loaded set so a silent auto-refresh that
   // pulls in new runs from disk can speak up *just enough* — a single
   // "X new run(s) detected" toast — without spamming the user with reads
@@ -8380,7 +8472,7 @@ async function commitParsedRuns(runs, sourceName, { silent, fileCount = 1 }) {
   // hop them to Overview so they actually see the result of their click.
   if (TABS_WITH_DATA.includes(activeTab)) {
     renderStatsTab(activeTab);
-  } else {
+  } else if (!stayOnTab) {
     switchTab("overview");
   }
   // Update the sidebar's "new run" red dot. If the user is currently
@@ -8455,6 +8547,28 @@ function reviveRun(r) {
   };
 }
 
+/** When this browser last sent its runs up only to give the Steam copy the
+ *  detail it lacked: card picks, rooms, abandoned runs
+ *  (hydrateFromCloudIfAvailable). */
+const STORAGE_DETAIL_REFILL_AT = "vault.web.cloud.detail-refill-at";
+/** One such upload a day at most. It is needed once per player, but a
+ *  server that cannot store the detail (an older Worker, after a rollback)
+ *  would leave the same gap on every visit, and every upload is a write
+ *  against the Worker's daily allowance, shared by all players. */
+const DETAIL_REFILL_EVERY_MS = 24 * 60 * 60 * 1000;
+
+function isDetailRefillDue() {
+  try {
+    const last = Number(localStorage.getItem(STORAGE_DETAIL_REFILL_AT)) || 0;
+    return Date.now() - last > DETAIL_REFILL_EVERY_MS;
+  } catch { return true; /* private mode: no record, so nothing to hold it back */ }
+}
+
+function noteDetailRefill() {
+  try { localStorage.setItem(STORAGE_DETAIL_REFILL_AT, String(Date.now())); }
+  catch { /* private mode */ }
+}
+
 /** Boot-time + sign-in cloud rehydration.
  *
  *  Pulls the user's cloud-copy run set and **unions** it with whatever's
@@ -8487,21 +8601,28 @@ async function hydrateFromCloudIfAvailable() {
     if (blob?.ok === false) {
       return { changed: false, count: parsedRuns.length, failed: true, status: blob.status };
     }
+    const cloudRevived = Array.isArray(blob?.runs)
+      ? blob.runs.map((r) => reviveRun(CloudWire.fromWire(r)))
+      : [];
     // The cloud copy only grows when an import happens while signed in, so
     // runs imported as a guest (or while sign-in was failing) never reached
     // it: one owner's copy stopped three months and 140 runs behind the save
-    // folder. Send whatever this device holds that the copy lacks; the
-    // server merges by run id.
+    // folder. And every copy written before 2026-11-18 holds no card picks,
+    // so a phone or second browser showed an empty Cards tab. Send what this
+    // device holds that the copy lacks (a run, or a run's card picks, rooms
+    // and abandoned flag); the server merges by run id.
     const localRuns = isDemoMode ? [] : parsedRuns;
-    if (blob && Array.isArray(blob.runs) && localRuns.length > 0) {
-      const inCloud = new Set(blob.runs.map((r) => r && r.id));
-      if (localRuns.some((r) => r?.id && !inCloud.has(r.id))) CloudRuns.upload(localRuns);
+    if (blob && Array.isArray(blob.runs)) {
+      const hasNewRuns = CloudWire.hasRunsCopyLacks(localRuns, cloudRevived);
+      if (hasNewRuns || (CloudWire.hasDetailCopyLacks(localRuns, cloudRevived) && isDetailRefillDue())) {
+        if (!hasNewRuns) noteDetailRefill();
+        CloudRuns.upload(localRuns);
+      }
     }
-    if (!blob || !Array.isArray(blob.runs) || blob.runs.length === 0) {
+    if (cloudRevived.length === 0) {
       return { changed: false, count: parsedRuns.length };
     }
 
-    const cloudRevived = blob.runs.map((r) => reviveRun(r));
     // Demo data is never merged — it's synthetic and would pollute the
     // user's actual run set. The first real ingest path (manual import
     // or cloud hydrate) replaces the demo wholesale.
@@ -8521,12 +8642,17 @@ async function hydrateFromCloudIfAvailable() {
         byId.set(r.id, r);
         cloudOnly += 1;
       } else {
-        // Pick the newer `endedAt` to win — same id but a later
-        // end-time means the run was re-finalized (extra floors before
-        // game-over, etc.) so prefer the freshly-observed copy.
-        const aT = existing.endedAt?.getTime?.() || 0;
-        const bT = r.endedAt?.getTime?.() || 0;
-        if (bT > aT) { byId.set(r.id, r); cloudOverrides += 1; }
+        // A later `endedAt` wins — same id but a later end-time means the
+        // run was re-finalized (extra floors before game-over, etc.). At
+        // the same end-time the copy holding the run's card picks wins, so
+        // a device that loaded the old thin copy takes the full one. Either
+        // way, card picks and the rest of a run's detail are never traded
+        // away for a record that lacks them (CloudWire.bestOf).
+        const kept = CloudWire.bestOf(existing, r);
+        if (kept !== existing) {
+          byId.set(r.id, kept);
+          cloudOverrides += 1;
+        }
       }
     }
 
@@ -8560,10 +8686,11 @@ async function hydrateFromCloudIfAvailable() {
       });
     } catch { /* IDB failure is non-fatal; we still have it in memory */ }
 
-    // Re-upload so cloud catches up to any local-only runs we just
-    // unioned in. Idempotent via CloudRuns' fingerprint memo — if the
-    // merged set matches what cloud already had, this is a no-op.
-    try { CloudRuns.upload(merged); } catch { /* fire-and-forget */ }
+    // No second upload here: `merged` is this device's runs plus the
+    // cloud's, and whatever the device had that the cloud lacked went up
+    // above. (An upload of `merged` used to follow; with the upload memo
+    // empty at boot it re-sent the whole library whenever another device
+    // had added a run.)
 
     if (wasDemo) {
       toast(`Loaded ${merged.length} run${merged.length === 1 ? "" : "s"} from your Steam account.`);
@@ -8620,6 +8747,17 @@ const CloudRuns = (() => {
   let retryTimer = 0;
   // A failed save tells the player once; the save that finally lands says so.
   let failureAnnounced = false;
+  // What the Steam copy is known to hold (CloudWire.indexOfCopy), from the
+  // last download and every upload since. Uploads send only what it lacks.
+  // null until the copy has been read in this visit: then everything goes up.
+  /** @type {import("/lib/cloud-run-wire.js").CopyIndex | null} */
+  let copyIndex = null;
+  // Whose copy that index describes. Another account's copy is another
+  // copy: its index is ignored until this account's has been read.
+  let copyIndexOwner = "";
+  // Workers KV takes one write a second to the same key, and every upload
+  // request re-writes the player's one key.
+  const CHUNK_GAP_MS = 1200;
 
   function fingerprintForRuns(runs) {
     if (!Array.isArray(runs) || runs.length === 0) return "0:";
@@ -8631,37 +8769,8 @@ const CloudRuns = (() => {
     return `${runs.length}:${latest}`;
   }
 
-  // Marshal the rich in-memory run shape down to the lean wire format
-  // documented in Backend/src/runs.ts. Strips Date objects (→ ISO),
-  // drops fields the server doesn't need, and trims arrays to
-  // sanitization-friendly bounds.
-  function toWire(r) {
-    return {
-      id: String(r.id || ""),
-      character: String(r.character || ""),
-      ascension: Number(r.ascension) || 0,
-      floorReached: Number(r.floorReached) || 0,
-      won: r.won === true,
-      playTimeSeconds: Number(r.playTimeSeconds) || 0,
-      endedAt: r.endedAt ? new Date(r.endedAt).toISOString() : new Date().toISOString(),
-      startedAt: r.startedAt ? new Date(r.startedAt).toISOString() : undefined,
-      seed: r.seed ? String(r.seed) : undefined,
-      killedBy: r.killedBy ? String(r.killedBy) : undefined,
-      relics: Array.isArray(r.relics) ? r.relics.slice(0, 64).map(String) : [],
-      deckAtEnd: Array.isArray(r.deckAtEnd) ? r.deckAtEnd.slice(0, 256).map(String) : [],
-      cardChoices: Array.isArray(r.cardChoices)
-        ? r.cardChoices.slice(0, 60).map((c) => ({
-            floor: Number(c?.floor) || 0,
-            picked: c?.picked ? String(c.picked) : undefined,
-            skipped: Array.isArray(c?.skipped) ? c.skipped.slice(0, 8).map(String) : [],
-          }))
-        : undefined,
-      neowBonus: r.neowBonus ? String(r.neowBonus) : undefined,
-      // Only the off-ladder beta modes travel, so main-branch payloads are
-      // byte-identical. Needs the matching Backend/src/runs.ts field.
-      gameMode: Stats.offLadderMode(r.gameMode) || undefined,
-    };
-  }
+  // The wire format lives in lib/cloud-run-wire.js (toWire / fromWire), next
+  // to the checks that keep card picks and the rest of a run's detail in it.
 
   /** Fire-and-forget upload of the current local run set to the cloud.
    *  Skipped when not signed in or when the cloud already has this set.
@@ -8721,27 +8830,64 @@ const CloudRuns = (() => {
    *  server's or the network's, so it can pass on its own.
    *  @returns {Promise<boolean>} true when the cloud took the set */
   async function sendRuns(runs, fp) {
+    // Only what the copy lacks. The server re-writes the whole copy on every
+    // upload, so a request that adds nothing is skipped outright, and a
+    // large library goes up a few hundred runs at a time, one request after
+    // another (the server's merge is read-then-write, never two at once).
+    // One account from first request to last: the requests are seconds
+    // apart, and a sign-out or another sign-in in between must not send
+    // this account's runs under the next one's name.
+    const owner = session.steamID;
+    const token = session.sessionToken || "__cookie__";
+    const toSend = CloudWire.runsToSend(runs, copyIndexOwner === owner ? copyIndex : null);
+    if (toSend.length === 0) {
+      lastUploadFingerprint = fp;
+      retryAttempt = 0;
+      return true;
+    }
     let status = 0;
     try {
-      const r = await fetch("/api/runs", {
-        method: "POST",
-        credentials: "include",
-        cache: "no-store",
-        headers: {
-          "content-type": "application/json",
-          "x-vault-source": "web",
-          authorization: `Bearer ${session.sessionToken || "__cookie__"}`,
-        },
-        body: JSON.stringify({ runs: runs.map(toWire) }),
-      });
-      status = r.status;
-      if (r.ok) {
+      let stored = 0;
+      let added = 0;
+      let wasTruncated = false;
+      let hasAllLanded = true;
+      const chunks = CloudWire.inChunks(toSend, CloudWire.UPLOAD_CHUNK_RUNS);
+      for (const [index, chunk] of chunks.entries()) {
+        if (index > 0) await new Promise((resolve) => setTimeout(resolve, CHUNK_GAP_MS));
+        if (session?.steamID !== owner) {
+          // Signed out or switched account mid-upload: the rest is not
+          // this session's to send. Nothing to retry, nothing to announce.
+          pendingRuns = null;
+          retryAttempt = 0;
+          return false;
+        }
+        status = 0; // a request that never answers must not inherit the last chunk's 200
+        const r = await fetch("/api/runs", {
+          method: "POST",
+          credentials: "include",
+          cache: "no-store",
+          headers: {
+            "content-type": "application/json",
+            "x-vault-source": "web",
+            authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ runs: chunk.map(CloudWire.toWire) }),
+        });
+        status = r.status;
+        if (!r.ok) { hasAllLanded = false; break; }
+        const j = await r.json().catch(() => ({}));
+        stored = j.count || stored;
+        added += j.added || 0;
+        wasTruncated = wasTruncated || j.truncated === true;
+        // A later failure retries only the chunks that did not land.
+        if (copyIndexOwner === owner) copyIndex = CloudWire.indexAfterSend(copyIndex, chunk);
+      }
+      if (hasAllLanded) {
         lastUploadFingerprint = fp;
         retryAttempt = 0;
-        const j = await r.json().catch(() => ({}));
         sendBeacon("cloud-runs-uploaded",
-          `count=${j.count || 0} added=${j.added || 0} truncated=${j.truncated ? 1 : 0}`);
-        recordCloudSync(j.count || runs.length);
+          `count=${stored} added=${added} sent=${toSend.length} truncated=${wasTruncated ? 1 : 0}`);
+        recordCloudSync(stored || runs.length);
         if (failureAnnounced) toast("Your runs are saved to your Steam account now.");
         failureAnnounced = false;
         return true;
@@ -8816,6 +8962,7 @@ const CloudRuns = (() => {
    *  mixing with parsedRuns. */
   async function download() {
     if (!session || !session.steamID) return null;
+    const owner = session.steamID;
     try {
       const r = await fetch("/api/runs", {
         method: "GET",
@@ -8829,7 +8976,12 @@ const CloudRuns = (() => {
         sendBeacon("cloud-runs-download-failed", `status=${r.status}`);
         return { ok: false, status: r.status };
       }
-      return await r.json();
+      const copy = await r.json();
+      if (Array.isArray(copy?.runs)) {
+        copyIndex = CloudWire.indexOfCopy(copy.runs);
+        copyIndexOwner = owner;
+      }
+      return copy;
     } catch (e) {
       sendBeacon("cloud-runs-download-error", String(e?.message || e).slice(0, 80));
       return { ok: false, status: 0 };
@@ -8850,6 +9002,8 @@ const CloudRuns = (() => {
         },
       });
       lastUploadFingerprint = "";
+      copyIndex = null;
+      copyIndexOwner = "";
     } catch { /* best effort */ }
   }
 
@@ -8859,6 +9013,8 @@ const CloudRuns = (() => {
   function resetFingerprint() {
     lastUploadFingerprint = "";
     retryAttempt = 0;
+    copyIndex = null;
+    copyIndexOwner = "";
   }
 
   return { upload, download, clearCloud, resetFingerprint };
@@ -9009,6 +9165,8 @@ function renderStatsTab(tab) {
   // While the boot skeleton is up, leave it alone. The hydrate
   // promise will trigger a re-render once cloud responds.
   if (bootSkeletonActive && tab === "overview") return;
+  // Arranging the Overview: hold refreshes until Done, which draws it again.
+  if (tab === "overview" && UI && UI.Overview.isArranging()) return;
   if (parsedRuns.length === 0) {
     $body.innerHTML = renderEmptyState();
     if (UI) {
@@ -9109,13 +9267,15 @@ function renderStatsTab(tab) {
   switch (tab) {
     case "overview":   $body.innerHTML = prefix + (UI ? renderOverviewNext(report) : renderOverview(report)); break;
     case "characters": $body.innerHTML = prefix + (UI ? renderCharactersTabNext(report) : renderCharactersTab(report)); break;
-    case "ascensions": $body.innerHTML = prefix + (UI ? renderAscensionsTabNext(report) : renderAscensionsTab(report)); if (UI) wireAscensionSpire($body); break;
+    case "ascensions": $body.innerHTML = prefix + (UI ? renderAscensionsTabNext() : renderAscensionsTab(report)); if (UI) wireAscensionSpire($body); break;
     case "relics":     $body.innerHTML = prefix + (UI ? renderRelicsNext(report) : renderRelicsTab(report)); break;
     case "cards":      $body.innerHTML = prefix + (UI ? renderCardsNext(report) : renderCards(report)); break;
     case "runs":       $body.innerHTML = prefix + renderRecentRuns(parsedRuns); break;
   }
   if (UI) UI.Motion.afterRender($body);
   else if (tab === "overview") fitClassicCharts($body);
+  // First time on the customizable Overview: the step-by-step tour.
+  if (UI && tab === "overview") UI.Overview.maybeStartTour();
   // Demo banner CTAs route to the existing scan/upload flow.
   if (isDemoMode) {
     $body.querySelectorAll('[data-action="scan"]').forEach((btn) => {
@@ -11049,7 +11209,17 @@ function renderOverview(report) {
   // tab pick up the same character-portrait art treatment.
   // The whole roster, as on the Characters tab and the new look: an
   // unplayed character (The Fool, for most players) shows "No runs yet".
-  const charCards = renderCharCards(rosterBuckets(report.byCharacter), { expandable: false });
+  // Filtered by the section's own mode / ascension controls, with each
+  // climber's current win streak.
+  const chars = characterSection(report);
+  const charLabel = Filters.characterFilterLabel(chars.filter);
+  const charCards = renderCharCards(rosterBuckets(chars.report.byCharacter), {
+    expandable: false,
+    streaks: chars.streaks,
+    streakScope: charLabel,
+    emptyText: charLabel ? "No runs" : "No runs yet",
+  });
+  const charFilters = renderClassicCharacterFilters(chars.filter, chars.runs.length);
 
   // KPI strip + analytics charts (added in v49). Reasoned about as
   // "answers to the questions a player asks every session": am I on a
@@ -11078,6 +11248,7 @@ function renderOverview(report) {
       ${deathChart}
     </div>
     ${secTitle("Per character", "people")}
+    ${charFilters}
     ${charCards}
     ${secTitle("Top relics", "sparkles", "gold")}
     ${classicToneKeyHtml(report.overallWinrate, { belowTone: "muted" })}
@@ -11087,18 +11258,18 @@ function renderOverview(report) {
 // =========================================================================
 // Overview — new UI
 // -------------------------------------------------------------------------
-// Builds the data model for lib/ui/views.js from the same report and the
-// same helpers the classic Overview uses (currentStreak, pbFloorRun,
-// weeklyCadence, …), so the two layouts cannot disagree about a number.
+// The Overview is a layout of widgets (lib/ui/overview/registry.js). Each
+// widget builds its model from one context per render, made here from the
+// same report and the same helpers the classic Overview uses (currentStreak,
+// pbFloorRun, weeklyCadence, …), so the two layouts cannot disagree about a
+// number.
 //
 // The KPI wording is restated here rather than shared with
 // renderKPIStrip() on purpose: the classic renderer stays untouched until
 // it is deleted, and then this is the only copy.
 // =========================================================================
-const NEXT_RECENT_PATH_RUNS = 20;
 const NEXT_STAGE_TORCH_RUNS = 10;
 const NEXT_RECENT_FORM_RUNS = 10;
-const NEXT_TOP_RELICS = 6;
 const NEXT_MAX_FLOOR_BINS = 30;
 const NEXT_MIN_CHART_RUNS = 5;
 
@@ -11293,8 +11464,9 @@ function buildFloorData(runs) {
   return { bins };
 }
 
-/** One banner per roster character, then any other characters in the data. */
-function buildCharacterRows(report) {
+/** One banner per roster character, then any other characters in the data.
+ *  `streaks`: current win streak per character (Filters.winStreaksByCharacter). */
+function buildCharacterRows(report, streaks = new Map()) {
   const byKey = new Map((report.byCharacter || []).map((b) => [String(b.key).toLowerCase(), b]));
   const extras = [...byKey.keys()].filter((key) => !CREST_ROSTER.includes(key));
   return [...CREST_ROSTER, ...extras].map((key) => {
@@ -11311,60 +11483,52 @@ function buildCharacterRows(report) {
       portraitSrc: inked ? inked.src : characterImageSrc(key),
       isPortraitInked: !!inked,
       iconHtml: charIcon(charTheme(key).icon),
+      streak: shownStreak(streaks, key),
     };
   });
 }
 
-function buildOverviewModel(report) {
-  const total = report.totalRuns;
-  const byDateDesc = runsByDateDesc(parsedRuns);
-  const lastTen = byDateDesc.slice(0, NEXT_RECENT_FORM_RUNS);
-  const lastTenWins = lastTen.filter((r) => r.won).length;
-  const bestChar = report.byCharacter
-    .filter((b) => b.runs >= 3)
-    .slice()
-    .sort((a, b) => b.winrate - a.winrate)[0] || report.byCharacter[0] || null;
-  const highestAsc = report.byAscension
-    .slice()
-    .sort((a, b) => parseAsc(b.key) - parseAsc(a.key))
-    .find((b) => b.runs > 0) || null;
-  const ascNums = parsedRuns.filter(isLadderRun).map((r) => Number(r.ascension)).filter((n) => Number.isFinite(n));
+/**
+ * What the Overview widgets may use from this file (lib/ui/overview/registry.js
+ * OverviewHelpers). A function, not a constant, so a render during boot can
+ * never meet it uninitialized.
+ */
+function overviewHelpers() {
   return {
-    noticesHtml: renderSinceLastVisitStrip(byDateDesc) + renderWeeklyDigestStrip(byDateDesc),
-    totals: {
-      total,
-      wins: report.totalWins,
-      losses: total - report.totalWins,
-      winratePct: report.overallWinrate * 100,
+    kpiCards: (runs) => [nextRecentFormCard(runs), ...nextStreakCards(runs), ...nextRecordCards(runs)],
+    characterRows: buildCharacterRows,
+    trendData: buildTrendData,
+    floorData: buildFloorData,
+    visitNews: lastVisitNews,
+    // The same "this week" as the hand's This week card (runAgeMs).
+    weekRuns: (byDateDesc, now) => byDateDesc.filter((r) => runAgeMs(r, now) < WEEK_MS),
+    characterName: prettifyCharacterName,
+    ascensionLevel: parseAsc,
+    isLadderRun,
+    relicLabel,
+    relicImageSrc,
+    cardLabel,
+    cardImageSrc,
+    // The By character widget: rows under the section's mode and ascension
+    // filter, with each climber's win streak (the stats-filters work).
+    characterPanel: (report) => {
+      const chars = characterSection(report);
+      return {
+        characters: buildCharacterRows(chars.report, chars.streaks),
+        characterFilter: buildCharacterFilterModel(chars.filter, chars.runs.length),
+      };
     },
-    bestCharacter: bestChar
-      ? { key: String(bestChar.key).toLowerCase(), label: prettifyCharacterName(bestChar.key), winratePct: bestChar.winrate * 100, runs: bestChar.runs }
-      : null,
-    highestAscension: highestAsc ? { level: parseAsc(highestAsc.key), runs: highestAsc.runs } : null,
-    avgAscension: ascNums.length > 0 ? (ascNums.reduce((a, b) => a + b, 0) / ascNums.length).toFixed(1) : "—",
-    recentRuns: byDateDesc
-      .slice(0, NEXT_RECENT_PATH_RUNS)
-      .reverse()
-      .map((r) => ({ won: !!r.won, abandoned: !!r.wasAbandoned })),
-    lastTen: { wins: lastTenWins, losses: lastTen.length - lastTenWins, count: lastTen.length },
-    characters: buildCharacterRows(report),
-    kpis: total > 0
-      ? [nextRecentFormCard(parsedRuns), ...nextStreakCards(parsedRuns), ...nextRecordCards(parsedRuns)]
-      : [],
-    trend: buildTrendData(parsedRuns),
-    floors: buildFloorData(parsedRuns),
-    relics: report.byRelic.slice(0, NEXT_TOP_RELICS).map((b) => ({
-      label: relicLabel(b.key),
-      src: relicImageSrc(b.key),
-      runs: b.runs,
-      wins: b.wins,
-      winratePct: b.winrate * 100,
-    })),
   };
 }
 
+/** One render's worth of data for the Overview widgets. */
+function overviewContext(report) {
+  return { now: Date.now(), runs: parsedRuns, byDateDesc: runsByDateDesc(parsedRuns), report, h: overviewHelpers() };
+}
+
+/** The player's own Overview layout (the default until they arrange it). */
 function renderOverviewNext(report) {
-  return UI.Views.overviewHtml(buildOverviewModel(report));
+  return UI.Overview.renderOverview(UI.Overview.loadLayout(), overviewContext(report));
 }
 
 const OVERLAY_TAGS = ["damage", "block", "scaling", "draw", "energy", "exhaust", "poison", "orbs", "stance", "strength", "defensive", "unknown"];
@@ -11808,6 +11972,9 @@ async function clearLocalCacheConfirmed() {
   isDemoMode = false;
   lastDirectoryFingerprint = "";
   lastIngestedMTime = 0;
+  // "Disconnects any linked save folder" covers SpireVault Sync too: it stays
+  // off until the player turns it back on, or the runs would be back in a minute.
+  SyncBridge.pause();
   toast("Local cache cleared.");
   renderActiveTab();
 }
@@ -12290,6 +12457,11 @@ function formatRelative(ts) {
  *  reinforced on pointer devices. */
 function renderCharCards(buckets, opts = {}) {
   const expandable = !!opts.expandable;
+  // Overview passes each climber's current win streak; the Characters tab does not.
+  const streaks = opts.streaks || new Map();
+  // The filter the streak counts within ("Standard A10"), named in its tooltip.
+  const streakScope = opts.streakScope ? ` (${opts.streakScope})` : "";
+  const emptyText = opts.emptyText || "No runs yet";
   if (!buckets || !buckets.length) {
     return `<p class="muted">No character data yet.</p>`;
   }
@@ -12310,17 +12482,24 @@ function renderCharCards(buckets, opts = {}) {
         const dataAttrs = expandable
           ? `data-action="char-expand" data-char-key="${esc(c.key)}"`
           : `data-action="goto-tab" data-tab="characters"`;
+        const name = prettifyCharacterName(c.key);
+        const streak = shownStreak(streaks, c.key);
+        const streakPill = streak > 0
+          ? `<span class="char-card-streak" title="${esc(name)}: ${streak} wins in a row${esc(streakScope)}" aria-hidden="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill-rule="evenodd" fill="currentColor" d="M12.6 1.6c.5 3.5 3.5 5.4 5 8.3 1.5 2.9 1.4 6.5-.9 8.9a7 7 0 0 1-11.3-2c-1-2.7-.2-5.6 1.9-7.6.1 1.9.9 3.2 2.1 3.8-.6-4.5.6-8.4 3.2-11.4zM12.2 12.4c-1 1.3-1.9 2.5-1.9 4.1a2.3 2.3 0 0 0 4.6.1c0-1.6-1.2-2.8-2.7-4.2z"/></svg><strong>${streak}</strong> in a row</span>`
+          : "";
+        const spokenStreak = streak > 0 ? ` ${streak} wins in a row${esc(streakScope)}.` : "";
         return `
           <div class="${cardClass}${played ? "" : " is-unplayed"}" style="--char-color:${theme.color}"
                role="button" tabindex="0"
                ${dataAttrs}
-               aria-label="${esc(prettifyCharacterName(c.key))}: ${played ? `${wr}% winrate over ${c.runs} runs.` : "no runs yet."}${expandable ? " Tap to view details." : ""}">
+               aria-label="${esc(name)}: ${played ? `${wr}% winrate over ${c.runs} runs.${spokenStreak}` : `${esc(emptyText.toLowerCase())}.`}${expandable ? " Tap to view details." : ""}">
             <div class="char-card-head">
               <div class="char-card-icon">${charPortraitOrIcon(c.key, theme)}</div>
+              ${streakPill}
               <span class="char-card-runs">${c.runs} runs</span>
             </div>
-            <div class="char-card-name">${esc(prettifyCharacterName(c.key))}</div>
-            <div class="char-card-record">${played ? `${c.wins} win${c.wins === 1 ? "" : "s"} &middot; ${lossCount} loss${lossCount === 1 ? "" : "es"}` : "No runs yet"}</div>
+            <div class="char-card-name">${esc(name)}</div>
+            <div class="char-card-record">${played ? `${c.wins} win${c.wins === 1 ? "" : "s"} &middot; ${lossCount} loss${lossCount === 1 ? "" : "es"}` : esc(emptyText)}</div>
             <div class="char-card-wr">
               <strong class="char-card-pct">${played ? `${wr}%` : "&mdash;"}</strong>
               <span class="char-card-pct-label">Winrate</span>
@@ -12987,13 +13166,16 @@ function renderAscensionsTab(report) {
   // patch raises the cap, the bucket renders cleanly via UNKNOWN_TIER
   // without code changes.
   const STS2_ASC_CAP = 10;
-  const allBuckets = report.byAscension
-    .slice()
-    .sort((a, b) => parseAsc(a.key) - parseAsc(b.key));
-  const buckets = allBuckets.filter((b) => parseAsc(b.key) <= STS2_ASC_CAP);
+  // The tab follows its climber / ladder filter (spireSection). Unfiltered,
+  // these are exactly report.byAscension's buckets.
+  const { filter, runs } = spireSection();
+  const isBlitz = filter.ladder === "blitz";
+  const filtersHtml = renderClassicSpireFilters(filter, runs.length);
+  const allBuckets = Filters.ascensionBuckets(runs, filter.ladder);
+  const buckets = isBlitz ? allBuckets : allBuckets.filter((b) => parseAsc(b.key) <= STS2_ASC_CAP);
   const hiddenAbove = allBuckets.length - buckets.length;
   if (!buckets.length) {
-    return `<p class="muted">No ascension data yet.</p>`;
+    return `${filtersHtml}<p class="muted">No ascension data yet.</p>`;
   }
   const maxRuns = Math.max(...buckets.map((b) => b.runs), 1);
   const barChart = `
@@ -13018,6 +13200,16 @@ function renderAscensionsTab(report) {
         }).join("")}
       </div>
     </div>`;
+
+  // Blitz (STS2 beta) is its own ladder: no tiers, and no modifiers this
+  // app can describe, so the chart stands alone with a note.
+  if (isBlitz) {
+    return `
+    ${filtersHtml}
+    ${secTitle("Blitz ladder", "bars")}
+    ${barChart}
+    <p class="muted small stat-filters-note">Blitz has its own ascension levels, shared by every character, so these runs never count toward your standard climb. SpireVault does not describe Blitz modifiers yet; the in-game level select lists them.</p>`;
+  }
 
   // Tier legend — condenses the 10+ ascension levels into five honest
   // difficulty bands. Kept above the detailed breakdown so the reader
@@ -13087,6 +13279,7 @@ function renderAscensionsTab(report) {
     : "";
 
   return `
+    ${filtersHtml}
     ${secTitle("Per ascension", "bars")}
     ${newLevelsHint}
     ${barChart}
@@ -13101,26 +13294,42 @@ function renderAscensionsTab(report) {
  *  renderAscensionsTab: levels above it are counted, not drawn). */
 const NEXT_ASC_CAP = 10;
 
-/** New look: every level A0 → cap (played or not) with its tier and
- *  modifier, plus each tier's combined record. */
-function buildAscensionsModel(report) {
-  const byLevel = new Map((report.byAscension || []).map((b) => [parseAsc(b.key), b]));
-  const levels = Array.from({ length: NEXT_ASC_CAP + 1 }, (_, level) => {
-    const bucket = byLevel.get(level) || null;
+/** Blitz levels the new-look spire always draws: the patch notes give Blitz
+ *  five levels of its own. A higher level in someone's saves adds storeys. */
+const NEXT_BLITZ_TOP = 5;
+
+/** One spire storey's numbers. @param {{ runs: number, wins: number }|undefined} bucket */
+function storeyStats(bucket) {
+  const runs = bucket ? bucket.runs : 0;
+  const wins = bucket ? bucket.wins : 0;
+  return { runs, wins, winratePct: runs > 0 ? (wins / runs) * 100 : 0 };
+}
+
+/** New look: every level A0 → top (played or not) for the chosen climber
+ *  and ladder, plus each tier's combined record (standard ladder only). */
+function buildAscensionsModel() {
+  const { filter, runs } = spireSection();
+  const isBlitz = filter.ladder === "blitz";
+  const buckets = Filters.ascensionBuckets(runs, filter.ladder);
+  const byLevel = new Map(buckets.map((b) => [b.level, b]));
+  const top = isBlitz ? Math.max(NEXT_BLITZ_TOP, ...buckets.map((b) => b.level)) : NEXT_ASC_CAP;
+  const levels = Array.from({ length: top + 1 }, (_, level) => {
+    const stats = storeyStats(byLevel.get(level));
+    if (isBlitz) {
+      return { level, tierKey: "blitz", tierLabel: "Blitz", ...stats, title: `Blitz A${level}`, modifier: null, detail: "" };
+    }
     const info = AscInfo.modifierFor(level);
     return {
       level,
       tierKey: info.tier.key,
       tierLabel: info.tier.label,
-      runs: bucket ? bucket.runs : 0,
-      wins: bucket ? bucket.wins : 0,
-      winratePct: bucket ? bucket.winrate * 100 : 0,
+      ...stats,
       title: info.title,
       modifier: info.modifier,
       detail: info.detail,
     };
   });
-  const tiers = AscInfo.ASCENSION_TIERS.filter((t) => t.band[0] <= NEXT_ASC_CAP).map((t) => {
+  const tiers = isBlitz ? [] : AscInfo.ASCENSION_TIERS.filter((t) => t.band[0] <= NEXT_ASC_CAP).map((t) => {
     const inBand = levels.filter((l) => l.level >= t.band[0] && l.level <= t.band[1]);
     return {
       key: t.key,
@@ -13132,17 +13341,31 @@ function buildAscensionsModel(report) {
     };
   });
   const played = levels.filter((l) => l.runs > 0);
+  const options = spireFilterOptions(filter);
   return {
     levels,
     tiers,
     cap: NEXT_ASC_CAP,
-    hiddenAbove: [...byLevel.keys()].filter((level) => level > NEXT_ASC_CAP).length,
+    hiddenAbove: isBlitz ? 0 : buckets.filter((b) => b.level > NEXT_ASC_CAP).length,
     peak: played.length > 0 ? played[played.length - 1].level : null,
+    ladder: filter.ladder,
+    climber: filter.character === "all" ? "" : prettifyCharacterName(filter.character),
+    record: {
+      runs: buckets.reduce((sum, b) => sum + b.runs, 0),
+      wins: buckets.reduce((sum, b) => sum + b.wins, 0),
+    },
+    filter: {
+      climbers: options.climbers,
+      ladders: options.ladders,
+      label: spireFilterLabel(filter),
+      shownRuns: runs.length,
+      totalRuns: filter.character === "all" ? null : Filters.filterRuns(parsedRuns, { mode: filter.ladder }).length,
+    },
   };
 }
 
-function renderAscensionsTabNext(report) {
-  return UI.AscensionsView.ascensionsHtml(buildAscensionsModel(report));
+function renderAscensionsTabNext() {
+  return UI.AscensionsView.ascensionsHtml(buildAscensionsModel());
 }
 
 /** Spire storeys open their row in the breakdown and bring it into view. */
@@ -13420,7 +13643,7 @@ function classicToneKeyHtml(baseline, opts = {}) {
   // line where all four fit, else two by two, so no chip sits alone.
   return `
     <div class="tone-key-wrap">
-      <ul class="tone-key${below}${base ? " has-base" : ""}" aria-label="How to read the colours">
+      <ul class="tone-key${below}${base ? " has-base" : ""}" aria-label="How to read the colors">
         ${base}
         ${["win", "gold", "accent"].map((tone) => `<li data-tone="${tone}"><i aria-hidden="true"></i>${CLASSIC_TONE_LABELS[tone]}</li>`).join("")}
       </ul>
@@ -13529,6 +13752,7 @@ function renderCardsNext(report) {
     hasOffers,
     lowSampleRuns: NEXT_LOW_SAMPLE_RUNS,
     baselinePct: report.overallWinrate * 100,
+    emptyNote: cardPicksMissingNote(),
   });
 }
 
@@ -13571,7 +13795,7 @@ function renderCards(report) {
       </div>`
     : `
       ${secTitle("Most-picked cards", "cards")}
-      <p class="muted">No card-pick data in your history yet.</p>`;
+      <p class="muted">${esc(cardPicksMissingNote() || "No card-pick data in your history yet.")}</p>`;
 
   const skippedSection = report.topSkippedCards?.length
     ? `
@@ -13613,6 +13837,7 @@ const STORAGE_RUN_FILTERS = "vault.web.runfilters.v1";
  *  the tier closest to what it asked for, so nobody's filter is dropped;
  *  "mid" keeps its id (now A4–A6, the Ascensions tab's mid climb). */
 const LEGACY_RUN_TIER_IDS = Object.freeze({ low: "early", high: "master" });
+const EMPTY_RUN_FILTERS = Object.freeze({ character: "all", outcome: "all", ascensionTier: "all", mode: "all", search: "" });
 let runFilters = (() => {
   try {
     const raw = localStorage.getItem(STORAGE_RUN_FILTERS);
@@ -13623,11 +13848,13 @@ let runFilters = (() => {
         outcome: j.outcome || "all",          // all | wins | losses
         // all | a0 | early | mid | expert | master (RUN_FILTER_TIERS)
         ascensionTier: LEGACY_RUN_TIER_IDS[j.ascensionTier] || j.ascensionTier || "all",
+        // all | standard | blitz | dread (STS2 beta modes; Filters.MODE_IDS)
+        mode: Filters.MODE_IDS.includes(j.mode) ? j.mode : "all",
         search: j.search || "",
       };
     }
   } catch {}
-  return { character: "all", outcome: "all", ascensionTier: "all", search: "" };
+  return { ...EMPTY_RUN_FILTERS };
 })();
 
 function persistRunFilters() {
@@ -13725,13 +13952,43 @@ function refreshCompareBar() {
 // logic both treat A10 as the maximum.
 const STS2_MAX_ASCENSION = 10;
 
-function applyRunFilters(runs) {
+/** The Runs tab's game mode as it applies to these runs ("all" when the
+ *  saved one has no runs, or the Mode chips are not on screen). */
+function runModeNow(runs) {
+  return Filters.availableMode(runFilters.mode, runs);
+}
+
+/** Ascension tiers are standard-ladder bands: they apply under All and
+ *  Standard, and are switched off under Blitz and Dread. */
+function runTiersApply(mode) {
+  return Filters.ladderOf(mode) === "standard";
+}
+
+/** Whether any Runs filter narrows the list. */
+function runFiltersActive(runs) {
+  const mode = runModeNow(runs);
+  return runFilters.character !== "all" || runFilters.outcome !== "all"
+    || (runFilters.ascensionTier !== "all" && runTiersApply(mode))
+    || mode !== "all" || (runFilters.search || "").trim() !== "";
+}
+
+/**
+ * @param {Array<object>} runs
+ * @param {{ ignoreDate?: boolean }} [options]  ignoreDate: every filter but the
+ *   date (the mini calendar's dots and counts)
+ */
+function applyRunFilters(runs, { ignoreDate = false } = {}) {
   const q = (runFilters.search || "").toLowerCase().trim();
+  const mode = runModeNow(runs);
+  const dateRange = ignoreDate ? null : activeRunsDate();
+  const today = dateRange ? RunDates.dayKey(new Date()) : "";
   return runs.filter((r) => {
+    if (dateRange && !RunDates.inRange(runDayKey(r, today), dateRange)) return false;
     if (runFilters.character !== "all" && r.character !== runFilters.character) return false;
     if (runFilters.outcome === "wins" && !r.won) return false;
     if (runFilters.outcome === "losses" && r.won) return false;
-    if (runFilters.ascensionTier !== "all") {
+    if (mode !== "all" && Filters.runMode(r) !== mode) return false;
+    if (runFilters.ascensionTier !== "all" && runTiersApply(mode)) {
       // Blitz/Dread ascensions are not standard-ladder levels (STS2 beta).
       if (!isLadderRun(r)) return false;
       // Clamp legacy / out-of-range ascensions into the STS2 ladder so
@@ -13774,6 +14031,33 @@ const RUN_FILTER_OUTCOMES = [
   { id: "losses", label: "Losses" },
 ];
 
+/** Mode chips for the Runs tab (the same choices as By character); empty
+ *  when every run is a standard one. */
+function runModeOptions(runs) {
+  const choices = Filters.modeChoices(runs);
+  if (!choices) return [];
+  const counts = Filters.modeCounts(runs);
+  const mode = runModeNow(runs);
+  return choices.map((id) => ({
+    value: id,
+    label: Filters.MODE_LABELS[id],
+    pressed: mode === id,
+    title: id === "all" ? `Every run (${runs.length})` : pluralRuns(counts[id], `${Filters.MODE_LABELS[id]} run`),
+  }));
+}
+
+/** Ascension tier chips; off (All stays) under Blitz and Dread. */
+function runTierOptions(mode) {
+  const apply = runTiersApply(mode);
+  const offTitle = `Ascension tiers are standard-ladder levels; ${Filters.MODE_LABELS[mode]} runs are not on that ladder`;
+  return RUN_FILTER_TIERS.map((t) => ({
+    ...t,
+    pressed: apply ? runFilters.ascensionTier === t.id : t.id === "all",
+    disabled: !apply && t.id !== "all",
+    title: !apply && t.id !== "all" ? offTitle : t.title,
+  }));
+}
+
 function renderRunFilters(allRuns, filteredCount) {
   // Every climber gets a chip, so the whole roster (The Fool included) is
   // visible. One you have never played is shown but disabled: a filter that
@@ -13793,11 +14077,15 @@ function renderRunFilters(allRuns, filteredCount) {
     <button class="chart-chip" type="button" data-filter-kind="outcome" data-filter-value="${esc(o.id)}" aria-pressed="${runFilters.outcome === o.id}">${esc(o.label)}</button>
   `).join("");
 
-  const tierChips = RUN_FILTER_TIERS.map((t) => `
-    <button class="chart-chip" type="button" data-filter-kind="ascensionTier" data-filter-value="${esc(t.id)}" aria-pressed="${runFilters.ascensionTier === t.id}"${t.title ? ` title="${esc(t.title)}"` : ""}>${esc(t.label)}</button>
+  const mode = runModeNow(allRuns);
+  const modeChips = runModeOptions(allRuns).map((o) => `
+    <button class="chart-chip" type="button" data-filter-kind="mode" data-filter-value="${esc(o.value)}" aria-pressed="${o.pressed}" title="${esc(o.title)}">${esc(o.label)}</button>
+  `).join("");
+  const tierChips = runTierOptions(mode).map((t) => `
+    <button class="chart-chip" type="button" data-filter-kind="ascensionTier" data-filter-value="${esc(t.id)}" aria-pressed="${t.pressed}"${t.title ? ` title="${esc(t.title)}"` : ""}${t.disabled ? " disabled" : ""}>${esc(t.label)}</button>
   `).join("");
 
-  const isFiltered = runFilters.character !== "all" || runFilters.outcome !== "all" || runFilters.ascensionTier !== "all" || (runFilters.search || "").trim() !== "";
+  const isFiltered = runFiltersActive(allRuns);
   const summary = isFiltered
     ? `Showing <strong>${filteredCount}</strong> of <strong>${allRuns.length}</strong> runs after filters. <button class="run-filter-clear" type="button" data-action="clear-filters">Clear all</button>`
     : `Showing all <strong>${allRuns.length}</strong> runs.`;
@@ -13825,6 +14113,10 @@ function renderRunFilters(allRuns, filteredCount) {
         <span class="run-filter-label">Outcome</span>
         <span class="run-filter-chips">${outcomeChips}</span>
       </div>
+      ${modeChips ? `<div class="run-filter-group">
+        <span class="run-filter-label">Mode</span>
+        <span class="run-filter-chips">${modeChips}</span>
+      </div>` : ""}
       <div class="run-filter-group">
         <span class="run-filter-label">Ascension</span>
         <span class="run-filter-chips">${tierChips}</span>
@@ -13959,7 +14251,92 @@ function runGroupLabelNext(date, now) {
 
 function runsNextFilterKey() {
   const f = runFilters;
-  return [f.character, f.outcome, f.ascensionTier, (f.search || "").trim().toLowerCase()].join("|");
+  const d = activeRunsDate();
+  return [f.character, f.outcome, f.ascensionTier, f.mode, (f.search || "").trim().toLowerCase(), d ? `${d.from}~${d.to}` : ""].join("|");
+}
+
+// ---- Recent Runs: "go by date" (new look) ---------------------------------
+// The Date chip opens a mini calendar (lib/ui/runs-calendar.js) where a day,
+// a range or a quick pick (Today, Last 7 days, This month) narrows the ledger,
+// together with the other filters. Not saved with them: it is a place you go,
+// and a range kept overnight would hide the next day's runs. Classic has no
+// Date control, so the range only applies in the new look.
+/** @type {import("/lib/run-dates.js").DayRange|null} */
+let runsDateRange = null;
+let runsDateWired = false;
+
+/** The range in force: a quick pick is re-read against today, so "Today"
+ *  left open past midnight means the new day, as its chip says.
+ *  @returns {import("/lib/run-dates.js").DayRange|null} */
+function activeRunsDate() {
+  if (!UI || !runsDateRange) return null;
+  if (!runsDateRange.preset) return runsDateRange;
+  return RunDates.presetRange(runsDateRange.preset, RunDates.dayKey(new Date())) || runsDateRange;
+}
+
+/** The calendar day a run counts for: the day it ended (or began), never after today. */
+function runDayKey(r, today) {
+  const key = RunDates.dayKey(r.endedAt || r.startedAt);
+  return key && today && key > today ? today : key;
+}
+
+/** @param {{ fromKeyboard?: boolean }} [options] */
+function openRunsDateCalendar({ fromKeyboard = false } = {}) {
+  if (!UI?.RunsCalendar || !Array.isArray(parsedRuns)) return;
+  const today = RunDates.dayKey(new Date());
+  const base = applyRunFilters(parsedRuns, { ignoreDate: true });
+  const keyed = base.map((r) => ({ key: runDayKey(r, today), won: r.won === true }));
+  const span = parsedRuns.map((r) => runDayKey(r, today)).filter(Boolean).sort();
+  UI.RunsCalendar.openRunsCalendar({
+    getAnchor: () => document.querySelector('#runs-body [data-action="runs-date-open"]'),
+    range: activeRunsDate(),
+    today,
+    days: RunDates.countByDay(keyed),
+    firstDay: span[0],
+    lastDay: span[span.length - 1],
+    count: (range) => (range ? keyed.filter((k) => RunDates.inRange(k.key, range)).length : base.length),
+    onChange: (range) => {
+      runsDateRange = range;
+      if (activeTab === "runs") renderStatsTab("runs");
+    },
+    onClose: (changed) => {
+      if (changed && runsDateRange) scrollRunsToFirstDay();
+    },
+    fromKeyboard,
+  });
+  vaultGtagEvent("runs_date_open", {});
+}
+
+/** After a date is picked, bring its first day of runs into view. */
+function scrollRunsToFirstDay() {
+  const target = document.querySelector("#runs-body .v-runs-day") || document.querySelector("#runs-body .v-runs-empty");
+  if (!(target instanceof HTMLElement)) return;
+  // Phones pin the top bar (the rail, sticky); land the day just under it.
+  const bar = document.querySelector(".sidebar");
+  const barBottom = bar && getComputedStyle(bar).position === "sticky" ? Math.max(0, bar.getBoundingClientRect().bottom) : 0;
+  const top = target.getBoundingClientRect().top;
+  if (top >= barBottom && top <= window.innerHeight * 0.6) return;
+  const smooth = !window.matchMedia("(prefers-reduced-motion: reduce)").matches && !document.documentElement.classList.contains("prefer-reduced-motion");
+  window.scrollTo({ top: Math.max(0, window.scrollY + top - barBottom - 16), behavior: smooth ? "smooth" : "auto" });
+}
+
+function wireRunsDate() {
+  if (runsDateWired) return;
+  runsDateWired = true;
+  document.addEventListener("click", (e) => {
+    const btn = e.target instanceof Element ? e.target.closest('[data-action="runs-date-open"], [data-action="runs-date-clear"]') : null;
+    if (!btn || !UI) return;
+    e.preventDefault();
+    if (btn.getAttribute("data-action") === "runs-date-open") {
+      // A click from Enter/Space has no pointer (detail 0): land on a day.
+      openRunsDateCalendar({ fromKeyboard: e.detail === 0 });
+      return;
+    }
+    runsDateRange = null;
+    renderStatsTab("runs");
+    const chip = document.querySelector('#runs-body [data-action="runs-date-open"]');
+    if (chip instanceof HTMLElement) chip.focus({ preventScroll: true });
+  });
 }
 
 function wireRunsNextPaging() {
@@ -13982,13 +14359,16 @@ function wireRunsNextPaging() {
 
 function renderRecentRunsNext(runs) {
   wireRunsNextPaging();
+  wireRunsDate();
   const key = runsNextFilterKey();
   if (runsNextPage.key !== key) runsNextPage = { key, limit: RUNS_NEXT_PAGE_SIZE };
   const sorted = applyRunFilters(runs).slice().sort((a, b) => (b.endedAt?.getTime() ?? 0) - (a.endedAt?.getTime() ?? 0));
   const maxFloor = Math.max(1, ...runs.map((r) => (Number.isFinite(r.floorReached) ? r.floorReached : 0)));
   const played = new Set(runs.map((r) => r.character).filter(Boolean));
-  const isFiltered = runFilters.character !== "all" || runFilters.outcome !== "all" || runFilters.ascensionTier !== "all" || (runFilters.search || "").trim() !== "";
+  const dateRange = activeRunsDate();
+  const isFiltered = runFiltersActive(runs) || !!dateRange;
   const now = new Date();
+  const today = RunDates.dayKey(now);
   const rows = sorted.slice(0, runsNextPage.limit).map((r) => {
     const id = String(r.id ?? "");
     const date = r.endedAt || r.startedAt;
@@ -14007,15 +14387,22 @@ function renderRecentRunsNext(runs) {
       duration: formatPlayTimeStrict(r.playTimeSeconds),
       result: runResultNext(r),
       killedBy: runResultNext(r) === "loss" && r.killedBy ? bossLabel(r.killedBy) : "",
-      group: runGroupLabelNext(date, now),
+      // With a date picked, each day gets its own divider ("Saturday, Nov 15").
+      group: dateRange ? RunDates.dayGroupLabel(runDayKey(r, today), today) : runGroupLabelNext(date, now),
       isSelected: compareSelected.has(id),
     };
   });
   return UI.RunsView.runsHtml({
-    filters: { ...runFilters, search: runFilters.search || "" },
+    filters: { ...runFilters, mode: runModeNow(runs), search: runFilters.search || "" },
     outcomes: RUN_FILTER_OUTCOMES,
-    tiers: RUN_FILTER_TIERS,
+    modes: runModeOptions(runs),
+    tiers: runTierOptions(runModeNow(runs)),
     characters: RUN_FILTER_CHARACTERS.map((c) => ({ key: c, label: prettifyCharacterName(c), disabled: !played.has(c) })),
+    date: {
+      isSet: !!dateRange,
+      label: RunDates.rangeChipLabel(dateRange, today),
+      rangeText: dateRange ? RunDates.formatRange(dateRange, today) : "",
+    },
     total: runs.length,
     filteredCount: sorted.length,
     isFiltered,
@@ -15785,6 +16172,256 @@ function renderActTimeline(r) {
 }
 
 // =========================================================================
+// Section filters
+// -------------------------------------------------------------------------
+// Overview → By character: game mode (All / Standard / Blitz / Dread) and
+// one ascension level. Ascensions: one climber, on the Standard or Blitz
+// ladder (the spire, tiers and breakdown all follow). The filter sits on
+// the section it changes and nothing else on the page moves with it.
+//
+// The rules live in lib/stat-filters.js. The saved choice is kept as the
+// player made it and cut down to the loaded runs on every render
+// (Filters.sanitize*), so a choice the data cannot show (Blitz, after a
+// switch to main-branch saves) is never applied unseen. Both looks read
+// the same state.
+// =========================================================================
+const STORAGE_STAT_FILTERS = "vault.web.statfilters.v1";
+let statFilters = (() => {
+  try {
+    const saved = JSON.parse(localStorage.getItem(STORAGE_STAT_FILTERS) || "null");
+    if (saved && typeof saved === "object") return Object.freeze({ chars: saved.chars ?? null, spire: saved.spire ?? null });
+  } catch {}
+  return Object.freeze({ chars: null, spire: null });
+})();
+
+function persistStatFilters() {
+  try { localStorage.setItem(STORAGE_STAT_FILTERS, JSON.stringify(statFilters)); } catch {}
+}
+
+/** A character's current win streak, or 0 when it is too short to show. */
+function shownStreak(streaks, key) {
+  const n = streaks.get(key) || 0;
+  return n >= Filters.STREAK_SHOWN_FROM ? n : 0;
+}
+
+/** @param {number} n @param {string} noun */
+function pluralRuns(n, noun = "run") {
+  return `${n} ${noun}${n === 1 ? "" : "s"}`;
+}
+
+/** The By character section's filter, runs, per-character report and streaks.
+ *  An unfiltered section reuses the page's report. */
+function characterSection(report) {
+  const filter = Filters.sanitizeCharacterFilter(statFilters.chars, parsedRuns);
+  const isFiltered = Filters.characterFilterLabel(filter) !== "";
+  const runs = isFiltered ? Filters.filterRuns(parsedRuns, filter) : parsedRuns;
+  return {
+    filter,
+    runs,
+    report: isFiltered ? Stats.summarize(runs) : report,
+    streaks: Filters.winStreaksByCharacter(runs),
+  };
+}
+
+/** Mode chips; null when every loaded run is a standard one (no control). */
+function characterModeOptions(filter) {
+  const choices = Filters.modeChoices(parsedRuns);
+  if (!choices) return null;
+  const counts = Filters.modeCounts(parsedRuns);
+  return choices
+    .map((id) => ({
+      value: id,
+      label: Filters.MODE_LABELS[id],
+      pressed: filter.mode === id,
+      title: id === "all" ? `Every run (${parsedRuns.length})` : pluralRuns(counts[id], `${Filters.MODE_LABELS[id]} run`),
+    }));
+}
+
+/** Ascension picker: every level of the mode's ladder that has runs, highest first. */
+function characterLevelOptions(filter) {
+  if (!Filters.ladderOf(filter.mode)) return [{ value: "", label: "No levels in Dread", selected: true }];
+  return [
+    { value: "", label: filter.mode === "blitz" ? "All Blitz levels" : "All ascensions", selected: filter.asc === null },
+    ...Filters.ascensionLevels(parsedRuns, filter.mode).map((b) => ({
+      value: String(b.level),
+      label: `A${b.level} · ${pluralRuns(b.runs)}`,
+      selected: filter.asc === b.level,
+    })),
+  ];
+}
+
+/** View model for the new look's By character filters. */
+function buildCharacterFilterModel(filter, shownRuns) {
+  const label = Filters.characterFilterLabel(filter);
+  return {
+    modes: characterModeOptions(filter),
+    levels: characterLevelOptions(filter),
+    levelsDisabled: !Filters.ladderOf(filter.mode),
+    label,
+    // Short on purpose: a banner can be 76px wide, and the summary line
+    // above the cards already names the filter.
+    emptyText: label ? "No runs" : "No runs yet",
+    shownRuns,
+    totalRuns: parsedRuns.length,
+  };
+}
+
+/** The Ascensions section's filter and the runs its spire is built from. */
+function spireSection() {
+  const filter = Filters.sanitizeSpireFilter(statFilters.spire, parsedRuns);
+  return { filter, runs: Filters.filterRuns(parsedRuns, { character: filter.character, mode: filter.ladder }) };
+}
+
+/** Climber chips (one per roster character, disabled without runs on the
+ *  ladder) and Ladder chips (only when there are Blitz runs). */
+function spireFilterOptions(filter) {
+  const onLadder = Filters.filterRuns(parsedRuns, { mode: filter.ladder });
+  const played = new Set(onLadder.map((r) => r.character).filter(Boolean));
+  const ladderName = filter.ladder === "blitz" ? "Blitz " : "";
+  const climbers = [
+    { value: "all", label: "All", pressed: filter.character === "all" },
+    ...RUN_FILTER_CHARACTERS.map((key) => {
+      const name = prettifyCharacterName(key);
+      const hasRuns = played.has(key);
+      return {
+        value: key,
+        label: name,
+        pressed: filter.character === key,
+        charKey: key,
+        disabled: !hasRuns,
+        title: hasRuns ? "" : `No ${ladderName}runs as ${name} yet`,
+      };
+    }),
+  ];
+  const blitzRuns = Filters.modeCounts(parsedRuns).blitz;
+  const ladders = blitzRuns > 0
+    ? [
+        { value: "standard", label: "Standard", pressed: filter.ladder === "standard", title: "A0–A10" },
+        { value: "blitz", label: "Blitz", pressed: filter.ladder === "blitz", title: pluralRuns(blitzRuns, "Blitz run") },
+      ]
+    : null;
+  return { climbers, ladders };
+}
+
+/** "Ironclad", "Blitz", "Ironclad · Blitz", or "" for the default spire. */
+function spireFilterLabel(filter) {
+  return [filter.character === "all" ? "" : prettifyCharacterName(filter.character), filter.ladder === "blitz" ? "Blitz" : ""]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+/**
+ * Applies a filter control. `data-stat-filter` is "<section>.<key>":
+ * chars.mode / chars.asc / chars.clear, spire.character / spire.ladder /
+ * spire.clear. Re-renders the open tab and puts focus back on the same
+ * control, since the re-render replaced it.
+ */
+function applyStatFilter(control, value) {
+  const [section, key] = String(control.dataset.statFilter || "").split(".");
+  let next = null;
+  if (section === "chars") {
+    const current = Filters.sanitizeCharacterFilter(statFilters.chars, parsedRuns);
+    if (key === "clear") next = { ...Filters.DEFAULT_CHARACTER_FILTER };
+    else if (key === "mode") next = Filters.withMode(current, value);
+    else if (key === "asc") next = { ...current, asc: value === "" ? null : Number(value) };
+    if (next) next = Filters.sanitizeCharacterFilter(next, parsedRuns);
+  } else if (section === "spire") {
+    const current = Filters.sanitizeSpireFilter(statFilters.spire, parsedRuns);
+    if (key === "clear") next = { ...Filters.DEFAULT_SPIRE_FILTER };
+    else if (key === "character") next = { ...current, character: value };
+    else if (key === "ladder") next = { ...current, ladder: value };
+    if (next) next = Filters.sanitizeSpireFilter(next, parsedRuns);
+  }
+  if (!next) return;
+  statFilters = Object.freeze({ ...statFilters, [section]: next });
+  persistStatFilters();
+  if (!TABS_WITH_DATA.includes(activeTab)) return;
+  renderStatsTab(activeTab);
+  const scope = document.getElementById(`${activeTab}-body`) || document;
+  const firstControl = `[data-stat-filter^="${section}."]:not(:disabled)`;
+  const sameControl = control.tagName === "SELECT"
+    ? `select[data-stat-filter="${section}.${key}"]`
+    : `button[data-stat-filter="${section}.${key}"][data-value="${cssEscape(value)}"]`;
+  const target = (key === "clear" ? null : scope.querySelector(sameControl)) || scope.querySelector(firstControl);
+  if (target) target.focus({ preventScroll: true });
+}
+
+// ---- Classic look: the same controls in the Runs tab's filter-bar markup
+// (.run-filters / .chart-chip / .h-sort-select), so they pick up classic's
+// existing desktop and phone styling.
+
+/** @param {string} filter @param {string} label @param {ReadonlyArray<{ value: string, label: string, pressed: boolean, disabled?: boolean, title?: string, charKey?: string }>} options */
+function classicFilterGroup(filter, label, options) {
+  const chips = options.map((o) => {
+    const char = o.charKey ? ` data-char style="--char-color:${charTheme(o.charKey).color}"` : "";
+    const title = o.title ? ` title="${esc(o.title)}"` : "";
+    return `<button class="chart-chip" type="button" data-stat-filter="${esc(filter)}" data-value="${esc(o.value)}" aria-pressed="${o.pressed}"${char}${title}${o.disabled ? " disabled" : ""}>${esc(o.label)}</button>`;
+  }).join("");
+  return `
+      <div class="run-filter-group" role="group" aria-label="${esc(label)}">
+        <span class="run-filter-label" aria-hidden="true">${esc(label)}</span>
+        <span class="run-filter-chips">${chips}</span>
+      </div>`;
+}
+
+/** @param {string} filter @param {string} label @param {ReadonlyArray<{ value: string, label: string, selected: boolean }>} options @param {boolean} disabled */
+function classicFilterSelect(filter, label, options, disabled) {
+  const items = options.map((o) => `<option value="${esc(o.value)}"${o.selected ? " selected" : ""}>${esc(o.label)}</option>`).join("");
+  return `
+      <label class="run-filter-group stat-filter-select">
+        <span class="run-filter-label">${esc(label)}</span>
+        <select class="h-sort-select" data-stat-filter="${esc(filter)}"${disabled ? ' disabled title="Dread runs have no ascension level"' : ""}>${items}</select>
+      </label>`;
+}
+
+/** @param {string} filter @param {string} label @param {number} shown @param {number|null} total */
+function classicFilterSummary(filter, label, shown, total) {
+  const count = total === null ? pluralRuns(shown) : `${shown} of ${total} runs`;
+  return `<p class="run-filter-summary">Showing <strong>${esc(label)}</strong> &middot; ${count}. <button class="run-filter-clear" type="button" data-stat-filter="${esc(filter)}" data-value="">Clear</button></p>`;
+}
+
+/** Classic Overview: mode chips (only with Blitz/Dread runs) and the ascension picker. */
+function renderClassicCharacterFilters(filter, shownRuns) {
+  const model = buildCharacterFilterModel(filter, shownRuns);
+  const modes = model.modes ? classicFilterGroup("chars.mode", "Mode", model.modes) : "";
+  const summary = model.label ? classicFilterSummary("chars.clear", model.label, model.shownRuns, model.totalRuns) : "";
+  // A lone picker (standard runs only, nothing picked) goes without the panel.
+  const bare = !model.modes && !model.label ? " is-bare" : "";
+  return `
+    <div class="run-filters stat-filters stat-filters--chars${bare}" role="region" aria-label="Filter the character cards">
+      ${modes}
+      ${classicFilterSelect("chars.asc", "Ascension", model.levels, model.levelsDisabled)}
+      ${summary}
+    </div>`;
+}
+
+/** Classic Ascensions: climber chips and, with Blitz runs, the ladder chips. */
+function renderClassicSpireFilters(filter, shownRuns) {
+  const { climbers, ladders } = spireFilterOptions(filter);
+  const label = spireFilterLabel(filter);
+  const total = filter.character === "all" ? null : Filters.filterRuns(parsedRuns, { mode: filter.ladder }).length;
+  return `
+    <div class="run-filters stat-filters stat-filters--spire" role="region" aria-label="Filter the ascension stats">
+      ${classicFilterGroup("spire.character", "Climber", climbers)}
+      ${ladders ? classicFilterGroup("spire.ladder", "Ladder", ladders) : ""}
+      ${label ? classicFilterSummary("spire.clear", label, shownRuns, total) : ""}
+    </div>`;
+}
+
+function wireStatFilters() {
+  document.addEventListener("click", (e) => {
+    const button = e.target.closest?.("button[data-stat-filter]");
+    if (!button || button.disabled) return;
+    e.preventDefault();
+    applyStatFilter(button, button.dataset.value || "");
+  });
+  document.addEventListener("change", (e) => {
+    const select = e.target.closest?.("select[data-stat-filter]");
+    if (select) applyStatFilter(select, select.value);
+  });
+}
+
+// =========================================================================
 // Recent Runs filters
 // =========================================================================
 function wireRunFilters() {
@@ -15793,8 +16430,10 @@ function wireRunFilters() {
     if (chip && chip.tagName === "BUTTON") {
       const kind = chip.dataset.filterKind;
       const value = chip.dataset.filterValue;
-      if (kind && value && (kind === "character" || kind === "outcome" || kind === "ascensionTier")) {
+      if (kind && value && (kind === "character" || kind === "outcome" || kind === "ascensionTier" || kind === "mode")) {
         runFilters[kind] = value;
+        // Blitz and Dread levels are not standard-ladder tiers.
+        if (kind === "mode" && !runTiersApply(value)) runFilters.ascensionTier = "all";
         persistRunFilters();
         if (activeTab === "runs") renderStatsTab("runs");
       }
@@ -15803,7 +16442,8 @@ function wireRunFilters() {
     const clear = e.target.closest('[data-action="clear-filters"]');
     if (clear) {
       e.preventDefault();
-      runFilters = { character: "all", outcome: "all", ascensionTier: "all", search: "" };
+      runFilters = { ...EMPTY_RUN_FILTERS };
+      runsDateRange = null;
       persistRunFilters();
       if (activeTab === "runs") renderStatsTab("runs");
     }

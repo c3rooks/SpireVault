@@ -35,6 +35,8 @@ export const SCENARIOS = Object.freeze({
   },
   empty: { presence: () => [], release: () => ({ tag_name: "v1.2.3", assets: [] }) },
   down: { presence: null, release: null },
+  // Only the roster fails (Steam slow upstream): the sign-up total still shows.
+  rosterDown: { presence: null, stats: () => ({ totalClimbers: 128 }), release: null },
 });
 
 
@@ -60,7 +62,12 @@ export async function stubNetwork(page, scenario) {
     if (!make) return route.abort("failed");
     return route.fulfill({ contentType: "application/json", headers: { "access-control-allow-origin": "*" }, body: JSON.stringify(make()) });
   };
-  await page.route("**/vault-coop.coreycrooks.workers.dev/**", (route) => answer(route, scenario.presence));
+  // /stats/community gets its own answer when a scenario gives one; otherwise
+  // it shares the roster's (an array, so the total falls back to its length).
+  await page.route("**/vault-coop.coreycrooks.workers.dev/**", (route) => {
+    const isStats = new URL(route.request().url()).pathname === "/stats/community";
+    return answer(route, isStats && "stats" in scenario ? scenario.stats : scenario.presence);
+  });
   await page.route("**/api.github.com/**", (route) => answer(route, scenario.release));
 }
 

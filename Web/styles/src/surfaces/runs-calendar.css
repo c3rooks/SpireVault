@@ -1,0 +1,546 @@
+/* ==========================================================================
+   Recent Runs: "go by date" — the Date chip and its mini calendar.
+   Built by lib/ui/runs-calendar.js (the dialog) and lib/ui/views-runs.js
+   (the chip). A popover under the chip on wide screens; a bottom sheet at
+   phone widths (880px, the phone tab bar's line).
+   ========================================================================== */
+
+/* ---- The Date chip ------------------------------------------------------- */
+.v-runs-date svg {
+  flex: none;
+  width: 15px;
+  height: 15px;
+}
+.v-runs-date .v-runs-date-caret {
+  width: 12px;
+  height: 12px;
+  margin-right: -3px;
+  opacity: 0.75;
+  transition: transform var(--v-dur-1) ease;
+}
+.v-runs-date[aria-expanded="true"] .v-runs-date-caret {
+  transform: rotate(180deg);
+}
+/* A date is set: the chip wears the pressed gold, like a chosen chip. */
+.v-runs-date[data-set="true"] {
+  background: var(--v-title);
+  box-shadow: inset 0 0 0 var(--v-outline-w) var(--v-ink);
+  color: var(--v-ink);
+}
+.v-runs-date-x {
+  justify-content: center;
+  width: 30px;
+  padding: 0;
+}
+.v-runs-date-x svg {
+  width: 14px;
+  height: 14px;
+}
+.v-runs-summary-date {
+  color: var(--v-text);
+  font-weight: 800;
+}
+
+/* ---- The dialog ----------------------------------------------------------- */
+html.v-rcal-lock {
+  overflow: hidden;
+}
+html.v-rcal-gutter {
+  scrollbar-gutter: stable;
+}
+.v-rcal[open] {
+  position: fixed;
+  inset: 0;
+  z-index: 320;
+  display: block;
+  width: 100%;
+  max-width: none;
+  height: 100%;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  background: transparent;
+  color: var(--v-text);
+  font-family: var(--v-font-text);
+  overscroll-behavior: contain;
+}
+.v-rcal::backdrop {
+  background: transparent;
+}
+.v-rcal-scrim {
+  display: none;
+}
+.v-rcal-panel {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  gap: var(--v-space-3);
+  width: 344px;
+  max-width: calc(100vw - 32px);
+  padding: var(--v-space-3) var(--v-space-3) var(--v-space-3);
+  border: var(--v-outline);
+  border-radius: var(--v-radius-lg);
+  background: var(--v-surface-1);
+  box-shadow: var(--v-shadow-lg);
+  transform-origin: 24px 0;
+  animation: v-rcal-pop 220ms var(--v-ease-out) both;
+}
+.v-rcal-panel[data-side="above"] {
+  transform-origin: 24px 100%;
+}
+.v-rcal[data-closing] .v-rcal-panel {
+  animation: v-rcal-unpop var(--v-dur-2) var(--v-ease-inout) both;
+}
+
+/* The heading names the dialog; on a wide screen the chip it hangs from is
+   its title, so it is read but not shown. */
+.v-rcal-head {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.v-rcal-title {
+  margin: 0;
+  color: var(--v-title);
+  font-family: var(--v-font-display);
+  font-size: var(--v-text-2xl);
+  font-weight: var(--v-display-weight);
+  line-height: 1;
+  text-shadow: var(--v-title-shadow);
+  transform: rotate(var(--v-title-tilt));
+  transform-origin: 0 50%;
+}
+.v-rcal-title:focus {
+  outline: none;
+}
+/* Only the sheet has a close button; the popover closes with Done, Esc or a
+   click outside, and a hidden button would still take a Tab stop. */
+.v-rcal-x {
+  display: none;
+  flex: none;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: var(--v-outline);
+  border-radius: var(--v-radius-sm);
+  background: var(--v-surface-2);
+  box-shadow: var(--v-shadow-sm);
+  color: var(--v-text);
+  cursor: pointer;
+}
+.v-rcal-x svg {
+  width: 20px;
+  height: 20px;
+}
+
+/* ---- Quick picks: a segmented track like the filter groups ------------------ */
+.v-rcal-quick {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 3px;
+  padding: 3px;
+  border: var(--v-outline);
+  border-radius: var(--v-radius-pill);
+  background: var(--v-well);
+}
+.v-rcal-pick {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-width: 0;
+  min-height: 32px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: var(--v-radius-pill);
+  background: transparent;
+  color: var(--v-text-2);
+  font: 700 var(--v-text-sm) / 1 var(--v-font-text);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color var(--v-dur-1) ease, color var(--v-dur-1) ease;
+}
+.v-rcal-pick:hover:where(:not(:disabled)) {
+  background: var(--v-surface-2);
+  color: var(--v-text);
+}
+.v-rcal-pick[aria-pressed="true"] {
+  background: var(--v-title);
+  box-shadow: inset 0 0 0 var(--v-outline-w) var(--v-ink);
+  color: var(--v-ink);
+}
+.v-rcal-pick:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.v-rcal-pick-n {
+  min-width: 18px;
+  padding: 2px 5px;
+  border-radius: var(--v-radius-pill);
+  background: var(--v-surface-2);
+  color: var(--v-text);
+  font-size: 0.7rem;
+  font-weight: 800;
+  line-height: 1.1;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.v-rcal-pick[aria-pressed="true"] .v-rcal-pick-n {
+  background: var(--v-ink);
+  color: var(--v-title);
+}
+
+/* ---- Month heading ----------------------------------------------------------- */
+.v-rcal-month {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--v-space-2);
+}
+.v-rcal-month-label {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  margin: 0;
+  text-align: center;
+}
+.v-rcal-month-label span {
+  color: var(--v-title);
+  font-family: var(--v-font-heading);
+  font-size: var(--v-text-lg);
+  font-weight: 800;
+  line-height: 1.1;
+}
+.v-rcal-month-label small {
+  color: var(--v-text-2);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+.v-rcal-nav {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: var(--v-outline);
+  border-radius: var(--v-radius-sm);
+  background: var(--v-surface-2);
+  box-shadow: var(--v-shadow-sm);
+  color: var(--v-text);
+  cursor: pointer;
+  transition: transform var(--v-dur-1) ease, box-shadow var(--v-dur-1) ease;
+}
+.v-rcal-nav svg {
+  width: 18px;
+  height: 18px;
+}
+.v-rcal-nav:hover:where(:not(:disabled)) {
+  box-shadow: var(--v-shadow-pressed);
+  color: var(--v-title);
+  transform: translate(var(--v-press), var(--v-press));
+}
+.v-rcal-nav:active:where(:not(:disabled)) {
+  box-shadow: none;
+  transform: translate(calc(var(--v-press) + 1px), calc(var(--v-press) + 1px));
+}
+.v-rcal-nav:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+/* ---- The day grid -------------------------------------------------------------
+   No gap between cells in a week, so a range reads as one band; a little
+   between weeks. */
+.v-rcal-grid {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0 3px;
+  table-layout: fixed;
+}
+.v-rcal-grid th {
+  padding: 0 0 2px;
+  color: var(--v-text-3);
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-align: center;
+}
+.v-rcal-day {
+  height: 40px;
+  padding: 0;
+  text-align: center;
+}
+.v-rcal-day button {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  padding: 0 0 4px;
+  border: 0;
+  border-radius: var(--v-radius-sm);
+  background: transparent;
+  color: var(--v-text);
+  font: 700 var(--v-text-md) / 1 var(--v-font-text);
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition: background-color var(--v-dur-1) ease, color var(--v-dur-1) ease;
+}
+.v-rcal-day button:hover:where(:not(:disabled)) {
+  background: var(--v-surface-2);
+}
+.v-rcal-day button:disabled {
+  color: var(--v-text-3);
+  opacity: 0.4;
+  cursor: default;
+}
+.v-rcal-day button[aria-current="date"] {
+  box-shadow: inset 0 0 0 2px var(--v-text-3);
+}
+/* Same box as a day button, so the numbers share one baseline. */
+.v-rcal-day.is-out span {
+  display: inline-grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  padding-bottom: 4px;
+  color: var(--v-text-3);
+  font: 600 var(--v-text-sm) / 1 var(--v-font-text);
+  opacity: 0.4;
+}
+
+/* Climb dots: neutral for a day of climbs, green when one was won. */
+.v-rcal-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--v-text-2);
+}
+.v-rcal-dot.is-win {
+  background: var(--v-win);
+}
+.v-rcal-day .v-rcal-dot {
+  position: absolute;
+  bottom: 5px;
+  left: 50%;
+  translate: -50% 0;
+}
+
+/* The range: a soft band, gold caps at both ends. */
+.v-rcal-day.is-in,
+.v-rcal-day.is-preview {
+  background: color-mix(in srgb, var(--v-title) 18%, transparent);
+}
+.v-rcal-day.is-preview:not(.is-in) {
+  background: color-mix(in srgb, var(--v-title) 9%, transparent);
+}
+.v-rcal-day.is-from,
+.v-rcal-day.is-pending,
+tr > .v-rcal-day:first-child {
+  border-radius: var(--v-radius-sm) 0 0 var(--v-radius-sm);
+}
+.v-rcal-day.is-to,
+tr > .v-rcal-day:last-child {
+  border-radius: 0 var(--v-radius-sm) var(--v-radius-sm) 0;
+}
+.v-rcal-day.is-from.is-to,
+tr > .v-rcal-day.is-from:last-child,
+tr > .v-rcal-day.is-to:first-child,
+tr > .v-rcal-day:first-child:last-child {
+  border-radius: var(--v-radius-sm);
+}
+:is(.v-rcal-day.is-from, .v-rcal-day.is-to, .v-rcal-day.is-pending) button {
+  background: var(--v-title);
+  box-shadow: inset 0 0 0 var(--v-outline-w) var(--v-ink);
+  color: var(--v-ink);
+}
+:is(.v-rcal-day.is-from, .v-rcal-day.is-to, .v-rcal-day.is-pending) .v-rcal-dot {
+  background: var(--v-ink);
+}
+:is(.v-rcal-day.is-from, .v-rcal-day.is-to, .v-rcal-day.is-pending) .v-rcal-dot.is-win {
+  background: color-mix(in srgb, var(--v-win) 45%, var(--v-ink));
+}
+
+.v-rcal-legend {
+  display: flex;
+  justify-content: center;
+  gap: var(--v-space-4);
+  margin: -2px 0 0;
+  color: var(--v-text-2);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+.v-rcal-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* ---- Footer: what is picked, Clear, Done ------------------------------------- */
+.v-rcal-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--v-space-2) var(--v-space-3);
+  padding-top: var(--v-space-3);
+  border-top: 2px dashed var(--v-line);
+}
+/* Two lines tall at most and always: the buttons beside it are that tall
+   anyway, and the panel does not grow when "now pick the last day" joins. */
+.v-rcal-status {
+  display: flex;
+  flex: 1 1 140px;
+  align-items: center;
+  min-width: 0;
+  min-height: calc(2 * 1.35em);
+  margin: 0;
+  color: var(--v-text-2);
+  font-size: var(--v-text-sm);
+  font-weight: 600;
+  line-height: 1.35;
+}
+.v-rcal-status b {
+  color: var(--v-text);
+  font-weight: 800;
+}
+.v-rcal-hint {
+  color: var(--v-text-3);
+}
+.v-rcal-actions {
+  display: flex;
+  flex: none;
+  gap: var(--v-space-2);
+  margin-left: auto;
+}
+.v-rcal-actions .v-btn {
+  min-height: 36px;
+}
+
+/* ---- Phones: a bottom sheet ------------------------------------------------- */
+@media (max-width: 880px) {
+  .v-rcal-scrim {
+    position: absolute;
+    inset: 0;
+    display: block;
+    background: color-mix(in srgb, var(--v-ink) 64%, transparent);
+    animation: v-rcal-fade var(--v-dur-2) ease both;
+  }
+  .v-rcal[data-closing] .v-rcal-scrim {
+    animation: v-rcal-fade var(--v-dur-2) ease reverse both;
+  }
+  .v-rcal-panel {
+    top: auto;
+    right: max(0px, env(safe-area-inset-right));
+    bottom: 0;
+    left: max(0px, env(safe-area-inset-left));
+    width: auto;
+    max-width: 560px;
+    max-height: calc(100% - 24px);
+    margin-inline: auto;
+    padding: var(--v-space-3) var(--v-space-4) calc(var(--v-space-4) + env(safe-area-inset-bottom));
+    overflow-y: auto;
+    border-bottom: 0;
+    border-radius: var(--v-radius-lg) var(--v-radius-lg) 0 0;
+    box-shadow: var(--v-shadow);
+    transform-origin: 50% 100%;
+    animation: v-rcal-rise 260ms var(--v-ease-out) both;
+    overscroll-behavior: contain;
+  }
+  .v-rcal[data-closing] .v-rcal-panel {
+    animation: v-rcal-sink var(--v-dur-2) var(--v-ease-inout) both;
+  }
+  .v-rcal-head {
+    position: static;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--v-space-3);
+    width: auto;
+    height: auto;
+    overflow: visible;
+    clip-path: none;
+  }
+  .v-rcal-x {
+    display: grid;
+  }
+  .v-rcal-pick {
+    min-height: 44px;
+    font-size: var(--v-text-sm);
+  }
+  .v-rcal-pick-n,
+  .v-rcal-month-label small,
+  .v-rcal-legend,
+  .v-rcal-grid th {
+    font-size: 0.8125rem;
+  }
+  .v-rcal-nav {
+    width: 44px;
+    height: 44px;
+  }
+  .v-rcal-day {
+    height: 46px;
+  }
+  .v-rcal-day button {
+    width: 100%;
+    max-width: 52px;
+    height: 44px;
+    font-size: 1rem;
+  }
+  .v-rcal-actions .v-btn {
+    min-height: 44px;
+    padding-inline: 18px;
+  }
+  .v-runs-date-x {
+    width: 44px;
+  }
+  .v-rcal-day.is-out span {
+    width: 100%;
+    height: 44px;
+  }
+}
+/* Narrow phones: every day stays a 44px target by taking the sheet's full
+   width, and the quick picks drop their counts to fit on one line. */
+@media (max-width: 379px) {
+  .v-rcal-grid {
+    width: calc(100% + 2 * var(--v-space-3));
+    margin-inline: calc(-1 * var(--v-space-3));
+  }
+  .v-rcal-pick-n {
+    display: none;
+  }
+}
+
+@keyframes v-rcal-pop { from { opacity: 0; transform: translateY(-6px) scale(0.98); } }
+@keyframes v-rcal-unpop { to { opacity: 0; transform: translateY(-6px) scale(0.98); } }
+@keyframes v-rcal-rise { from { transform: translateY(100%); } }
+@keyframes v-rcal-sink { to { transform: translateY(100%); } }
+@keyframes v-rcal-fade { from { opacity: 0; } }
+
+/* Reduced motion (the OS setting or the in-app toggle): it simply appears. */
+@media (prefers-reduced-motion: reduce) {
+  :is(.v-rcal, .v-rcal[data-closing]) :is(.v-rcal-panel, .v-rcal-scrim) {
+    animation: none;
+  }
+  .v-rcal-pick,
+  .v-rcal-nav,
+  .v-rcal-day button,
+  .v-runs-date .v-runs-date-caret {
+    transition: none;
+  }
+}
+.prefer-reduced-motion :is(.v-rcal, .v-rcal[data-closing]) :is(.v-rcal-panel, .v-rcal-scrim) {
+  animation: none;
+}
+.prefer-reduced-motion :is(.v-rcal-pick, .v-rcal-nav, .v-rcal-day button, .v-runs-date .v-runs-date-caret) {
+  transition: none;
+}

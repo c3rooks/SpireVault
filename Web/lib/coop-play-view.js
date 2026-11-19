@@ -7,7 +7,7 @@
 
 import { STAGE_ACTOR_ART } from "/lib/ui/stage-actors.js?v=2";
 import { STAGE_BACKDROPS } from "/lib/ui/stage-backdrops.js?v=1";
-import { canShare } from "/lib/coop-play-share.js?v=4";
+import { canShare } from "/lib/coop-play-share.js?v=5";
 
 /** The playable climbers, in the game's own order. The Fool is beta-only. */
 export const CLIMBERS = Object.freeze([
@@ -44,6 +44,14 @@ const SEATED = Object.freeze({
   silent: Object.freeze({ left: 0.02, top: 0.52, width: 0.62, height: 0.4 }),
   necrobinder: Object.freeze({ left: -0.02, top: 0.56, width: 0.66, height: 0.36 }),
 });
+
+/**
+ * Where each climber's head is across its own picture, 0 (left) to 1: the
+ * host's crown floats over it. Measured on the built sprites (the middle of
+ * what is opaque in the top tenth of the art, the Silent's between her
+ * antlers and her hood); measure again if the sprites are redrawn.
+ */
+const HEAD_X = Object.freeze({ ironclad: 0.52, silent: 0.4, defect: 0.44, regent: 0.34, necrobinder: 0.4, fool: 0.52 });
 
 const pct = (n) => `${(n * 100).toFixed(1)}%`;
 
@@ -121,6 +129,19 @@ function spriteHtml(id, extraClass = "") {
   return `<img class="cp-figure-img ${extraClass}" src="${esc(art.src)}" width="${art.width}" height="${art.height}" alt="" loading="lazy" decoding="async">`;
 }
 
+/**
+ * The host's crown, over the head of whoever hosts (a blank figure wears it
+ * in the middle). It stands on the figure, not in the name tag, so a tag is
+ * only ever as wide as its name.
+ * @param {string | undefined} id the host's climber
+ */
+function crownHtml(id) {
+  const art = id ? STAGE_ACTOR_ART[id] : null;
+  const drawn = Boolean(art && art.kind === "climber");
+  const x = drawn ? (HEAD_X[/** @type {keyof typeof HEAD_X} */ (id)] ?? 0.5) : 0.5;
+  return `<span class="cp-crown${drawn ? "" : " cp-crown--blank"}" style="left:${pct(x)}" title="Host">${ICON.crown}<span class="cp-sr">Host</span></span>`;
+}
+
 function avatarHtml(member) {
   if (member.avatar) {
     return `<img class="cp-avatar" src="${esc(member.avatar)}" width="28" height="28" alt="" loading="lazy" referrerpolicy="no-referrer">`;
@@ -179,7 +200,7 @@ export function liveLineHtml(view, branch) {
 // MARK: - Idle
 
 /**
- * @param {{ view: any, me: any, prefs: { character?: string, branch: "stable"|"beta" }, push: { supported: boolean, on: boolean, reason?: string }, busy: boolean }} m
+ * @param {{ view: any, me: any, prefs: { character?: string, branch: "stable"|"beta" }, push: { supported: boolean, on: boolean, reason?: string }, busy: boolean, around?: { inGame: number, faces: Array<{ name: string, avatar?: string }> } }} m
  */
 export function idleHtml(m) {
   const { prefs } = m;
@@ -225,11 +246,11 @@ export function idleHtml(m) {
           ${ICON.play}<span>Play</span>
         </button>
 
-        ${pingToggleHtml(m.push)}
+        ${pingAreaHtml(m)}
       </div>
 
       <div class="cp-side">
-        ${soloScene(m.me, prefs.character, false)}
+        ${soloScene(m.me, prefs.character, false, skyHtml(m.view, prefs.branch, m.around))}
         <ol class="cp-howto" aria-label="How co-op works">
           <li><span class="cp-howto-n">1</span><span>Tap&nbsp;Play</span></li>
           <li><span class="cp-howto-n">2</span><span>Add each other on&nbsp;Steam</span></li>
@@ -239,16 +260,79 @@ export function idleHtml(m) {
     </div>`;
 }
 
-function pingToggleHtml(push) {
-  if (!push.supported) {
-    return `<p class="cp-ping cp-ping--off">${ICON.bell}<span>${esc(tieLastWords(push.reason || "This browser can't ping you, so keep the tab open while you wait."))}</span></p>`;
-  }
-  return `
+/** How long a search lasts after you step away, with pings on (Backend STAY_CHOICES_MIN). */
+export const STAY_CHOICES = Object.freeze([
+  { min: 30, label: "30 min", phrase: "30 minutes" },
+  { min: 60, label: "1 hour", phrase: "an hour" },
+  { min: 120, label: "2 hours", phrase: "two hours" },
+]);
+export const DEFAULT_STAY_MIN = 60;
+
+function stayPhrase(min) {
+  return (STAY_CHOICES.find((c) => c.min === min) ?? STAY_CHOICES[1]).phrase;
+}
+
+/**
+ * The ping switch, and once something can ping you: how long to keep looking
+ * after you step away, and which devices get the pings.
+ * @param {{ push: { supported: boolean, on: boolean, here?: boolean, account?: boolean, reason?: string }, prefs: { stay?: number }, devices?: Array<{ id: string, label: string }>, thisDevice?: string, devicesOpen?: boolean }} m
+ */
+function pingAreaHtml(m) {
+  const { push } = m;
+  const toggle = push.supported
+    ? `
     <label class="cp-ping">
       <input type="checkbox" class="cp-ping-input" data-cp="ping" ${push.on ? "checked" : ""}>
       <span class="cp-ping-switch" aria-hidden="true"></span>
       <span class="cp-ping-text">${ICON.bell}<span>Ping me when someone's looking or I'm matched, even with this tab&nbsp;closed</span></span>
-    </label>`;
+    </label>`
+    : push.account
+      ? `<p class="cp-ping cp-ping--off">${ICON.bell}<span>${esc(tieLastWords("This browser can't show pings, but your other devices will get them."))}</span></p>`
+      : `<p class="cp-ping cp-ping--off">${ICON.bell}<span>${esc(tieLastWords(push.reason || "This browser can't ping you, so keep the tab open while you wait."))}</span></p>`;
+  if (!push.account) return toggle;
+  return `${toggle}${stayFieldHtml(m.prefs.stay ?? DEFAULT_STAY_MIN)}${devicesHtml(m.devices ?? [], m.thisDevice ?? "", Boolean(m.devicesOpen))}`;
+}
+
+function stayFieldHtml(stay) {
+  const opts = STAY_CHOICES.map(
+    (c) => `<button type="button" role="radio" class="cp-branch-opt cp-stay-opt" aria-checked="${stay === c.min}" data-cp-stay="${c.min}">${c.label}</button>`,
+  ).join("");
+  return `
+    <div class="cp-field cp-field--stay">
+      <p class="cp-label" id="cp-stay-label">If you step away, keep looking for</p>
+      <div class="cp-branch cp-stay" role="radiogroup" aria-labelledby="cp-stay-label">${opts}</div>
+    </div>`;
+}
+
+/** "this browser", "this browser and Safari on iPhone", "3 devices". */
+function devicesSummary(devices, thisDevice) {
+  const names = devices.map((d) => (d.id === thisDevice ? "this browser" : d.label));
+  if (names.length === 1) return names[0];
+  if (names.length === 2) return `${names[0]} and ${names[1]}`;
+  return `${names.length} devices`;
+}
+
+function devicesHtml(devices, thisDevice, open) {
+  if (devices.length === 0) return "";
+  const rows = devices
+    .map((d) => {
+      const here = d.id === thisDevice;
+      return `
+        <li class="cp-device">
+          <span class="cp-device-who">
+            <span class="cp-device-name">${esc(d.label)}</span>
+            ${here ? `<span class="cp-device-here">This browser</span>` : ""}
+          </span>
+          <button type="button" class="cp-btn cp-btn--quiet cp-device-remove" data-cp="device-remove" data-device="${esc(d.id)}" aria-label="Stop pings on ${esc(here ? "this browser" : d.label)}">Remove</button>
+        </li>`;
+    })
+    .join("");
+  return `
+    <details class="cp-help cp-devices"${open ? " open" : ""}>
+      <summary>Pings go to ${esc(devicesSummary(devices, thisDevice))}</summary>
+      <ul class="cp-devices-list">${rows}</ul>
+      <p>${esc(tieLastWords("Turn pings on in SpireVault on your phone or another computer and it joins this list."))}</p>
+    </details>`;
 }
 
 // MARK: - Searching
@@ -265,13 +349,17 @@ function noticeHtml(view) {
 }
 
 /**
- * @param {{ view: any, me: any, push: { supported: boolean, on: boolean }, now: number, shared?: "" | "copied" | "shared" }} m
+ * @param {{ view: any, me: any, push: { supported: boolean, on: boolean, here?: boolean, account?: boolean }, now: number, shared?: "" | "copied" | "shared", around?: { inGame: number, faces: Array<{ name: string, avatar?: string }> } }} m
  */
 export function searchingHtml(m) {
   const t = m.view.ticket;
   const wait = formatWait(m.now - (t?.createdAt ?? m.now));
-  const hint = m.push.on
-    ? "We'll ping you the moment someone joins. You can close this tab."
+  // The server says whether this search has pings (any device) and how long
+  // it keeps going after you leave the page.
+  const pinged = Boolean(t?.push);
+  const stay = stayPhrase(Math.round((t?.stayMs ?? DEFAULT_STAY_MIN * 60_000) / 60_000));
+  const hint = pinged
+    ? `We'll ping ${m.push.on ? "you" : "your other devices"} the moment someone joins. You can close this tab: we keep looking for ${stay} after you leave it.`
     : "Keep this tab open. You'll hear a chime when someone joins.";
   const others = Math.max(0, (m.view.lookingByBranch?.[t?.branch ?? "stable"] ?? 1) - 1);
   return `
@@ -287,12 +375,12 @@ export function searchingHtml(m) {
         ${others > 0 ? `<p class="cp-hint">${others} other ${others === 1 ? "player is" : "players are"} waiting too.</p>` : ""}
         <div class="cp-actions">
           ${canShare(m.view) ? shareButtonHtml(m.shared) : ""}
-          ${m.push.supported && !m.push.on ? `<button type="button" class="cp-btn" data-cp="ping-on">${ICON.bell}<span>Ping me instead</span></button>` : ""}
+          ${m.push.supported && !pinged ? `<button type="button" class="cp-btn" data-cp="ping-on">${ICON.bell}<span>Ping me instead</span></button>` : ""}
           <button type="button" class="cp-btn cp-btn--quiet" data-cp="cancel" data-analytics-cta="coop-cancel">Stop looking</button>
         </div>
       </div>
       <div class="cp-side">
-        ${soloScene(m.me, t?.character, true)}
+        ${soloScene(m.me, t?.character, true, skyHtml(m.view, t?.branch ?? "stable", m.around))}
       </div>
     </div>`;
 }
@@ -302,7 +390,7 @@ export function searchingHtml(m) {
 /**
  * The party standing in a game room. Everyone in a party sees the same room
  * (picked from the match id); before a match it's picked from your Steam ID.
- * @param {{ seed: string, members: Array<any>, openSeats: number, searching?: boolean }} m
+ * @param {{ seed: string, members: Array<any>, openSeats: number, searching?: boolean, sky?: string }} m
  */
 function sceneHtml(m) {
   const room = roomFor(m.seed);
@@ -310,11 +398,10 @@ function sceneHtml(m) {
     .map(
       (mem) => `
       <figure class="cp-climber${mem.isYou ? " is-you" : ""}${mem.isHost ? " is-host" : ""}">
-        <span class="cp-climber-art">${seatStoneHtml(mem.character)}${spriteHtml(mem.character)}</span>
+        <span class="cp-climber-art">${seatStoneHtml(mem.character)}${spriteHtml(mem.character)}${mem.isHost ? crownHtml(mem.character) : ""}</span>
         <figcaption class="cp-tag">
           ${avatarHtml(mem)}
           <span class="cp-tag-name">${esc(mem.name)}</span>
-          ${mem.isHost ? `<span class="cp-tag-badge" title="Host">${ICON.crown}<span class="cp-sr">Host</span></span>` : ""}
         </figcaption>
       </figure>`,
     )
@@ -322,12 +409,68 @@ function sceneHtml(m) {
   const seats = Array.from({ length: Math.max(0, m.openSeats) })
     .map(() => `<span class="cp-seat" aria-hidden="true"><span class="cp-seat-mark">+</span></span>`)
     .join("");
+  // The room is a picture: only the sign in its sky (when there is one) is read out.
+  const classes = `cp-scene${m.searching ? " is-searching" : ""}${m.sky ? " has-sky" : ""}`;
   return `
-    <div class="cp-scene${m.searching ? " is-searching" : ""}" style="--cp-foot:${room.foot}" aria-hidden="true">
+    <div class="${classes}" style="--cp-foot:${room.foot}"${m.sky ? "" : ` aria-hidden="true"`}>
       <img class="cp-scene-room" src="${esc(room.planes.base)}" width="${room.width}" height="${room.height}" alt="" decoding="async">
       ${room.planes.front ? `<img class="cp-scene-room cp-scene-front" src="${esc(room.planes.front)}" width="${room.width}" height="${room.height}" alt="" decoding="async">` : ""}
-      <span class="cp-scene-veil"></span>
-      <div class="cp-scene-floor" style="--cp-sum:${floorSum(m.members, Math.max(0, m.openSeats))}">${figures}${seats}</div>
+      <span class="cp-scene-veil" aria-hidden="true"></span>
+      ${m.sky ?? ""}
+      <div class="cp-scene-floor" style="--cp-sum:${floorSum(m.members, Math.max(0, m.openSeats))}" aria-hidden="true">${figures}${seats}</div>
+    </div>`;
+}
+
+// MARK: - Right now, in the sky
+
+/** Faces on the sign before the rest become "+N": wide rooms, and phones. */
+const SKY_FACES = 4;
+const SKY_FACES_NARROW = 2;
+
+/**
+ * The sign in the sky of your room before a match: who is looking on your
+ * game version, who is in a party, and who Steam shows in Slay the Spire 2
+ * right now, with their faces. Before a match the seats stand low in a tall
+ * room, and the sky above them was bare; this puts the people who are
+ * actually around up there. `around` is the app's own roster poll
+ * (script.js pullFeed), without you. Each count carries the live dot: grey
+ * at zero, green when someone is there. Long labels give way to short ones
+ * in a narrow room (coop-play.css), so no label wraps or is cut.
+ * @param {any} view the server's Play view
+ * @param {"stable"|"beta"} branch the game version you picked
+ * @param {{ inGame: number, faces: Array<{ name: string, avatar?: string }> }} around
+ */
+export function skyHtml(view, branch, around) {
+  const other = branch === "beta" ? "stable" : "beta";
+  const looking = view?.lookingByBranch?.[branch] ?? 0;
+  const elsewhere = view?.lookingByBranch?.[other] ?? 0;
+  const playing = view?.playingCount ?? 0;
+  const inGame = Math.max(0, around?.inGame ?? 0);
+  const faces = (around?.faces ?? []).slice(0, Math.min(SKY_FACES, inGame));
+  const versionName = (b) => (b === "beta" ? "Beta" : "Stable");
+  const lookingLong = `looking on ${versionName(branch)}${elsewhere > 0 ? `, ${elsewhere} on ${versionName(other)}` : ""}`;
+  // Every count stands alone, centred over its label. The faces lead the
+  // STS2 label in place of its live dot ("4" over "[faces] in STS2"), so all
+  // three numbers line up.
+  const item = (n, long, short, faces = "") => `
+        <li class="cp-sky-item${n > 0 ? " is-on" : ""}${faces ? " has-faces" : ""}">
+          <span class="cp-sky-count"><b class="cp-sky-n">${n}</b></span>
+          <span class="cp-sky-label">${faces}<span class="cp-live-dot" aria-hidden="true"></span><span class="cp-sky-long">${long}</span><span class="cp-sky-brief">${short}</span></span>
+        </li>`;
+  const more = (shown, cls) => (inGame > shown ? `<span class="cp-sky-more ${cls}">+${inGame - shown}</span>` : "");
+  const faceRow = faces.length
+    ? `<span class="cp-sky-faces" title="${esc(faces.map((f) => f.name).filter(Boolean).join(", "))}" aria-hidden="true">${faces
+        .map((f, i) => `<span class="cp-sky-face${i >= SKY_FACES_NARROW ? " cp-sky-wide" : ""}">${avatarHtml(f)}</span>`)
+        .join("")}${more(faces.length, "cp-sky-wide")}${more(Math.min(faces.length, SKY_FACES_NARROW), "cp-sky-tight")}</span>`
+    : "";
+  return `
+    <div class="cp-sky">
+      <p class="cp-sky-title" aria-hidden="true">Right now</p>
+      <ul class="cp-sky-list" aria-label="Right now">
+        ${item(looking, lookingLong, "looking")}
+        ${item(playing, "in a party", "in a party")}
+        ${item(inGame, "in Slay the Spire 2", "in STS2", faceRow)}
+      </ul>
     </div>`;
 }
 
@@ -340,22 +483,29 @@ const TAG_EDGE_PX = 8;
 const TAG_MIN_PX = 40;
 /** A tag may slide off-centre, but at least this much of it stays over its climber's middle. */
 const TAG_HOLD_PX = 12;
-/** Gap from the figure's head to its tag, and between a raised tag and the row below (CSS px). */
-const TAG_LIFT_PX = 10;
+/**
+ * Gap from the figure's feet down to its tag, and between the two rows when
+ * a crowded party stacks its tags (CSS px). The same numbers as
+ * --cp-tag-drop and --cp-tag-row-gap in coop-play.css; change them together.
+ */
+const TAG_DROP_PX = 6;
 const TAG_ROW_GAP_PX = 6;
+/** On the room while its tags stand in two rows: the floor leaves space for both. */
+const STACKED_CLASS = "is-stacked";
 
 /**
  * Sizes the name tags in every party room under `root`. The whole party
  * shares one width: the longest name, whole, whenever the room has space for
- * it. Each tag sits over its climber. Two climbers standing shoulder to
- * shoulder push their tags apart by equal amounts, and a tag by the wall
+ * it. Each tag sits under its climber's feet. Two climbers standing shoulder
+ * to shoulder push their tags apart by equal amounts, and a tag by the wall
  * slides inward, so neighbours always keep the same gap and no tag touches,
  * overlaps or leaves the room. Only when the row cannot hold the names at
  * full width does the shared width shrink and the longest name truncate; and
  * when your own name or most of the names would be cut (a full party on a
- * narrow phone), every second tag steps up one row, which doubles the room
- * each name has. Runs after every render, whenever a room changes size and
- * whenever a font finishes loading (lib/coop-play.js).
+ * narrow phone), every second tag steps down one row, which doubles the room
+ * each name has; the floor then leaves space for both rows (.is-stacked).
+ * Runs after every render, whenever a room changes size and whenever a font
+ * finishes loading (lib/coop-play.js).
  * @param {ParentNode} root
  */
 export function fitPartyTags(root) {
@@ -429,26 +579,40 @@ function fitSceneTags(scene) {
   if (!tags.length) return;
   const frame = scene.getBoundingClientRect();
   if (frame.width === 0) return; // a hidden tab: fitted again when it shows
+  scene.classList.remove(STACKED_CLASS);
   for (const tag of tags) {
     tag.style.width = "max-content";
     tag.style.minWidth = "";
-    tag.style.bottom = "";
+    tag.style.top = "";
     tag.style.transform = "";
   }
+  // The band the floor keeps under the feet is as tall as a tag really is.
+  // A reader's larger text makes a tag taller than the stylesheet's figure,
+  // and a second row of taller tags would run out of the room.
+  const tagHeight = Math.ceil(Math.max(...tags.map((tag) => tag.getBoundingClientRect().height)));
+  scene.style.setProperty("--cp-tag-h", `${tagHeight}px`);
   // Measured in fractions and rounded up, with a pixel to spare: a tag a
   // third of a pixel narrower than its name is drawn with an ellipsis.
   const needs = tags.map((tag) => Math.ceil(tag.getBoundingClientRect().width));
   const natural = Math.max(...needs) + 1;
-  const centres = tags.map((tag) => {
-    const box = /** @type {HTMLElement} */ (tag.parentElement).getBoundingClientRect();
-    return box.left + box.width / 2 - frame.left;
-  });
+  const middles = () =>
+    tags.map((tag) => {
+      const box = /** @type {HTMLElement} */ (tag.parentElement).getBoundingClientRect();
+      return box.left + box.width / 2 - frame.left;
+    });
+  let centres = middles();
   let fit = widestFit(centres, frame.width, natural, 1);
   const you = tags.findIndex((tag) => tag.parentElement?.classList.contains("is-you"));
   const cut = needs.filter((need) => need > fit.width).length;
   const staggered = tags.length >= 3 && ((you >= 0 && needs[you] > fit.width) || cut * 2 > tags.length);
-  if (staggered) fit = widestFit(centres, frame.width, natural, 2);
-  const lift = TAG_LIFT_PX + tags[0].offsetHeight + TAG_ROW_GAP_PX;
+  if (staggered) {
+    // Two rows under the feet need a taller band: the floor rises, the
+    // figures shrink with it, so everyone's middle is measured again.
+    scene.classList.add(STACKED_CLASS);
+    centres = middles();
+    fit = widestFit(centres, frame.width, natural, 2);
+  }
+  const drop = TAG_DROP_PX + tagHeight + TAG_ROW_GAP_PX;
   const roomy = fit.width >= natural;
   tags.forEach((tag, i) => {
     // With room for every name the width is only a floor: a name that grows
@@ -457,7 +621,7 @@ function fitSceneTags(scene) {
     else tag.style.width = `${fit.width}px`;
     const shift = Math.round((fit.lefts[i] - (centres[i] - fit.width / 2)) * 10) / 10;
     if (shift) tag.style.transform = `translateX(calc(-50% + ${shift}px))`;
-    if (staggered && i % 2 === 1) tag.style.bottom = `calc(100% + ${lift}px)`;
+    if (staggered && i % 2 === 1) tag.style.top = `calc(100% + ${drop}px)`;
   });
 }
 
@@ -480,13 +644,14 @@ export function miniClimberHtml(id) {
   return spriteHtml(id ?? undefined, "cp-mini");
 }
 
-/** You, alone, before a match. */
-function soloScene(me, character, searching) {
+/** You, alone, before a match, with who is around right now in the sky. */
+function soloScene(me, character, searching, sky) {
   return sceneHtml({
     seed: me?.sid || "spirevault",
     members: [{ sid: me?.sid, name: me?.name || "You", avatar: me?.avatar, character, isYou: true }],
     openSeats: MAX_PARTY - 1,
     searching,
+    sky,
   });
 }
 
@@ -522,6 +687,12 @@ export function partyHtml(m) {
   const seats = match.seatsLeft > 0
     ? `Up to ${match.seatsLeft} more can join until the host starts the run.`
     : "The party is full.";
+  // Someone pinged while away tapped "On my way" on the ping: say so, so
+  // the others wait for them instead of leaving.
+  const coming = match.members.filter((x) => x.coming && !x.isYou).map((x) => x.name);
+  const comingLine = coming.length
+    ? `<p class="cp-live cp-live--on cp-coming" role="status"><span class="cp-live-dot" aria-hidden="true"></span><span>${esc(coming.length === 1 ? coming[0] : `${coming.slice(0, -1).join(", ")} and ${coming[coming.length - 1]}`)} ${coming.length === 1 ? "is" : "are"} on the way.</span></p>`
+    : "";
 
   const startText = match.youAreHost
     ? "Open STS2, choose Multiplayer, then Host. Tap the button below once you're on character select."
@@ -538,6 +709,7 @@ export function partyHtml(m) {
         <p class="cp-eyebrow">Party found &middot; ${branch}</p>
         <h2 class="cp-title" id="cp-title">You're in a party</h2>
         <p class="cp-sub">${esc(seats)}</p>
+        ${comingLine}
         ${share ? `<div class="cp-actions cp-invite">${share}</div>` : ""}
       </header>
       <ol class="cp-steps">

@@ -32,7 +32,7 @@ export function toneKey(tone) {
  */
 export function toneLegendHtml({ baselinePct, lowSampleRuns, lowSampleNoun }) {
   return `
-    <ul class="v-tone-legend" aria-label="How to read the colours">
+    <ul class="v-tone-legend" aria-label="How to read the colors">
       <li class="v-tone-legend-base">Your average: <b>${fixed(baselinePct)}%</b></li>
       <li data-tone="win"><i aria-hidden="true"></i>${TONE_LABELS.win}</li>
       <li data-tone="gold"><i aria-hidden="true"></i>${TONE_LABELS.gold}</li>

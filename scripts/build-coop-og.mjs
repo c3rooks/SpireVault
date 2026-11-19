@@ -28,7 +28,7 @@ const REPO = join(dirname(fileURLToPath(import.meta.url)), "..");
 const require = createRequire(join(REPO, "package.json"));
 const { chromium } = require("playwright");
 
-const VERSION = 2;
+const VERSION = 3;
 const WIDTH = 1200;
 const HEIGHT = 630;
 const JPEG_QUALITY = 90;

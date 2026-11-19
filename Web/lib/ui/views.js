@@ -1,10 +1,12 @@
 // Presentational views for the new UI. Pure functions: model in, HTML out.
 // All data work (stats, streaks, formatting of names) happens in script.js
 // with the existing helpers; nothing here touches parsedRuns or the DOM.
-// Styles: styles/src/surfaces/overview.css, components/cards.css.
+// The Overview's sections are widgets: overview/registry.js builds each one's
+// model and lays them out; this file draws them.
+// Styles: styles/src/surfaces/overview.css, overview-grid.css, components/cards.css.
 
 import { esc, fixed, clamp } from "./html.js?v=1";
-import { trendChartHtml, floorChartHtml } from "./charts.js?v=2";
+import { segmentedHtml, selectHtml, summaryHtml } from "./filter-controls.js?v=1";
 
 /**
  * @typedef {Object} CharacterRow
@@ -16,6 +18,20 @@ import { trendChartHtml, floorChartHtml } from "./charts.js?v=2";
  * @property {string|null} portraitSrc
  * @property {boolean} [isPortraitInked]  portraitSrc is tight-cropped stage art
  * @property {string} iconHtml   trusted fallback icon markup
+ * @property {number} streak     current win streak in the filtered runs, 0 when too short to show
+ */
+
+/**
+ * The By character panel's filters (state lives in script.js).
+ * @typedef {Object} CharacterFilterModel
+ * @property {ReadonlyArray<import("./filter-controls.js").SegOption>|null} modes
+ *           null when the history holds only standard runs (no mode control)
+ * @property {ReadonlyArray<import("./filter-controls.js").SelectOption>} levels
+ * @property {boolean} levelsDisabled   Dread: its runs sit on no ascension ladder
+ * @property {string} label             "Blitz A2"; "" when nothing is filtered
+ * @property {string} emptyText         a banner with no runs under the filter
+ * @property {number} shownRuns
+ * @property {number} totalRuns
  */
 
 /**
@@ -40,19 +56,25 @@ import { trendChartHtml, floorChartHtml } from "./charts.js?v=2";
  */
 
 /**
- * @typedef {Object} OverviewModel
- * @property {string} noticesHtml   trusted legacy strips (since-last-visit, weekly digest)
+ * @typedef {Object} WinRateModel
  * @property {{ total: number, wins: number, losses: number, winratePct: number }} totals
  * @property {{ key: string, label: string, winratePct: number, runs: number }|null} bestCharacter
  * @property {{ level: number, runs: number }|null} highestAscension
  * @property {string} avgAscension
  * @property {ReadonlyArray<{ won: boolean, abandoned: boolean }>} recentRuns   up to 20, oldest → newest
  * @property {{ wins: number, losses: number, count: number }} lastTen
- * @property {ReadonlyArray<CharacterRow>} characters
- * @property {ReadonlyArray<KpiCard>} kpis
- * @property {{ values: number[], lifetime: number, windowSize: number }|null} trend
- * @property {{ bins: Array<{ label: string, wins: number, losses: number }> }|null} floors
- * @property {ReadonlyArray<RelicRow>} relics
+ *
+ * @typedef {{ characters: ReadonlyArray<CharacterRow>, characterFilter?: CharacterFilterModel }} CharactersModel
+ * @typedef {{ kpis: ReadonlyArray<KpiCard> }} HandModel
+ * @typedef {{ relics: ReadonlyArray<RelicRow> }} RelicsModel
+ *
+ * @typedef {Object} OverviewCell  one placed widget, already drawn
+ * @property {string} key    layout key, escaped
+ * @property {string} id     widget id
+ * @property {string} size   S | M | L | W
+ * @property {number} span   columns on the 12-column grid
+ * @property {"start"|"end"|null} [pair]  one of the two halves of a split row
+ * @property {string} html   trusted widget markup
  */
 
 const RING_RADIUS = 60;
@@ -66,16 +88,13 @@ const SPARK_W = 64;
 const SPARK_H = 18;
 const SPARK_PAD = 3;
 const SPARK_DOT_R = 2.6;
-/** Reveal order (× 55ms). The hand leads the page (cards 0..5); the two
- *  panels under it rise alongside the later cards rather than after them. */
-const REVEAL_WIN_RATE = 3;
-const REVEAL_CHARACTERS = 4;
-const REVEAL_TREND = 8;
-const REVEAL_FLOORS = 9;
 
 const ICONS = Object.freeze({
   bolt: '<path d="M13 2 4 14h7l-1 8 9-12h-7z" fill="currentColor"/>',
   flame: '<path d="M12 2c1 4 5 6 5 11a5 5 0 0 1-10 0c0-2 1-3 2-4 0 2 1 3 2 3 0-4-1-6 1-10z" fill="currentColor"/>',
+  // The streak tag's flame is drawn at 13px, where the solid one above reads
+  // as a droplet; a hollow core keeps it a flame.
+  streak: '<path fill-rule="evenodd" fill="currentColor" d="M12.6 1.6c.5 3.5 3.5 5.4 5 8.3 1.5 2.9 1.4 6.5-.9 8.9a7 7 0 0 1-11.3-2c-1-2.7-.2-5.6 1.9-7.6.1 1.9.9 3.2 2.1 3.8-.6-4.5.6-8.4 3.2-11.4zM12.2 12.4c-1 1.3-1.9 2.5-1.9 4.1a2.3 2.3 0 0 0 4.6.1c0-1.6-1.2-2.8-2.7-4.2z"/>',
   crown: '<path d="m3 8 4 4 5-7 5 7 4-4-1 11H4z" fill="currentColor"/>',
   stairs: '<path d="M4 20h4v-4h4v-4h4V8h4" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>',
   clock: '<circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="2.4"/><path d="M12 7.5V12l3 2" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>',
@@ -92,8 +111,13 @@ function plural(count, noun) {
   return `${count} ${noun}${count === 1 ? "" : "s"}`;
 }
 
-/** @param {OverviewModel} model */
-function winRatePanel(model) {
+/**
+ * Win rate ring, totals, best character, ascension chips and the last 20.
+ * @param {WinRateModel} model
+ * @param {number} order  entrance beat
+ * @returns {string}
+ */
+export function winRateHtml(model, order) {
   const { totals, bestCharacter, highestAscension } = model;
   const dash = (clamp(totals.winratePct, 0, 100) / 100) * RING_CIRCUMFERENCE;
   const best = bestCharacter
@@ -106,7 +130,7 @@ function winRatePanel(model) {
        </button>`
     : "";
   return `
-    <section class="v-panel v-wr" data-reveal style="--r:${REVEAL_WIN_RATE}" aria-label="Win rate and run totals">
+    <section class="v-panel v-wr" data-reveal style="--r:${order}" aria-label="Win rate and run totals">
       <div class="v-wr-main">
         <div class="v-ring">
           <svg viewBox="0 0 160 160" aria-hidden="true">
@@ -142,7 +166,7 @@ function winRatePanel(model) {
 
 /**
  * The last 20 runs as a map trail of win/loss nodes.
- * @param {OverviewModel} model
+ * @param {WinRateModel} model
  */
 function recentPath(model) {
   const runs = model.recentRuns;
@@ -180,8 +204,33 @@ function recentPath(model) {
     </div>`;
 }
 
-/** @param {CharacterRow} row */
-function characterBanner(row) {
+/** "9 wins in a row", plus the filter it counts within: " (Standard A10)". @param {number} streak @param {string} scope */
+function streakWords(streak, scope) {
+  return `${streak} wins in a row${scope ? ` (${scope})` : ""}`;
+}
+
+/**
+ * "🔥 9 in a row" under the banner's record. When any climber in the grid
+ * has a streak, a banner without one keeps an empty line in its place, so
+ * every bar stays level. The banner's label says the streak for a screen
+ * reader.
+ * @param {CharacterRow} row
+ * @param {boolean} reserve
+ * @param {string} scope   the active filter's label, "" when unfiltered
+ */
+function streakTag(row, reserve, scope) {
+  if (row.streak <= 0) return reserve ? '<span class="v-char-streak is-empty" aria-hidden="true"></span>' : "";
+  return `
+      <span class="v-char-streak" title="${esc(row.label)}: ${esc(streakWords(row.streak, scope))}" aria-hidden="true">${icon("streak")}<b>${row.streak}</b><span class="v-char-streak-unit"> in a row</span></span>`;
+}
+
+/**
+ * @param {CharacterRow} row
+ * @param {CharacterFilterModel} filter
+ * @param {boolean} reserveStreak
+ */
+function characterBanner(row, filter, reserveStreak) {
+  const emptyText = filter.emptyText;
   const played = row.runs > 0;
   const art = row.portraitSrc
     ? `<img${row.isPortraitInked ? ' class="is-inked"' : ""} src="${esc(row.portraitSrc)}" alt="" loading="lazy" decoding="async" draggable="false">`
@@ -192,27 +241,56 @@ function characterBanner(row) {
   // of clipping the line at both edges (overview.css .v-char-rec).
   const record = played
     ? `<span>${winLoss}</span><span class="v-char-rec-sep" aria-hidden="true"> · </span><span>${runCount}</span>`
-    : "<span>No runs yet</span>";
+    : `<span>${esc(emptyText)}</span>`;
+  const streak = row.streak > 0 ? `, ${streakWords(row.streak, filter.label)}` : "";
+  const spoken = played ? `${fixed(row.winratePct)} percent win rate, ${winLoss} · ${runCount}${streak}` : emptyText.toLowerCase();
   return `
     <button class="v-char${played ? "" : " is-unplayed"}" type="button" data-char="${esc(row.key)}"
             data-action="goto-tab" data-tab="characters"
-            aria-label="${esc(row.label)}: ${played ? `${fixed(row.winratePct)} percent win rate, ${winLoss} · ${runCount}` : "no runs yet"}. Open Characters.">
+            aria-label="${esc(row.label)}: ${esc(spoken)}. Open Characters.">
       <span class="v-char-art">${art}</span>
       <span class="v-char-name">${esc(row.label)}</span>
       <span class="v-char-wr">${played ? `${fixed(row.winratePct)}<small>%</small>` : "—"}</span>
-      <span class="v-char-rec">${record}</span>
+      <span class="v-char-rec">${record}</span>${streakTag(row, reserveStreak, filter.label)}
       <span class="v-char-bar" aria-hidden="true"><i style="width:${clamp(row.winratePct, 0, 100).toFixed(1)}%"></i></span>
     </button>`;
 }
 
-/** @param {OverviewModel} model */
-function charactersPanel(model) {
+/**
+ * Mode chips (only when the history has Blitz or Dread runs) and the
+ * ascension picker.
+ * @param {CharacterFilterModel} filter
+ */
+function characterFilters(filter) {
+  const modes = filter.modes ? segmentedHtml("chars.mode", "Mode", filter.modes) : "";
+  const levels = selectHtml("chars.asc", "Ascension", filter.levels, {
+    disabled: filter.levelsDisabled,
+    title: filter.levelsDisabled ? "Dread runs have no ascension level" : "",
+  });
+  return `<div class="v-chars-filters">${modes}${levels}</div>`;
+}
+
+/**
+ * One banner per climber.
+ * @param {CharactersModel} model
+ * @param {number} order  entrance beat
+ * @returns {string}
+ */
+export function charactersHtml(model, order) {
   if (model.characters.length === 0) return "";
+  // A caller with no section filter (a preview) draws the plain panel.
+  const filter = model.characterFilter ?? { label: "", modes: null, levels: [], levelsDisabled: false, shownRuns: 0, totalRuns: 0 };
+  const summary = filter.label ? summaryHtml("chars.clear", filter.label, filter.shownRuns, filter.totalRuns) : "";
+  const reserveStreak = model.characters.some((row) => row.streak > 0);
   return `
-    <section class="v-panel v-chars" data-reveal style="--r:${REVEAL_CHARACTERS}" aria-label="Win rate by character">
-      <p class="v-eyebrow">By character</p>
+    <section class="v-panel v-chars" data-reveal style="--r:${order}" aria-label="Win rate by character">
+      <header class="v-chars-head">
+        <p class="v-eyebrow">By character</p>
+        ${characterFilters(filter)}
+      </header>
+      ${summary}
       <div class="v-chars-grid" style="--cols:${model.characters.length}">
-        ${model.characters.map(characterBanner).join("")}
+        ${model.characters.map((row) => characterBanner(row, filter, reserveStreak)).join("")}
       </div>
     </section>`;
 }
@@ -267,8 +345,13 @@ function handCard(card, index, count) {
     </article>`;
 }
 
-/** @param {OverviewModel} model */
-function hand(model) {
+/**
+ * The six at-a-glance stats as a fanned hand of cards (cards 0..5 of the
+ * entrance).
+ * @param {HandModel} model
+ * @returns {string}
+ */
+export function handHtml(model) {
   if (model.kpis.length === 0) return "";
   return `
     <div class="v-section-title v-hand-title"><h3>Your hand</h3></div>
@@ -290,37 +373,83 @@ function relicTile(row) {
     </button>`;
 }
 
-/** @param {OverviewModel} model */
-function relics(model) {
+/**
+ * @param {RelicsModel} model
+ * @param {number} order  entrance beat
+ * @returns {string}
+ */
+export function relicsHtml(model, order) {
   if (model.relics.length === 0) return "";
   return `
-    <div class="v-section-title"><h3>Top relics</h3><p>by win rate, weighted by runs</p></div>
-    <div class="v-relics" data-reveal style="--r:10">
+    ${sectionTitleHtml("Top relics", "by win rate, weighted by runs")}
+    <div class="v-relics" data-reveal style="--r:${order}">
       ${model.relics.map(relicTile).join("")}
     </div>`;
 }
 
 /**
- * The Overview body. Sections follow the classic layout's order (at-a-glance
- * stats, win rate, trends, relics) so a person who switches between the two
- * looks finds each number in the same place.
- * @param {OverviewModel} model
+ * A section title with its dashed rule.
+ * @param {string} title  plain text
+ * @param {string} [sub]  plain text
  * @returns {string}
  */
-export function overviewHtml(model) {
+export function sectionTitleHtml(title, sub = "") {
+  return `<div class="v-section-title"><h3>${esc(title)}</h3>${sub ? `<p>${esc(sub)}</p>` : ""}</div>`;
+}
+
+/** The Arrange button's quill. */
+const QUILL_ICON = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.6 2.4c-6.6.5-11.2 5.4-11.7 11.9 6.5-.5 11.3-5.3 11.7-11.9z" fill="currentColor"/><path d="M20.6 2.4 9.4 13.6M15.2 6.4l2.3.6M12.6 9.1l2.6.5" fill="none" stroke="rgb(0 0 0 / 0.55)" stroke-width="1.3" stroke-linecap="round"/><path d="M10.4 12.6 3.8 20.6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>`;
+
+/**
+ * The Overview body: the player's widgets on the 12-column grid
+ * (overview-grid.css). The default layout keeps the classic layout's order
+ * (at-a-glance stats, win rate, trends, relics) so a person who switches
+ * between the two looks finds each number in the same place.
+ *
+ * Normally the Arrange button rides on the first widget's section title
+ * (`bar`: "center" for the hand, "start" for a left title) or gets a row of
+ * its own. While arranging (overview/edit.js), each widget's content sits in
+ * an inert body under its tools, and the bar and the sticky foot come from
+ * the editor.
+ * @param {ReadonlyArray<OverviewCell & { tools?: string }>} cells
+ * @param {{ bar?: "center"|"start"|"row", arrange?: boolean, barHtml?: string, footHtml?: string }} [options]
+ * @returns {string}
+ */
+export function overviewHtml(cells, options = {}) {
+  const arrange = !!options.arrange;
+  const bar = arrange ? "row" : options.bar || "row";
+  const items = cells
+    .map((cell) => {
+      const pair = cell.pair === "start" || cell.pair === "end" ? ` data-pair="${cell.pair}"` : "";
+      const body = arrange ? `${cell.tools || ""}<div class="v-w-body" inert>${cell.html}</div>` : cell.html;
+      return `
+      <div class="v-w" data-w="${esc(cell.id)}" data-key="${cell.key}" data-size="${esc(cell.size)}"${pair} style="--span:${Number(cell.span) || 12}">${body}</div>`;
+    })
+    .join("");
+  const empty = cells.length > 0
+    ? ""
+    : arrange
+      ? `
+      <div class="v-ov-empty">
+        <p class="v-ov-empty-title">Your board is empty</p>
+        <p>Add widgets from the gallery, or Reset for the default Overview.</p>
+        <button class="v-btn v-btn--paper" type="button" data-arr="add">Add widget</button>
+      </div>`
+      : `
+      <div class="v-ov-empty">
+        <p class="v-ov-empty-title">Your Overview is empty</p>
+        <p>Pick the widgets you want from the gallery.</p>
+        <button class="v-btn v-btn--primary" type="button" data-action="ov-arrange">Add widgets</button>
+      </div>`;
+  const head = arrange
+    ? options.barHtml || ""
+    : `<div class="v-ov-bar">
+        <button class="v-btn v-ov-arrange" type="button" data-action="ov-arrange" aria-label="Arrange your Overview" title="Arrange your Overview">${QUILL_ICON}<span>Arrange</span></button>
+      </div>`;
   return `
-    <div class="v-ov">
-      ${model.noticesHtml}
-      ${hand(model)}
-      <div class="v-ov-top">
-        ${winRatePanel(model)}
-        ${charactersPanel(model)}
-      </div>
-      <div class="v-section-title"><h3>Trends</h3><p>win rate over time, and where climbs end</p></div>
-      <div class="v-ov-charts">
-        ${trendChartHtml(model.trend, REVEAL_TREND)}
-        ${floorChartHtml(model.floors, REVEAL_FLOORS)}
-      </div>
-      ${relics(model)}
+    <div class="v-ov" data-bar="${bar}"${arrange ? " data-arrange" : ""}>
+      ${head}
+      <div class="v-ov-grid">${items}${empty}
+      </div>${arrange ? options.footHtml || "" : ""}
     </div>`;
 }

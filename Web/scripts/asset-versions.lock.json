@@ -7,6 +7,10 @@
     "v": "3",
     "sha256": "004c5c68670e48a5668f5375f4507d6130f7d4e1af883f5926ccc0462bdc2669"
   },
+  "/lib/cloud-run-wire.js": {
+    "v": "2",
+    "sha256": "1863a6a6dce1b983e32a465695f408a6d5b038ce4956e736c17828e410b76e84"
+  },
   "/lib/coop-climbs.js": {
     "v": "2",
     "sha256": "70ed4dd25d5dc788eb54bb23391d6893ec4c7d1143135f2460a7b55b48199a1e"
@@ -16,24 +20,24 @@
     "sha256": "0a1a2dd839b3b85d0ece2362ae0d23521c02797068254571dda822315ced090f"
   },
   "/lib/coop-play-more.js": {
-    "v": "5",
-    "sha256": "8e423b4c3a27556f175e861cdc15d64e634a253df5a415ab58ca8425e63029db"
+    "v": "6",
+    "sha256": "d0f4c23708a54570ac4888c89773c0a4e19090f65eb258c4c6706eebf4f8a94f"
   },
   "/lib/coop-play-share.js": {
-    "v": "4",
-    "sha256": "c90b1335d96a74bf6744d535d6756d4e1a3d0e57edfc3a18447c3cd7f0e56022"
+    "v": "5",
+    "sha256": "acf098355065cc420b55d63345c9c8863445b6947ae05e074f551a807021ec58"
   },
   "/lib/coop-play-view.js": {
-    "v": "7",
-    "sha256": "3a2aefff6418781d3cf73a83cb299a8de46745815d020b9c0e417cd02c4d58a1"
+    "v": "8",
+    "sha256": "65990fc68b3f6ccb635f71805d473094e992d7d22bb0cd80bdcd55aab5dcf55f"
   },
   "/lib/coop-play.css": {
-    "v": "8",
-    "sha256": "1dd667a454849d457e3612eca45140581585ce423198e7c57e39d74efa5681a8"
+    "v": "9",
+    "sha256": "74f2d532f1483b610b1df578ab1d0325dd8de35207604df6cf97afc10be69138"
   },
   "/lib/coop-play.js": {
-    "v": "8",
-    "sha256": "53d7d6e40ecc4cc091dcf960f8393e6797329f0f41ebb00df0572e5f2efc801d"
+    "v": "9",
+    "sha256": "5c1907d6ee14cc86a28d692d7f3b2f030e64ea1d53c86114b2432b32aac70b8f"
   },
   "/lib/demo-runs.js": {
     "v": "2",
@@ -64,8 +68,8 @@
     "sha256": "e15dd5152c6fbf0b6aa6872eb7b18eef52448835338448b9bc5e0605eed4c31f"
   },
   "/lib/stats-engine.js": {
-    "v": "7",
-    "sha256": "d058ca7c6d6e70e75409222bc4cee781621ca8958366ed9d42aa56e8326a5fa1"
+    "v": "8",
+    "sha256": "b6c4ced95438590e3ce226a97f4055555c766c4dd4c693594db2aa30a096bdaa"
   },
   "/lib/sts2-run-parser.js": {
     "v": "3",
@@ -84,8 +88,8 @@
     "sha256": "10685a5b43186b942126c2952cd7ce75e9f55305d70f74b0071541bfc1342702"
   },
   "/lib/ui/index.js": {
-    "v": "13",
-    "sha256": "d97b5bfec0f0197b594acdbc4c9295ce7f4fc7106f9e907c189fa6010d0b028a"
+    "v": "15",
+    "sha256": "b3593207f6441af3b0142f2c37b1b31e340b50cc62b8e49b720831986eef4f7a"
   },
   "/lib/ui/legacy-layer.js": {
     "v": "1",
@@ -160,16 +164,16 @@
     "sha256": "8f18c5afb139763bedd141338280a369467b46b2dceea88cd1475cb804fbe1f9"
   },
   "/lib/ui/tone-legend.js": {
-    "v": "2",
-    "sha256": "7854c2926da9bf47288e959b9ab969fad643e2732016ac08fed32e74f7d80220"
+    "v": "3",
+    "sha256": "ccf5beeb27f07119808d88acf508e0f864a41ea53003461fd379a1ef57ab2d7c"
   },
   "/lib/ui/views-ascensions.js": {
-    "v": "1",
-    "sha256": "b021c48b903a53b742dee8a182258e644af22ab07c07bba5499d7c451912eea1"
+    "v": "2",
+    "sha256": "21de5fcb49a42db61aaddaad5d4d466aed4dc9f3aa1180a690f4e0c3c62bf3d1"
   },
   "/lib/ui/views-cards.js": {
-    "v": "4",
-    "sha256": "028dbd3225c454a9ee42aa91a4bb7c64ee5fbabdede8bebc23cd172b5a432432"
+    "v": "6",
+    "sha256": "e2214f3f26b4c121bd32d30f4785c97446a96a6385df4b131fd24f7a7604cf35"
   },
   "/lib/ui/views-characters.js": {
     "v": "3",
@@ -184,8 +188,8 @@
     "sha256": "1209b72c32b0b545f4104ee4e0aad8bc273f151390ab78bbe41353991b91fe60"
   },
   "/lib/ui/views-relics.js": {
-    "v": "4",
-    "sha256": "73b7afafd6b958b4dc88248583dec09f2912bd96ae57315d17f993f314d1a4ec"
+    "v": "5",
+    "sha256": "24f242ddcac6c9d0be6129deee4384eae219cac64d4924a00b91c4cd132a5d3a"
   },
   "/lib/ui/views-runs.js": {
     "v": "3",
@@ -200,8 +204,8 @@
     "sha256": "1f019e18a550964764d321df1b3df1cb52eb8954eb353c08fe096dcb4a37d177"
   },
   "/script.js": {
-    "v": "244",
-    "sha256": "5bf6ac8a56cef11ddae1f7009e8b47ad30c90a87dfeffc00307244fa73d08085"
+    "v": "250",
+    "sha256": "c7520312c6be64ad6faa85db501f51b5f0b8f80845f82b632338481c64881c52"
   },
   "/styles.css": {
     "v": "165",

@@ -1,0 +1,491 @@
+/* ==========================================================================
+   Showcase widgets (lib/ui/overview/widgets-showcase.js): the climb
+   calendar, the gauntlet, the play clock and the picks that win. Shared
+   pieces first: a heading pair, in-widget chips, a facts row.
+   ========================================================================== */
+.v-sc-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--v-space-2) var(--v-space-4);
+}
+.v-sc-title {
+  margin: 4px 0 0;
+  color: var(--v-title);
+  font-family: var(--v-font-heading);
+  font-size: var(--v-text-xl);
+  font-weight: 800;
+  line-height: 1.05;
+  text-shadow: 2px 2px 0 var(--v-ink);
+}
+.v-sc-insight {
+  margin: 0;
+  color: var(--v-text);
+  font-size: var(--v-text-md);
+  font-weight: 600;
+}
+.v-sc-insight b {
+  color: var(--v-title);
+  font-weight: 800;
+}
+.v-sc-note {
+  margin: 0;
+  color: var(--v-text-3);
+  font-size: var(--v-text-xs);
+  font-weight: 600;
+}
+.v-sc-chips {
+  display: flex;
+  gap: 3px;
+  padding: 3px;
+  border: var(--v-outline);
+  border-radius: var(--v-radius-pill);
+  background: var(--v-well);
+}
+.v-sc-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: var(--v-radius-pill);
+  background: transparent;
+  color: var(--v-text-2);
+  font: 800 var(--v-text-sm) / 1 var(--v-font-text);
+  cursor: pointer;
+  transition: background-color var(--v-dur-1) ease, color var(--v-dur-1) ease;
+}
+.v-sc-chip small {
+  color: inherit;
+  line-height: 1;
+  font-size: var(--v-text-xs);
+  font-weight: 700;
+  opacity: 0.7;
+}
+.v-sc-chip:hover {
+  background: var(--v-surface-2);
+  color: var(--v-text);
+}
+.v-sc-chip[aria-pressed="true"] {
+  background: var(--v-title);
+  box-shadow: inset 0 0 0 var(--v-outline-w) var(--v-ink);
+  color: var(--v-ink);
+}
+.v-sc-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px var(--v-space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--v-text-2);
+  font-size: var(--v-text-sm);
+  font-weight: 600;
+}
+.v-sc-facts b {
+  color: var(--v-text);
+  font-family: var(--v-font-display);
+  font-size: 1.35em;
+  font-weight: var(--v-display-weight);
+}
+.v-sc-facts small {
+  color: var(--v-text-3);
+}
+.v-sc-facts.is-stack {
+  flex-direction: column;
+}
+
+/* ---- Climb calendar ------------------------------------------------------------- */
+.v-cal {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v-space-3);
+}
+.v-cal-frame {
+  position: relative;
+}
+.v-cal-months {
+  position: relative;
+  height: 16px;
+  color: var(--v-text-3);
+  font-size: var(--v-text-xs);
+  font-weight: 700;
+}
+.v-cal-months span {
+  position: absolute;
+  left: calc(var(--w) / var(--weeks) * 100%);
+}
+.v-cal-grid {
+  display: flex;
+  gap: 3px;
+}
+.v-cal-week {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.v-cal-day,
+.v-cal-legend i {
+  display: block;
+  aspect-ratio: 1;
+  border-radius: 3px;
+  background: var(--v-well);
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.04);
+}
+.v-cal-day[data-level="1"],
+.v-cal-legend i[data-level="1"] { background: color-mix(in srgb, var(--v-accent) 32%, var(--v-well)); }
+.v-cal-day[data-level="2"],
+.v-cal-legend i[data-level="2"] { background: color-mix(in srgb, var(--v-accent) 55%, var(--v-well)); }
+.v-cal-day[data-level="3"],
+.v-cal-legend i[data-level="3"] { background: color-mix(in srgb, var(--v-accent) 78%, var(--v-well)); }
+.v-cal-day[data-level="4"],
+.v-cal-legend i[data-level="4"] { background: var(--v-accent-hi); }
+/* A day with a win wears a gold ring. */
+.v-cal-day.is-won,
+.v-cal-legend i.is-won {
+  box-shadow: inset 0 0 0 2px var(--v-gold);
+}
+.v-cal-day.is-today {
+  outline: 2px solid var(--v-text);
+  outline-offset: 1px;
+}
+.v-cal-day.is-future {
+  visibility: hidden;
+}
+.v-cal-empty {
+  position: absolute;
+  inset: 16px 0 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: var(--v-radius-md);
+  background: color-mix(in srgb, var(--v-surface-1) 82%, transparent);
+  color: var(--v-text);
+  font-weight: 700;
+  text-align: center;
+}
+.v-cal-empty p {
+  max-width: 28em;
+  margin: 0;
+}
+.v-cal-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--v-space-2) var(--v-space-4);
+}
+.v-cal-legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--v-text-3);
+  font-size: var(--v-text-xs);
+  font-weight: 700;
+}
+.v-cal-legend i {
+  width: 12px;
+}
+.v-cal-legend i.is-won {
+  margin-left: 8px;
+}
+/* A narrow calendar keeps its newest weeks. */
+@container v-w (width < 560px) {
+  .v-cal-week:nth-child(-n + 26) {
+    display: none;
+  }
+  .v-cal-months {
+    display: none;
+  }
+}
+
+/* ---- The gauntlet --------------------------------------------------------------- */
+.v-gnt {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v-space-3);
+}
+.v-gnt-list {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.v-gnt-row {
+  display: grid;
+  grid-template-columns: 4.8em minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  align-items: center;
+  gap: 4px var(--v-space-3);
+}
+.v-gnt-act {
+  grid-row: span 2;
+  color: var(--v-text);
+  font-family: var(--v-font-heading);
+  font-size: var(--v-text-lg);
+  font-weight: 800;
+}
+.v-gnt-row.is-win .v-gnt-act {
+  color: var(--v-gold);
+}
+.v-gnt-reach {
+  position: relative;
+  display: block;
+  height: 22px;
+  overflow: hidden;
+  border: var(--v-outline);
+  border-radius: var(--v-radius-pill);
+  background: var(--v-well);
+}
+.v-gnt-reach i {
+  display: block;
+  height: 100%;
+  border-right: var(--v-outline);
+  background: color-mix(in srgb, var(--v-accent) 70%, var(--v-well));
+}
+.v-gnt-row.is-win .v-gnt-reach i {
+  background: var(--v-gold);
+}
+.v-gnt-reach b {
+  position: absolute;
+  top: 50%;
+  left: 10px;
+  color: var(--v-text);
+  font-size: var(--v-text-xs);
+  font-weight: 800;
+  text-shadow: 1px 1px 0 var(--v-ink);
+  transform: translateY(-50%);
+}
+.v-gnt-end {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.v-gnt-end small {
+  overflow: hidden;
+  color: var(--v-text-2);
+  font-size: var(--v-text-xs);
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Narrow: the line about how climbs end wraps under its bar instead of cutting off. */
+@container v-w (width < 520px) {
+  .v-gnt-end {
+    flex-wrap: wrap;
+    gap: 4px 10px;
+  }
+  .v-gnt-end small {
+    white-space: normal;
+  }
+}
+.v-gnt-segs {
+  display: flex;
+  flex: none;
+  min-width: 6px;
+  height: 10px;
+  overflow: hidden;
+  border-radius: var(--v-radius-pill);
+}
+.v-gnt-segs i,
+.v-gnt-key i {
+  display: block;
+  min-width: 2px;
+}
+.v-gnt-segs i { flex-basis: 0; }
+.v-gnt .is-elite { background: var(--v-gold); }
+.v-gnt .is-boss { background: var(--v-loss); }
+.v-gnt .is-combat { background: var(--v-violet); }
+.v-gnt .is-abandoned { background: var(--v-text-3); }
+.v-gnt .is-other { background: var(--v-info); }
+.v-gnt-key {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px var(--v-space-3);
+  margin: 0;
+  color: var(--v-text-3);
+  font-size: var(--v-text-xs);
+  font-weight: 700;
+}
+.v-gnt-key span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.v-gnt-key i {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+}
+
+/* ---- Play clock ------------------------------------------------------------------ */
+.v-clock {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v-space-3);
+}
+.v-clock-body {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: var(--v-space-4);
+}
+.v-clock-dial {
+  width: min(100%, 230px);
+  height: auto;
+  flex: none;
+}
+.v-clock-ring {
+  fill: var(--v-well);
+  stroke: var(--v-ink);
+  stroke-width: 2;
+}
+.v-clock-w {
+  fill: color-mix(in srgb, var(--v-accent) 55%, var(--v-well));
+  stroke: var(--v-ink);
+  stroke-width: 1.2;
+}
+.v-clock-w.is-up,
+.v-clock-key i.is-up { fill: var(--v-win); background: var(--v-win); }
+.v-clock-w.is-down,
+.v-clock-key i.is-down { fill: var(--v-loss); background: var(--v-loss); }
+.v-clock-w.is-thin { fill: color-mix(in srgb, var(--v-text-3) 55%, var(--v-well)); }
+.v-clock-hub {
+  fill: var(--v-surface-1);
+  stroke: var(--v-ink);
+  stroke-width: 2;
+}
+.v-clock-peak {
+  fill: var(--v-title);
+  font-family: var(--v-font-display);
+  font-size: 19px;
+  font-weight: 700;
+  text-anchor: middle;
+}
+.v-clock-sub {
+  fill: var(--v-text-2);
+  font-family: var(--v-font-text);
+  font-size: 10px;
+  font-weight: 700;
+  text-anchor: middle;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+.v-clock-ticks text {
+  fill: var(--v-text-3);
+  font-family: var(--v-font-text);
+  font-size: 11px;
+  font-weight: 700;
+  text-anchor: middle;
+}
+.v-clock-key {
+  display: flex;
+  gap: var(--v-space-3);
+  color: var(--v-text-3);
+  font-size: var(--v-text-xs);
+}
+.v-clock-key span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.v-clock-key i {
+  width: 10px;
+  height: 10px;
+  border: 1.5px solid var(--v-ink);
+  border-radius: 3px;
+}
+
+/* ---- Picks that win ------------------------------------------------------------- */
+.v-picks {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v-space-3);
+}
+.v-picks-cols {
+  display: grid;
+  gap: var(--v-space-4);
+}
+@container v-w (width >= 620px) {
+  .v-picks-cols {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+.v-picks-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--v-space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.v-pick {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+  text-align: center;
+}
+.v-pick-art {
+  display: block;
+  width: min(100%, 92px);
+  aspect-ratio: 205 / 256;
+  margin-bottom: 4px;
+  overflow: hidden;
+  border-radius: 6px;
+  box-shadow: 3px 3px 0 var(--v-ink);
+  transform: rotate(-2deg);
+  transition: transform var(--v-dur-2) var(--v-ease-spring, ease);
+}
+.v-pick:nth-child(2) .v-pick-art { transform: rotate(1.5deg); }
+.v-pick:nth-child(3) .v-pick-art { transform: rotate(-0.5deg); }
+.v-pick-art img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.v-pick-name {
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--v-text);
+  font-size: var(--v-text-sm);
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.v-pick-lift {
+  font-family: var(--v-font-display);
+  font-size: var(--v-text-lg);
+  font-weight: var(--v-display-weight);
+  line-height: 1;
+}
+.v-pick-lift small {
+  font-family: var(--v-font-text);
+  font-size: var(--v-text-xs);
+}
+.v-pick-lift.is-win { color: var(--v-win); }
+.v-pick-lift.is-loss { color: var(--v-loss); }
+.v-pick-n {
+  color: var(--v-text-3);
+  font-size: var(--v-text-xs);
+  font-weight: 600;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .v-pick-art,
+  .v-pick:nth-child(n) .v-pick-art {
+    transform: none;
+    transition: none;
+  }
+}

@@ -173,6 +173,43 @@
   background: color-mix(in srgb, var(--v-stage-spire, var(--v-surface-2)) 70%, var(--v-text));
 }
 
+/* The room grows by the sign's height (coop-play.css): that needs a
+   content-box room, and base.css's border-box outranks the legacy layer. */
+.cp-scene.has-sky {
+  box-sizing: content-box;
+}
+/* The sign in the room's sky: an inked plate with a gold tab, like the
+   example tag, and the counts in the display face. */
+.cp-sky {
+  border: 2px solid var(--v-ink);
+  background: color-mix(in srgb, var(--v-surface-1) 92%, transparent);
+  box-shadow: var(--v-shadow-sm);
+}
+.cp-sky-title {
+  border: 2px solid var(--v-ink);
+  background: var(--v-gold);
+  color: var(--v-ink);
+  box-shadow: 2px 2px 0 var(--v-ink);
+  transform: rotate(var(--v-title-tilt, -2deg));
+}
+.cp-sky-item + .cp-sky-item {
+  border-left: 2px solid var(--v-line);
+}
+.cp-sky-n {
+  font-weight: var(--v-display-weight, 800);
+}
+.cp-sky-item.is-on .cp-sky-n {
+  text-shadow: var(--v-title-shadow, none);
+}
+.cp-sky-faces .cp-avatar {
+  border-color: var(--v-ink);
+}
+.cp-sky-more {
+  border: 2px solid var(--v-ink);
+  background: var(--v-paper);
+  color: var(--v-ink);
+}
+
 .cp-notice {
   border: 2px solid var(--v-ink);
   background: var(--v-gold);
@@ -183,6 +220,13 @@
 
 .cp-ping-switch {
   border: 2px solid var(--v-ink);
+}
+
+/* "This browser" in the list of devices that get pings: a paper chip in ink. */
+.cp-device-here {
+  border: 2px solid var(--v-ink);
+  background: var(--v-paper);
+  color: var(--v-ink);
 }
 
 /* The pill on other tabs. */

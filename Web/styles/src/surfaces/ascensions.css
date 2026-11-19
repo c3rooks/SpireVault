@@ -17,6 +17,9 @@
   --tier-expert: var(--v-loss);
   --tier-master: var(--v-violet);
   --tier-unknown: var(--v-text-3);
+  /* Blitz (STS2 beta) is its own ladder, so it takes none of the five
+     standard bands' colours. */
+  --tier-blitz: var(--v-info);
   --asc-taper: 4.4%;
   display: flex;
   flex-direction: column;
@@ -29,6 +32,55 @@
 .v-asc [data-tier="mid"] { --tier: var(--tier-mid); }
 .v-asc [data-tier="expert"] { --tier: var(--tier-expert); }
 .v-asc [data-tier="master"] { --tier: var(--tier-master); }
+.v-asc [data-tier="blitz"] { --tier: var(--tier-blitz); }
+
+/* ---- Filters: one climber, Standard or Blitz ladder ---------------------------- */
+.v-asc-filters {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v-space-3);
+  margin-bottom: var(--v-space-5);
+  padding: var(--v-space-3) var(--v-space-4);
+}
+.v-asc-filters-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--v-space-3) var(--v-space-6);
+}
+.v-asc-filters .v-filter-summary {
+  padding-top: var(--v-space-2);
+  border-top: 2px dashed var(--v-line);
+}
+/* A Blitz storey has no modifier row to open, so it is not a button and
+   does not answer the pointer. */
+.v-asc-st-btn.is-static {
+  pointer-events: none;
+}
+
+/* ---- Blitz note (in the tiers panel's place) --------------------------------- */
+/* As tall as its words, not stretched to the spire's height. */
+.v-asc-blitz {
+  align-self: start;
+}
+.v-asc-blitz-rec {
+  margin: 0 0 var(--v-space-3);
+  color: var(--v-text-2);
+  font-size: var(--v-text-md);
+  font-weight: 700;
+}
+.v-asc-blitz-rec b {
+  color: var(--v-info);
+  font-family: var(--v-font-display);
+  font-size: var(--v-text-2xl);
+  font-weight: var(--v-display-weight);
+}
+.v-asc-blitz-text {
+  margin: 0;
+  color: var(--v-text-2);
+  font-size: var(--v-text-sm);
+  line-height: 1.5;
+}
 
 .v-asc-note {
   margin: 0 0 var(--v-space-3);
@@ -306,6 +358,20 @@
   width: 10px;
   border-top: var(--v-outline-w) solid var(--v-title);
   border-top-width: max(2px, var(--v-outline-w));
+}
+/* A low storey is too wide for the flag beside it (a climber's or the Blitz
+   ladder's peak is often low): it sits on the storey's top edge instead. */
+.v-asc-st.is-flag-in .v-asc-st-flag {
+  top: -9px;
+  right: 8px;
+  left: auto;
+  padding: 0 7px;
+  border-radius: var(--v-radius-pill);
+  line-height: 1.4;
+  transform: none;
+}
+.v-asc-st.is-flag-in .v-asc-st-flag::before {
+  display: none;
 }
 
 .v-asc-plinth {

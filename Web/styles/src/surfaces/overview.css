@@ -8,19 +8,14 @@
               · per-character banners
      charts → win-rate trend, where climbs end
      relics → top six by win rate
-   Markup from lib/ui/views.js.
+   Each section is a widget on the Overview grid (overview-grid.css); this
+   is the default layout. Markup from lib/ui/views.js.
    ========================================================================== */
 .v-ov {
   display: flex;
   flex-direction: column;
   /* The column's width, for the hand's fan steps (components/cards.css). */
   container: v-ov / inline-size;
-}
-.v-ov-top {
-  display: grid;
-  grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
-  gap: var(--v-space-5);
-  align-items: stretch;
 }
 
 /* ---- Win-rate panel ----------------------------------------------------------- */
@@ -216,6 +211,22 @@
   flex-direction: column;
   gap: var(--v-space-3);
 }
+/* Caption on the left, the mode chips and ascension picker on the right;
+   the controls drop under the caption when the panel is narrow. */
+.v-chars-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--v-space-2) var(--v-space-4);
+}
+.v-chars-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--v-space-2) var(--v-space-4);
+  min-width: 0;
+}
 .v-chars-grid {
   display: grid;
   flex: 1;
@@ -372,6 +383,54 @@
   opacity: 0.6;
 }
 
+/* "🔥 9 in a row": the climber's current win streak, on its own line under
+   the record, tinted with the win colour as the hand's Win streak card is.
+   A banner without a streak keeps the line empty (.is-empty) whenever a
+   neighbour has one, so the bars stay level. */
+.v-char-streak {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  max-width: calc(100% + 2 * var(--char-bleed, 6px));
+  min-height: 20px;
+  margin: 3px calc(-1 * var(--char-bleed, 6px)) 0;
+  padding: 0 7px 0 5px;
+  border-radius: var(--v-radius-pill);
+  background: color-mix(in srgb, var(--v-win) 16%, transparent);
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--v-win) 45%, transparent);
+  color: var(--v-win);
+  font: 800 11px / 1 var(--v-font-text);
+  white-space: nowrap;
+}
+.v-char-streak.is-empty {
+  visibility: hidden;
+}
+/* The flame burns warm (gold into red); the count keeps the win colour. */
+.v-char-streak svg {
+  flex: none;
+  width: 13px;
+  height: 13px;
+  color: color-mix(in srgb, var(--v-gold) 55%, var(--v-loss));
+}
+.v-char-streak b {
+  margin-right: 3px;
+  font-size: 12px;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+}
+/* Measured on the banner's content box: under 76px (a banner under 92px,
+   1180–1300px windows) the tag keeps the flame and count; the tooltip and
+   the banner's label still say "in a row". */
+@container v-char (max-width: 75.98px) {
+  .v-char-streak-unit {
+    display: none;
+  }
+  .v-char-streak b {
+    margin-right: 0;
+  }
+}
+
 /* ---- Hand heading --------------------------------------------------------------- */
 /* The hand leads the page, as the stat strip does in the classic layout, so
    its heading sits tight under the header (or under a notice strip). */
@@ -387,13 +446,6 @@
   align-self: center;
   height: 0;
   border-top: 2px dashed var(--v-line);
-}
-
-/* ---- Charts row ------------------------------------------------------------------ */
-.v-ov-charts {
-  display: grid;
-  grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
-  gap: var(--v-space-5);
 }
 
 /* ---- Top relics ------------------------------------------------------------------ */
@@ -471,10 +523,6 @@
 
 /* ---- Responsive ------------------------------------------------------------------- */
 @media (max-width: 1180px) {
-  .v-ov-top,
-  .v-ov-charts {
-    grid-template-columns: minmax(0, 1fr);
-  }
   .v-relics {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -545,5 +593,27 @@
   }
   .v-char:hover {
     transform: translateX(3px);
+  }
+  /* A row with a streak grows a third line for it, under the record;
+     a row without one does not keep the empty line. */
+  .v-char-art,
+  .v-char-wr {
+    grid-row: 1 / span 3;
+  }
+  .v-char-streak {
+    grid-row: 3;
+    grid-column: 2;
+    justify-self: start;
+    max-width: 100%;
+    margin: 4px 0 0;
+  }
+  .v-char-streak.is-empty {
+    display: none;
+  }
+  .v-chars-filters {
+    flex: 1 1 100%;
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--v-space-3);
   }
 }

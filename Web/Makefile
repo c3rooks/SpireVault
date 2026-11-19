@@ -38,7 +38,7 @@ assets:
 # but the browser explodes the moment that template renders. Once
 # bitten, twice shy.
 preflight:
-	@for f in script.js run-coach.js lib/*.js lib/ui/*.js scripts/*.mjs; do \
+	@for f in script.js run-coach.js lib/*.js lib/ui/*.js lib/ui/overview/*.js scripts/*.mjs; do \
 	  node --check $$f || { echo "✘ parse error in $$f — aborting deploy"; exit 1; }; \
 	done
 	@node scripts/preflight-runtime.mjs || { echo "✘ runtime preflight failed — aborting deploy"; exit 1; }
@@ -94,6 +94,19 @@ preflight:
 	@# "Your co-op climbs": the run parser keeps every player in a save, and
 	@# the co-op numbers count only runs with a party.
 	@node scripts/verify-coop-climbs.mjs || { echo "✘ co-op climbs check failed"; exit 1; }
+	@# The Steam copy of a player's runs is all a phone or second browser
+	@# shows: it must carry card picks, abandoned runs, modes, the party and
+	@# the act timeline. It held no card picks at all until 2026-11-18.
+	@node scripts/verify-cloud-run-wire.mjs || { echo "✘ Steam copy check failed"; exit 1; }
+	@# Section filters (By character mode + ascension, the Ascensions climber
+	@# and ladder) and the per-character win streak: offline, no browser.
+	@node scripts/verify-stat-filters.mjs || { echo "✘ stat filters check failed"; exit 1; }
+	@# Recent Runs "go by date": day keys, quick picks, the calendar's month
+	@# grid and its labels (offline, no browser).
+	@node scripts/verify-run-dates.mjs || { echo "✘ run-dates check failed"; exit 1; }
+	@# SpireVault Sync: new runs from the extension join the loaded ones and
+	@# never replace them; only desktop Chromium is offered the extension.
+	@node scripts/verify-sync-bridge.mjs || { echo "✘ SpireVault Sync check failed"; exit 1; }
 	@# Game-data drift guard. Cross-references labels.json, relic-info.js,
 	@# ascension-info.js, demo-runs.js, script.js's boss/roster enums and
 	@# the Swift AI glossary so a tooltip can never describe a card the

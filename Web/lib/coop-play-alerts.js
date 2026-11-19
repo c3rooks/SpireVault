@@ -75,17 +75,60 @@ export async function enablePush(api, branch) {
   }
 }
 
-/** @param {(path: string, opts?: object) => Promise<any>} api */
-export async function disablePush(api) {
+/**
+ * This browser's push endpoint, or null. The Worker knows each device by a
+ * hash of it, so turning pings off here leaves the player's phone alone.
+ * @returns {Promise<string | null>}
+ */
+export async function pushEndpoint() {
   try {
     const reg = await navigator.serviceWorker?.getRegistration(SW_URL);
     const sub = await reg?.pushManager.getSubscription();
+    return sub?.endpoint ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * This browser's id in the Devices list: the first 16 hex characters of
+ * SHA-256 of its push endpoint, the same as Backend/src/coop-play-devices.ts.
+ * Empty when this browser isn't subscribed.
+ * @returns {Promise<string>}
+ */
+export async function pushDeviceId() {
+  const endpoint = await pushEndpoint();
+  if (!endpoint || !globalThis.crypto?.subtle) return "";
+  try {
+    const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(endpoint));
+    return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("").slice(0, 16);
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * Pings off for this device only. Other devices that turned pings on keep
+ * getting them.
+ * @param {(path: string, opts?: object) => Promise<any>} api
+ */
+export async function disablePush(api) {
+  let endpoint = null;
+  try {
+    const reg = await navigator.serviceWorker?.getRegistration(SW_URL);
+    const sub = await reg?.pushManager.getSubscription();
+    endpoint = sub?.endpoint ?? null;
     if (sub) await sub.unsubscribe();
   } catch (err) {
     console.warn("[coop-play] push unsubscribe failed", err);
   }
-  const r = await api("/coop/play/push", { method: "DELETE" });
-  return { ok: r.ok };
+  // Without an endpoint (nothing subscribed here) there is no device of ours
+  // to forget: never fall back to "every device", which the Worker would do
+  // for a body with no endpoint.
+  if (!endpoint) return { ok: true };
+  const r = await api("/coop/play/push", { method: "DELETE", body: { endpoint } });
+  // pushOn: whether any other device of yours still gets pings.
+  return { ok: r.ok, pushOn: typeof r.data?.pushOn === "boolean" ? r.data.pushOn : undefined };
 }
 
 // MARK: - Tab-open alerts

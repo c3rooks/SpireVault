@@ -1,0 +1,326 @@
+/* ==========================================================================
+   SpireVault Sync: the "Auto-sync" toolbar button, the setup card (a dialog)
+   and the one-line offer on the import screen (lib/sync-bridge-view.js).
+
+   Loaded on demand by lib/sync-bridge.js, in both looks, and only in desktop
+   Chromium browsers. Structure is shared; each look only re-points the
+   --svs-* tokens: classic first, the new look ("Inked Codex") below.
+   ========================================================================== */
+
+.svs {
+  --svs-card: var(--card, #14111e);
+  --svs-raised: var(--card-raised, #1a1626);
+  --svs-line: var(--border-strong, #3a3450);
+  --svs-line-soft: var(--border, #28233a);
+  --svs-text: var(--text, #f4eddc);
+  --svs-text-2: var(--text-2, #b6abc4);
+  --svs-text-3: var(--text-3, #6c647a);
+  --svs-accent: var(--accent, #ff6b1a);
+  --svs-accent-hi: var(--accent-hi, #ffa05c);
+  --svs-on-accent: #1a0d05;
+  --svs-gold: var(--gold, #d4af37);
+  --svs-live: var(--win, #6dd97c);
+  --svs-trouble: var(--loss, #ff5f6d);
+  --svs-radius: var(--radius, 12px);
+  --svs-radius-sm: 8px;
+  --svs-border: 1px;
+  --svs-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+  --svs-btn-shadow: none;
+  --svs-font: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --svs-font-display: "Cinzel", "Playfair Display", Georgia, serif;
+  --svs-title-weight: 700;
+  --svs-dur: 150ms;
+  --svs-ease: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+html[data-ui="next"] .svs {
+  --svs-card: var(--v-surface-1);
+  --svs-raised: var(--v-surface-2);
+  --svs-line: var(--v-ink);
+  --svs-line-soft: var(--v-line);
+  --svs-text: var(--v-text);
+  --svs-text-2: var(--v-text-2);
+  --svs-text-3: var(--v-text-3);
+  --svs-accent: var(--v-accent);
+  --svs-accent-hi: var(--v-accent-hi);
+  --svs-on-accent: var(--v-ink);
+  --svs-gold: var(--v-title, var(--v-gold));
+  --svs-live: var(--v-win);
+  --svs-trouble: var(--v-loss, #c8402f);
+  --svs-radius: var(--v-radius-lg);
+  --svs-radius-sm: var(--v-radius-md);
+  --svs-border: 3px;
+  --svs-shadow: var(--v-shadow-lg);
+  --svs-btn-shadow: var(--v-shadow);
+  --svs-font: var(--v-font-text);
+  --svs-font-display: var(--v-font-display);
+  --svs-title-weight: var(--v-display-weight, 800);
+  --svs-dur: var(--v-dur-2, 150ms);
+  --svs-ease: var(--v-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+}
+
+/* ── Toolbar button ─────────────────────────────────────────────────────── */
+
+.svs-toolbar-btn[hidden] { display: none; }
+
+/* The extension is in but cannot read yet: a gold dot says "unfinished". */
+.svs-toolbar-btn.is-attention { position: relative; }
+.svs-toolbar-btn.is-attention::after {
+  content: "";
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--gold, #d4af37);
+}
+html[data-ui="next"] .svs-toolbar-btn.is-attention::after { background: var(--v-gold, #d4af37); }
+
+/* ── Setup card ─────────────────────────────────────────────────────────── */
+
+.svs-dialog {
+  width: min(480px, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px);
+  overflow: auto;
+  margin: auto;
+  padding: 28px 28px 22px;
+  border: var(--svs-border) solid var(--svs-line);
+  border-radius: var(--svs-radius);
+  background: var(--svs-card);
+  color: var(--svs-text);
+  font-family: var(--svs-font);
+  box-shadow: var(--svs-shadow);
+}
+
+.svs-dialog::backdrop {
+  background: rgba(6, 4, 10, 0.72);
+}
+
+.svs-dialog[open] {
+  animation: svs-rise var(--svs-dur) var(--svs-ease);
+}
+
+@keyframes svs-rise {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.svs-close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: var(--svs-radius-sm);
+  background: transparent;
+  color: var(--svs-text-2);
+  font-size: 24px;
+  line-height: 1;
+  cursor: pointer;
+  transition: color var(--svs-dur) var(--svs-ease);
+}
+.svs-close:hover { color: var(--svs-text); }
+
+.svs-title {
+  margin: 0 40px 6px 0;
+  font-family: var(--svs-font-display);
+  font-size: 24px;
+  font-weight: var(--svs-title-weight);
+  line-height: 1.15;
+  letter-spacing: 0.01em;
+  color: var(--svs-gold);
+}
+
+.svs-lead {
+  margin: 0 0 20px;
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--svs-text-2);
+}
+
+.svs-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0;
+}
+
+.svs-step {
+  position: relative;
+  display: grid;
+  grid-template-columns: 32px 1fr;
+  column-gap: 14px;
+  padding-bottom: 18px;
+}
+
+/* The line that ties one step to the next. */
+.svs-step:not(:last-child)::before {
+  content: "";
+  position: absolute;
+  left: 15px;
+  top: 34px;
+  bottom: 2px;
+  width: 2px;
+  background: var(--svs-line-soft);
+}
+.svs-step[data-state="done"]:not(:last-child)::before { background: var(--svs-live); }
+
+.svs-step-mark {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border: 2px solid var(--svs-line-soft);
+  border-radius: 50%;
+  background: var(--svs-raised);
+  color: var(--svs-text-3);
+  font-size: 14px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.svs-step[data-state="now"] .svs-step-mark {
+  border-color: var(--svs-accent);
+  color: var(--svs-accent-hi);
+}
+
+.svs-step[data-state="done"] .svs-step-mark {
+  border-color: var(--svs-live);
+  background: var(--svs-live);
+  color: var(--svs-on-accent);
+}
+
+.svs-step-body { min-width: 0; padding-top: 5px; }
+
+.svs-step-title {
+  margin: 0 0 2px;
+  font-family: var(--svs-font);
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 22px;
+  color: var(--svs-text);
+}
+
+.svs-step[data-state="todo"] .svs-step-title { color: var(--svs-text-3); }
+
+.svs-step-text {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--svs-text-2);
+}
+.svs-step-text strong { color: var(--svs-text); font-weight: 700; }
+.svs-step[data-state="todo"] .svs-step-text { color: var(--svs-text-3); }
+.svs-step[data-state="todo"] .svs-step-text strong { color: inherit; }
+.svs-step[data-step="sync"][data-state="done"] .svs-step-text { color: var(--svs-text); }
+
+.svs-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  margin-top: 10px;
+  padding: 10px 18px;
+  border: var(--svs-border) solid var(--svs-line);
+  border-radius: var(--svs-radius-sm);
+  background: var(--svs-accent);
+  color: var(--svs-on-accent);
+  font-family: var(--svs-font);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.2;
+  text-decoration: none;
+  cursor: pointer;
+  box-shadow: var(--svs-btn-shadow);
+  transition: transform var(--svs-dur) var(--svs-ease), filter var(--svs-dur) var(--svs-ease);
+}
+.svs-btn:hover { filter: brightness(1.08); }
+.svs-btn:active { transform: translateY(1px); }
+.svs-btn[disabled] { opacity: 0.55; cursor: default; }
+.svs-btn[hidden] { display: none; }
+
+.svs-btn-quiet {
+  background: var(--svs-raised);
+  color: var(--svs-text);
+}
+
+.svs-btn:focus-visible,
+.svs-close:focus-visible,
+.svs-input:focus-visible {
+  outline: 2px solid var(--svs-gold);
+  outline-offset: 2px;
+}
+
+.svs-folder {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  margin-top: 10px;
+}
+.svs-folder[hidden] { display: none; }
+.svs-folder .svs-btn { margin-top: 0; }
+
+.svs-input {
+  min-width: 0;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: var(--svs-border) solid var(--svs-line);
+  border-radius: var(--svs-radius-sm);
+  background: var(--svs-raised);
+  color: var(--svs-text);
+  font: 16px/1.2 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+.svs-input::placeholder { color: var(--svs-text-3); }
+
+.svs-error {
+  grid-column: 1 / -1;
+  margin: 0;
+  font-size: 13px;
+  color: var(--svs-trouble);
+}
+.svs-error:empty { display: none; }
+
+.svs-foot {
+  margin: 4px 0 0;
+  padding-top: 14px;
+  border-top: 1px solid var(--svs-line-soft);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--svs-text-3);
+}
+
+/* ── The offer on the import screen ─────────────────────────────────────── */
+
+.svs-nudge {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 16px;
+  max-width: 640px;
+  margin: 18px auto 0;
+  padding: 12px 16px;
+  border: var(--svs-border) dashed var(--svs-line);
+  border-radius: var(--svs-radius-sm);
+  background: var(--svs-raised);
+  text-align: left;
+}
+
+.svs-nudge-text {
+  flex: 1 1 280px;
+  margin: 0;
+  font-family: var(--svs-font);
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--svs-text-2);
+}
+.svs-nudge-text strong { color: var(--svs-text); }
+.svs-nudge .svs-btn { margin-top: 0; }
+
+@media (prefers-reduced-motion: reduce) {
+  .svs-dialog[open] { animation: none; }
+  .svs-btn, .svs-close { transition: none; }
+}

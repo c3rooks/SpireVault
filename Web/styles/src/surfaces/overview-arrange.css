@@ -1,0 +1,832 @@
+/* ==========================================================================
+   Arranging the Overview (lib/ui/overview/edit.js, gallery.js).
+
+   The Arrange button rides on the first widget's section title when there is
+   one (`.v-ov[data-bar="center"|"start"]`), so the page does not grow a row
+   for it; otherwise it gets a row of its own.
+
+   In Arrange mode (`.v-ov[data-arrange]`, never on <html>: a root change
+   re-fits every stage header) each widget gets an inked dashed frame and a
+   tools row (grip + name, size chips, settings, remove) above its content,
+   which stays live but inert. A sticky bar at the foot holds Add widget,
+   Reset and Done, above the phone tab bar.
+   ========================================================================== */
+.v-ov {
+  --ov-arrange-w: 112px;
+  --ov-frame-pad: 8px;
+  position: relative;
+}
+
+/* ---- The Arrange button ------------------------------------------------------- */
+.v-ov-bar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: var(--v-space-3);
+}
+.v-ov-arrange {
+  width: var(--ov-arrange-w);
+  min-height: 34px;
+  padding: 6px 12px 6px 10px;
+}
+.v-ov-arrange svg {
+  width: 17px;
+  height: 17px;
+  color: var(--v-title);
+}
+.v-ov[data-bar="center"] > .v-ov-bar,
+.v-ov[data-bar="start"] > .v-ov-bar {
+  position: absolute;
+  top: var(--ov-bar-mid);
+  right: 0;
+  z-index: 3;
+  margin: 0;
+  transform: translateY(-50%);
+}
+/* The middle of the title row, where its dashed rule runs. */
+.v-ov[data-bar="center"] {
+  --ov-bar-mid: calc(var(--v-text-xl) / 2);
+}
+.v-ov[data-bar="start"] {
+  --ov-bar-mid: calc(var(--v-space-6) - var(--v-space-5) + var(--v-text-xl) / 2);
+}
+/* The rule stops short of the button; a centered title stays centered. */
+.v-ov[data-bar="center"] > .v-ov-grid > .v-w:first-child > .v-section-title:first-child {
+  padding-inline: calc(var(--ov-arrange-w) + var(--v-space-3));
+}
+.v-ov[data-bar="start"] > .v-ov-grid > .v-w:first-child > .v-section-title:first-child {
+  padding-inline-end: calc(var(--ov-arrange-w) + var(--v-space-3));
+}
+
+/* ---- Arrange mode: the head ------------------------------------------------------ */
+.v-arr-head {
+  justify-content: flex-start;
+  align-items: center;
+  gap: var(--v-space-3);
+  margin-bottom: var(--v-space-4);
+  padding: 10px 14px;
+  border: 2px dashed var(--v-line);
+  border-radius: var(--v-radius-md);
+}
+.v-arr-badge {
+  flex: none;
+  padding: 4px 10px;
+  border: var(--v-outline);
+  border-radius: var(--v-radius-pill);
+  background: var(--v-title);
+  color: var(--v-ink);
+  font-size: var(--v-text-xs);
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.v-arr-hint {
+  margin: 0;
+  color: var(--v-text-2);
+  font-size: var(--v-text-sm);
+  font-weight: 600;
+}
+
+/* ---- Arrange mode: each widget ---------------------------------------------------- */
+.v-ov[data-arrange] .v-w {
+  position: relative;
+  margin: 0;
+  padding: var(--ov-frame-pad);
+  border: 2px dashed var(--v-text-3);
+  border-radius: calc(var(--v-radius-lg) + var(--ov-frame-pad));
+  background: color-mix(in srgb, var(--v-bg-deep) 55%, transparent);
+  transition: border-color var(--v-dur-1) ease, background-color var(--v-dur-1) ease;
+}
+.v-ov[data-arrange] .v-w[data-pair="start"],
+.v-ov[data-arrange] .v-w-slot[data-pair="start"] {
+  margin-inline-end: calc(var(--v-space-5) * (var(--span) / 6 - 1));
+}
+.v-ov[data-arrange] .v-w[data-pair="end"],
+.v-ov[data-arrange] .v-w-slot[data-pair="end"] {
+  margin-inline-start: calc(var(--v-space-5) * (var(--span) / 6 - 1));
+}
+.v-ov[data-arrange] .v-w:hover,
+.v-ov[data-arrange] .v-w:focus-within {
+  border-style: solid;
+  border-color: var(--v-title);
+}
+.v-w-body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+  user-select: none;
+}
+.v-w-body > .v-panel {
+  flex: 1 1 auto;
+}
+.v-w-body > .v-section-title:first-child {
+  margin-top: 4px;
+}
+.v-w-body > .v-section-title:only-child {
+  margin-bottom: 4px;
+}
+
+/* Tools row: grip + name, sizes, settings, remove. */
+.v-w-tools {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: var(--ov-frame-pad);
+}
+.v-w-grip {
+  display: flex;
+  flex: 0 1 auto;
+  align-items: center;
+  margin-inline-end: auto;
+  gap: 8px;
+  min-width: 0;
+  min-height: 36px;
+  padding: 4px 10px 4px 9px;
+  border: var(--v-outline);
+  border-radius: var(--v-radius-sm);
+  background: var(--v-surface-1);
+  box-shadow: var(--v-shadow-sm);
+  color: var(--v-text);
+  font: 800 var(--v-text-sm) / 1.1 var(--v-font-text);
+  text-align: left;
+  cursor: grab;
+  touch-action: none;
+}
+.v-w-grip:hover {
+  background: var(--v-surface-2);
+}
+.v-w-grip:active,
+.v-w-grip[aria-pressed="true"] {
+  cursor: grabbing;
+  background: var(--v-title);
+  color: var(--v-ink);
+}
+.v-w-grip svg {
+  flex: none;
+  width: 10px;
+  height: 18px;
+  color: var(--v-text-3);
+}
+.v-w-grip[aria-pressed="true"] svg {
+  color: var(--v-ink);
+}
+.v-w-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* A small tile prints its own name; its grip is just the dots. */
+.v-w[data-size="S"] .v-w-name,
+.v-w[data-size="S"] .v-w-filter {
+  display: none;
+}
+.v-w-filter {
+  min-width: 0;
+  overflow: hidden;
+  padding: 2px 8px;
+  border-radius: var(--v-radius-pill);
+  background: var(--v-well);
+  color: var(--v-title);
+  font-size: var(--v-text-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.v-w-sizes {
+  display: flex;
+  flex: none;
+  gap: 2px;
+  padding: 2px;
+  border: var(--v-outline);
+  border-radius: var(--v-radius-pill);
+  background: var(--v-well);
+}
+.v-w-size {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--v-radius-pill);
+  background: transparent;
+  color: var(--v-text-2);
+  font: 800 var(--v-text-xs) / 1 var(--v-font-text);
+  cursor: pointer;
+  transition: background-color var(--v-dur-1) ease, color var(--v-dur-1) ease;
+}
+.v-w-size:hover {
+  background: var(--v-surface-2);
+  color: var(--v-text);
+}
+.v-w-size[aria-checked="true"] {
+  background: var(--v-title);
+  box-shadow: inset 0 0 0 var(--v-outline-w) var(--v-ink);
+  color: var(--v-ink);
+}
+.v-w-icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: var(--v-outline);
+  border-radius: var(--v-radius-sm);
+  background: var(--v-surface-1);
+  box-shadow: var(--v-shadow-sm);
+  color: var(--v-text-2);
+  cursor: pointer;
+  transition: transform var(--v-dur-1) ease, box-shadow var(--v-dur-1) ease, color var(--v-dur-1) ease;
+}
+.v-w-icon svg {
+  width: 17px;
+  height: 17px;
+}
+.v-w-icon:hover,
+.v-w-icon[aria-expanded="true"] {
+  transform: translate(var(--v-press), var(--v-press));
+  box-shadow: var(--v-shadow-pressed);
+  color: var(--v-title);
+}
+.v-w-remove:hover {
+  color: var(--v-loss);
+}
+
+/* The gear's settings. */
+.v-w-settings {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 25;
+  display: grid;
+  gap: 10px;
+  width: min(280px, 100%);
+  min-width: 220px;
+  padding: 12px;
+  border: var(--v-outline);
+  border-radius: var(--v-radius-md);
+  background: var(--v-surface-1);
+  box-shadow: var(--v-shadow-lg);
+}
+.v-w-field {
+  display: grid;
+  gap: 4px;
+  color: var(--v-text-2);
+  font-size: var(--v-text-xs);
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.v-w-field select,
+.v-w-field input {
+  min-height: 40px;
+  padding: 0 10px;
+  border: var(--v-outline);
+  border-radius: var(--v-radius-sm);
+  background: var(--v-well);
+  color: var(--v-text);
+  font: 600 16px / 1.2 var(--v-font-text);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+/* Picked up from the keyboard: raised in place. */
+.v-ov[data-arrange] .v-w.is-picked {
+  z-index: 5;
+  border-style: solid;
+  border-color: var(--v-title);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--v-title) 35%, transparent), var(--v-shadow-lg);
+  transform: translateY(-3px);
+}
+/* Picked up by the pointer: it lifts off the page and follows; the slot it
+   will drop into is drawn in ink where it would land. */
+.v-ov[data-arrange] .v-w.is-lifted {
+  position: absolute;
+  z-index: 40;
+  margin: 0;
+  border-style: solid;
+  border-color: var(--v-title);
+  background: var(--v-bg-deep);
+  box-shadow: var(--v-shadow-lg), 0 22px 44px rgb(0 0 0 / 0.38);
+  pointer-events: none;
+  transform-origin: 24% 18%;
+  will-change: transform;
+}
+.v-ov.is-dragging,
+.v-ov.is-dragging * {
+  cursor: grabbing !important;
+}
+.v-w-slot {
+  grid-column: span var(--span, 12);
+  border: 3px dashed var(--v-title);
+  border-radius: calc(var(--v-radius-lg) + var(--ov-frame-pad));
+  background: color-mix(in srgb, var(--v-title) 10%, transparent);
+}
+/* Just added from the gallery: a short gold flash. */
+.v-ov[data-arrange] .v-w.is-new::after {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  border-radius: inherit;
+  box-shadow: 0 0 0 4px var(--v-title);
+  pointer-events: none;
+  animation: v-arr-flash 1.4s ease-out forwards;
+}
+@keyframes v-arr-flash {
+  0%, 40% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+/* ---- The foot bar ------------------------------------------------------------------- */
+.v-arr-foot {
+  position: sticky;
+  bottom: var(--v-space-4);
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  margin-top: var(--v-space-6);
+  pointer-events: none;
+}
+/* A fade behind the bar, so it never sits flat on a widget of the same ink:
+   in the panels' own color it blended into whatever was under it. */
+.v-arr-foot::before {
+  content: "";
+  position: absolute;
+  inset: -56px calc(-1 * var(--v-gutter)) calc(-1 * var(--v-space-4));
+  z-index: -1;
+  background: linear-gradient(
+    to bottom,
+    transparent,
+    color-mix(in srgb, var(--v-bg-deep) 78%, transparent) 45%,
+    color-mix(in srgb, var(--v-bg-deep) 92%, transparent)
+  );
+  pointer-events: none;
+}
+/* One inked panel in gold: the actions in a row (Add, Reset, Clear all on the
+   left, Done on the right), a gold "Arranging" tab on its top edge, and under
+   them a quiet line saying where it is saved. */
+.v-arr-panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(640px, 100%);
+  margin-top: 12px;
+  padding: 14px 12px 8px;
+  border: 3px solid var(--v-title);
+  border-radius: var(--v-radius-lg);
+  background: var(--v-surface-2);
+  box-shadow:
+    0 0 0 5px color-mix(in srgb, var(--v-title) 22%, transparent),
+    6px 6px 0 var(--v-ink),
+    0 22px 48px rgb(0 0 0 / 0.55);
+  pointer-events: auto;
+}
+/* Rises in once, when Arrange opens (edit.js), not on every redraw. */
+.v-arr-panel.is-rising {
+  animation: v-arr-rise 360ms var(--v-ease-spring, ease-out) both;
+}
+.prefer-reduced-motion .v-arr-panel.is-rising {
+  animation: none;
+}
+.v-arr-panel::before {
+  content: "Arranging";
+  position: absolute;
+  top: -14px;
+  left: 16px;
+  padding: 3px 10px;
+  border: var(--v-outline);
+  border-radius: var(--v-radius-pill);
+  background: var(--v-title);
+  color: var(--v-ink);
+  font-size: var(--v-text-xs);
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+@keyframes v-arr-rise {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.v-arr-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.v-arr-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.v-arr-actions[hidden],
+.v-arr-toast[hidden] {
+  display: none;
+}
+.v-arr-actions .v-btn {
+  min-height: 40px;
+}
+.v-arr-actions .v-btn svg {
+  width: 16px;
+  height: 16px;
+}
+.v-arr-clear:hover:where(:not(:disabled)) {
+  color: var(--v-loss);
+}
+.v-arr-done {
+  min-width: 96px;
+}
+.v-arr-saved {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  margin: 0;
+  padding-top: 7px;
+  border-top: 2px dashed var(--v-line);
+  color: var(--v-text-3);
+  font-size: var(--v-text-xs);
+  font-weight: 700;
+}
+.v-arr-saved::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border: 1.5px solid var(--v-ink);
+  border-radius: 50%;
+  background: var(--v-win);
+}
+.v-arr-saved.is-trouble::before {
+  background: var(--v-loss);
+}
+
+/* Nothing on the board. */
+.v-ov-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  grid-column: 1 / -1;
+  padding: var(--v-space-7) var(--v-space-5);
+  border: 2px dashed var(--v-line);
+  border-radius: var(--v-radius-lg);
+  color: var(--v-text-2);
+  text-align: center;
+}
+.v-ov-empty p {
+  margin: 0;
+}
+.v-ov-empty-title {
+  color: var(--v-title);
+  font-family: var(--v-font-heading);
+  font-size: var(--v-text-xl);
+  font-weight: 800;
+  text-shadow: 2px 2px 0 var(--v-ink);
+}
+.v-ov-empty .v-btn {
+  margin-top: 6px;
+  min-height: 44px;
+}
+.v-arr-ask {
+  padding: 0 6px;
+  color: var(--v-text);
+  font-size: var(--v-text-sm);
+  font-weight: 800;
+}
+.v-arr-toast {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 5px 5px 5px 16px;
+  border: var(--v-outline);
+  border-radius: var(--v-radius-pill);
+  background: var(--v-paper);
+  box-shadow: var(--v-shadow);
+  color: var(--v-on-paper);
+  font-size: var(--v-text-sm);
+  pointer-events: auto;
+}
+.v-arr-toast .v-btn {
+  min-height: 34px;
+  border-radius: var(--v-radius-pill);
+}
+
+/* ---- The gallery sheet ------------------------------------------------------------------ */
+dialog.v-gal {
+  position: fixed;
+  inset: 0 0 0 auto;
+  width: min(540px, 100vw);
+  max-width: none;
+  height: 100dvh;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-left: var(--v-outline);
+  background: var(--v-bg);
+  box-shadow: -6px 0 0 var(--v-ink);
+  color: var(--v-text);
+}
+dialog.v-gal::backdrop {
+  background: rgb(6 3 16 / 0.58);
+}
+.v-gal-sheet {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v-space-3);
+  height: 100%;
+  overflow-y: auto;
+  padding: var(--v-space-5);
+  overscroll-behavior: contain;
+}
+.v-gal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--v-space-3);
+}
+.v-gal-head h2 {
+  margin: 0;
+  color: var(--v-title);
+  font-family: var(--v-font-heading);
+  font-size: var(--v-text-2xl);
+  font-weight: 800;
+  line-height: 1;
+  text-shadow: 2px 2px 0 var(--v-ink);
+}
+.v-gal-close {
+  width: 44px;
+  height: 44px;
+}
+.v-gal-search {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 46px;
+  padding: 0 16px;
+  border: var(--v-outline);
+  border-radius: var(--v-radius-pill);
+  background: var(--v-well);
+  color: var(--v-text-2);
+}
+.v-gal-search:focus-within {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--v-title) 40%, transparent);
+}
+.v-gal-search svg {
+  flex: none;
+  width: 18px;
+  height: 18px;
+}
+.v-gal-search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--v-text);
+  font: 600 16px / 1.2 var(--v-font-text);
+}
+.v-gal-cats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 3px;
+  border: var(--v-outline);
+  border-radius: 22px;
+  background: var(--v-well);
+}
+.v-gal-note {
+  margin: 0;
+  color: var(--v-text-3);
+  font-size: var(--v-text-xs);
+  font-weight: 700;
+}
+.v-gal-list {
+  display: grid;
+  gap: var(--v-space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.v-gal-tile {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px 12px;
+  padding: 10px;
+  border: var(--v-outline);
+  border-radius: var(--v-radius-md);
+  background: var(--v-surface-1);
+  box-shadow: var(--v-shadow-sm);
+}
+.v-gal-tile[hidden] {
+  display: none;
+}
+.v-gal-preview {
+  position: relative;
+  grid-column: 1 / -1;
+  height: 176px;
+  overflow: hidden;
+  border: 2px solid var(--v-line);
+  border-radius: var(--v-radius-sm);
+  background: var(--v-bg-deep);
+}
+.v-gal-cats .v-runs-chip {
+  padding: 0 11px;
+}
+.v-gal-stage {
+  container: v-w / inline-size;
+  position: absolute;
+  top: var(--top, 10px);
+  left: 50%;
+  width: var(--pw);
+  pointer-events: none;
+  transform: translateX(-50%) scale(var(--scale, 0.6));
+  transform-origin: 50% 0;
+}
+.v-gal-preview.is-short {
+  height: 72px;
+}
+.v-gal-preview.is-short .v-section-title {
+  margin: 0;
+}
+.v-gal-tile.is-placed .v-gal-preview {
+  opacity: 0.72;
+}
+.v-gal-empty {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  margin: 0;
+  padding: 0 var(--v-space-5);
+  color: var(--v-text-2);
+  font-size: var(--v-text-sm);
+  font-weight: 600;
+  text-align: center;
+}
+.v-gal-text h3 {
+  margin: 0;
+  color: var(--v-text);
+  font-family: var(--v-font-heading);
+  font-size: var(--v-text-lg);
+  font-weight: 800;
+  line-height: 1.1;
+}
+.v-gal-text p {
+  margin: 3px 0 0;
+  color: var(--v-text-2);
+  font-size: var(--v-text-sm);
+}
+.v-gal-act {
+  align-self: center;
+}
+.v-gal-add {
+  min-width: 76px;
+  min-height: 40px;
+}
+.v-gal-placed {
+  color: var(--v-win);
+  font-size: var(--v-text-sm);
+  font-weight: 800;
+  white-space: nowrap;
+}
+.v-gal-none {
+  margin: var(--v-space-4) 0;
+  color: var(--v-text-2);
+  text-align: center;
+}
+
+/* ---- Narrower ------------------------------------------------------------------------ */
+@media (max-width: 1180px) {
+  .v-ov[data-arrange] .v-w[data-pair],
+  .v-ov[data-arrange] .v-w-slot[data-pair] {
+    margin-inline: 0;
+  }
+  .v-w-slot {
+    grid-column: span 6;
+  }
+  .v-w-slot[data-size="S"] {
+    grid-column: span 3;
+  }
+}
+@media (max-width: 880px) {
+  .v-arr-foot {
+    bottom: calc(var(--v-tabbar-h) + env(safe-area-inset-bottom) + 10px);
+  }
+  .v-w-grip,
+  .v-w-icon,
+  .v-arr-actions .v-btn {
+    min-width: 44px;
+    min-height: 44px;
+  }
+  .v-w-icon {
+    width: 44px;
+    height: 44px;
+  }
+  .v-w-size {
+    width: 40px;
+    height: 40px;
+  }
+}
+@media (max-width: 720px) {
+  .v-ov {
+    --ov-arrange-w: 44px;
+  }
+  .v-ov-arrange {
+    min-height: 44px;
+    padding: 0;
+  }
+  .v-ov-arrange span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .v-w-slot {
+    grid-column: span 2;
+  }
+  .v-w-slot[data-size="S"] {
+    grid-column: span 1;
+  }
+  /* Grip, settings and remove on the first line; the sizes under them. */
+  .v-ov[data-arrange] .v-w[data-size="S"] .v-w-tools {
+    flex-wrap: wrap;
+  }
+  .v-ov[data-arrange] .v-w[data-size="S"] .v-w-sizes {
+    order: 9;
+  }
+  .v-arr-head {
+    flex-wrap: wrap;
+  }
+  /* One row of four on a phone: Add · Reset · Clear · Done. */
+  .v-arr-panel {
+    gap: 6px;
+    padding: 8px 8px 6px;
+  }
+  .v-arr-actions {
+    gap: 6px;
+  }
+  .v-arr-group {
+    flex: 3 1 0;
+    gap: 6px;
+    min-width: 0;
+  }
+  .v-arr-group .v-btn,
+  .v-arr-done {
+    flex: 1 1 0;
+    min-width: 0;
+    padding-inline: 6px;
+  }
+  .v-arr-done {
+    min-width: 0;
+  }
+  .v-arr-more {
+    display: none;
+  }
+  .v-arr-actions[data-arr="confirm"] {
+    flex-wrap: wrap;
+  }
+  .v-arr-actions[data-arr="confirm"] .v-arr-ask {
+    flex-basis: 100%;
+    text-align: center;
+  }
+  .v-arr-saved {
+    padding-top: 5px;
+  }
+  dialog.v-gal {
+    inset: auto 0 0;
+    width: 100vw;
+    height: auto;
+    max-height: 90dvh;
+    border-top: var(--v-outline);
+    border-left: 0;
+    border-radius: var(--v-radius-lg) var(--v-radius-lg) 0 0;
+    box-shadow: 0 -6px 0 var(--v-ink);
+  }
+  .v-gal-sheet {
+    max-height: 90dvh;
+    padding: var(--v-space-4) var(--v-space-4) calc(var(--v-space-4) + env(safe-area-inset-bottom));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .v-arr-panel.is-rising {
+    animation: none;
+  }
+  .v-ov[data-arrange] .v-w.is-picked {
+    transform: none;
+  }
+  .v-ov[data-arrange] .v-w.is-new::after {
+    animation: none;
+    opacity: 0;
+  }
+}

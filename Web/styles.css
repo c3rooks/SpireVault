@@ -9397,6 +9397,34 @@ html:not([data-ui="next"]) .run-filter-chips .chart-chip { white-space: nowrap; 
   flex: 0 0 auto;
 }
 
+/* Section filters: Overview → Per character (mode + ascension) and the
+ * Ascensions tab (climber + ladder). Same filter-bar markup as Recent Runs
+ * (script.js renderClassicCharacterFilters / renderClassicSpireFilters). */
+.stat-filters { margin: 0 0 16px; }
+.stat-filters.is-bare { padding: 0; border: 0; background: none; }
+.stat-filter-select .h-sort-select { min-height: 30px; }
+.stat-filters-note { margin: 12px 0 0; max-width: 72ch; line-height: 1.5; }
+
+/* "🔥 9 in a row" on an Overview character card: the climber's current win
+ * streak, beside the run count. */
+.char-card-streak {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0 6px 0 auto;
+  padding: 3px 9px 3px 7px;
+  border: 1px solid rgba(109, 217, 124, 0.38);
+  border-radius: 999px;
+  background: rgba(109, 217, 124, 0.12);
+  color: var(--win, #6dd97c);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+.char-card-streak svg { width: 13px; height: 13px; flex: 0 0 auto; color: var(--accent, #ffa05c); }
+.char-card-streak strong { font-weight: 800; }
+
 /* Run row clickability — hover + keyboard focus polish. */
 .run-row {
   cursor: pointer;

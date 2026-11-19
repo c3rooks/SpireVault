@@ -1,0 +1,202 @@
+/* ==========================================================================
+   Section filters: a captioned track of toggle chips and a captioned native
+   select, plus the "Showing … · Clear" line under a filtered section. They
+   wear the Runs tab's filter chips (surfaces/runs.css) so a filter looks the
+   same wherever it sits. Used by Overview → By character and Ascensions.
+   Markup: lib/ui/filter-controls.js.
+   ========================================================================== */
+.v-filter {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.v-filter-label {
+  color: var(--v-text-2);
+  font-size: var(--v-text-xs);
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+/* ---- Chip track ------------------------------------------------------------- */
+.v-seg {
+  display: flex;
+  flex-wrap: wrap;
+  max-width: 100%;
+  gap: 3px;
+  padding: 3px;
+  border: var(--v-outline);
+  border-radius: var(--v-radius-pill);
+  background: var(--v-well);
+}
+.v-seg-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: var(--v-radius-pill);
+  background: transparent;
+  color: var(--v-text-2);
+  font: 700 var(--v-text-sm) / 1 var(--v-font-text);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color var(--v-dur-1) ease, color var(--v-dur-1) ease;
+}
+.v-seg-chip:hover:where(:not(:disabled, [aria-pressed="true"])) {
+  background: var(--v-surface-2);
+  color: var(--v-text);
+}
+.v-seg-chip[aria-pressed="true"] {
+  background: var(--v-title);
+  box-shadow: inset 0 0 0 var(--v-outline-w) var(--v-ink);
+  color: var(--v-ink);
+}
+.v-seg-chip[data-char][aria-pressed="true"] {
+  background: var(--v-char);
+}
+.v-seg-chip:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.v-seg-dot {
+  width: 9px;
+  height: 9px;
+  border: 1.5px solid var(--v-ink);
+  border-radius: 50%;
+  background: var(--v-char);
+}
+
+/* ---- Select ------------------------------------------------------------------ */
+.v-select {
+  position: relative;
+  display: inline-flex;
+  max-width: 100%;
+}
+.v-select select {
+  min-width: 0;
+  max-width: 100%;
+  min-height: 40px;
+  padding: 0 36px 0 14px;
+  border: var(--v-outline);
+  border-radius: var(--v-radius-pill);
+  background: var(--v-well);
+  color: var(--v-text);
+  font: 700 var(--v-text-sm) / 1.2 var(--v-font-text);
+  text-overflow: ellipsis;
+  cursor: pointer;
+  appearance: none;
+  transition: background-color var(--v-dur-1) ease;
+}
+.v-select select:hover:not(:disabled) {
+  background: var(--v-surface-2);
+}
+.v-select select:disabled {
+  color: var(--v-text-3);
+  cursor: default;
+}
+/* Native option lists draw in the page's colours on Windows and Linux. */
+.v-select option {
+  background: var(--v-surface-1);
+  color: var(--v-text);
+}
+/* The chevron: a turned square corner, drawn in the text colour. */
+.v-select::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  right: 15px;
+  width: 7px;
+  height: 7px;
+  border-right: 2.5px solid var(--v-text-2);
+  border-bottom: 2.5px solid var(--v-text-2);
+  transform: translateY(-70%) rotate(45deg);
+  pointer-events: none;
+}
+.v-select:has(select:disabled)::after {
+  opacity: 0.4;
+}
+
+/* ---- Summary line ------------------------------------------------------------ */
+.v-filter-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+  margin: 0;
+  color: var(--v-text-2);
+  font-size: var(--v-text-sm);
+  font-weight: 600;
+}
+.v-filter-summary b {
+  color: var(--v-text);
+  font-weight: 800;
+}
+.v-filter-clear {
+  padding: 2px 4px;
+  border: 0;
+  background: none;
+  color: var(--v-title);
+  font: 800 var(--v-text-sm) / 1.2 var(--v-font-text);
+  text-decoration: underline 2px;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.v-filter-clear:hover {
+  text-decoration-thickness: 3px;
+}
+
+/* ---- Phones and small tablets ------------------------------------------------ */
+/* As on the Runs tab: a caption over one swipeable line of full-size chips,
+   bleeding 12px past the group on both sides; every target 44px; the select
+   at 16px so iOS does not zoom in on it. */
+@media (max-width: 880px) {
+  .v-filter {
+    flex-direction: column;
+    flex-wrap: nowrap;
+    align-items: stretch;
+    gap: 6px;
+  }
+  .v-filter-label {
+    font-size: 0.75rem;
+  }
+  .v-seg {
+    flex-wrap: nowrap;
+    max-width: none;
+    gap: 6px;
+    margin: -5px -12px;
+    padding: 5px 12px 6px;
+    overflow-x: auto;
+    border: 0;
+    border-radius: 0;
+    background: none;
+    scrollbar-width: none;
+    scroll-padding-inline: 12px;
+  }
+  .v-seg::-webkit-scrollbar {
+    display: none;
+  }
+  .v-seg-chip {
+    flex: none;
+    min-height: 44px;
+    padding: 0 16px;
+    border: var(--v-outline);
+    background: var(--v-well);
+  }
+  .v-select,
+  .v-select select {
+    width: 100%;
+  }
+  .v-select select {
+    min-height: 46px;
+    font-size: 16px;
+  }
+  .v-filter-clear {
+    min-height: 44px;
+    padding-inline: 8px;
+  }
+}

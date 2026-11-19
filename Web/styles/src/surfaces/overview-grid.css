@@ -1,0 +1,81 @@
+/* ==========================================================================
+   Overview grid. The player's widgets on 12 columns (lib/ui/overview/*):
+     S = 3 columns, M = 4, L = 6, W = 12
+   Each cell carries its span as --span (layout.js columnSpans), so a row of
+   two halves can keep its widgets' own shares (win rate 5 · by character 7).
+   Narrower, the grid drops to 6 columns (S = half, the rest full width) and
+   then to 2; the order never changes. Resizing is CSS only: every widget
+   draws at any width (charts use a fixed viewBox).
+
+   Rows are --v-space-5 apart. Widgets that open with a section title sit a
+   section's distance (--v-space-6) below the row above, as the titles always
+   have; the hand sits flush on what follows, as before.
+   ========================================================================== */
+.v-ov-grid {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: var(--v-space-5);
+}
+.v-w {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  grid-column: span var(--span, 12);
+  /* Widgets fit their own width (overview-widgets.css): @container v-w. */
+  container: v-w / inline-size;
+}
+/* A row split between two halves (layout.js columnPlan, e.g. 5 + 7) divides
+   its width the way `5fr 7fr` would rather than along a column line: each
+   cell gives or takes gap × (span / 6 − 1) on its inner edge, so the win-rate
+   and by-character panels keep the proportions they have always had. */
+.v-w[data-pair="start"] {
+  margin-inline-end: calc(var(--v-space-5) * (var(--span) / 6 - 1));
+}
+.v-w[data-pair="end"] {
+  margin-inline-start: calc(var(--v-space-5) * (var(--span) / 6 - 1));
+}
+/* A panel fills its cell, so two panels in a row stand the same height. */
+.v-w > .v-panel {
+  flex: 1 1 auto;
+}
+
+/* ---- Rhythm ------------------------------------------------------------------ */
+.v-w > .v-section-title:first-child {
+  margin-top: calc(var(--v-space-6) - var(--v-space-5));
+}
+.v-w > .v-section-title:only-child {
+  margin-bottom: calc(var(--v-space-3) - var(--v-space-5));
+}
+.v-w > .v-hand-title:first-child {
+  margin-top: 0;
+}
+.v-w[data-w="hand"] {
+  margin-bottom: calc(-1 * var(--v-space-5));
+}
+
+/* ---- Narrower ------------------------------------------------------------------ */
+@media (max-width: 1180px) {
+  .v-ov-grid {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+  .v-w {
+    grid-column: span 6;
+  }
+  .v-w[data-pair] {
+    margin-inline: 0;
+  }
+  .v-w[data-size="S"] {
+    grid-column: span 3;
+  }
+}
+@media (max-width: 720px) {
+  .v-ov-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .v-w {
+    grid-column: span 2;
+  }
+  .v-w[data-size="S"] {
+    grid-column: span 1;
+  }
+}

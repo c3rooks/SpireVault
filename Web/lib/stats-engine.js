@@ -200,6 +200,18 @@ function relicBuckets(runs, minSample, topN) {
     .slice(0, topN);
 }
 
+/**
+ * Last tie-break for a ranked list: the key, in plain code-point order. Cards
+ * that tie on every number otherwise rank by the order the runs happened to
+ * be loaded in, which differs between a device that read the save folder and
+ * one that loaded the Steam copy: the same history then lists tied cards
+ * differently, and past the top-N cut shows different cards. Not
+ * localeCompare, which varies with the device's language.
+ */
+function byKey(a, b) {
+  return a.key < b.key ? -1 : a.key > b.key ? 1 : 0;
+}
+
 function cardPickStats(runs, minSample, topN) {
   const offered = new Map();
   const picked = new Map();
@@ -234,7 +246,7 @@ function cardPickStats(runs, minSample, topN) {
       pickedRate: n / Math.max(off, 1),
     });
   }
-  mostPicked.sort((a, b) => b.runs - a.runs || b.winrate - a.winrate);
+  mostPicked.sort((a, b) => b.runs - a.runs || b.winrate - a.winrate || byKey(a, b));
 
   // Most skipped: offered enough to be meaningful AND picked < 50% of the time.
   const mostSkipped = [];
@@ -251,7 +263,7 @@ function cardPickStats(runs, minSample, topN) {
       pickedRate: rate,
     });
   }
-  mostSkipped.sort((a, b) => (a.pickedRate ?? 0) - (b.pickedRate ?? 0) || b.runs - a.runs);
+  mostSkipped.sort((a, b) => (a.pickedRate ?? 0) - (b.pickedRate ?? 0) || b.runs - a.runs || byKey(a, b));
 
   return {
     picked: mostPicked.slice(0, topN),

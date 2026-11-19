@@ -308,6 +308,10 @@ async function checkWiring(browser, baseUrl) {
       expect("empty", "Windows download", s.exe?.href, RELEASES_PAGE);
       expect("empty", "hero Windows link", s.winCta?.href, "#install-win");
     }],
+    ["rosterDown", SCENARIOS.rosterDown, (s) => {
+      expect("rosterDown", "hero line", s.presence, "128 players signed up");
+      expect("rosterDown", "count", [s.count, s.label, s.ingame, s.empty], ["128", "players signed up", "0", false]);
+    }],
     ["down", SCENARIOS.down, (s) => {
       expect("down", "hero line", s.presence, "Live count unavailable right now.");
       expect("down", "count", [s.count, s.label, s.ingame, s.empty], ["—", "live count unavailable right now", "—", true]);
@@ -320,8 +324,12 @@ async function checkWiring(browser, baseUrl) {
     const { page, context, log } = await openPage(browser, baseUrl, { width: 1440, height: 900, scenario });
     try {
       await page.waitForTimeout(500);
+      // "Unavailable" only follows a second miss in a row (a retry about 5 s
+      // after the first), so the down case waits for that state itself.
+      if (name === "down") await page.waitForFunction(() => document.querySelector(".hero-presence")?.dataset.state === "down", null, { timeout: 15_000 });
       assert(await read(page));
-      if (log.console.length && name !== "down") failures.push(`${name}: console errors: ${log.console.join("; ")}`);
+      // These two abort requests on purpose, which Chromium logs as errors.
+      if (log.console.length && !["down", "rosterDown"].includes(name)) failures.push(`${name}: console errors: ${log.console.join("; ")}`);
     } finally {
       await context.close();
     }

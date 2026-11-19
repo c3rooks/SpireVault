@@ -16,7 +16,7 @@ export const COOP_EMBED = Object.freeze({
   title: "Play Slay the Spire 2 co-op · SpireVault",
   description:
     "Tap Play and get matched with other Slay the Spire 2 players, up to four in a party. Add each other on Steam and climb together. Free.",
-  image: "https://app.spirevault.app/assets/og-coop-v2.jpg",
+  image: "https://app.spirevault.app/assets/og-coop-v3.jpg",
   url: "https://app.spirevault.app/coop",
 });
 

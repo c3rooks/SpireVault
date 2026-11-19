@@ -388,6 +388,11 @@
   html:not([data-ui="next"]) .beta-panel .btn-ghost.sm {
     min-height: 44px;
   }
+  /* Overview's and Ascensions' section filters (classic): the ascension
+     picker at 16px, or iOS zooms the page when it opens. */
+  html:not([data-ui="next"]) .stat-filter-select .h-sort-select {
+    font-size: 16px;
+  }
   /* A taller box needs its label re-centred: these were inline blocks with
      the text sitting at the top. */
   html:not([data-ui="next"]) .chart-chip,

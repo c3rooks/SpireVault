@@ -14,8 +14,11 @@
  * switching and persistence, deep links, reduced motion, desktop-host mode
  * and the host bridge, the load-failure fallback, analytics tagging,
  * horizontal overflow across breakpoints, the header duel's staging, the
- * one-word brand, the opt-in beta switch (Settings, Beta tab, news post), and
- * parity: the new Overview shows every number the classic one does.
+ * one-word brand, the opt-in beta switch (Settings, Beta tab, news post),
+ * parity: the new Overview shows every number the classic one does, and the
+ * section filters (By character mode + ascension, the Ascensions climber and
+ * ladder, the Runs mode chips) with each climber's win streak, in both looks
+ * (`--only filters`).
  */
 
 import { chromium } from "playwright";
@@ -35,6 +38,10 @@ const PHONE_VIEWPORT = { width: 375, height: 812 };
 const CLASSIC_PATH = "/?ui=classic";
 /** Set by lib/ui/look-notice.js once the first-visit notice is answered. */
 const NOTICE_KEY = "vault.web.ui.notice";
+/** Set by lib/ui/overview/index.js once the Overview tour is finished or skipped. */
+const TOUR_KEY = "vault.web.overview.tour.v1";
+/** Where lib/ui/overview/store.js keeps a player's own Overview layout. */
+const LAYOUT_KEY = "vault.web.overview.layout.v1";
 /** Tabs that need a Steam account (STEAM_LOCKED_TABS in Web/script.js). */
 const STEAM_LOCKED_TABS = ["coop", "highlights", "beta"];
 /** A signed-in visitor, as script.js stores one (`open(..., { signedIn: true })`). */
@@ -119,16 +126,18 @@ function startServer() {
  *   freshVisitor: do not pre-answer the first-visit look notice (every other
  *             check starts as a returning visitor, so the notice never sits
  *             over what it clicks)
+ *   tour:     do not pre-answer the Overview tour (it is pre-answered like the
+ *             notice everywhere else, so it never dims a page under test)
  *   routes:   request mocks installed before the page boots (the static
  *             server has no /api)
  */
 async function open(browser, path, options = {}) {
-  const { abort, signedIn, freshVisitor, routes = [], ...contextOptions } = options;
+  const { abort, signedIn, freshVisitor, tour, routes = [], ...contextOptions } = options;
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, ...contextOptions });
   if (!freshVisitor) {
-    await context.addInitScript((key) => {
-      try { window.localStorage.setItem(key, "seen"); } catch { /* storage blocked */ }
-    }, NOTICE_KEY);
+    await context.addInitScript((keys) => {
+      try { keys.forEach((key) => window.localStorage.setItem(key, "seen")); } catch { /* storage blocked */ }
+    }, [NOTICE_KEY, ...(options.tour ? [] : [TOUR_KEY])]);
   }
   if (signedIn) {
     await context.addInitScript((value) => {
@@ -1032,15 +1041,17 @@ async function runParity(browser) {
 
   await check("the new Overview keeps the classic section order", async () => {
     // Stats first, then win rate, then trends, then relics, as in classic.
-    // (Relics only render when the data has some; the demo data does.)
-    const sections = ["v-hand", "v-ov-top", "v-ov-charts", "v-relics"];
+    // Each section is a widget (lib/ui/overview/registry.js); this is the
+    // default layout. (Relics only render when the data has some; the demo
+    // data does.)
+    const sections = ["hand", "winRate", "characters", "trend", "floors", "relics"];
     const order = await next.page.$$eval(
-      "#overview-body .v-ov > *",
-      (els, names) => els.map((el) => names.find((name) => el.classList.contains(name))).filter(Boolean),
+      "#overview-body .v-ov-grid > .v-w[data-w]",
+      (els, names) => els.map((el) => el.dataset.w).filter((id) => names.includes(id)),
       sections
     );
     assert.deepEqual(order, sections.filter((name) => order.includes(name)));
-    assert.deepEqual(order.slice(0, 3), sections.slice(0, 3));
+    assert.deepEqual(order.slice(0, 5), sections.slice(0, 5));
     const titles = await next.page.$$eval("#overview-body .v-section-title h3", (els) => els.map((el) => el.textContent));
     assert.deepEqual(titles.slice(0, 2), ["Your hand", "Trends"]);
     assert.ok(await next.page.locator(".v-wr .v-eyebrow", { hasText: "Run history" }).count(), "Run history label");
@@ -1678,6 +1689,18 @@ function coopView(state, extra = {}) {
   }
 }
 
+/**
+ * The roster the app polls (/api/presence/roster), for the sign in the room's
+ * sky: you and five others in STS2, one more who is not. The sign counts the
+ * five and shows their faces, never yours.
+ */
+const COOP_ROSTER = Object.freeze([
+  { steamID: COOP_ME, personaName: "TestClimber", avatarURL: "", status: "looking", inSTS2: true },
+  ...["Boble", "Mako", "Rook", "Vex", "Tallow"].map((name, i) => ({ steamID: `7656119800000020${i}`, personaName: name, avatarURL: "", status: "looking", inSTS2: true })),
+  { steamID: "76561198000000299", personaName: "Away", avatarURL: "", status: "looking", inSTS2: false },
+]);
+const COOP_ROSTER_ROUTE = ["**/api/presence/roster**", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(COOP_ROSTER) })];
+
 /** A mock of /api/coop/play whose answer the test can change, recording what was sent. */
 function coopServer(initial) {
   const server = { view: coopView(initial), posts: [] };
@@ -1904,10 +1927,59 @@ async function runCoop(browser) {
 
   for (const [label, path] of [["new look", "/?ui=next"], ["classic", CLASSIC_PATH]]) {
     for (const width of [1728, 1440, 390, 320]) {
-      await check(`co-op (${label}, ${width}px): under the card sit the live strip, the invite and your co-op climbs, all inside the page`, async () => {
+      await check(`co-op (${label}, ${width}px): the live counts hang in the room's sky before a match and under the card after; the invite and your co-op climbs sit under the card, all inside the page`, async () => {
         const server = coopServer("idle");
         const { context, page: p, errors } = await open(browser, path, {
-          signedIn: true, routes: [server.route], viewport: { width, height: width < 600 ? 844 : width > 1600 ? 1000 : 900 },
+          signedIn: true, routes: [server.route, COOP_ROSTER_ROUTE], viewport: { width, height: width < 600 ? 844 : width > 1600 ? 1000 : 900 },
+        });
+        // The sign in the room's sky (before a match), read as it is drawn.
+        const sky = () => p.evaluate(() => {
+          const sign = document.querySelector("#coop-play-root .cp-card .cp-sky");
+          if (!sign) return null;
+          const shown = (el) => el.getClientRects().length > 0;
+          const s = sign.getBoundingClientRect();
+          const scene = sign.closest(".cp-scene");
+          const room = scene.getBoundingClientRect();
+          const cs = getComputedStyle(sign);
+          const innerL = s.left + parseFloat(cs.borderLeftWidth) + parseFloat(cs.paddingLeft);
+          const innerR = s.right - parseFloat(cs.borderRightWidth) - parseFloat(cs.paddingRight);
+          const items = [...sign.querySelectorAll(".cp-sky-item")];
+          const range = document.createRange();
+          return {
+            counts: items.map((li) => li.querySelector(".cp-sky-n").textContent.trim()),
+            // The words only: faces without a picture show an initial in the same line.
+            labels: items.map((li) => [...li.querySelectorAll(".cp-sky-long, .cp-sky-brief")].filter(shown).map((el) => el.textContent.trim()).join(" ")),
+            dots: items.map((li) => (li.classList.contains("is-on") ? "green" : "grey")),
+            faces: [...sign.querySelectorAll(".cp-sky-face")].filter(shown).length,
+            more: [...sign.querySelectorAll(".cp-sky-more")].filter(shown).map((el) => el.textContent.trim()),
+            // Its width inside the padding: what it shows grows with this (coop-play.css).
+            inner: innerR - innerL,
+            readOut: scene.closest("[aria-hidden='true']") === null,
+            inRoom: s.top >= room.top && s.bottom <= room.bottom && s.left >= room.left - 0.5 && s.right <= room.right + 0.5,
+            // Nothing that stands on the floor reaches up behind the sign.
+            clear: [...scene.querySelectorAll(".cp-scene-floor > *")].every((el) => el.getBoundingClientRect().top >= s.bottom),
+            spill: [...sign.querySelectorAll(".cp-sky-list *")].filter((el) => {
+              if (!shown(el)) return false;
+              const r = el.getBoundingClientRect();
+              const innerT = s.top + parseFloat(cs.borderTopWidth) + parseFloat(cs.paddingTop);
+              const innerB = s.bottom - parseFloat(cs.borderBottomWidth) - parseFloat(cs.paddingBottom);
+              return r.right > innerR + 0.01 || r.left < innerL - 0.01 || r.top < innerT - 0.01 || r.bottom > innerB + 0.01;
+            }).length,
+            // The title tab overlaps the plate's top edge, never a number.
+            tabClear: Math.min(...items.map((li) => li.querySelector(".cp-sky-n").getBoundingClientRect().top)) - sign.querySelector(".cp-sky-title").getBoundingClientRect().bottom,
+            // All three numbers stand on one line, each centred over its label.
+            level: (() => {
+              const ns = items.map((li) => li.querySelector(".cp-sky-n").getBoundingClientRect());
+              const off = items.map((li, i) => Math.abs((ns[i].left + ns[i].right) / 2 - (li.querySelector(".cp-sky-label").getBoundingClientRect().left + li.querySelector(".cp-sky-label").getBoundingClientRect().right) / 2));
+              return { tops: Math.max(...ns.map((r) => r.top)) - Math.min(...ns.map((r) => r.top)), centre: Math.max(...off) };
+            })(),
+            // Drawn text against its item's box, in fractions of a pixel (a 0.3px cut is invisible to scrollWidth).
+            cut: items.filter((li) => {
+              const right = li.getBoundingClientRect().right - parseFloat(getComputedStyle(li).paddingRight);
+              return [...li.querySelectorAll(".cp-sky-label, .cp-sky-count")].some((part) => { range.selectNodeContents(part); return range.getBoundingClientRect().right > right + 0.01; });
+            }).length,
+            smallText: [...sign.querySelectorAll("*")].filter((el) => shown(el) && [...el.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim()) && parseFloat(getComputedStyle(el).fontSize) < 11).length,
+          };
         });
         const below = () => p.evaluate(async () => {
           const root = document.querySelector("#coop-play-root");
@@ -1952,9 +2024,22 @@ async function runCoop(browser) {
         });
 
         await coopCard(p, "idle");
+        // The roster arrives on its own poll; the sign redraws when it does.
+        await p.waitForFunction(() => document.querySelector("#coop-play-root .cp-card .cp-sky .cp-sky-faces"), null, { timeout: 8000 });
         const idle = await below();
-        assert.deepEqual(idle.now, ["1 looking on Stable", "0 looking on Beta", "0 players in a party"]);
-        assert.deepEqual(idle.dots, ["green", "grey", "grey"], "every count has the same dot: green when someone is there, grey at zero");
+        const idleSky = await sky();
+        assert.deepEqual(idle.now, [], "before a match the counts are in the room's sky, not under the card");
+        assert.ok(idleSky, "the room has the sign in its sky");
+        assert.deepEqual(idleSky.counts, ["1", "0", "5"], "you are not counted among the players in STS2");
+        assert.deepEqual(idleSky.labels, idleSky.inner >= 520 ? ["looking on Stable", "in a party", "in Slay the Spire 2"] : ["looking", "in a party", "in STS2"]);
+        assert.deepEqual(idleSky.dots, ["green", "grey", "green"], "every count has the same dot: green when someone is there, grey at zero");
+        assert.deepEqual([idleSky.faces, idleSky.more], idleSky.inner >= 320 ? [4, ["+1"]] : idleSky.inner >= 270 ? [2, ["+3"]] : [0, []], `four faces, two in a narrower sign, none in the narrowest, then the rest as +N (${idleSky.inner.toFixed(1)}px inside)`);
+        assert.equal(idleSky.readOut, true, "the sign is read out; the rest of the room stays a picture");
+        assert.equal(idleSky.inRoom, true, "the sign stays inside the room");
+        assert.equal(idleSky.clear, true, "no figure or seat stands behind the sign");
+        assert.ok(idleSky.tabClear >= 2, `the Right now tab stays clear of the numbers (${idleSky.tabClear.toFixed(1)}px)`);
+        assert.ok(idleSky.level.tops <= 0.5 && idleSky.level.centre <= 1, `the three numbers stand level, each centred over its label (tops off by ${idleSky.level.tops.toFixed(2)}px, centres by ${idleSky.level.centre.toFixed(2)}px)`);
+        assert.deepEqual([idleSky.spill, idleSky.cut, idleSky.smallText], [0, 0, 0], "nothing spills out of the sign, no label is cut, no text under 11px");
         assert.deepEqual(idle.post, [
           "Slay the Spire 2 co-op · who's up for a run?",
           `${TEST_SESSION.personaName} wants to climb · Any climber · Stable version · up to 4 in a party`,
@@ -1991,15 +2076,20 @@ async function runCoop(browser) {
         server.view = coopView("searching");
         await coopCard(p, "searching");
         const looking = await below();
+        const lookingSky = await sky();
         assert.equal(looking.post[1], `${TEST_SESSION.personaName} is waiting · Silent · Stable version · 3 seats open`);
         assert.deepEqual([looking.outside, looking.cut, looking.sideways], [0, 0, false], "while looking");
+        assert.deepEqual(looking.now, [], "while looking the counts stay in the room's sky");
+        assert.deepEqual(lookingSky?.counts, ["1", "0", "5"]);
+        assert.deepEqual([lookingSky.inRoom, lookingSky.clear, lookingSky.spill, lookingSky.cut], [true, true, 0, 0], "while looking the sign fits too");
 
         server.view = coopView("host");
         await coopCard(p, "matched");
         const partyState = await below();
         assert.equal(partyState.post[0], "Slay the Spire 2 co-op · 2 seats open");
-        assert.equal(partyState.now[2], "2 players in a party");
+        assert.deepEqual(partyState.now, ["0 looking on Stable", "0 looking on Beta", "2 players in a party"], "in a party the counts are back under the card");
         assert.deepEqual(partyState.dots, ["grey", "grey", "green"]);
+        assert.equal(await sky(), null, "a party's room has no sign: the party fills it");
         assert.deepEqual([partyState.outside, partyState.cut, partyState.sideways], [0, 0, false], "in a party");
 
         server.view = coopView("in_game");
@@ -2073,6 +2163,85 @@ async function runCoop(browser) {
           assert.ok(Math.abs(r.left - r.right) <= 2, `${name}: as much bare ground left as right (${r.left.toFixed(1)}px and ${r.right.toFixed(1)}px)`);
           assert.equal(r.tagsInside, true, `${name}: name tags stay inside the room`);
         }
+        assert.deepEqual(errors, []);
+        await context.close();
+      });
+    }
+  }
+
+  // Pings on every device (2026-11-18). With pings reaching you somewhere,
+  // the card offers how long to keep looking after you step away and lists
+  // the devices that get pings. Both follow the card's one left edge and one
+  // gap between groups; a device's name is never broken across lines; the
+  // choice reaches the server with Play; the looking card says how long it
+  // keeps going; and the party says who is on the way.
+  const COOP_DEVICES = [
+    { id: "a1".repeat(8), kind: "webpush", label: "Chrome on Mac", createdAt: COOP_T0, lastSeenAt: COOP_T0 },
+    { id: "b2".repeat(8), kind: "webpush", label: "Safari on iPhone", createdAt: COOP_T0, lastSeenAt: COOP_T0 },
+  ];
+  for (const [label, path] of [["new look", "/?ui=next"], ["classic", CLASSIC_PATH]]) {
+    for (const width of [1728, 1440, 390, 320]) {
+      await check(`co-op (${label}, ${width}px): with pings on, the keep-looking choice and the device list line up, names stay whole, and the choice reaches Play`, async () => {
+        const answer = { view: coopView("idle", { pushOn: true }), posts: [] };
+        const route = ["**/api/coop/play**", async (r) => {
+          const req = r.request();
+          if (new URL(req.url()).pathname.endsWith("/devices")) {
+            return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true, devices: COOP_DEVICES }) });
+          }
+          if (req.method() === "POST") answer.posts.push(req.postDataJSON());
+          return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(answer.view) });
+        }];
+        const { context, page: p, errors } = await open(browser, path, {
+          signedIn: true, routes: [route], viewport: { width, height: width < 600 ? 844 : 1000 },
+        });
+        await coopCard(p, "idle");
+        await p.waitForSelector("#coop-play-root .cp-devices", { timeout: 8000 });
+        await p.click("#coop-play-root .cp-devices summary");
+        const card = await p.evaluate(() => {
+          const root = document.querySelector("#coop-play-root .cp-card");
+          const box = (sel) => root.querySelector(sel).getBoundingClientRect();
+          const cardBox = root.getBoundingClientRect();
+          const opts = [...root.querySelectorAll(".cp-stay-opt")].map((o) => ({ top: Math.round(o.getBoundingClientRect().top), h: o.getBoundingClientRect().height, on: o.getAttribute("aria-checked") }));
+          const lines = (el) => { const range = document.createRange(); range.selectNodeContents(el); return new Set([...range.getClientRects()].map((r) => Math.round(r.top))).size; };
+          const inside = [...root.querySelectorAll(".cp-device, .cp-device-remove, .cp-stay")].every((el) => { const r = el.getBoundingClientRect(); return r.left >= cardBox.left - 0.5 && r.right <= cardBox.right + 0.5; });
+          return {
+            lefts: { version: box(".cp-branch:not(.cp-stay)").left, stayLabel: box("#cp-stay-label").left, stay: box(".cp-stay").left, devices: box(".cp-devices").left },
+            gaps: { versionToPlay: box(".cp-play").top - box(".cp-branch:not(.cp-stay)").bottom, pingToStay: box(".cp-field--stay").top - box(".cp-ping").bottom, stayToDevices: box(".cp-devices").top - box(".cp-field--stay").bottom },
+            opts, inside,
+            nameLines: [...root.querySelectorAll(".cp-device-name")].map(lines),
+            removes: [...root.querySelectorAll(".cp-device-remove")].map((b) => b.getBoundingClientRect().height),
+            summary: root.querySelector(".cp-devices summary").textContent.trim(),
+            sideways: document.documentElement.scrollWidth > window.innerWidth + 1,
+          };
+        });
+        const lefts = Object.values(card.lefts);
+        assert.ok(Math.max(...lefts) - Math.min(...lefts) <= 1, `one left edge (${JSON.stringify(card.lefts)})`);
+        assert.ok(Math.abs(card.gaps.pingToStay - card.gaps.versionToPlay) <= 1 && Math.abs(card.gaps.stayToDevices - card.gaps.versionToPlay) <= 1, `one gap between groups (${JSON.stringify(card.gaps)})`);
+        assert.equal(card.opts.length, 3);
+        assert.equal(new Set(card.opts.map((o) => o.top)).size, 1, "30 min, 1 hour and 2 hours stand on one line");
+        assert.ok(card.opts.every((o) => o.h >= 43.5) && card.removes.every((h) => h >= 43.5), "44px tap targets");
+        assert.deepEqual(card.opts.map((o) => o.on), ["false", "true", "false"], "an hour by default");
+        assert.deepEqual(card.nameLines, [1, 1], "each device name on one line");
+        assert.equal(card.inside, true, "the controls stay inside the card");
+        assert.equal(card.sideways, false, "the page scrolls sideways");
+        assert.equal(card.summary, "Pings go to Chrome on Mac and Safari on iPhone");
+
+        await p.click('#coop-play-root [data-cp-stay="120"]');
+        await p.click('#coop-play-root [data-cp="play"]');
+        for (let i = 0; i < 30 && answer.posts.length === 0; i++) await p.waitForTimeout(100);
+        assert.equal(answer.posts.at(-1)?.stay, 120, `Play sends the choice (${JSON.stringify(answer.posts.at(-1))})`);
+
+        answer.view = coopView("searching", { pushOn: true, ticket: { createdAt: Date.now() - 42000, character: "silent", branch: "stable", push: true, stayMs: 7_200_000 } });
+        await coopCard(p, "searching");
+        const hint = await p.$eval("#coop-play-root .cp-hint", (el) => el.textContent);
+        assert.match(hint, /two hours after you leave it/);
+        assert.equal(await p.$('#coop-play-root [data-cp="ping-on"]'), null, "no 'Ping me instead' when pings already reach you");
+
+        const party = coopView("host", { pushOn: true });
+        party.match.members = party.match.members.map((m) => (m.isYou ? m : { ...m, coming: true }));
+        answer.view = party;
+        await coopCard(p, "matched");
+        assert.equal(await p.$eval("#coop-play-root .cp-coming", (el) => el.textContent.trim()), "Boble is on the way.");
         assert.deepEqual(errors, []);
         await context.close();
       });
@@ -2193,6 +2362,112 @@ async function runCoop(browser) {
         const grown = await measure();
         for (const room of grown.rooms) {
           assert.deepEqual(room.tags.filter((t) => t.cutBy > 0.05).map((t) => t.name), [], `a name that grows after the fit stays whole in ${room.where}`);
+        }
+        assert.deepEqual(errors, []);
+        await context.close();
+      });
+    }
+  }
+
+  // Names stand under the figures, not over their heads (owner, 2026-11-18:
+  // "the names of the players need to be below the cut out not on top").
+  // Every tag starts below its own figure's feet and ends inside the room, in
+  // each state that seats someone and at the phone widths where a full
+  // party's tags stack in two rows. The host's crown floats over the host's
+  // head, inside the room, and the tag holds nothing but the name (a crown in
+  // the tag cut "c3rooks" short on a 320px phone).
+  for (const [label, path] of [["new look", "/?ui=next"], ["classic", CLASSIC_PATH]]) {
+    for (const width of [1440, 390, 320]) {
+      await check(`co-op (${label}, ${width}px): every name stands under its figure, inside the room`, async () => {
+        const server = coopServer("idle");
+        const { context, page: p, errors } = await open(browser, path, {
+          signedIn: true, routes: [server.route], viewport: { width, height: width < 600 ? 844 : 1000 },
+        });
+        const rooms = () => p.evaluate(async () => {
+          const root = document.querySelector("#coop-play-root");
+          const settled = (img) => Promise.race([img.decode().catch(() => {}), new Promise((ok) => setTimeout(ok, 3000))]);
+          await Promise.all([...root.querySelectorAll(".cp-scene img")].map(settled));
+          await new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok)));
+          return [...root.querySelectorAll(".cp-scene")].map((scene) => {
+            const frame = scene.getBoundingClientRect(), border = parseFloat(getComputedStyle(scene).borderBottomWidth);
+            return {
+              where: scene.closest(".cp-best") ? "most wins together" : "the Play card",
+              stacked: scene.classList.contains("is-stacked"),
+              rows: new Set([...scene.querySelectorAll(".cp-climber > .cp-tag")].map((tag) => Math.round(tag.getBoundingClientRect().top))).size,
+              tags: [...scene.querySelectorAll(".cp-climber")].map((climber) => {
+                const art = climber.querySelector(".cp-climber-art").getBoundingClientRect();
+                const tag = climber.querySelector(".cp-tag").getBoundingClientRect();
+                const figure = climber.querySelector(".cp-figure-img, .cp-figure-blank").getBoundingClientRect();
+                const crown = climber.querySelector(".cp-crown svg")?.getBoundingClientRect();
+                const nameEl = climber.querySelector(".cp-tag-name"), words = document.createRange();
+                words.selectNodeContents(nameEl);
+                return {
+                  name: nameEl.textContent,
+                  host: climber.classList.contains("is-host"),
+                  underFeet: tag.top - art.bottom,
+                  toFloor: frame.bottom - border - tag.bottom,
+                  cutBy: Math.max(0, words.getBoundingClientRect().width - nameEl.getBoundingClientRect().width),
+                  crownInTag: climber.querySelectorAll(".cp-tag svg").length,
+                  crown: crown ? { overHead: figure.top - crown.bottom, toCeiling: crown.top - frame.top - border, across: (crown.left + crown.width / 2 - figure.left) / figure.width } : null,
+                };
+              }),
+            };
+          });
+        });
+        // A host who picked "Any climber" stands as a blank figure and still wears the crown.
+        const blankHost = () => {
+          const view = coopParty(2);
+          view.match.members = view.match.members.map((m) => (m.isHost ? { ...m, character: undefined } : m));
+          return view;
+        };
+        const states = [
+          ["idle", "idle", coopView("idle")], ["looking", "searching", coopView("searching")], ["party of 2", "matched", coopParty(2)],
+          ["party of 4", "matched", coopParty(4)], ["party of 2 after a full party", "matched", coopParty(2)], ["host on any climber", "matched", blankHost()],
+        ];
+        for (const [name, state, view] of states) {
+          server.view = view;
+          await coopCard(p, state);
+          await p.waitForTimeout(250);
+          const found = await rooms();
+          assert.ok(found.length >= 1 && found[0].tags.length >= 1, `${name}: the Play card's room has a name in it`);
+          // The two-row path is real on the narrowest phone, and a smaller party goes back to one row.
+          if (name === "party of 4" && width === 320) {
+            assert.ok(found[0].stacked && found[0].rows === 2, `${name}: a full party's names stand in two rows here (stacked ${found[0].stacked}, ${found[0].rows} rows)`);
+          }
+          if (name === "party of 2 after a full party") {
+            assert.ok(!found[0].stacked && found[0].rows === 1, `${name}: back to one row (stacked ${found[0].stacked}, ${found[0].rows} rows)`);
+          }
+          if (name === "host on any climber") {
+            assert.equal(found[0].tags.filter((t) => t.host && t.crown).length, 1, `${name}: the blank host wears the crown`);
+          }
+          for (const room of found) {
+            for (const t of room.tags) {
+              assert.ok(t.underFeet >= 2, `${name}: ${t.name} starts under its figure in ${room.where} (${t.underFeet.toFixed(1)}px below the feet)`);
+              assert.ok(t.toFloor >= 4, `${name}: ${t.name} ends inside ${room.where} (${t.toFloor.toFixed(1)}px above the room's foot)`);
+              assert.equal(t.crownInTag, 0, `${name}: ${t.name}'s tag holds the name only`);
+              assert.equal(Boolean(t.crown), t.host, `${name}: only the host wears the crown (${t.name})`);
+              if (t.crown) {
+                assert.ok(t.crown.overHead >= 0 && t.crown.overHead <= 6, `${name}: the crown floats just over ${t.name}'s head (${t.crown.overHead.toFixed(1)}px)`);
+                assert.ok(t.crown.toCeiling >= 2, `${name}: the crown is inside ${room.where} (${t.crown.toCeiling.toFixed(1)}px under the frame)`);
+                assert.ok(t.crown.across >= 0.2 && t.crown.across <= 0.8, `${name}: the crown is over ${t.name}'s figure (${t.crown.across.toFixed(2)} across)`);
+              }
+            }
+          }
+          // From a 390px phone up, a party of two has room for both names whole.
+          if (name === "party of 2" && width >= 390) {
+            assert.deepEqual(found[0].tags.filter((t) => t.cutBy > 0.05).map((t) => t.name), [], `${name}: both names are whole`);
+          }
+        }
+        // Text set half as large again by the reader: a tag is taller than the
+        // stylesheet's figure, so the floor's band is sized from the tag itself.
+        await p.evaluate(() => { document.documentElement.style.fontSize = "150%"; });
+        server.view = coopParty(4);
+        await coopCard(p, "matched");
+        await p.waitForTimeout(250);
+        for (const room of await rooms()) {
+          for (const t of room.tags) {
+            assert.ok(t.underFeet >= 2 && t.toFloor >= 4, `larger text: ${t.name} still stands under its figure and inside ${room.where} (${t.underFeet.toFixed(1)}px under the feet, ${t.toFloor.toFixed(1)}px above the room's foot)`);
+          }
         }
         assert.deepEqual(errors, []);
         await context.close();
@@ -2605,7 +2880,755 @@ async function runWidths(browser) {
   }
 }
 
+/** The widget ids of the Overview, in page order. @param {import("playwright").Page} page */
+function widgetOrder(page) {
+  return page.$$eval("#overview-body .v-ov-grid > .v-w[data-w]", (els) => els.map((el) => el.dataset.key));
+}
+
+/** @param {import("playwright").Page} page */
+async function enterArrange(page) {
+  await page.click('#overview-body [data-action="ov-arrange"]');
+  await page.waitForSelector("#overview-body .v-ov[data-arrange]");
+}
+
+/**
+ * The customizable Overview (new look): Arrange mode by pointer and keyboard,
+ * sizes, remove and Undo, the gallery, Reset, saving across reloads, the
+ * first-visit tour, and that none of it touches <html> (a root change re-fits
+ * every stage header).
+ */
+async function runArrange(browser) {
+  await check("Arrange opens in the Overview body and leaves <html> alone", async () => {
+    const { context, page: p, errors } = await open(browser, "/?ui=next");
+    const root = () => p.evaluate(() => {
+      const html = document.documentElement;
+      return { cls: html.className, attrs: [...html.attributes].map((a) => `${a.name}=${a.value}`).sort().join(" ") };
+    });
+    const before = await root();
+    assert.equal(await p.locator('.panel-head [data-action="ov-arrange"], .toolbar [data-action="ov-arrange"]').count(), 0, "not in the header or toolbar");
+    await enterArrange(p);
+    const state = await p.evaluate(() => ({
+      cells: document.querySelectorAll("#overview-body .v-ov-grid > .v-w").length,
+      tools: document.querySelectorAll("#overview-body .v-w > .v-w-tools").length,
+      inert: [...document.querySelectorAll("#overview-body .v-w-body")].every((el) => el.inert),
+      foot: !!document.querySelector("#overview-body .v-arr-foot [data-arr='done']"),
+    }));
+    assert.ok(state.cells >= 6, `widgets in Arrange (${state.cells})`);
+    assert.equal(state.tools, state.cells, "every widget has its tools");
+    assert.equal(state.inert, true, "widget content is inert while arranging");
+    assert.equal(state.foot, true, "the foot bar has Done");
+    assert.deepEqual(await root(), before, "<html> class and attributes unchanged");
+    await p.click('[data-arr="done"]');
+    await p.waitForSelector('#overview-body .v-ov:not([data-arrange]) [data-action="ov-arrange"]');
+    assert.deepEqual(await root(), before, "<html> unchanged after Done");
+    assert.deepEqual(errors, []);
+    await context.close();
+  });
+
+  await check("a widget moves by pointer drag, saves, and stays moved after a reload", async () => {
+    const { context, page: p, errors } = await open(browser, "/?ui=next");
+    await enterArrange(p);
+    const before = await widgetOrder(p);
+    assert.ok(before.indexOf("winRate") < before.indexOf("characters"), "win rate starts before by character");
+    await p.evaluate(() => document.querySelector('.v-w[data-key="winRate"]').scrollIntoView({ block: "center" }));
+    const grip = await p.locator('.v-w[data-key="winRate"] [data-arr="grip"]').boundingBox();
+    const target = await p.locator('.v-w[data-key="characters"]').boundingBox();
+    await p.mouse.move(grip.x + 20, grip.y + grip.height / 2);
+    await p.mouse.down();
+    const to = { x: target.x + target.width * 0.8, y: target.y + target.height / 2 };
+    for (let i = 1; i <= 12; i += 1) {
+      await p.mouse.move(grip.x + 20 + (to.x - grip.x - 20) * (i / 12), grip.y + grip.height / 2 + (to.y - grip.y - grip.height / 2) * (i / 12));
+    }
+    assert.equal(await p.locator(".v-w.is-lifted").count(), 1, "the widget lifts while dragged");
+    assert.equal(await p.locator(".v-w-slot").count(), 1, "a slot shows where it will land");
+    await p.mouse.up();
+    await p.waitForFunction(() => !document.querySelector(".v-w.is-lifted"));
+    const after = await widgetOrder(p);
+    assert.ok(after.indexOf("winRate") > after.indexOf("characters"), `win rate dropped after by character (${after.join(",")})`);
+    const stored = await p.evaluate((key) => JSON.parse(localStorage.getItem(key) || "null"), LAYOUT_KEY);
+    assert.deepEqual(stored && stored.items.map((item) => item.key), after, "the new order is saved");
+    await p.click('[data-arr="done"]');
+    await p.reload({ waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#overview-body .v-ov");
+    // Normally a widget with nothing to show is not drawn (sample data has no "since your last visit").
+    const shown = await widgetOrder(p);
+    assert.deepEqual(shown, after.filter((key) => shown.includes(key)), "the order survives a reload");
+    assert.ok(shown.indexOf("winRate") > shown.indexOf("characters"), "still after by character");
+    assert.deepEqual(errors, []);
+    await context.close();
+  });
+
+  await check("keyboard: Space picks up, arrows move, Space drops, Escape puts back", async () => {
+    const { context, page: p } = await open(browser, "/?ui=next");
+    await enterArrange(p);
+    const start = await widgetOrder(p);
+    const grip = '.v-w[data-key="trend"] [data-arr="grip"]';
+    await p.focus(grip);
+    await p.keyboard.press("Space");
+    assert.equal(await p.locator(".v-w.is-picked").count(), 1, "picked up");
+    await p.keyboard.press("ArrowUp");
+    await p.keyboard.press("Space");
+    const moved = await widgetOrder(p);
+    assert.equal(moved.indexOf("trend"), start.indexOf("trend") - 1, "one place earlier");
+    assert.equal(await p.evaluate(() => document.activeElement && document.activeElement.closest(".v-w")?.dataset.key), "trend", "focus stays on its grip");
+    const live = await p.textContent('[data-arr="live"]');
+    assert.match(live || "", /moved to \d+ of \d+/, "screen readers hear the new place");
+    await p.keyboard.press("Space");
+    await p.keyboard.press("ArrowDown");
+    await p.keyboard.press("ArrowDown");
+    await p.keyboard.press("Escape");
+    assert.deepEqual(await widgetOrder(p), moved, "Escape puts it back");
+    await context.close();
+  });
+
+  await check("size chips resize a widget, remove has Undo, Reset brings the default back", async () => {
+    const { context, page: p } = await open(browser, "/?ui=next");
+    await enterArrange(p);
+    await p.click('.v-w[data-key="winRate"] [data-arr="size"][data-size="W"]');
+    const sized = await p.evaluate(() => {
+      const cell = document.querySelector('.v-w[data-key="winRate"]');
+      return { size: cell.dataset.size, span: cell.style.getPropertyValue("--span"), pair: cell.dataset.pair || null };
+    });
+    assert.deepEqual(sized, { size: "W", span: "12", pair: null }, "W spans the row");
+    await p.click('.v-w[data-key="relics"] [data-arr="remove"]');
+    assert.equal(await p.locator('.v-w[data-key="relics"]').count(), 0, "removed");
+    assert.match(await p.textContent('[data-arr="toast"]'), /Removed/, "an Undo toast shows");
+    await p.click('[data-arr="undo"]');
+    await p.waitForSelector('.v-w[data-key="relics"]');
+    await p.click('[data-arr="clear"]');
+    assert.equal(await p.locator("#overview-body .v-ov-grid > .v-w").count(), 0, "Clear all empties the board");
+    assert.equal(await p.locator('#overview-body .v-ov-empty [data-arr="add"]').count(), 1, "the empty board offers Add widget");
+    assert.match(await p.textContent('[data-arr="toast"]'), /Cleared the board/, "with an Undo");
+    await p.click('[data-arr="undo"]');
+    await p.waitForSelector('.v-w[data-key="relics"]');
+    await p.click('[data-arr="reset"]');
+    await p.click('[data-arr="reset-yes"]');
+    await p.waitForSelector('.v-w[data-key="winRate"][data-size="L"]');
+    assert.equal(await p.evaluate((key) => localStorage.getItem(key), LAYOUT_KEY), null, "the default layout is not stored");
+    await context.close();
+  });
+
+  await check("the climb calendar's Solo / Co-op chips filter it and are remembered", async () => {
+    const { context, page: p, errors } = await open(browser, "/?ui=next");
+    await enterArrange(p);
+    await p.click('[data-arr="add"]');
+    await p.waitForSelector('dialog.v-gal[open] [data-gal-add="calendar"]');
+    await p.click('dialog.v-gal [data-gal-add="calendar"]');
+    await p.waitForSelector('#overview-body .v-w[data-w="calendar"] .v-cal-grid');
+    await p.click('[data-arr="done"]');
+    const chip = '#overview-body .v-w[data-w="calendar"] [data-ov-set="mode"][data-value="coop"]';
+    await p.waitForSelector(chip);
+    await p.click(chip);
+    await p.waitForSelector(`${chip}[aria-pressed="true"]`);
+    const stored = await p.evaluate((key) => JSON.parse(localStorage.getItem(key) || "null"), LAYOUT_KEY);
+    assert.equal(stored.items.find((item) => item.id === "calendar").settings.mode, "coop", "the choice is saved with the layout");
+    await p.reload({ waitUntil: "domcontentloaded" });
+    await p.waitForSelector(`${chip}[aria-pressed="true"]`);
+    assert.deepEqual(errors, []);
+    await context.close();
+  });
+
+  await check("the gallery adds a live widget with your own numbers", async () => {
+    const { context, page: p, errors } = await open(browser, "/?ui=next");
+    await enterArrange(p);
+    await p.click('[data-arr="add"]');
+    await p.waitForSelector("dialog.v-gal[open] .v-gal-tile");
+    const tiles = await p.$$eval("dialog.v-gal .v-gal-tile", (els) => els.map((el) => el.querySelector("h3").textContent));
+    assert.ok(tiles.includes("Solo vs co-op") && tiles.includes("Stat tile"), "new widgets are offered");
+    assert.equal(await p.locator('dialog.v-gal .v-gal-tile:has(h3:text-is("Your hand")) .v-gal-placed').count(), 1, "placed widgets say so");
+    await p.fill("dialog.v-gal [data-gal-search]", "solo vs");
+    assert.equal(await p.locator("dialog.v-gal .v-gal-tile:not([hidden])").count(), 1, "search filters the gallery");
+    await p.click('dialog.v-gal [data-gal-add="coopSplit"]');
+    await p.waitForSelector('#overview-body .v-w[data-w="coopSplit"] .v-split');
+    assert.equal(await p.locator("dialog.v-gal[open]").count(), 0, "the sheet closes");
+    const text = await p.textContent('#overview-body .v-w[data-w="coopSplit"]');
+    assert.match(text || "", /Solo/, "it draws the player's solo record");
+    assert.deepEqual(errors, []);
+    await context.close();
+  });
+
+  await check("the first-visit tour steps through Arrange once, with Next and Skip", async () => {
+    const { context, page: p, errors } = await open(browser, "/", { tour: true });
+    await p.waitForSelector(".v-tour:not(.is-moving) .v-tour-card", { timeout: BOOT_TIMEOUT_MS });
+    await p.waitForTimeout(450); // the ring's slide (320ms)
+    assert.match(await p.textContent(".v-tour-count"), /Step 1 of 6/);
+    const ring = await p.evaluate(() => {
+      const hole = document.querySelector(".v-tour-hole").getBoundingClientRect();
+      const btn = document.querySelector('[data-action="ov-arrange"]').getBoundingClientRect();
+      return hole.left <= btn.left && hole.right >= btn.right && hole.top <= btn.top && hole.bottom >= btn.bottom;
+    });
+    assert.equal(ring, true, "the ring is around the Arrange button");
+    await p.click('[data-tour="next"]');
+    await p.waitForSelector("#overview-body .v-ov[data-arrange]");
+    await p.waitForFunction(() => /Step 2 of 6/.test(document.querySelector(".v-tour-count")?.textContent || ""));
+    await p.keyboard.press("Escape");
+    await p.waitForFunction(() => !document.querySelector(".v-tour"));
+    assert.equal(await p.evaluate((key) => localStorage.getItem(key), TOUR_KEY), "skip", "skipping is remembered");
+    await p.click('[data-arr="done"]');
+    await p.reload({ waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#overview-body .v-ov");
+    await p.waitForTimeout(2500);
+    assert.equal(await p.locator(".v-tour").count(), 0, "it does not come back");
+    assert.deepEqual(errors, []);
+    await context.close();
+  });
+}
+
+// ---- Section filters and win streaks ----------------------------------------
+// Overview → By character: mode (All / Standard / Blitz / Dread) and one
+// ascension level, plus each climber's current win streak on its card.
+// Ascensions: one climber, Standard or Blitz ladder. Both looks.
+
+/**
+ * Demo runs plus some of the STS2 beta's Blitz and Dread runs and two fresh
+ * win streaks (Ironclad 9, Silent 3), pushed in the way the desktop apps push
+ * runs. Returns what was sent, so expectations never come from the app's code.
+ * @param {import("playwright").Page} page
+ * @returns {Promise<Array<{ character: string, won: boolean, ascension: number|null, gameMode: string }>>}
+ */
+async function seedFilterRuns(page) {
+  const runs = await page.evaluate(async () => {
+    const { getDemoRuns } = await import("/lib/demo-runs.js?v=2");
+    const demo = getDemoRuns();
+    const newest = Math.max(...demo.map((r) => +r.endedAt));
+    const extras = [];
+    let i = 0;
+    const add = (character, extra) => {
+      const template = demo.find((r) => r.character === character) || demo[0];
+      const endedAt = new Date(newest + ++i * 5 * 3_600_000);
+      extras.push({ ...template, id: `filters-${i}`, seed: `FILTERS${i}`, startedAt: new Date(+endedAt - 3_000_000), endedAt, ...extra });
+    };
+    for (const [c, won, ascension] of [["ironclad", true, 1], ["ironclad", false, 2], ["silent", true, 1], ["defect", false, 1], ["ironclad", true, 2], ["silent", false, 3], ["regent", true, 1], ["ironclad", false, 3]]) {
+      add(c, { won, ascension, gameMode: "blitz" });
+    }
+    for (const [c, won] of [["ironclad", false], ["silent", false], ["ironclad", false], ["defect", true]]) add(c, { won, ascension: 10, gameMode: "dread" });
+    for (let k = 0; k < 3; k++) add("silent", { won: true, ascension: 6 });
+    for (let k = 0; k < 9; k++) add("ironclad", { won: true, ascension: k % 3 === 0 ? 9 : 10 });
+    const all = [...demo, ...extras].map((r) => ({ ...r, startedAt: r.startedAt?.toISOString?.() ?? r.startedAt, endedAt: r.endedAt?.toISOString?.() ?? r.endedAt }));
+    window.SpireVault.ingestDesktopRuns(all);
+    return all.map((r) => ({ character: r.character, won: r.won === true, ascension: Number.isFinite(r.ascension) ? r.ascension : null, gameMode: r.gameMode || "" }));
+  });
+  await page.waitForFunction(
+    () => document.querySelector("#overview-body .v-char-streak:not(.is-empty), #overview-body .char-card-streak"),
+    null,
+    { timeout: BOOT_TIMEOUT_MS }
+  );
+  return runs;
+}
+
+/** @param {{ gameMode: string }} run */
+const modeOf = (run) => (/blitz/i.test(run.gameMode) ? "blitz" : /dread/i.test(run.gameMode) ? "dread" : "standard");
+/** @param {Array<any>} runs @param {{ character?: string, mode?: string, asc?: number }} want */
+const pickRuns = (runs, want) => runs.filter((r) =>
+  (!want.character || r.character === want.character) && (!want.mode || modeOf(r) === want.mode) && (want.asc === undefined || r.ascension === want.asc));
+/** "6W · 0L", as a banner shows it. @param {Array<any>} list */
+const recordOf = (list) => `${list.filter((r) => r.won).length}W · ${list.filter((r) => !r.won).length}L`;
+
+/** Per-level "wins/runs" of the storeys or classic bars on the Ascensions tab. @param {import("playwright").Page} page */
+function ladderCounts(page) {
+  return page.evaluate(() => {
+    const out = {};
+    for (const st of document.querySelectorAll("#ascensions-body .v-asc-st.is-lit")) {
+      const key = st.querySelector(".v-asc-st-key").textContent.trim();
+      const runs = Number.parseInt(st.querySelector(".v-asc-st-runs").textContent, 10);
+      out[key] = runs;
+    }
+    for (const col of document.querySelectorAll("#ascensions-body .asc-bar-col")) {
+      const key = col.querySelector(".asc-bar-label").textContent.trim();
+      const match = col.querySelector(".asc-bar-tooltip").textContent.match(/(\d+)r/);
+      out[key] = match ? Number(match[1]) : NaN;
+    }
+    return out;
+  });
+}
+
+/** Expected runs per level on one ladder. @param {Array<any>} runs */
+function expectedLadder(runs) {
+  const out = {};
+  for (const r of runs) if (r.ascension !== null && r.ascension <= 10) out[`A${r.ascension}`] = (out[`A${r.ascension}`] || 0) + 1;
+  return out;
+}
+
+async function runStatFilters(browser) {
+  await check("By character: a climber's current win streak shows on its card, in both looks", async () => {
+    for (const [label, path] of [["new look", "/?ui=next"], ["classic", CLASSIC_PATH]]) {
+      const { context, page: p, errors } = await open(browser, path);
+      try {
+        await seedFilterRuns(p);
+        const shown = await p.evaluate(() => {
+          const out = {};
+          for (const el of document.querySelectorAll("#overview-body .v-char[data-char]")) {
+            out[el.dataset.char] = { tag: el.querySelector(".v-char-streak:not(.is-empty) b")?.textContent || "", spoken: el.getAttribute("aria-label") || "" };
+          }
+          for (const el of document.querySelectorAll("#overview-body .char-card")) {
+            const key = (el.querySelector(".char-card-name")?.textContent || "").trim().toLowerCase();
+            out[key] = { tag: el.querySelector(".char-card-streak strong")?.textContent || "", spoken: el.getAttribute("aria-label") || "" };
+          }
+          return out;
+        });
+        assert.equal(shown.ironclad?.tag, "9", `${label}: Ironclad has won its last 9 runs`);
+        assert.equal(shown.silent?.tag, "3", `${label}: Silent has won its last 3`);
+        assert.equal(shown.defect?.tag, "", `${label}: Defect's newest run is not a win`);
+        assert.match(shown.ironclad.spoken, /9 wins in a row/, `${label}: the card's label says the streak`);
+        if (label === "new look") {
+          // Every bar stays level: a banner without a streak keeps the line.
+          const lines = await p.$$eval("#overview-body .v-char", (els) => els.map((el) => !!el.querySelector(".v-char-streak")));
+          assert.ok(lines.every(Boolean), "every banner has a streak line (empty when there is no streak)");
+        }
+        assert.deepEqual(errors, []);
+      } finally {
+        await context.close();
+      }
+    }
+  });
+
+  await check("By character: no mode control without Blitz or Dread runs; they bring one", async () => {
+    const { context, page: p, errors } = await open(browser, "/?ui=next");
+    try {
+      assert.equal(await p.locator('#overview-body [data-stat-filter="chars.mode"]').count(), 0, "sample data has only standard runs");
+      assert.equal(await p.locator('#overview-body select[data-stat-filter="chars.asc"]').count(), 1, "the ascension picker is there");
+      await seedFilterRuns(p);
+      const modes = await p.$$eval('#overview-body [data-stat-filter="chars.mode"]', (els) => els.map((el) => el.dataset.value));
+      assert.deepEqual(modes, ["all", "standard", "blitz", "dread"]);
+      assert.equal(await p.locator('#overview-body [data-stat-filter="chars.mode"][aria-pressed="true"]').getAttribute("data-value"), "all");
+      assert.deepEqual(errors, []);
+    } finally {
+      await context.close();
+    }
+  });
+
+  await check("By character: an ascension narrows every card and says so; Clear undoes it", async () => {
+    const { context, page: p, errors } = await open(browser, "/?ui=next");
+    try {
+      const runs = await seedFilterRuns(p);
+      await p.selectOption('#overview-body select[data-stat-filter="chars.asc"]', "10");
+      const a10 = pickRuns(runs, { mode: "standard", asc: 10 });
+      const ironclad = pickRuns(a10, { character: "ironclad" });
+      const state = await p.evaluate(() => ({
+        summary: document.querySelector("#overview-body .v-chars .v-filter-summary")?.textContent.replace(/\s+/g, " ").trim(),
+        ironclad: document.querySelector('#overview-body .v-char[data-char="ironclad"] .v-char-rec')?.textContent.replace(/\s+/g, " ").trim(),
+        silent: document.querySelector('#overview-body .v-char[data-char="silent"] .v-char-rec')?.textContent.trim(),
+        focused: document.activeElement?.matches('select[data-stat-filter="chars.asc"]') ?? false,
+        value: document.querySelector('#overview-body select[data-stat-filter="chars.asc"]').value,
+      }));
+      assert.equal(state.summary, `Showing A10 · ${a10.length} of ${runs.length} runs Clear`);
+      assert.ok(state.ironclad?.startsWith(recordOf(ironclad)), `Ironclad at A10: "${state.ironclad}", expected ${recordOf(ironclad)}`);
+      assert.equal(state.silent, "No runs", "a climber with no A10 runs says so, short enough for a narrow banner");
+      assert.equal(state.value, "10");
+      assert.ok(state.focused, "focus stays on the picker after the re-render");
+      await p.click('#overview-body [data-stat-filter="chars.clear"]');
+      assert.equal(await p.locator("#overview-body .v-chars .v-filter-summary").count(), 0, "Clear removes the summary");
+      const all = pickRuns(runs, { character: "ironclad" });
+      const back = await p.textContent('#overview-body .v-char[data-char="ironclad"] .v-char-rec');
+      assert.ok(back.replace(/\s+/g, " ").trim().startsWith(recordOf(all)), `after Clear: "${back}"`);
+      assert.deepEqual(errors, []);
+    } finally {
+      await context.close();
+    }
+  });
+
+  await check("By character: Blitz counts Blitz runs only; Dread turns the ascension picker off", async () => {
+    const { context, page: p, errors } = await open(browser, "/?ui=next");
+    try {
+      const runs = await seedFilterRuns(p);
+      await p.click('#overview-body [data-stat-filter="chars.mode"][data-value="blitz"]');
+      const blitz = pickRuns(runs, { mode: "blitz" });
+      const levels = [...new Set(blitz.map((r) => r.ascension))].sort((a, b) => b - a).map(String);
+      const state = await p.evaluate(() => ({
+        ironclad: document.querySelector('#overview-body .v-char[data-char="ironclad"] .v-char-rec')?.textContent.replace(/\s+/g, " ").trim(),
+        options: [...document.querySelectorAll('#overview-body select[data-stat-filter="chars.asc"] option')].map((o) => o.value),
+        focused: document.activeElement?.matches('[data-stat-filter="chars.mode"][data-value="blitz"]') ?? false,
+      }));
+      assert.ok(state.ironclad?.startsWith(recordOf(pickRuns(blitz, { character: "ironclad" }))), `Ironclad in Blitz: "${state.ironclad}"`);
+      assert.deepEqual(state.options, ["", ...levels], "the picker offers the Blitz levels that have runs, highest first");
+      assert.ok(state.focused, "focus stays on the Blitz chip");
+      // A Blitz level does not survive a switch to the standard ladder.
+      await p.selectOption('#overview-body select[data-stat-filter="chars.asc"]', levels[levels.length - 1]);
+      await p.click('#overview-body [data-stat-filter="chars.mode"][data-value="standard"]');
+      assert.equal(await p.inputValue('#overview-body select[data-stat-filter="chars.asc"]'), "", "Blitz A1 does not become standard A1");
+      assert.match((await p.textContent("#overview-body .v-chars .v-filter-summary")).replace(/\s+/g, " "), /Showing Standard · /);
+      await p.click('#overview-body [data-stat-filter="chars.mode"][data-value="dread"]');
+      assert.equal(await p.locator('#overview-body select[data-stat-filter="chars.asc"]').isDisabled(), true, "Dread runs have no ascension level");
+      const saved = await p.evaluate(() => JSON.parse(localStorage.getItem("vault.web.statfilters.v1") || "null"));
+      assert.deepEqual(saved?.chars, { mode: "dread", asc: null }, "the choice is kept for the next visit");
+      assert.deepEqual(errors, []);
+    } finally {
+      await context.close();
+    }
+  });
+
+  await check("Ascensions: one climber redraws the spire, tiers and breakdown, in both looks", async () => {
+    for (const [label, path] of [["new look", "/?ui=next"], ["classic", CLASSIC_PATH]]) {
+      const { context, page: p, errors } = await open(browser, path);
+      try {
+        const runs = await seedFilterRuns(p);
+        await p.evaluate(() => window.SpireVault.switchTab("ascensions"));
+        await p.waitForSelector('#ascensions-body [data-stat-filter="spire.character"]');
+        assert.equal(await p.locator('#ascensions-body [data-stat-filter="spire.character"][data-value="fool"]').isDisabled(), true, `${label}: a climber with no runs cannot be picked`);
+        await p.click('#ascensions-body [data-stat-filter="spire.character"][data-value="silent"]');
+        const silent = pickRuns(runs, { character: "silent", mode: "standard" });
+        assert.deepEqual(await ladderCounts(p), expectedLadder(silent), `${label}: Silent's runs per level`);
+        const standardRuns = pickRuns(runs, { mode: "standard" }).length;
+        const summary = (await p.textContent("#ascensions-body .v-filter-summary, #ascensions-body .stat-filters .run-filter-summary")).replace(/\s+/g, " ").trim();
+        assert.ok(summary.startsWith(`Showing Silent · ${silent.length} of ${standardRuns} runs`), `${label}: "${summary}"`);
+        if (label === "new look") {
+          assert.match(await p.textContent("#ascensions-body .v-asc-panel-head p"), /^Silent · /);
+          const a0 = pickRuns(silent, { asc: 0 });
+          assert.match(await p.textContent('#ascensions-body .v-asc-tier[data-tier="standard"] .v-asc-tier-rec'), new RegExp(`${a0.filter((r) => r.won).length}W / ${a0.length} run`));
+          assert.equal(await p.locator("#ascensions-body .v-asc-row").count(), 11, "the breakdown keeps every level");
+        } else {
+          assert.equal(await p.locator("#ascensions-body .asc-detail-row").count(), Object.keys(expectedLadder(silent)).length);
+        }
+        assert.deepEqual(errors, []);
+      } finally {
+        await context.close();
+      }
+    }
+  });
+
+  await check("Ascensions: the Blitz ladder draws its own levels and drops the standard tiers", async () => {
+    for (const [label, path] of [["new look", "/?ui=next"], ["classic", CLASSIC_PATH]]) {
+      const { context, page: p, errors } = await open(browser, path);
+      try {
+        const runs = await seedFilterRuns(p);
+        await p.evaluate(() => window.SpireVault.switchTab("ascensions"));
+        await p.click('#ascensions-body [data-stat-filter="spire.ladder"][data-value="blitz"]');
+        assert.deepEqual(await ladderCounts(p), expectedLadder(pickRuns(runs, { mode: "blitz" })), `${label}: Blitz runs per level`);
+        assert.equal(await p.locator('#ascensions-body [data-stat-filter="spire.character"][data-value="necrobinder"]').isDisabled(), true, `${label}: no Blitz runs as Necrobinder`);
+        if (label === "new look") {
+          assert.equal(await p.locator("#ascensions-body .v-asc-blitz").count(), 1, "the Blitz note takes the tiers' place");
+          assert.equal(await p.locator("#ascensions-body .v-asc-tier-list, #ascensions-body .v-asc-rows").count(), 0, "no standard tiers or modifiers");
+          assert.equal(await p.locator("#ascensions-body .v-asc-st").count(), 6, "A0 to Blitz A5");
+          assert.equal(await p.locator("#ascensions-body .v-asc-st button").count(), 0, "a Blitz storey has no modifier row to open");
+        } else {
+          assert.equal(await p.locator("#ascensions-body .asc-detail-panel, #ascensions-body .asc-tier-legend").count(), 0, "no standard tiers or modifiers");
+          assert.match(await p.textContent("#ascensions-body"), /Blitz ladder/);
+        }
+        assert.deepEqual(errors, []);
+      } finally {
+        await context.close();
+      }
+    }
+  });
+
+  await check("Runs: Blitz or Dread runs bring Mode chips that count that mode only and switch the tiers off, in both looks", async () => {
+    for (const [label, path] of [["new look", "/?ui=next"], ["classic", CLASSIC_PATH]]) {
+      const { context, page: p, errors } = await open(browser, path);
+      try {
+        await p.evaluate(() => window.SpireVault.switchTab("runs"));
+        await p.waitForSelector('#runs-body [data-filter-kind="outcome"]');
+        assert.equal(await p.locator('#runs-body [data-filter-kind="mode"]').count(), 0, `${label}: sample data has only standard runs`);
+        // The seed waits for Overview to show the streaks, so it runs there.
+        await p.evaluate(() => window.SpireVault.switchTab("overview"));
+        const runs = await seedFilterRuns(p);
+        await p.evaluate(() => window.SpireVault.switchTab("runs"));
+        await p.waitForSelector('#runs-body [data-filter-kind="mode"]');
+        const modes = await p.$$eval('#runs-body button[data-filter-kind="mode"]', (els) => els.map((el) => el.dataset.filterValue));
+        assert.deepEqual(modes, ["all", "standard", "blitz", "dread"], label);
+        const summary = async () => (await p.textContent("#runs-body .v-runs-summary, #runs-body .run-filter-summary")).replace(/\s+/g, " ").trim();
+        // A standard tier, then Blitz: the tier gives way, since Blitz levels are not on that ladder.
+        await p.click('#runs-body button[data-filter-kind="ascensionTier"][data-filter-value="master"]');
+        await p.click('#runs-body button[data-filter-kind="mode"][data-filter-value="blitz"]');
+        const blitz = pickRuns(runs, { mode: "blitz" }).length;
+        assert.match(await summary(), new RegExp(`^Showing ${blitz} of ${runs.length} runs`), `${label}: Blitz`);
+        const tiers = await p.$$eval('#runs-body button[data-filter-kind="ascensionTier"]', (els) => els.map((el) => ({ id: el.dataset.filterValue, pressed: el.getAttribute("aria-pressed"), off: el.disabled })));
+        assert.deepEqual(tiers.filter((t) => t.pressed === "true").map((t) => t.id), ["all"], `${label}: the A10 tier was dropped`);
+        assert.ok(tiers.filter((t) => t.id !== "all").every((t) => t.off), `${label}: standard tiers are off under Blitz`);
+        await p.click('#runs-body button[data-filter-kind="mode"][data-filter-value="dread"]');
+        assert.match(await summary(), new RegExp(`^Showing ${pickRuns(runs, { mode: "dread" }).length} of ${runs.length} runs`), `${label}: Dread`);
+        const saved = await p.evaluate(() => JSON.parse(localStorage.getItem("vault.web.runfilters.v1") || "null"));
+        assert.equal(saved?.mode, "dread", `${label}: the mode is kept with the other Runs filters`);
+        await p.click('#runs-body [data-action="clear-filters"]');
+        assert.match(await summary(), new RegExp(`(All|Showing all) ${runs.length} runs`), `${label}: Clear resets the mode`);
+        assert.deepEqual(errors, []);
+      } finally {
+        await context.close();
+      }
+    }
+  });
+
+  await check("a saved filter the loaded runs cannot show is never applied", async () => {
+    const { context, page: p, errors } = await open(browser, "/?ui=next");
+    try {
+      // Saved while Blitz runs were loaded; the sample data has none.
+      await p.evaluate(() => localStorage.setItem("vault.web.statfilters.v1", JSON.stringify({ chars: { mode: "blitz", asc: 2 }, spire: { character: "fool", ladder: "blitz" } })));
+      await p.reload({ waitUntil: "domcontentloaded" });
+      await p.waitForSelector("#overview-body .v-ov", { timeout: BOOT_TIMEOUT_MS });
+      assert.equal(await p.locator("#overview-body .v-filter-summary").count(), 0);
+      assert.equal(await p.inputValue('#overview-body select[data-stat-filter="chars.asc"]'), "");
+      await p.evaluate(() => window.SpireVault.switchTab("ascensions"));
+      await p.waitForSelector('#ascensions-body [data-stat-filter="spire.character"]');
+      assert.equal(await p.locator('#ascensions-body [data-stat-filter="spire.character"][aria-pressed="true"]').getAttribute("data-value"), "all");
+      assert.equal(await p.locator('#ascensions-body [data-stat-filter="spire.ladder"]').count(), 0, "no ladder choice without Blitz runs");
+      assert.deepEqual(errors, []);
+    } finally {
+      await context.close();
+    }
+  });
+
+  await check("the section filters fit a phone in both looks", async () => {
+    for (const [label, path] of [["new look", "/?ui=next"], ["classic", CLASSIC_PATH]]) {
+      const { context, page: p, errors } = await open(browser, path, { viewport: PHONE_VIEWPORT, isMobile: true, hasTouch: true });
+      try {
+        await seedFilterRuns(p);
+        for (const tab of ["overview", "ascensions"]) {
+          await p.evaluate((id) => window.SpireVault.switchTab(id), tab);
+          await p.waitForSelector(`#${tab}-body [data-stat-filter]`);
+          const problems = await p.evaluate((id) => {
+            const out = [];
+            const doc = document.documentElement;
+            if (doc.scrollWidth > doc.clientWidth + 1) out.push(`page scrolls sideways (${doc.scrollWidth} > ${doc.clientWidth})`);
+            for (const el of document.querySelectorAll(`#${id}-body [data-stat-filter]`)) {
+              const box = el.getBoundingClientRect();
+              if (box.width === 0) continue;
+              const name = `${el.dataset.statFilter}=${el.dataset.value ?? el.value}`;
+              if (box.height < 43.5) out.push(`${name} is ${box.height.toFixed(1)}px tall`);
+              if (el.tagName === "SELECT" && Number.parseFloat(getComputedStyle(el).fontSize) < 16) out.push(`${name} text under 16px (iOS zooms in)`);
+            }
+            return out;
+          }, tab);
+          assert.deepEqual(problems, [], `${label} ${tab}`);
+        }
+        assert.deepEqual(errors, []);
+      } finally {
+        await context.close();
+      }
+    }
+  });
+}
+
+// ---- Recent Runs: go by date (the mini calendar) ------------------------------
+
+/** Opens Recent Runs in the new look and waits for the Date chip. */
+async function openRunsTab(page) {
+  await page.evaluate(() => window.SpireVault.switchTab("runs"));
+  await page.waitForSelector('#runs-body [data-action="runs-date-open"]');
+}
+
+/** The calendar and the ledger as a reader sees them. */
+function dateState(page) {
+  return page.evaluate(() => {
+    const dlg = document.getElementById("v-rcal");
+    const chip = document.querySelector('#runs-body [data-action="runs-date-open"]');
+    const focused = document.activeElement;
+    /** "Nov 16, 2026 at 2:09 PM" → "2026-11-16" */
+    const keyOf = (text) => {
+      const d = new Date(text.split(" at ")[0]);
+      return Number.isNaN(d.getTime()) ? "" : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    };
+    return {
+      open: !!dlg?.open,
+      mode: dlg?.dataset.mode || "",
+      chip: chip?.textContent.replace(/\s+/g, " ").trim() || "",
+      chipSet: chip?.getAttribute("data-set") || "",
+      expanded: chip?.getAttribute("aria-expanded") || "",
+      focusIsChip: focused === chip,
+      focusDay: focused?.getAttribute?.("data-rcal-day") || "",
+      month: dlg?.querySelector(".v-rcal-month-label span")?.textContent || "",
+      summary: document.querySelector("#runs-body .v-runs-summary")?.textContent.replace(/\s+/g, " ").trim() || "",
+      dayHeads: [...document.querySelectorAll("#runs-body .v-runs-day")].map((h) => h.textContent.trim()),
+      rows: [...document.querySelectorAll("#runs-body .run-row")].map((r) => ({
+        key: keyOf(r.querySelector(".v-run-date")?.textContent || ""),
+        result: r.getAttribute("data-result"),
+      })),
+    };
+  });
+}
+
+async function runDates(browser) {
+  await check("runs date filter: the Date chip opens a calendar under it, dotted on the days you climbed; Esc closes and hands focus back", async () => {
+    const { context, page, errors } = await open(browser, "/");
+    try {
+      await openRunsTab(page);
+      const before = await dateState(page);
+      assert.match(before.chip, /^Any date$/, "the chip starts at Any date");
+      await page.click('[data-action="runs-date-open"]');
+      await page.waitForSelector("#v-rcal[open] [data-rcal-day]");
+      await page.evaluate(() => Promise.all(document.getAnimations().filter((a) => a.effect?.target?.closest?.("#v-rcal")).map((a) => a.finished)));
+      const geo = await page.evaluate(() => {
+        const chip = document.querySelector('#runs-body [data-action="runs-date-open"]').getBoundingClientRect();
+        const panel = document.querySelector("#v-rcal .v-rcal-panel").getBoundingClientRect();
+        const dots = [...document.querySelectorAll("#v-rcal [data-rcal-day] .v-rcal-dot")];
+        return {
+          gap: panel.top - chip.bottom,
+          leftDelta: panel.left - chip.left,
+          inside: panel.left >= 0 && panel.right <= document.documentElement.clientWidth && panel.bottom <= innerHeight,
+          dots: dots.length,
+          dotsSayClimbs: dots.every((d) => /\d+ climbs?/.test(d.parentElement.getAttribute("aria-label") || "")),
+          bare: [...document.querySelectorAll("#v-rcal [data-rcal-day]:not(:has(.v-rcal-dot))")]
+            .every((b) => /no climbs/.test(b.getAttribute("aria-label") || "")),
+          todayMarked: document.querySelectorAll('#v-rcal [aria-current="date"]').length,
+          role: document.querySelector("#v-rcal table")?.getAttribute("role"),
+        };
+      });
+      const open1 = await dateState(page);
+      assert.equal(open1.mode, "popover", "a wide screen gets the popover");
+      assert.equal(open1.expanded, "true");
+      assert.ok(geo.gap >= 4 && geo.gap <= 12, `the popover hangs just under the chip (gap ${geo.gap.toFixed(1)}px)`);
+      assert.ok(Math.abs(geo.leftDelta) <= 1, `and lines up with its left edge (off by ${geo.leftDelta.toFixed(1)}px)`);
+      assert.ok(geo.inside, "the popover is fully on screen");
+      assert.ok(geo.dots > 0, "days with climbs carry a dot");
+      assert.ok(geo.dotsSayClimbs && geo.bare, "every day says its climbs to a screen reader");
+      assert.equal(geo.todayMarked, 1, "today is marked aria-current");
+      assert.equal(geo.role, "grid");
+      await page.keyboard.press("Escape");
+      await page.waitForFunction(() => !document.getElementById("v-rcal")?.open);
+      const closed = await dateState(page);
+      assert.equal(closed.focusIsChip, true, "focus is back on the chip");
+      assert.equal(closed.expanded, "false");
+      assert.deepEqual(errors, []);
+    } finally {
+      await context.close();
+    }
+  });
+
+  await check("runs date filter: two days make a range that filters the ledger with the other filters; chip, count line and day dividers say it; × clears", async () => {
+    const { context, page, errors } = await open(browser, "/");
+    try {
+      await openRunsTab(page);
+      const all = await dateState(page);
+      const total = Number(/All (\d+) runs/.exec(all.summary)?.[1]);
+      assert.ok(total > 0, `the count line reads "All N runs" (${all.summary})`);
+      await page.click('#runs-body [data-filter-kind="outcome"][data-filter-value="losses"]');
+      await page.click('#runs-body [data-action="runs-date-open"]');
+      await page.waitForSelector("#v-rcal[open] [data-rcal-day]");
+      const days = await page.$$eval("#v-rcal [data-rcal-day]:not([disabled])", (els) => els.map((e) => e.getAttribute("data-rcal-day")));
+      const [from, to] = [days[Math.max(0, days.length - 9)], days[Math.max(0, days.length - 3)]];
+      await page.click(`#v-rcal [data-rcal-day="${to}"]`);
+      await page.click(`#v-rcal [data-rcal-day="${from}"]`);
+      const banded = await page.$$eval("#v-rcal td.is-in", (tds) => tds.length);
+      assert.equal(banded, 7, "picked in either order, the band covers the seven days");
+      await page.click("#v-rcal [data-rcal-done]");
+      await page.waitForFunction(() => !document.getElementById("v-rcal")?.open);
+      const s = await dateState(page);
+      assert.ok(s.rows.length > 0, "the range has runs in the sample data");
+      assert.ok(s.rows.every((r) => r.key >= from && r.key <= to), `every run is inside ${from}…${to}: ${s.rows.map((r) => r.key).join(", ")}`);
+      assert.ok(s.rows.every((r) => r.result !== "win"), "and the Losses filter still holds");
+      assert.equal(s.chipSet, "true", "the chip turns gold");
+      assert.doesNotMatch(s.chip, /Any date/);
+      assert.match(s.summary, new RegExp(`Showing ${s.rows.length} of ${total} runs · ${s.chip.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`), `the count line names the range (${s.summary})`);
+      assert.ok(s.dayHeads.length >= 1 && s.dayHeads.every((h) => /^(Today|Yesterday|\w+day, \w{3} \d{1,2})$/.test(h)), `one divider per day: ${s.dayHeads.join(" | ")}`);
+      await page.click('#runs-body [data-action="runs-date-clear"]');
+      const cleared = await dateState(page);
+      assert.match(cleared.chip, /^Any date$/, "× puts the chip back to Any date");
+      assert.equal(cleared.focusIsChip, true, "and focus lands on the chip");
+      assert.match(cleared.summary, new RegExp(`of ${total} runs`), "the Losses filter alone is left");
+      assert.doesNotMatch(cleared.summary, /·/, "no range in the count line");
+      assert.deepEqual(errors, []);
+    } finally {
+      await context.close();
+    }
+  });
+
+  await check("runs date filter: keyboard — Enter opens on a day, arrows and PageUp move, Enter picks, a quick pick applies and closes", async () => {
+    const { context, page, errors } = await open(browser, "/");
+    try {
+      await openRunsTab(page);
+      await page.focus('#runs-body [data-action="runs-date-open"]');
+      await page.keyboard.press("Enter");
+      await page.waitForSelector("#v-rcal[open] [data-rcal-day]");
+      const start = (await dateState(page)).focusDay;
+      assert.match(start, /^\d{4}-\d{2}-\d{2}$/, "focus lands on a day");
+      const shift = (key, days) => {
+        const [y, m, d] = key.split("-").map(Number);
+        const t = new Date(y, m - 1, d + days);
+        return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, "0")}-${String(t.getDate()).padStart(2, "0")}`;
+      };
+      await page.keyboard.press("ArrowLeft");
+      assert.equal((await dateState(page)).focusDay, shift(start, -1), "← is the day before");
+      await page.keyboard.press("ArrowUp");
+      assert.equal((await dateState(page)).focusDay, shift(start, -8), "↑ is a week earlier");
+      const monthBefore = (await dateState(page)).month;
+      await page.keyboard.press("PageUp");
+      const turned = await dateState(page);
+      assert.notEqual(turned.month, monthBefore, "PageUp turns to the month before");
+      assert.equal(turned.focusDay.slice(0, 7) < shift(start, -8).slice(0, 7), true, "and the focus goes with it");
+      await page.keyboard.press("Enter");
+      const picked = await dateState(page);
+      assert.equal(picked.open, true, "one day picked: still open for a second");
+      assert.ok(picked.rows.every((r) => r.key === turned.focusDay), "the ledger shows that day only");
+      // The month arrows keep focus when the heading redraws (or hand it to
+      // the grid once the arrow has run out of months).
+      await page.focus('#v-rcal [data-rcal-step="1"]');
+      await page.keyboard.press("Enter");
+      const arrowFocus = await page.evaluate(() => {
+        const a = document.activeElement;
+        return a?.getAttribute("data-rcal-step") || (a?.hasAttribute("data-rcal-day") ? "day" : a?.tagName || "none");
+      });
+      assert.ok(arrowFocus === "1" || arrowFocus === "day", `focus stays put after turning the month (on ${arrowFocus})`);
+      await page.click('#v-rcal [data-rcal-preset="week"]');
+      await page.waitForFunction(() => !document.getElementById("v-rcal")?.open);
+      const week = await dateState(page);
+      assert.equal(week.chip, "Last 7 days");
+      assert.equal(week.focusIsChip, true);
+      assert.deepEqual(errors, []);
+    } finally {
+      await context.close();
+    }
+  });
+
+  for (const width of [375, 320]) {
+    await check(`runs date filter (phone ${width}px): a bottom sheet, every control a 44px target, nothing off-screen`, async () => {
+      const { context, page, errors } = await open(browser, "/", { viewport: { width, height: 812 }, hasTouch: true });
+      try {
+        await openRunsTab(page);
+        const chip = await page.evaluate(() => {
+          const r = document.querySelector('#runs-body [data-action="runs-date-open"]').getBoundingClientRect();
+          return { w: r.width, h: r.height };
+        });
+        assert.ok(chip.h >= 44, `the Date chip is ${chip.h}px tall`);
+        await page.tap('#runs-body [data-action="runs-date-open"]');
+        await page.waitForSelector("#v-rcal[open] [data-rcal-day]");
+        await page.evaluate(() => Promise.all(document.getAnimations().filter((a) => a.effect?.target?.closest?.("#v-rcal")).map((a) => a.finished)));
+        const sheet = await page.evaluate(() => {
+          const panel = document.querySelector("#v-rcal .v-rcal-panel").getBoundingClientRect();
+          const small = [...document.querySelectorAll("#v-rcal .v-rcal-panel button:not([disabled])")]
+            .map((b) => ({ b, r: b.getBoundingClientRect() }))
+            .filter(({ r }) => r.width > 0 && (r.width < 43.5 || r.height < 43.5))
+            .map(({ b, r }) => `${b.getAttribute("data-rcal-day") || b.textContent.trim() || b.getAttribute("aria-label")} ${r.width.toFixed(1)}x${r.height.toFixed(1)}`);
+          const cut = [...document.querySelectorAll("#v-rcal .v-rcal-panel *")]
+            .filter((el) => { const r = el.getBoundingClientRect(); return r.width > 0 && (r.left < -0.5 || r.right > innerWidth + 0.5); })
+            .map((el) => el.className || el.tagName);
+          return {
+            mode: document.getElementById("v-rcal").dataset.mode,
+            bottomGap: innerHeight - panel.bottom,
+            left: panel.left,
+            right: innerWidth - panel.right,
+            small,
+            cut,
+          };
+        });
+        assert.equal(sheet.mode, "sheet");
+        assert.ok(Math.abs(sheet.bottomGap) <= 1, `the sheet sits on the bottom edge (gap ${sheet.bottomGap}px)`);
+        assert.ok(sheet.left >= -0.5 && sheet.right >= -0.5, "and spans the screen without spilling");
+        assert.deepEqual(sheet.small, [], "no control under 44px");
+        assert.deepEqual(sheet.cut, [], "nothing runs off the sides");
+        await page.tap("#v-rcal .v-rcal-x");
+        await page.waitForFunction(() => !document.getElementById("v-rcal")?.open);
+        assert.equal(await page.evaluate(() => document.documentElement.classList.contains("v-rcal-lock")), false, "the page scrolls again once it closes");
+        assert.deepEqual(errors, []);
+      } finally {
+        await context.close();
+      }
+    });
+  }
+
+  await check("runs date filter: classic has no Date chip and is not filtered by a date picked in the new look", async () => {
+    const { context, page, errors } = await open(browser, CLASSIC_PATH);
+    try {
+      await page.evaluate(() => window.SpireVault.switchTab("runs"));
+      await page.waitForSelector("#runs-body .run-filters");
+      assert.equal(await page.locator('[data-action="runs-date-open"]').count(), 0);
+      assert.deepEqual(errors, []);
+    } finally {
+      await context.close();
+    }
+  });
+}
+
+
 const GROUPS = Object.freeze({
+  dates: runDates,
   saves: runSaves,
   core: run,
   coop: runCoop,
@@ -2619,6 +3642,8 @@ const GROUPS = Object.freeze({
   share: runShare,
   cards: runCards,
   widths: runWidths,
+  arrange: runArrange,
+  filters: runStatFilters,
 });
 
 /** @returns {string[]} the group names to run */

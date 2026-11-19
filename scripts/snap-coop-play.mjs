@@ -12,7 +12,7 @@
 
 import { chromium } from "playwright";
 import { spawn } from "node:child_process";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
 import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -32,6 +32,41 @@ const PEOPLE = [
   { sid: "76561198000000003", name: "Mako", character: "defect" },
   { sid: "76561198000000004", name: "IAmWeirdAndLong", character: "necrobinder" },
 ];
+
+/**
+ * Stand-in Steam avatars (there are no Steam images offline): a square crop of
+ * a game character portrait's head on a solid colour, as many players' real
+ * avatars are. [x, y, size] in the 512px portrait, then the background.
+ */
+const FACES = Object.freeze({
+  ironclad: [[165, 50, 170], "#7a2a22"],
+  defect: [[199, 55, 170], "#1f5866"],
+  regent: [[142, 115, 160], "#35306e"],
+  necrobinder: [[190, 44, 160], "#5e2440"],
+  silent: [[151, 105, 170], "#2c5236"],
+});
+function faceSvg(id) {
+  const [[x, y, size], fill] = FACES[id];
+  const art = readFileSync(join(REPO_ROOT, "Web", "assets", "sts2", "characters", `${id}-v2.webp`)).toString("base64");
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="${x} ${y} ${size} ${size}"><rect x="${x}" y="${y}" width="${size}" height="${size}" fill="${fill}"/><image href="data:image/webp;base64,${art}" x="0" y="0" width="512" height="512"/></svg>`;
+}
+
+/**
+ * The roster the app polls (/api/presence/roster): who Steam shows in STS2
+ * right now, for the sign in the room's sky.
+ */
+const IN_GAME = ["Boble", "Mako", "IAmWeirdAndLong", "Rook", "Vex", "Tallow"].map((name, i) => ({
+  steamID: `7656119800000010${i}`,
+  personaName: name,
+  avatarURL: `/snap-avatars/${["ironclad", "defect", "regent", "necrobinder", "silent", "ironclad"][i]}.svg`,
+  status: "looking",
+  inSTS2: true,
+  updatedAt: "2026-11-18T20:00:00.000Z",
+}));
+function roster(fixture) {
+  if (fixture === "idle-empty") return [];
+  return IN_GAME.slice(0, fixture === "idle-live" ? 6 : 4);
+}
 
 function view(state) {
   const base = { ok: true, lookingCount: 0, playingCount: 0, lookingByBranch: { stable: 0, beta: 0 }, pings: { looking: false }, pushOn: false };
@@ -53,7 +88,8 @@ function view(state) {
     };
   };
   switch (state) {
-    case "idle-empty": return { ...base, state: "idle" };
+    case "idle-empty":
+    case "idle-today": return { ...base, state: "idle" };
     case "idle-live": return { ...base, state: "idle", lookingCount: 2, lookingByBranch: { stable: 2, beta: 0 }, playingCount: 3 };
     case "searching": return { ...base, state: "searching", lookingCount: 1, lookingByBranch: { stable: 1, beta: 0 }, ticket: { createdAt: Date.now() - 42000, character: "silent", branch: "stable", push: false } };
     case "party-host": return { ...base, state: "matched", playingCount: 2, match: party(true) };
@@ -93,6 +129,8 @@ const COOP_SAVES = [
 
 const SHOTS = [
   ["idle-empty", "idle", "/coop"],
+  // As on 2026-11-18: nobody looking, nobody in a party, four in STS2.
+  ["idle-today", "idle", "/coop"],
   ["idle-live", "idle", "/coop"],
   // Under the card: saves with no co-op runs yet, then with some.
   ["idle-solo-saves", "idle", "/coop", "solo-saves"],
@@ -142,13 +180,27 @@ async function main() {
           await context.route("**/api/coop/play**", (route) =>
             route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(answer) }),
           );
+          await context.route("**/snap-avatars/*.svg", (route) => {
+            const id = new URL(route.request().url()).pathname.split("/").pop().replace(/\.svg$/, "");
+            route.fulfill({ status: 200, contentType: "image/svg+xml", body: faceSvg(id) });
+          });
+          const people = roster(fixture);
+          await context.route("**/api/presence/roster**", (route) =>
+            route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(people) }),
+          );
           const page = await context.newPage();
           const sep = query && path.includes("?") ? "&" : "";
           await page.goto(`${BASE}${path}${query ? (sep || "?") + query.slice(1) : ""}`, { waitUntil: "domcontentloaded" });
           await page.waitForFunction(() => window.SpireVault && !window.SpireVault.__isStub, null, { timeout: 20000 });
           await page.evaluate(() => window.SpireVault.switchTab("coop"));
           await page.waitForSelector(`#coop-play-root .cp[data-cp-state="${state}"]`, { timeout: 10000 });
-          await page.evaluate(() => Promise.all([...document.querySelectorAll(".cp img")].map((img) => img.decode().catch(() => {}))));
+          // The roster arrives on its own poll: wait for its faces on the sign.
+          if (people.length && state !== "matched" && state !== "in_game" && fixture !== "ended") {
+            await page.waitForSelector("#coop-play-root .cp-sky-faces", { state: "attached", timeout: 10000 });
+          }
+          // A lazy image off screen never decodes, so each wait is capped.
+          await page.evaluate(() => Promise.all([...document.querySelectorAll(".cp img")].map((img) =>
+            Promise.race([img.decode().catch(() => {}), new Promise((done) => setTimeout(done, 3000))]))));
           // The static server has no sign-in backend, so the app shows its
           // "session expired" notice and a server warning. Not part of co-op.
           await page.addStyleTag({ content: ".session-expired-notice{display:none!important}" });

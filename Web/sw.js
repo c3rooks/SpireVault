@@ -12,6 +12,8 @@
 // alpha alone, so it is a plain white shield.
 const ICON = "/assets/brand/crest-icon-192-v1.png";
 const BADGE = "/assets/brand/crest-badge-96-v1.png";
+/** How recent "your search ended" must be for a push to be that ping (allows clock drift). */
+const ENDED_FRESH_MS = 3 * 60 * 1000;
 
 self.addEventListener("install", () => self.skipWaiting());
 self.addEventListener("activate", (event) => event.waitUntil(self.clients.claim()));
@@ -28,6 +30,17 @@ async function describe() {
           ? `${others.join(", ")} ${others.length === 1 ? "is" : "are"} ready to climb. Open SpireVault to team up.`
           : "Your co-op party is ready. Open SpireVault to team up.",
         url: `/party/${data.match.matchId}`,
+        matched: true,
+      };
+    }
+    // Your pinged search ran out while you were away. That ping is sent the
+    // moment it runs out, so only a fresh endedAt means this push is it; an
+    // older one must not relabel a later "someone's looking" ping.
+    if (data && data.state === "idle" && data.endedAt && Math.abs(Date.now() - data.endedAt) < ENDED_FRESH_MS) {
+      return {
+        title: "Your co-op search ended",
+        body: "Nobody joined in time. Tap Play when you're back and you'll be first in line for the next player.",
+        url: "/coop",
       };
     }
     if (data && data.lookingCount > 0) {
@@ -43,6 +56,15 @@ async function describe() {
   return { title: "SpireVault co-op", body: "Something happened in co-op. Open SpireVault to see.", url: "/coop" };
 }
 
+// Buttons on "Party found!" (Chrome, Edge and Android show them; Safari shows
+// none and a tap opens the party as before). Neither counts as the player
+// being back at the page: "On my way" tells the party and restarts the five
+// minutes they have to get there, "Pass" gives the seat back at once.
+const MATCH_ACTIONS = [
+  { action: "omw", title: "On my way" },
+  { action: "pass", title: "Pass" },
+];
+
 self.addEventListener("push", (event) => {
   event.waitUntil(
     describe().then((n) =>
@@ -53,13 +75,33 @@ self.addEventListener("push", (event) => {
         tag: "coop-play",
         renotify: true,
         data: { url: n.url },
+        ...(n.matched ? { actions: MATCH_ACTIONS, requireInteraction: true } : {}),
       }),
     ),
   );
 });
 
+/** A party step from a ping's button, sent with the player's own cookie. */
+function partyStep(action) {
+  return fetch("/api/coop/play/action", {
+    method: "POST",
+    credentials: "include",
+    cache: "no-store",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ action, visible: false }),
+  }).catch(() => null);
+}
+
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
+  if (event.action === "omw") {
+    event.waitUntil(partyStep("omw"));
+    return;
+  }
+  if (event.action === "pass") {
+    event.waitUntil(partyStep("leave"));
+    return;
+  }
   const url = (event.notification.data && event.notification.data.url) || "/coop";
   event.waitUntil(
     self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((wins) => {

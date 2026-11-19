@@ -1,14 +1,15 @@
 // Co-op Play — what sits under the Play card.
 //
 //   · Right now          who is looking on each game version, who is in a party
+//                        (once you are in a party; before that the room's sky shows it)
 //   · Bring someone      the Discord post as friends will see it, Share and Copy link
 //   · Your co-op climbs  numbers from the player's own saves (lib/coop-climbs.js)
 //
 // Pure functions: (view model) → HTML string, like coop-play-view.js. Every
 // player's name goes through esc() before it reaches the page.
 
-import { esc, tieLastWords, CLIMBERS, ICON, shareButtonHtml, partySceneHtml, miniClimberHtml } from "/lib/coop-play-view.js?v=7";
-import { EMBED } from "/lib/coop-play-share.js?v=4";
+import { esc, tieLastWords, CLIMBERS, ICON, shareButtonHtml, partySceneHtml, miniClimberHtml } from "/lib/coop-play-view.js?v=10";
+import { EMBED } from "/lib/coop-play-share.js?v=5";
 
 /** A climber's name; one the app does not know is "Unknown". */
 function nameOf(id) {
@@ -228,13 +229,15 @@ function climbsHtml(m) {
 // MARK: - Whole section
 
 /**
- * @param {{ view: any, post: object | null, shared: string, climbs: object | null, hasRuns: boolean }} m
+ * `countsInRoom`: the card's room already shows the live counts in its sky
+ * (before a match), so the Right now line is left out here.
+ * @param {{ view: any, post: object | null, shared: string, climbs: object | null, hasRuns: boolean, countsInRoom?: boolean }} m
  */
 export function moreHtml(m) {
   const bring = bringHtml(m);
   return `
     <div class="cp-more${bring ? "" : " cp-more--solo"}">
-      ${nowHtml(m.view)}
+      ${m.countsInRoom ? "" : nowHtml(m.view)}
       <div class="cp-more-grid">
         ${bring}
         ${climbsHtml(m)}

@@ -13,7 +13,7 @@
  *   - no uncaught page errors, no 5xx, no failed same-origin static file
  *   - og:image points at the host being tested
  *   - /sw.js (the co-op ping worker; it caches nothing) is served as JavaScript
- *   - (optional) news post 015 carries the release date
+ *   - (optional) the newest news post carries the release date
  * A preview must never make the browser request production
  * (app.spirevault.app): Pages answers a not-yet-deployed /assets/ path with
  * HTML under a year-long cache header. On a preview such requests are
@@ -94,12 +94,13 @@ async function openTabs(page, look, viewport, engineName, options, problems) {
     ui: document.documentElement.dataset.ui || "classic",
     og: document.querySelector('meta[property="og:image"]')?.content || "",
     tabs: window.SpireVault.knownTabs(),
-    eyebrow: document.querySelector("#news-015")?.dataset?.newsEyebrow || "",
+    // Posts are in the page newest first.
+    eyebrow: document.querySelector(".news-post")?.dataset?.newsEyebrow || "",
   }));
   if (head.build !== options.build) problems.push(`${label}: build ${head.build}, expected ${options.build}`);
   if (head.ui !== look.expect) problems.push(`${label}: look is "${head.ui}", expected "${look.expect}"`);
   if (head.og && !options.isLocal && new URL(head.og).host !== options.host) problems.push(`${label}: og:image points at ${new URL(head.og).host}`);
-  if (options.newsDate && !head.eyebrow.includes(options.newsDate)) problems.push(`${label}: news 015 eyebrow is "${head.eyebrow}"`);
+  if (options.newsDate && !head.eyebrow.includes(options.newsDate)) problems.push(`${label}: the newest news post's eyebrow is "${head.eyebrow}"`);
   const seen = [];
   for (const tab of head.tabs.filter((t) => !SKIP_TABS.has(t))) {
     const switched = await page.evaluate((t) => window.SpireVault.switchTab(t), tab);
