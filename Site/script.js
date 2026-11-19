@@ -119,6 +119,18 @@
   let presenceInFlight = false;
   /** A request that goes silent is given up on, so the next tick can try again. */
   const PRESENCE_TIMEOUT_MS = 10_000;
+  /** After a miss, ask again this soon instead of waiting for the next tick. */
+  const PRESENCE_RETRY_MS = 5_000;
+  /** Misses in a row before the page says the count is unavailable. */
+  const PRESENCE_MISSES_BEFORE_DOWN = 2;
+  let presenceMisses = 0;
+
+  /** @param {string} path @param {AbortSignal | undefined} signal */
+  async function getServerJson(path, signal) {
+    const response = await fetch(`${SERVER_URL}${path}`, { cache: "no-store", signal });
+    if (!response.ok) throw new Error(`HTTP ${response.status} ${path}`);
+    return response.json();
+  }
 
   async function refreshPresence() {
     // A hidden tab does not need the number, and two answers must not race.
@@ -128,23 +140,26 @@
       const signal = typeof AbortSignal.timeout === "function" ? AbortSignal.timeout(PRESENCE_TIMEOUT_MS) : undefined;
       // "Signed up" is every account that has signed in (the server's user
       // records, the same total the app shows); "currently in" is how many of
-      // the co-op roster Steam shows in STS2 right now.
-      const [response, total] = await Promise.all([
-        fetch(`${SERVER_URL}/presence`, { cache: "no-store", signal }),
-        fetch(`${SERVER_URL}/stats/community`, { cache: "no-store", signal })
-          .then((r) => (r.ok ? r.json() : null))
-          .then((stats) => Number(stats?.totalClimbers) || 0)
-          .catch(() => 0),
+      // the co-op roster Steam shows in STS2 right now. Either answer alone
+      // is enough for a line, so one slow or failed request never hides both.
+      const [rosterAnswer, statsAnswer] = await Promise.allSettled([
+        getServerJson("/presence", signal),
+        getServerJson("/stats/community", signal),
       ]);
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const roster = await response.json();
-      const people = Array.isArray(roster) ? roster : [];
-      const inGame = people.filter((person) => person && person.inSTS2).length;
-      const count = Math.max(total, people.length);
+      const people = rosterAnswer.status === "fulfilled" && Array.isArray(rosterAnswer.value) ? rosterAnswer.value : null;
+      const total = statsAnswer.status === "fulfilled" ? Number(statsAnswer.value?.totalClimbers) || 0 : null;
+      if (people === null && total === null) throw new Error("count unreachable");
+      const inGame = people ? people.filter((person) => person && person.inSTS2).length : 0;
+      const count = Math.max(total ?? 0, people ? people.length : 0);
+      presenceMisses = 0;
       showPresence(presenceCopy(count, inGame), count === 0 ? "empty" : "live");
     } catch {
-      // The count is decoration; say so plainly and try again next tick.
-      showPresence(PRESENCE_DOWN, "down");
+      // One miss (a laptop waking up, a slow moment upstream) keeps whatever
+      // is showing and asks again shortly; only a second miss in a row says
+      // the count is unavailable, and from then on the normal tick retries.
+      presenceMisses += 1;
+      if (presenceMisses >= PRESENCE_MISSES_BEFORE_DOWN) showPresence(PRESENCE_DOWN, "down");
+      if (presenceMisses === 1) window.setTimeout(refreshPresence, PRESENCE_RETRY_MS);
     } finally {
       presenceInFlight = false;
     }
@@ -211,7 +226,7 @@
   const SHOT_ALT = Object.freeze({
     overview: "SpireVault Overview on sample data: a win-rate ring, run totals, and six stat cards fanned like a hand.",
     characters: "Characters tab on sample data: one banner per character with win rate and run count.",
-    ascensions: "Ascensions tab on sample data: a spire with one storey per ascension level, each with its win rate and run count, the highest one reached marked as your peak.",
+    ascensions: "Ascensions tab on sample data: a spire with one floor per ascension level, each with its win rate and run count, the highest one reached marked as your peak.",
     relics: "Top Relics tab on sample data: the three best relics on a podium with their in-game art, and a ranked list below.",
     cards: "Cards tab on sample data: the three most-picked cards on a podium, shown as real game cards, with pick counts and win rates.",
     runs: "Recent Runs tab on sample data: filter chips for outcome, ascension and character above a list of runs, each with its floor, time and a Victory or Defeat stamp.",
