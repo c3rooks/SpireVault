@@ -245,6 +245,85 @@ await check("a thin run stores no empty extras", async () => {
 
 // ---- reading the copy back ----------------------------------------------------------
 
+// ---- whose side of a co-op run a record tells ------------------------------------
+// Until 2026-11-22 the web reader took the first player in a co-op save, so a
+// player who joined a friend's game had the friend's climber, deck and card
+// picks on record. Records from a reader that knew the local player carry
+// `seat`; the copy must take those, and never trade one back for a record
+// that does not say.
+
+await check("a co-op record keeps whose side it tells; a solo one has none", async () => {
+  const env = fakeEnv();
+  await Runs.uploadRuns(env, STEAM_ID, { runs: [
+    fullRun({ id: "coop", seat: 1 }),
+    fullRun({ id: "solo", partySize: 1, party: undefined, seat: 0 }),
+    fullRun({ id: "outside", seat: 5 }),
+    fullRun({ id: "junk", seat: "1" }),
+    fullRun({ id: "half", seat: 0.5 }),
+  ] }, "web");
+  const byId = new Map((await stored(env)).map((run) => [run.id, run]));
+  assert.equal(byId.get("coop").seat, 1);
+  assert.equal("seat" in byId.get("solo"), false, "a solo run has no side to tell");
+  assert.equal("seat" in byId.get("outside"), false, "a seat outside the party is dropped");
+  assert.equal("seat" in byId.get("junk"), false);
+  assert.equal("seat" in byId.get("half"), false);
+});
+
+await check("a corrected co-op record replaces the one that showed a teammate", async () => {
+  const env = fakeEnv();
+  await Runs.uploadRuns(env, STEAM_ID, { runs: [fullRun({ character: "ironclad", deckAtEnd: ["bash"] })] }, "web");
+  await Runs.uploadRuns(env, STEAM_ID, { runs: [fullRun({ character: "silent", deckAtEnd: ["neutralize"], seat: 1 })] }, "web");
+  const [run] = await stored(env);
+  assert.equal(run.character, "silent");
+  assert.deepEqual(run.deckAtEnd, ["neutralize"]);
+  assert.equal(run.seat, 1);
+});
+
+await check("an older build's record never replaces a corrected one", async () => {
+  const env = fakeEnv();
+  await Runs.uploadRuns(env, STEAM_ID, { runs: [fullRun({ character: "silent", deckAtEnd: ["neutralize"], seat: 1 })] }, "web");
+  // Same run, same end time, from a tab still running the old reader.
+  await Runs.uploadRuns(env, STEAM_ID, { runs: [fullRun({ character: "ironclad", deckAtEnd: ["bash"] })] }, "web");
+  const [run] = await stored(env);
+  assert.equal(run.character, "silent", "the copy keeps the local player's side");
+  assert.deepEqual(run.deckAtEnd, ["neutralize"]);
+  assert.equal(run.seat, 1);
+});
+
+await check("end times do not decide between a record that knows the player and one that does not", async () => {
+  // Other readers stamp the same run's end differently, and a run sent with
+  // no end time is stamped with the upload time, which always looks later.
+  const env = fakeEnv();
+  await Runs.uploadRuns(env, STEAM_ID, { runs: [fullRun({ character: "silent", seat: 1 })] }, "web");
+  await Runs.uploadRuns(env, STEAM_ID, { runs: [fullRun({ character: "ironclad", endedAt: "2026-11-18T17:00:00.000Z" })] }, "macos");
+  assert.equal((await stored(env))[0].character, "silent", "a later record that does not say stays out");
+
+  const other = fakeEnv();
+  await Runs.uploadRuns(other, STEAM_ID, { runs: [fullRun({ character: "ironclad", endedAt: "2026-11-18T17:00:00.000Z" })] }, "macos");
+  await Runs.uploadRuns(other, STEAM_ID, { runs: [fullRun({ character: "silent", seat: 1 })] }, "web");
+  const [run] = await stored(other);
+  assert.equal(run.character, "silent", "an earlier record that knows the player still goes in");
+  assert.equal(run.seat, 1);
+});
+
+await check("between two records that both know the player, the later ending wins as before", async () => {
+  const env = fakeEnv();
+  await Runs.uploadRuns(env, STEAM_ID, { runs: [fullRun({ character: "silent", seat: 1, deckAtEnd: ["neutralize"] })] }, "web");
+  await Runs.uploadRuns(env, STEAM_ID, { runs: [fullRun({ character: "silent", seat: 1, deckAtEnd: ["neutralize", "backflip"], endedAt: "2026-11-18T17:00:00.000Z" })] }, "web");
+  assert.deepEqual((await stored(env))[0].deckAtEnd, ["neutralize", "backflip"]);
+});
+
+await check("card picks do not cross from a teammate's record to the local player's", async () => {
+  const env = fakeEnv();
+  await Runs.uploadRuns(env, STEAM_ID, { runs: [fullRun({ character: "ironclad" })] }, "web");
+  const { picks, cardChoices, ...noPicks } = fullRun({ character: "silent", seat: 1 });
+  await Runs.uploadRuns(env, STEAM_ID, { runs: [noPicks] }, "web");
+  const [run] = await stored(env);
+  assert.equal(run.character, "silent");
+  assert.equal(run.picks, undefined, "the first player's picks are not kept under the second player");
+  assert.equal((run.cardChoices ?? []).length, 0);
+});
+
 await check("GET hands back exactly what is stored", async () => {
   const env = fakeEnv();
   assert.deepEqual(JSON.parse(await Runs.getRunsText(env, STEAM_ID)), { runs: [], updatedAt: new Date(0).toISOString(), count: 0 }, "no copy yet: an empty list, not an error");

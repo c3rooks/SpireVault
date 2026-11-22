@@ -77,6 +77,10 @@ export interface RunSummary {
   /** A co-op party's characters, in the save's order; "" for one that could
    *  not be read. Left out for a solo run. */
   party?: string[];
+  /** Which of `party` this record is told from: the player whose save folder
+   *  it came from. Web builds since 2026-11-22 send it when they know; a
+   *  co-op record without it may show a teammate's character and deck. */
+  seat?: number;
 }
 
 /** The fields one record of a run may lack because the client that sent it
@@ -177,6 +181,14 @@ function sanitizePartySize(v: unknown): number | undefined {
   return Math.min(MAX_PARTY, Math.floor(v));
 }
 
+/** Whose side of a co-op run the record tells: the local player's place in
+ *  `party`. Only for a party of two or more, and only inside it. */
+function sanitizeSeat(v: unknown, partySize: number | undefined): number | undefined {
+  if (!partySize || partySize < 2) return undefined;
+  if (typeof v !== "number" || !Number.isInteger(v) || v < 0 || v >= partySize) return undefined;
+  return v;
+}
+
 /** A co-op party's characters. Entries stay in place ("" for one the client
  *  could not read) so a party of three keeps three entries. */
 function sanitizeParty(v: unknown): string[] | undefined {
@@ -194,6 +206,7 @@ function sanitizeRun(raw: unknown): RunSummary | null {
   const character = clampString(r.character, 32);
   if (!id || !character) return null;
   const choices = Array.isArray(r.cardChoices) ? r.cardChoices : [];
+  const partySize = sanitizePartySize(r.partySize);
   return {
     id,
     character,
@@ -223,8 +236,9 @@ function sanitizeRun(raw: unknown): RunSummary | null {
     wasAbandoned: r.wasAbandoned === true ? true : undefined,
     modifiers: optionalStringArr(r.modifiers, MAX_MODIFIERS),
     path: sanitizePath(r.path),
-    partySize: sanitizePartySize(r.partySize),
+    partySize,
     party: sanitizeParty(r.party),
+    seat: sanitizeSeat(r.seat, partySize),
   };
 }
 
@@ -237,13 +251,18 @@ function sanitizeRun(raw: unknown): RunSummary | null {
  *  would empty the Cards tab on every other device again. So whatever `kept`
  *  lacks, it takes from `other`. Returns `kept` itself when it lacks nothing. */
 function withDetailFrom(kept: RunSummary, other: RunSummary): RunSummary {
+  // Card picks (`picks`, `cardChoices`) are one player's. A record that does
+  // not say whose side it tells is the first player's (who every reader takes
+  // when it cannot tell), so picks only cross between records of the same side.
+  const sameSide = (kept.seat ?? 0) === (other.seat ?? 0);
   const filled: Partial<RunSummary> = {};
   for (const field of DETAIL_FIELDS) {
+    if (field === "picks" && !sameSide) continue;
     if (kept[field] === undefined && other[field] !== undefined) {
       Object.assign(filled, { [field]: other[field] });
     }
   }
-  if ((kept.cardChoices?.length ?? 0) === 0 && (other.cardChoices?.length ?? 0) > 0) {
+  if (sameSide && (kept.cardChoices?.length ?? 0) === 0 && (other.cardChoices?.length ?? 0) > 0) {
     filled.cardChoices = other.cardChoices;
   }
   return Object.keys(filled).length > 0 ? { ...kept, ...filled } : kept;
@@ -342,11 +361,19 @@ export async function uploadRuns(
       added++;
       byId.set(r.id, r);
     } else {
-      // Last-write-wins by endedAt: the later ending is the record that
-      // stays (the upload on a tie). Detail it lacks is kept from the other.
+      // A co-op record that knows whose side it tells (`seat`) stays over
+      // one that does not, which may be telling a teammate's: web builds
+      // before 2026-11-22, and the desktop apps' reader. End times do not
+      // decide between those two: readers do not stamp a run's end alike,
+      // and a run sent with none is stamped with the upload time.
+      // Otherwise last-write-wins by endedAt: the later ending is the record
+      // that stays (the upload on a tie). Detail it lacks is kept from the other.
       const a = Date.parse(prev.endedAt);
       const b = Date.parse(r.endedAt);
-      const takeUpload = Number.isFinite(b) && (!Number.isFinite(a) || b >= a);
+      const gainsSide = r.seat !== undefined && prev.seat === undefined;
+      const losesSide = prev.seat !== undefined && r.seat === undefined;
+      const isLater = !Number.isFinite(a) || b >= a;
+      const takeUpload = Number.isFinite(b) && !losesSide && (gainsSide || isLater);
       byId.set(r.id, takeUpload ? withDetailFrom(r, prev) : withDetailFrom(prev, r));
     }
   }
