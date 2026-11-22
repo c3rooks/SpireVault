@@ -8,8 +8,8 @@
     "sha256": "004c5c68670e48a5668f5375f4507d6130f7d4e1af883f5926ccc0462bdc2669"
   },
   "/lib/cloud-run-wire.js": {
-    "v": "2",
-    "sha256": "1863a6a6dce1b983e32a465695f408a6d5b038ce4956e736c17828e410b76e84"
+    "v": "3",
+    "sha256": "57a903a588ad71bb9553e3175a2eea02b96970fe6e506ad22c4ef312ba03323f"
   },
   "/lib/coop-climbs.js": {
     "v": "2",
@@ -67,21 +67,25 @@
     "v": "1",
     "sha256": "c566df0a4bbc3709fc67ae81f6cbc0367fb0870d1eb02e350eef975d611c2c4a"
   },
+  "/lib/run-owner.js": {
+    "v": "1",
+    "sha256": "d776400981bd9456885ad984f58b079815d3f490ce4f880048418ac2a2cf761c"
+  },
   "/lib/showtime-shared.js": {
     "v": "2",
     "sha256": "e15dd5152c6fbf0b6aa6872eb7b18eef52448835338448b9bc5e0605eed4c31f"
   },
   "/lib/stat-filters.js": {
-    "v": "2",
-    "sha256": "e69741cac27a66ce99b70d2c4f65351368b57f1a04d4a4a12df92459678e6f4a"
+    "v": "3",
+    "sha256": "ad89d59ff52663e7f93c56fca779f50dc0374b03788aa0e0b4167f51cdf4f465"
   },
   "/lib/stats-engine.js": {
-    "v": "8",
-    "sha256": "b6c4ced95438590e3ce226a97f4055555c766c4dd4c693594db2aa30a096bdaa"
+    "v": "9",
+    "sha256": "77521d7b5e5275342ecda1c92d6335ff94ace6668a1e986457eb17549c8ab1e5"
   },
   "/lib/sts2-run-parser.js": {
-    "v": "3",
-    "sha256": "3caef1cc89212c39fce28b24b1362843c16fc83b1a51b815876ed901966f7184"
+    "v": "4",
+    "sha256": "9879590e135148e04037f4cf20bd1efede38c9a90f451da00f60276c2d2c399f"
   },
   "/lib/sync-bridge-core.js": {
     "v": "1",
@@ -92,8 +96,8 @@
     "sha256": "68471555d03e5ea8c8ad64f7b316a252fdc9a56f6429e95560f81c0c6e8fd864"
   },
   "/lib/sync-bridge.js": {
-    "v": "1",
-    "sha256": "872c8bb0f3ff63386cef39e7ca5eda01a89885e43a72379d75848b4161184ee4"
+    "v": "2",
+    "sha256": "f81eeabe03caf00f10cd6915e61f91464c7698816b40e9def6a14fc3f2df27b6"
   },
   "/lib/ui/card-art-hd.js": {
     "v": "1",
@@ -268,8 +272,8 @@
     "sha256": "1f019e18a550964764d321df1b3df1cb52eb8954eb353c08fe096dcb4a37d177"
   },
   "/script.js": {
-    "v": "263",
-    "sha256": "03a113c60c5c5b537c1b3ee34b45bf6972b10b3cf0666a33dfd7ae95af99e6e5"
+    "v": "264",
+    "sha256": "0bf8092d359c7e8e6f6f1469f86eba25642ee374b3ccda11ade3aae479935c2f"
   },
   "/styles.css": {
     "v": "166",
