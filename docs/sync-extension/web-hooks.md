@@ -20,14 +20,16 @@ Each is anchored on text that exists unchanged in the v244 tree, the live v250 c
 1. **Import.** After `import * as OverlayEngine from "/lib/overlay-engine.js?v=1";`:
 
    ```js
-   import * as SyncBridge from "/lib/sync-bridge.js?v=1";
+   import * as SyncBridge from "/lib/sync-bridge.js?v=2";
    ```
 
-2. **`ingestHistoryFiles` takes `merge`.** The signature becomes:
+2. **`ingestHistoryFiles` takes `merge` and `owner`.** The signature becomes:
 
    ```js
-   async function ingestHistoryFiles(files, { silent = false, merge = false } = {}) {
+   async function ingestHistoryFiles(files, { silent = false, merge = false, owner = "" } = {}) {
    ```
+
+   `owner` is the Steam ID of the account folder the extension read (`reply.steamId`). A co-op save lists every player and does not mark the local one, so the reader needs it to show the player's own climber, deck and card picks instead of the first player listed (`Web/lib/run-owner.js`).
 
 3. **New files join the loaded runs.** The import commits whatever it is given as the whole run set, which is right for a folder pick and wrong for a sync that brings three new files. The line that calls `commitParsedRuns` becomes:
 
@@ -56,7 +58,7 @@ Each is anchored on text that exists unchanged in the v244 tree, the live v250 c
      getSteamId: () => session?.steamID || "",
      isSignedIn: () => Boolean(session?.steamID),
      runCount: () => (isDemoMode ? 0 : parsedRuns.length),
-     ingest: (files) => ingestHistoryFiles(files, { silent: true, merge: true }),
+     ingest: (files, from) => ingestHistoryFiles(files, { silent: true, merge: true, owner: from?.owner || "" }),
      pullCloud: () => hydrateFromCloudIfAvailable(),
      toast,
      onChange: () => { renderSyncPill(); renderToolbarEmptyPill(); },

@@ -13,8 +13,9 @@
 //   Co-op (presence + canned-message invite system + Steam deep-links)
 // =========================================================================
 
-import * as Stats from "/lib/stats-engine.js?v=8";
-import * as Filters from "/lib/stat-filters.js?v=2";
+import * as Stats from "/lib/stats-engine.js?v=9";
+import * as RunOwner from "/lib/run-owner.js?v=1";
+import * as Filters from "/lib/stat-filters.js?v=3";
 import * as HistoryStore from "/lib/history-store.js?v=9";
 import * as InviteAPI from "/lib/invites.js?v=4";
 import * as HighlightsAPI from "/lib/highlights.js?v=1";
@@ -23,8 +24,8 @@ import * as RunDates from "/lib/run-dates.js?v=1";
 import * as CharInfo from "/lib/character-info.js?v=3";
 import * as RelicInfo from "/lib/relic-info.js?v=4";
 import * as OverlayEngine from "/lib/overlay-engine.js?v=1";
-import * as SyncBridge from "/lib/sync-bridge.js?v=1";
-import * as CloudWire from "/lib/cloud-run-wire.js?v=2";
+import * as SyncBridge from "/lib/sync-bridge.js?v=2";
+import * as CloudWire from "/lib/cloud-run-wire.js?v=3";
 // Co-op is one-tap Play (lib/coop-play.js). The Play module is loaded on demand, for signed-in players only: it draws
 // the inked climbers from /lib/ui/, and signed-out visitors (classic look by
 // default) must not download any of the new UI.
@@ -91,7 +92,7 @@ const STS2_APP_ID = "2868840";
  * on an old client — instruct hard refresh. If it DOES match, the
  * bug is real and we can stop chasing cache ghosts.
  */
-const VAULT_BUILD = "v263-2026-11-19-arrange-your-overview";
+const VAULT_BUILD = "v264-2026-11-22-coop-runs-show-you";
 
 /** True on wrangler pages dev / local loopback — not production hostnames. */
 function isLocalDevHost() {
@@ -3184,7 +3185,7 @@ async function boot() {
     getSteamId: () => session?.steamID || "",
     isSignedIn: () => Boolean(session?.steamID),
     runCount: () => (isDemoMode ? 0 : parsedRuns.length),
-    ingest: (files) => ingestHistoryFiles(files, { silent: true, merge: true }),
+    ingest: (files, from) => ingestHistoryFiles(files, { silent: true, merge: true, owner: from?.owner || "" }),
     pullCloud: () => hydrateFromCloudIfAvailable(),
     toast,
     onChange: () => { renderSyncPill(); renderToolbarEmptyPill(); },
@@ -4235,9 +4236,34 @@ function cardPicksMissingNote() {
     + "Open SpireVault once on the computer where you read your saves and they'll appear here.";
 }
 
+/** Co-op runs on screen whose record does not say which player is this one:
+ *  every co-op run read before 2026-11-22 (the reader took the first player
+ *  listed, often the friend who hosted), and any read since with nothing to
+ *  tell the players apart. Reading the save folder again fixes them. */
+function coopRunsOfUnknownSide() {
+  return parsedRuns.filter((r) => Number.isFinite(r?.partySize) && r.partySize > 1 && !Number.isInteger(r.seat)).length;
+}
+
 /** What the runs status says right now, or null when it should hide
  *  (sample data has its own pill). */
 function runsStatus() {
+  const status = runsStatusBase();
+  if (!status) return status;
+  // Said only where Refresh can change it: a browser that has read the save
+  // folder. The desktop apps read saves with their own reader, which does not
+  // say whose side a co-op run is yet. A device that only shows the Steam
+  // copy is put right when the computer that reads the saves is.
+  const unsure = !IS_DESKTOP_HOST && savesLastReadAt() ? coopRunsOfUnknownSide() : 0;
+  if (unsure === 0) return status;
+  return {
+    ...status,
+    live: false,
+    stale: true,
+    sub: `${unsure} co-op ${unsure === 1 ? "run" : "runs"} may show a teammate's climber. Refresh your saves to fix.`,
+  };
+}
+
+function runsStatusBase() {
   if (isDemoMode || parsedRuns.length === 0) return null;
   // SpireVault Sync is reading the save folder for this tab: say so.
   const synced = SyncBridge.runsStatus({ count: parsedRuns.length });
@@ -6940,9 +6966,9 @@ async function collectFilesFromEntries(entries) {
       if (!allowedExt.test(entry.name || "")) return;
       const file = await new Promise((resolve, reject) => entry.file(resolve, reject));
       if (file) {
-        // Stash the relative path on the File object so error messages
-        // can say "profile1/saves/history/123.run" instead of "123.run".
-        try { file.webkitRelativePath = entry.fullPath || file.name; } catch {}
+        // Where the file sat in the dropped folder: the path names the
+        // Steam account whose saves these are (lib/run-owner.js).
+        RunOwner.notePath(file, entry.fullPath || file.name);
         out.push(file);
       }
       return;
@@ -7382,9 +7408,9 @@ async function collectFilesFromDirectoryHandle(dirHandle) {
         if (!allowedExt.test(name)) continue;
         try {
           const file = await entry.getFile();
-          // Path label so error messages reference where in the tree
-          // a bad file came from.
-          try { file.webkitRelativePath = `${prefix}${name}`; } catch {}
+          // Where the file sat in the picked folder: the path names the
+          // Steam account whose saves these are (lib/run-owner.js).
+          RunOwner.notePath(file, `${prefix}${name}`);
           out.push(file);
         } catch (e) {
           console.warn("[Vault] could not read", name, e);
@@ -7397,7 +7423,8 @@ async function collectFilesFromDirectoryHandle(dirHandle) {
       }
     }
   }
-  await walk(dirHandle, "", 0);
+  // The picked folder's own name leads the path: it may be the account folder.
+  await walk(dirHandle, `${dirHandle?.name || ""}/`, 0);
   return out;
 }
 
@@ -8059,7 +8086,21 @@ function startHistoryAutoRefresh() {
  * Used by both single-file and multi-file ingest so the validation +
  * decoding logic lives in exactly one place.
  */
-async function parseOneFile(file) {
+/**
+ * Reads one save file into runs. A co-op save does not say which player is
+ * the local one (lib/run-owner.js). When the file's folder, the account the
+ * caller read or the signed-in account names one of its players, or the save
+ * is solo, its runs come back at once. Otherwise the parsed save comes back
+ * as `undecided`, to be read once every file of the import has had its say
+ * (ingestHistoryFiles): only those few are held in memory meanwhile.
+ * @param {File} file
+ * @param {{ owner?: string, signedIn?: string }} [known] who the saves may belong to
+ * @returns {Promise<
+ *   { ok: true, runs: any[], coopIds: string[] }
+ *   | { ok: true, undecided: any, hints: string[], coopIds: string[] }
+ *   | { ok: false, error: string }>}
+ */
+async function readOneFile(file, { owner = "", signedIn = "" } = {}) {
   if (!file || typeof file.size !== "number") {
     return { ok: false, error: "Browser handed us an invalid file object." };
   }
@@ -8085,12 +8126,19 @@ async function parseOneFile(file) {
 
   let parsed;
   try {
-    parsed = JSON.parse(text);
+    // Player ids are 64-bit; quoted first so JSON.parse keeps every digit.
+    parsed = JSON.parse(RunOwner.keepPlayerIds(text));
   } catch (e) {
     return { ok: false, error: `${file.name || "File"} isn't valid JSON: ${e?.message || ""}` };
   }
 
-  return await Stats.extractRuns(parsed);
+  const coopIds = RunOwner.coopPlayerIds(parsed);
+  const hints = RunOwner.ownerHints({ path: RunOwner.pathOf(file), given: owner, signedIn });
+  if (coopIds.length > 0 && !RunOwner.localSeat(parsed.players, hints).known) {
+    return { ok: true, undecided: parsed, hints, coopIds };
+  }
+  const result = await Stats.extractRuns(parsed, { ownerIds: hints });
+  return result.ok ? { ...result, coopIds } : result;
 }
 
 /**
@@ -8104,7 +8152,7 @@ async function parseOneFile(file) {
  * function now accepts the raw save format directly so anyone can drop
  * their STS2 save folder and see their stats.
  */
-async function ingestHistoryFiles(files, { silent = false, merge = false } = {}) {
+async function ingestHistoryFiles(files, { silent = false, merge = false, owner = "" } = {}) {
   const list = Array.from(files || []).filter((f) => f && typeof f.size === "number");
   if (list.length === 0) {
     sendBeacon("ingest-files-empty", silent ? "silent" : "interactive");
@@ -8148,7 +8196,17 @@ async function ingestHistoryFiles(files, { silent = false, merge = false } = {})
 
   // Parse every file in parallel. A bad file in the middle of a folder
   // shouldn't blow up the rest of the import — log and keep going.
-  const results = await Promise.all(plausible.map((f) => parseOneFile(f)));
+  // Whose saves these are. A co-op save lists every player and does not mark
+  // the local one, so each file is read with hints, most trusted first: the
+  // Steam ID in its own path, the account folder the caller read (`owner`,
+  // from SpireVault Sync) and the signed-in account. A co-op save none of
+  // those settles waits for the vote: the player who is in more of this
+  // import's co-op saves than anyone else.
+  const read = await Promise.all(plausible.map((f) => readOneFile(f, { owner, signedIn: session?.steamID || "" })));
+  const voted = RunOwner.ownerByVote(read.map((r) => r.coopIds || []));
+  const results = await Promise.all(read.map((r) => (r.undecided
+    ? Stats.extractRuns(r.undecided, { ownerIds: voted ? [...r.hints, voted] : r.hints })
+    : r)));
 
   // Tally: collect every run that came out, dedupe by id (so dropping
   // both the rollup and the raw `.run` folder doesn't double-count),
@@ -8198,6 +8256,19 @@ async function ingestHistoryFiles(files, { silent = false, merge = false } = {})
       setTimeout(() => {
         toast(`${failedFiles} of ${plausible.length} files failed to parse${firstError ? ` (${(firstError).slice(0, 80)})` : ""}.`);
       }, 1200);
+    }
+  }
+
+  // Co-op runs where nothing said which player is the local one (the history
+  // folder picked by itself, signed out, and no vote): they show the first
+  // player listed, as before. Say how to settle it.
+  const unsureCoop = runs.filter((r) => Number.isFinite(r?.partySize) && r.partySize > 1 && !Number.isInteger(r.seat)).length;
+  if (unsureCoop > 0) {
+    sendBeacon("ingest-coop-side-unknown", `runs=${unsureCoop}/${runs.length}`);
+    if (!silent) {
+      setTimeout(() => {
+        toast(`Couldn't tell which player is you in ${unsureCoop} co-op ${unsureCoop === 1 ? "run" : "runs"}. Sign in with Steam, or pick the whole SlayTheSpire2 folder, then Refresh.`);
+      }, 2400);
     }
   }
 
@@ -9785,7 +9856,7 @@ function renderDemoBanner() {
 let cachedKnownSchemas = null;
 async function loadKnownSchemas() {
   if (cachedKnownSchemas) return cachedKnownSchemas;
-  const mod = await import("./lib/sts2-run-parser.js?v=3");
+  const mod = await import("./lib/sts2-run-parser.js?v=4");
   cachedKnownSchemas = mod.KNOWN_SCHEMA_VERSIONS || new Set();
   return cachedKnownSchemas;
 }

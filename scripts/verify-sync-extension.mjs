@@ -180,9 +180,13 @@ async function fileSwitch(context, extensionId) {
 const pillText = (page) => page.locator(PILL).innerText().then((text) => text.replace(/\s+/g, " ").trim());
 const waitForPill = (page, pattern, timeout = SYNC_TIMEOUT_MS) =>
   page.waitForFunction(({ selector, source }) => new RegExp(source).test((document.querySelector(selector)?.textContent || "").replace(/\s+/g, " ")), { selector: PILL, source: pattern.source }, { timeout });
+/** The bridge exactly as the app imports it. Any other address (an old `?v=`)
+ *  loads a second copy of the module that never started and stays "unknown". */
+const BRIDGE_URL = /"(\/lib\/sync-bridge\.js\?v=\d+)"/.exec(readFileSync(join(WEB_ROOT, "script.js"), "utf8"))?.[1];
+assert.ok(BRIDGE_URL, "script.js imports /lib/sync-bridge.js with a version");
 /** The bridge's state. waitForFunction does not wait for a promise, so the module is put on the window first. */
 async function bridge(page) {
-  await page.evaluate(async () => { window.__syncBridge = window.__syncBridge || await import("/lib/sync-bridge.js?v=1"); });
+  await page.evaluate(async (url) => { window.__syncBridge = window.__syncBridge || await import(url); }, BRIDGE_URL);
 }
 async function phase(page) {
   await bridge(page);

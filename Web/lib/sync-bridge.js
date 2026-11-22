@@ -72,7 +72,7 @@ const state = { phase: "unknown", os: "", version: "", lastOkAt: 0 };
 
 /** @type {null | {
  *   getSteamId: () => string, isSignedIn: () => boolean, runCount: () => number,
- *   ingest: (files: File[]) => Promise<boolean>, pullCloud: () => Promise<{ failed?: boolean } | undefined>,
+ *   ingest: (files: File[], from?: { owner: string }) => Promise<boolean>, pullCloud: () => Promise<{ failed?: boolean } | undefined>,
  *   toast: (message: string) => void, onChange: () => void, isDesktopHost: boolean,
  * }} */
 let deps = null;
@@ -252,11 +252,15 @@ async function syncOnce({ everything }) {
     // A page with no runs holds nothing, whatever the record says (cleared data, another account).
     let known = everything || deps.runCount() === 0 ? {} : loadKnown(owner, deps.runCount());
     const collected = [];
+    // The account folder the extension read: whose saves these are, which a
+    // co-op save does not say for itself (lib/run-owner.js).
+    let readFrom = owner;
     let chars = 0;
     for (let pass = 0; pass < MAX_SYNC_PASSES && chars < MAX_SYNC_CHARS; pass += 1) {
       const reply = await ask("sync", { steamId: owner, known });
       if (!reply || reply.reason === "no-answer") { void probe(); return -1; }
       if (reply.ok !== true) { applyFailure(reply.reason); return -1; }
+      if (typeof reply.steamId === "string" && reply.steamId) readFrom = reply.steamId;
       const readable = readableFiles(reply.files);
       for (const file of readable) chars += file.text.length;
       collected.push(...readable);
@@ -271,7 +275,7 @@ async function syncOnce({ everything }) {
     const before = deps.runCount();
     if (collected.length > 0) {
       const files = collected.map((file) => new File([file.text], file.name, { type: "application/json", lastModified: file.mtime * 1000 }));
-      const wasTakenIn = await deps.ingest(files);
+      const wasTakenIn = await deps.ingest(files, { owner: readFrom });
       if (!wasTakenIn) {
         // Nothing parsed. Leave the record as it was, so these files are read
         // again later (a newer build may understand them), but not every pass.

@@ -98,6 +98,10 @@ preflight:
 	@# shows: it must carry card picks, abandoned runs, modes, the party and
 	@# the act timeline. It held no card picks at all until 2026-11-18.
 	@node scripts/verify-cloud-run-wire.mjs || { echo "✘ Steam copy check failed"; exit 1; }
+	@# A co-op save lists every player and does not mark the local one. The
+	@# reader took the first until 2026-11-22, so a player who joined a
+	@# friend's game saw the friend's climber, deck and card picks.
+	@node scripts/verify-run-owner.mjs || { echo "✘ co-op run owner check failed"; exit 1; }
 	@# Section filters (By character mode + ascension, the Ascensions climber
 	@# and ladder) and the per-character win streak: offline, no browser.
 	@node scripts/verify-stat-filters.mjs || { echo "✘ stat filters check failed"; exit 1; }

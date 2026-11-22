@@ -49,6 +49,8 @@
  * the renderers don't know the difference.
  */
 
+import { idText, localSeat, sameId } from "./run-owner.js?v=1";
+
 // "fool" is The Fool, the STS2 public-beta character (v0.113.0). It is
 // not on the main branch yet, so only beta players' saves carry it.
 const VALID_CHAR_KEYS = new Set(["ironclad", "silent", "regent", "necrobinder", "defect", "fool"]);
@@ -83,14 +85,42 @@ export function looksLikeSTS2Run(obj) {
 }
 
 /**
+ * The local player's row of one floor's `player_stats`. A co-op floor has a
+ * row per player, each with that player's id as `player_id`; the rows are not
+ * promised to be in the player list's order, so the id decides. A floor may
+ * hold fewer rows than players; a row carrying another player's id is never
+ * taken for ours. The seat decides only for rows that carry no id.
+ * @param {any} point one map point
+ * @param {any} player the local player's entry in `players`
+ * @param {number} seatIndex where that entry is in `players`
+ * @param {boolean} isCoop whether the save lists more than one player
+ */
+function statsOf(point, player, seatIndex, isCoop) {
+  const rows = Array.isArray(point.player_stats) ? point.player_stats : [];
+  if (!isCoop) return rows[0] ?? null;
+  const mine = rows.find((row) => sameId(row?.player_id, player?.id));
+  if (mine) return mine;
+  const bySeat = rows[seatIndex] ?? rows[0] ?? null;
+  const isSomeoneElses = Boolean(idText(bySeat?.player_id)) && Boolean(idText(player?.id));
+  return isSomeoneElses ? null : bySeat;
+}
+
+/**
  * Parse one STS2 `.run` JSON object → normalized run record.
  * Returns `null` if the object isn't actually an STS2 run (so callers
  * can chain through other parsers without throwing).
  */
-export function parseSTS2Run(obj, sourceName = "unknown.run") {
+export function parseSTS2Run(obj, sourceName = "unknown.run", context = {}) {
   if (!looksLikeSTS2Run(obj)) return null;
 
-  const player = obj.players[0];
+  // Whose run this is. A co-op save lists every player, in an order that has
+  // nothing to do with whose computer wrote it, so the caller says who the
+  // local player is (lib/run-owner.js). With no hint that names anyone in the
+  // list it is the first player, as it always was, and `seat` is left out so
+  // the app knows the run may show a teammate's side.
+  const isCoop = obj.players.length > 1;
+  const seat = localSeat(obj.players, context?.ownerIds);
+  const player = obj.players[seat.index];
 
   // Stable id. STS2 doesn't ship one, so we fingerprint with start_time
   // (a Unix epoch second). Falls back to seed+random if the run never
@@ -136,11 +166,11 @@ export function parseSTS2Run(obj, sourceName = "unknown.run") {
   }
   // Everyone in the run, in the file's order. A co-op save lists each player
   // (the game's RunHistoryPlayer: a 64-bit id, the character, deck, relics).
-  // Nothing in it says which entry is the local player, so `character`, the
-  // deck and the relics on this record stay the first player's, as they
-  // always were; `party` is for co-op numbers about the party as a whole
-  // (lib/coop-climbs.js). A character we cannot read is kept as null.
-  const party = obj.players.map((p, i) => (i === 0 ? character : extractCharacter(p) || parseCharacter(p?.character)) || null);
+  // `character`, the deck, the relics and the card picks on this record are
+  // the local player's (`seat`, above); `party` is for co-op numbers about
+  // the party as a whole (lib/coop-climbs.js). A character we cannot read is
+  // kept as null.
+  const party = obj.players.map((p, i) => (i === seat.index ? character : extractCharacter(p) || parseCharacter(p?.character)) || null);
   const ascension = Number.isFinite(obj.ascension) ? Math.max(0, Math.min(20, obj.ascension | 0)) : null;
   const seed = typeof obj.seed === "string" ? obj.seed : null;
   const won = obj.win === true || obj.win === 1;
@@ -266,7 +296,7 @@ export function parseSTS2Run(obj, sourceName = "unknown.run") {
         actNodes.push({ floor, type });
 
         if (!point || typeof point !== "object") continue;
-        const stats = Array.isArray(point.player_stats) ? point.player_stats[0] : null;
+        const stats = statsOf(point, player, seat.index, isCoop);
         if (stats) {
           latestStats = stats;
           latestRoomType = type;
@@ -335,6 +365,10 @@ export function parseSTS2Run(obj, sourceName = "unknown.run") {
     character,
     partySize: obj.players.length,
     party,
+    // Where the local player stands in `party`. Left out of a co-op run when
+    // nothing said who that is (the record then shows the first player).
+    // Co-op only: a solo record is what it always was.
+    ...(isCoop && seat.known ? { seat: seat.index } : {}),
     ascension,
     seed,
     won,

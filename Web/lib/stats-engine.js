@@ -303,7 +303,12 @@ export function applyFilter(runs, filter = {}) {
  * Returns `{ ok, runs, error? }`. `runs` is always normalized into the
  * shape downstream stats math expects, regardless of input shape.
  */
-export async function extractRuns(parsed) {
+/**
+ * @param {unknown} parsed a save file as parsed JSON
+ * @param {{ ownerIds?: Iterable<string> }} [context] who the local player is,
+ *   for a co-op `.run` file (lib/run-owner.js): hints, most trusted first
+ */
+export async function extractRuns(parsed, context = {}) {
   // Shape 2: raw STS2 `.run` file. Look for the fingerprint and dispatch
   // to the dedicated parser. Lazy-loaded so the rollup path stays sync.
   if (parsed && typeof parsed === "object" && !Array.isArray(parsed)
@@ -312,8 +317,8 @@ export async function extractRuns(parsed) {
     // `immutable` for a year, so an unversioned URL here would pin whatever
     // parser a user first downloaded. This is the file that has to change the
     // day STS2 ships a new save schema. Bump on every parser edit.
-    const { parseSTS2Run } = await import("./sts2-run-parser.js?v=3");
-    const r = parseSTS2Run(parsed, "drop.run");
+    const { parseSTS2Run } = await import("./sts2-run-parser.js?v=4");
+    const r = parseSTS2Run(parsed, "drop.run", context);
     if (!r) return { ok: false, error: "File has STS2 run shape but couldn't be parsed." };
     return { ok: true, runs: [r] };
   }

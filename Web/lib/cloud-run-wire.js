@@ -177,7 +177,33 @@ export function toWire(run) {
     party: partySize && partySize > 1 && Array.isArray(run.party)
       ? run.party.slice(0, LIMITS.party).map((climber) => (typeof climber === "string" ? climber : ""))
       : undefined,
+    // Which of the party this record is told from (lib/run-owner.js). Only a
+    // co-op run whose reader knew the local player has it; a record without
+    // it may show a teammate's climber, and gives way to one that has it.
+    seat: knownSeat(run, partySize),
   };
+}
+
+/**
+ * @param {any} run @param {number | undefined} partySize
+ * @returns {number | undefined} the local player's place in a co-op party, when known
+ */
+function knownSeat(run, partySize) {
+  if (!partySize || partySize < 2) return undefined;
+  return Number.isInteger(run?.seat) && run.seat >= 0 && run.seat < partySize ? run.seat : undefined;
+}
+
+/** Whether a record says whose side of the run it tells: always, for a solo run. @param {any} run a loaded run */
+export function hasSeat(run) {
+  return !(Number.isFinite(run?.partySize) && run.partySize > 1) || knownSeat(run, run.partySize) !== undefined;
+}
+
+/** Whether two records of one run tell the same player's side. A record that
+ *  does not say tells the first player's: that is who every reader takes when
+ *  it cannot tell. @param {any} a @param {any} b loaded runs */
+function sameSide(a, b) {
+  const sideOf = (run) => knownSeat(run, run?.partySize) ?? 0;
+  return sideOf(a) === sideOf(b);
 }
 
 /** @param {unknown} path @returns {Array<{ act: number, nodes: Array<{ floor: number, type: string }> }>} */
@@ -257,7 +283,7 @@ function cardPicksFromWire(picks, cardChoices, roomByFloor) {
  * @param {any} wire
  */
 export function fromWire(wire) {
-  const { picks, cardChoices, path, party, partySize, ...rest } = wire ?? {};
+  const { picks, cardChoices, path, party, partySize, seat, ...rest } = wire ?? {};
   const pathByAct = pathFromWire(path);
   const roomByFloor = new Map(pathByAct.flatMap((act) => act.nodes.map((node) => /** @type {[number, string]} */ ([node.floor, node.type]))));
   const size = Number.isFinite(partySize) ? Math.max(1, Math.min(LIMITS.party, Math.floor(partySize))) : undefined;
@@ -272,6 +298,7 @@ export function fromWire(wire) {
     pathByAct,
     ...(size ? { partySize: size } : {}),
     ...(listed ? { party: listed } : {}),
+    ...(knownSeat({ seat }, size) !== undefined ? { seat } : {}),
   };
 }
 
@@ -291,13 +318,18 @@ function endTime(run) {
 }
 
 /**
- * Which copy of one run is the newer record: the Steam copy's, or the
- * device's. A later end time wins, as it always has (the run was finalized
- * again). At the same end time both describe one save file, so the one
- * holding more of it wins.
+ * Which copy of one run is the record to keep: the Steam copy's, or the
+ * device's. A co-op record that knows the local player beats one that may be
+ * telling a teammate's side (every record written before 2026-11-22, and the
+ * desktop apps' until their reader learns it), whatever their end times:
+ * readers do not all stamp a run's end alike, and a run sent with no end time
+ * is stamped with the upload time. Otherwise a later end time wins, as it
+ * always has (the run was finalized again), and at the same end time both
+ * describe one save file, so the one holding more of it wins.
  * @param {any} local a loaded run @param {any} cloud the same run from the copy, loaded
  */
 export function cloudCopyWins(local, cloud) {
+  if (hasSeat(cloud) !== hasSeat(local)) return hasSeat(cloud);
   const localEnd = endTime(local);
   const cloudEnd = endTime(cloud);
   if (cloudEnd !== localEnd) return cloudEnd > localEnd;
@@ -330,6 +362,8 @@ export function bestOf(local, cloud) {
   const other = winner === cloud ? local : cloud;
   const filled = {};
   for (const field of DETAIL_FIELDS) {
+    // Card picks are one player's: never a teammate's under the local player's climber.
+    if (field === "cardPicks" && !sameSide(winner, other)) continue;
     if (!isFilled(winner?.[field]) && isFilled(other?.[field])) filled[field] = other[field];
   }
   return Object.keys(filled).length > 0 ? { ...winner, ...filled } : winner;
@@ -348,12 +382,12 @@ export function hasRunsCopyLacks(localRuns, cloudRuns) {
  * What a record of a run holds beyond the totals. Each is something every
  * build since 2026-11-18 sends when the save has it, so a record without it
  * was written by an older build (or the save had none).
- * @typedef {{ hasPicks: boolean, hasPath: boolean, hasPartySize: boolean }} RunDetail
+ * @typedef {{ hasPicks: boolean, hasPath: boolean, hasPartySize: boolean, hasSeat: boolean }} RunDetail
  */
 
 /** @param {any} run a loaded run @returns {RunDetail} */
 function detailOf(run) {
-  return { hasPicks: hasCardPicks(run), hasPath: hasPath(run), hasPartySize: Number.isFinite(run?.partySize) };
+  return { hasPicks: hasCardPicks(run), hasPath: hasPath(run), hasPartySize: Number.isFinite(run?.partySize), hasSeat: hasSeat(run) };
 }
 
 /**
@@ -363,7 +397,8 @@ function detailOf(run) {
  * @param {RunDetail} local @param {RunDetail} held
  */
 function hasMoreDetail(local, held) {
-  return (local.hasPicks && !held.hasPicks) || (local.hasPath && !held.hasPath) || (local.hasPartySize && !held.hasPartySize);
+  return (local.hasPicks && !held.hasPicks) || (local.hasPath && !held.hasPath) || (local.hasPartySize && !held.hasPartySize)
+    || (local.hasSeat && !held.hasSeat);
 }
 
 /**
@@ -409,7 +444,7 @@ export function indexOfCopy(wireRuns) {
     const hasPicks = (typeof run.picks === "string" && run.picks.length > 0)
       || (Array.isArray(run.cardChoices) && run.cardChoices.length > 0);
     const hasRooms = Array.isArray(run.path) && run.path.some((act) => typeof act === "string" && act.length > 0);
-    index.set(run.id, { end: Date.parse(run.endedAt) || 0, hasPicks, hasPath: hasRooms, hasPartySize: Number.isFinite(run.partySize) });
+    index.set(run.id, { end: Date.parse(run.endedAt) || 0, hasPicks, hasPath: hasRooms, hasPartySize: Number.isFinite(run.partySize), hasSeat: hasSeat(run) });
   }
   return index;
 }
@@ -448,6 +483,8 @@ export function indexAfterSend(index, sent) {
       hasPicks: Boolean(held?.hasPicks) || sentDetail.hasPicks,
       hasPath: Boolean(held?.hasPath) || sentDetail.hasPath,
       hasPartySize: Boolean(held?.hasPartySize) || sentDetail.hasPartySize,
+      // The upload stays on a tie, so the copy now says what was sent.
+      hasSeat: sentDetail.hasSeat,
     });
   }
   return next;

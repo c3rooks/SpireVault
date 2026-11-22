@@ -18,7 +18,7 @@
 // no storage, no input mutation. Checked by scripts/verify-stat-filters.mjs.
 // =========================================================================
 
-import { offLadderMode } from "./stats-engine.js?v=8";
+import { offLadderMode } from "./stats-engine.js?v=9";
 
 /** @typedef {"all"|"standard"|"blitz"|"dread"} ModeId */
 /** @typedef {"standard"|"blitz"} LadderId */

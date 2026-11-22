@@ -23,6 +23,8 @@
 
 import { chromium } from "playwright";
 import { spawn } from "node:child_process";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import assert from "node:assert/strict";
@@ -3627,7 +3629,175 @@ async function runDates(browser) {
 }
 
 
+// ---- Whose side of a co-op run is shown ------------------------------------------
+// A co-op save lists every player and does not mark the local one. The reader
+// took the first until 2026-11-22, so a player who joined a friend's game saw
+// the friend's climber. These go through the real import (the folder input).
+
+/** A friend's Steam ID, listed first in the co-op save: the friend hosted. */
+const COOP_FRIEND = "76561198000004177";
+
+/** A save's text the way the game writes it: player ids as bare 64-bit numbers. */
+function coopSaveText(players, start) {
+  const isMe = (id) => id === TEST_SESSION.steamID;
+  const climber = (id) => (isMe(id) ? "SILENT" : "IRONCLAD");
+  const entry = (id) => `{"character":"CHARACTER.${climber(id)}","deck":[{"id":"CARD.STRIKE_${climber(id)}","current_upgrade_level":0}],"id":${id},"max_potion_slot_count":3,"potions":[],"relics":[{"id":"RELIC.BURNING_BLOOD"}]}`;
+  const stats = (id) => `{"card_choices":[{"card":{"id":"CARD.${isMe(id) ? "BLADE_DANCE" : "INFLAME"}"},"was_picked":true}],"current_gold":99,"current_hp":40,"max_hp":80,"player_id":${id}}`;
+  return `{"acts":["ACT.OVERGROWTH"],"ascension":3,"build_id":"v0.113.0","game_mode":"standard","killed_by_encounter":"NONE.NONE","map_point_history":[[{"map_point_type":"monster","player_stats":[${players.map(stats).join(",")}],"rooms":[{"room_type":"monster"}]}]],"platform_type":"steam","players":[${players.map(entry).join(",")}],"run_time":900,"schema_version":11,"seed":"COOPSEED","start_time":${start},"was_abandoned":false,"win":true}`;
+}
+
+/** Another friend, for imports where the saves themselves tell who the local player is. */
+const COOP_FRIEND_2 = "76561198000090211";
+
+/**
+ * A save folder on disk with co-op runs friends hosted.
+ * @param {"account" | "history"} level what the player will pick: the folder
+ *   that holds `steam/<id>/…`, or the history folder by itself
+ * @param {string[][]} [parties] each run's players in the save's order
+ * @returns {{ pick: string, dispose: () => void }}
+ */
+function coopSaveFolder(level, parties = [[COOP_FRIEND, TEST_SESSION.steamID]]) {
+  const root = mkdtempSync(join(tmpdir(), "vault-coop-owner-"));
+  const history = join(root, "SlayTheSpire2", "steam", TEST_SESSION.steamID, "profile1", "saves", "history");
+  mkdirSync(history, { recursive: true });
+  parties.forEach((players, i) => {
+    const start = 1790000000 + i * 86_400;
+    writeFileSync(join(history, `${start}.run`), coopSaveText(players, start));
+  });
+  return { pick: level === "account" ? join(root, "SlayTheSpire2") : history, dispose: () => rmSync(root, { recursive: true, force: true }) };
+}
+
+/** What the app shows once an import lands: the status line (Overview has it) and each run's climber. */
+async function shownAfterImport(page) {
+  await page.waitForFunction(() => window.SpireVault.activeTab() === "overview"
+    && [...document.querySelectorAll("[data-sync-pill]")].some((el) => el.getClientRects().length > 0 && el.textContent.trim()), null, { timeout: BOOT_TIMEOUT_MS });
+  const status = await page.evaluate(() => [...document.querySelectorAll("[data-sync-pill]")]
+    .find((el) => el.getClientRects().length > 0)?.textContent.replace(/\s+/g, " ").trim() ?? "");
+  await page.evaluate(() => window.SpireVault.switchTab("runs"));
+  await page.waitForSelector("#runs-body .run-row");
+  const climbers = await page.evaluate(() => [...document.querySelectorAll("#runs-body .run-row")].map((row) => row.dataset.char));
+  return { status, climbers };
+}
+
+/** Linux Chrome: the one desktop where the app opens the browser's own folder picker. */
+const LINUX_CHROME = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36";
+
+async function runCoopOwner(browser) {
+  await check("a co-op run a friend hosted shows your own climber when the folder says whose saves they are", async () => {
+    const folder = coopSaveFolder("account");
+    const { context, page, errors } = await open(browser, "/?ui=next");
+    try {
+      await page.setInputFiles("#history-folder-input", folder.pick);
+      const shown = await shownAfterImport(page);
+      assert.deepEqual(shown.climbers, ["silent"], "the local player's climber, not the host's Ironclad");
+      assert.match(shown.status, /^Saves read /);
+      assert.doesNotMatch(shown.status, /teammate/, "nothing to warn about");
+      assert.deepEqual(errors, []);
+    } finally {
+      await context.close();
+      folder.dispose();
+    }
+  });
+
+  await check("with only the history folder and nobody signed in, it is the first player, and the status says how to fix it", async () => {
+    const folder = coopSaveFolder("history");
+    const { context, page, errors } = await open(browser, "/?ui=next");
+    try {
+      await page.setInputFiles("#history-folder-input", folder.pick);
+      const shown = await shownAfterImport(page);
+      assert.deepEqual(shown.climbers, ["ironclad"], "nothing says who the local player is");
+      assert.match(shown.status, /1 co-op run may show a teammate's climber\. Refresh your saves to fix\./);
+      assert.deepEqual(errors, []);
+    } finally {
+      await context.close();
+      folder.dispose();
+    }
+  });
+
+  await check("signed in with Steam, the history folder alone is enough", async () => {
+    const folder = coopSaveFolder("history");
+    const { context, page, errors } = await open(browser, "/?ui=next", { signedIn: true });
+    try {
+      await page.setInputFiles("#history-folder-input", folder.pick);
+      const shown = await shownAfterImport(page);
+      assert.deepEqual(shown.climbers, ["silent"]);
+      assert.doesNotMatch(shown.status, /teammate/);
+      assert.deepEqual(errors, []);
+    } finally {
+      await context.close();
+      folder.dispose();
+    }
+  });
+
+  await check("with nothing else to go on, the saves vote: you are the player in most of them", async () => {
+    const folder = coopSaveFolder("history", [[COOP_FRIEND, TEST_SESSION.steamID], [COOP_FRIEND_2, TEST_SESSION.steamID]]);
+    const { context, page, errors } = await open(browser, "/?ui=next");
+    try {
+      await page.setInputFiles("#history-folder-input", folder.pick);
+      const shown = await shownAfterImport(page);
+      assert.deepEqual(shown.climbers, ["silent", "silent"], "both friends' games show the local player");
+      assert.doesNotMatch(shown.status, /teammate/);
+      assert.deepEqual(errors, []);
+    } finally {
+      await context.close();
+      folder.dispose();
+    }
+  });
+
+  await check("a dropped SlayTheSpire2 folder says whose saves they are too", async () => {
+    const { context, page, errors } = await open(browser, "/?ui=next");
+    try {
+      await page.evaluate(({ text, me }) => {
+        // A dropped folder reaches a page as entries; these stand in for the browser's.
+        const fileEntry = (name, fullPath) => ({ isFile: true, isDirectory: false, name, fullPath, file: (done) => done(new File([text], name)) });
+        const dirEntry = (name, fullPath, children) => ({
+          isFile: false, isDirectory: true, name, fullPath,
+          createReader: () => { let read = false; return { readEntries: (done) => { done(read ? [] : children); read = true; } }; },
+        });
+        const parts = ["SlayTheSpire2", "steam", me, "profile1", "saves", "history"];
+        let entry = fileEntry("1790000000.run", `/${parts.join("/")}/1790000000.run`);
+        for (let depth = parts.length; depth > 0; depth--) entry = dirEntry(parts[depth - 1], `/${parts.slice(0, depth).join("/")}`, [entry]);
+        const drop = new Event("drop", { bubbles: true, cancelable: true });
+        Object.defineProperty(drop, "dataTransfer", { value: { types: ["Files"], files: [], items: [{ kind: "file", webkitGetAsEntry: () => entry }] } });
+        window.dispatchEvent(drop);
+      }, { text: coopSaveText([COOP_FRIEND, TEST_SESSION.steamID], 1790000000), me: TEST_SESSION.steamID });
+      const shown = await shownAfterImport(page);
+      assert.deepEqual(shown.climbers, ["silent"]);
+      assert.doesNotMatch(shown.status, /teammate/);
+      assert.deepEqual(errors, []);
+    } finally {
+      await context.close();
+    }
+  });
+
+  await check("so does a folder picked in the browser's own folder picker", async () => {
+    const { context, page, errors } = await open(browser, "/?ui=next", { userAgent: LINUX_CHROME });
+    try {
+      await page.evaluate(async ({ text, me }) => {
+        // The browser's private folder store gives a real folder handle to walk.
+        const root = await navigator.storage.getDirectory();
+        let dir = root;
+        for (const name of ["steam", me, "profile1", "saves", "history"]) dir = await dir.getDirectoryHandle(name, { create: true });
+        const writer = await (await dir.getFileHandle("1790000000.run", { create: true })).createWritable();
+        await writer.write(text);
+        await writer.close();
+        window.showDirectoryPicker = async () => root;
+        // The app asks the platform as well as the user agent which desktop this is.
+        Object.defineProperty(Navigator.prototype, "platform", { configurable: true, get: () => "Linux x86_64" });
+        document.querySelector('[data-action="scan"]').click();
+      }, { text: coopSaveText([COOP_FRIEND, TEST_SESSION.steamID], 1790000000), me: TEST_SESSION.steamID });
+      const shown = await shownAfterImport(page);
+      assert.deepEqual(shown.climbers, ["silent"]);
+      assert.doesNotMatch(shown.status, /teammate/);
+      assert.deepEqual(errors, []);
+    } finally {
+      await context.close();
+    }
+  });
+}
+
 const GROUPS = Object.freeze({
+  owner: runCoopOwner,
   dates: runDates,
   saves: runSaves,
   core: run,
