@@ -11,10 +11,10 @@
 // motion: moves are instant.
 
 import { esc } from "../html.js?v=1";
-import { overviewHtml } from "../views.js?v=9";
+import { overviewHtml } from "../views.js?v=10";
 import * as Layout from "./layout.js?v=1";
-import { WIDGETS, CATALOG, DEFAULT_ENTRIES, cellHtml } from "./registry.js?v=2";
-import { loadLayout, saveLayout } from "./store.js?v=2";
+import { WIDGETS, CATALOG, DEFAULT_ENTRIES, cellHtml } from "./registry.js?v=3";
+import { loadLayout, saveLayout } from "./store.js?v=3";
 
 const LONG_PRESS_MS = 250;
 const DRAG_START_PX = 4;
@@ -606,7 +606,7 @@ export function enterArrange(deps) {
   }
 
   async function openGallery() {
-    const { openGallery: open } = await import("./gallery.js?v=2");
+    const { openGallery: open } = await import("./gallery.js?v=3");
     open({
       layout,
       ctx,

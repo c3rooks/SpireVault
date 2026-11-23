@@ -6,8 +6,9 @@
 // A signed-in player's other devices (a phone, a second browser, any browser
 // that has not read the save folder) show nothing but this copy. So it has to
 // carry what the tabs show, not only the totals: card picks (Cards, the run
-// sheet), whether a run was abandoned, its mode and modifiers, its party and
-// the rooms it walked (the act timeline).
+// sheet), whether a run was abandoned, its mode and modifiers, whether it was
+// a Custom Run (left out of win streaks), its party and the rooms it walked
+// (the act timeline).
 //
 // Until 2026-11-18 the upload read `run.cardChoices`, a field the parser
 // never wrote (it writes `cardPicks`), so every copy held no card picks and
@@ -170,6 +171,7 @@ export function toWire(run) {
     neowBonus: textOrNothing(run.neowBonus),
     gameMode: typeof run.gameMode === "string" && run.gameMode ? run.gameMode.toLowerCase() : undefined,
     wasAbandoned: run.wasAbandoned === true ? true : undefined,
+    isCustom: run.isCustom === true ? true : undefined,
     modifiers: modifiers.length ? modifiers : undefined,
     path: pathToWire(run),
     partySize,
@@ -283,7 +285,7 @@ function cardPicksFromWire(picks, cardChoices, roomByFloor) {
  * @param {any} wire
  */
 export function fromWire(wire) {
-  const { picks, cardChoices, path, party, partySize, seat, ...rest } = wire ?? {};
+  const { picks, cardChoices, path, party, partySize, seat, isCustom, ...rest } = wire ?? {};
   const pathByAct = pathFromWire(path);
   const roomByFloor = new Map(pathByAct.flatMap((act) => act.nodes.map((node) => /** @type {[number, string]} */ ([node.floor, node.type]))));
   const size = Number.isFinite(partySize) ? Math.max(1, Math.min(LIMITS.party, Math.floor(partySize))) : undefined;
@@ -293,6 +295,7 @@ export function fromWire(wire) {
   return {
     ...rest,
     wasAbandoned: rest.wasAbandoned === true,
+    ...(isCustom === true ? { isCustom: true } : {}),
     modifiers: strings(rest.modifiers, LIMITS.modifiers),
     cardPicks: cardPicksFromWire(picks, cardChoices, roomByFloor),
     pathByAct,
@@ -345,7 +348,7 @@ function isFilled(value) {
 /** What one copy of a run may hold that the other lacks, because the client
  *  that wrote it was older or (sourceFile) because only a device that read
  *  the save knows it. */
-const DETAIL_FIELDS = Object.freeze(["cardPicks", "pathByAct", "modifiers", "party", "partySize", "gameMode", "wasAbandoned", "sourceFile"]);
+const DETAIL_FIELDS = Object.freeze(["cardPicks", "pathByAct", "modifiers", "party", "partySize", "gameMode", "wasAbandoned", "isCustom", "sourceFile"]);
 
 /**
  * The run a device keeps when it and the Steam copy both hold one. The newer
@@ -382,12 +385,14 @@ export function hasRunsCopyLacks(localRuns, cloudRuns) {
  * What a record of a run holds beyond the totals. Each is something every
  * build since 2026-11-18 sends when the save has it, so a record without it
  * was written by an older build (or the save had none).
- * @typedef {{ hasPicks: boolean, hasPath: boolean, hasPartySize: boolean, hasSeat: boolean }} RunDetail
+ * `isCustom` is only ever true, so a record without it is either a
+ * standard run or one written before 2026-11-22.
+ * @typedef {{ hasPicks: boolean, hasPath: boolean, hasPartySize: boolean, hasSeat: boolean, isCustom: boolean }} RunDetail
  */
 
 /** @param {any} run a loaded run @returns {RunDetail} */
 function detailOf(run) {
-  return { hasPicks: hasCardPicks(run), hasPath: hasPath(run), hasPartySize: Number.isFinite(run?.partySize), hasSeat: hasSeat(run) };
+  return { hasPicks: hasCardPicks(run), hasPath: hasPath(run), hasPartySize: Number.isFinite(run?.partySize), hasSeat: hasSeat(run), isCustom: run?.isCustom === true };
 }
 
 /**
@@ -398,7 +403,7 @@ function detailOf(run) {
  */
 function hasMoreDetail(local, held) {
   return (local.hasPicks && !held.hasPicks) || (local.hasPath && !held.hasPath) || (local.hasPartySize && !held.hasPartySize)
-    || (local.hasSeat && !held.hasSeat);
+    || (local.hasSeat && !held.hasSeat) || (local.isCustom && !held.isCustom);
 }
 
 /**
@@ -444,7 +449,7 @@ export function indexOfCopy(wireRuns) {
     const hasPicks = (typeof run.picks === "string" && run.picks.length > 0)
       || (Array.isArray(run.cardChoices) && run.cardChoices.length > 0);
     const hasRooms = Array.isArray(run.path) && run.path.some((act) => typeof act === "string" && act.length > 0);
-    index.set(run.id, { end: Date.parse(run.endedAt) || 0, hasPicks, hasPath: hasRooms, hasPartySize: Number.isFinite(run.partySize), hasSeat: hasSeat(run) });
+    index.set(run.id, { end: Date.parse(run.endedAt) || 0, hasPicks, hasPath: hasRooms, hasPartySize: Number.isFinite(run.partySize), hasSeat: hasSeat(run), isCustom: run.isCustom === true });
   }
   return index;
 }
@@ -485,6 +490,7 @@ export function indexAfterSend(index, sent) {
       hasPartySize: Boolean(held?.hasPartySize) || sentDetail.hasPartySize,
       // The upload stays on a tie, so the copy now says what was sent.
       hasSeat: sentDetail.hasSeat,
+      isCustom: Boolean(held?.isCustom) || sentDetail.isCustom,
     });
   }
   return next;

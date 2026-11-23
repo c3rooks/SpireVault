@@ -1,12 +1,25 @@
 // stat-filters.js
 // =========================================================================
-// The filters behind two stats sections, shared by both looks:
+// The filters behind three stats sections, shared by both looks:
 //
-//   · Overview → By character   game mode (All / Standard / Blitz / Dread)
-//                               and one ascension level
-//   · Ascensions                one climber, on the Standard or Blitz ladder
+//   · Overview → By character   game mode (All / Standard / Blitz / Dread),
+//                               one ascension level, Solo or Co-op
+//   · Ascensions                one climber, on the Standard or Blitz ladder,
+//                               Solo or Co-op; each climber's record per level
+//   · Runs                      Solo or Co-op (script.js applies the rest)
 //
 // plus each character's current win streak.
+//
+// Streaks count climb runs only. The game's own per-character stats
+// (progress.save: total_wins, total_losses, current_streak, best_win_streak)
+// match a real 730-run history exactly when an abandoned run counts as a
+// loss and daily runs are left out. Custom Runs are left out too: they are
+// not a run of your climb (a player who started one by mistake and
+// abandoned it saw it break their streak; Reddit, 2026-11-22).
+//
+// Solo or co-op comes from `partySize`. The web reader writes it on every
+// record; the Mac app writes it on co-op records only, so a record that
+// does not say is a solo run.
 //
 // An ascension number means different things per mode (STS2 beta v0.113):
 // Blitz has its own ladder and Dread turns every modifier on, so its number
@@ -18,13 +31,15 @@
 // no storage, no input mutation. Checked by scripts/verify-stat-filters.mjs.
 // =========================================================================
 
-import { offLadderMode } from "./stats-engine.js?v=9";
+import { offLadderMode } from "./stats-engine.js?v=10";
 
 /** @typedef {"all"|"standard"|"blitz"|"dread"} ModeId */
 /** @typedef {"standard"|"blitz"} LadderId */
-/** @typedef {{ mode: ModeId, asc: number|null }} CharacterFilter */
-/** @typedef {{ character: string, ladder: LadderId }} SpireFilter */
+/** @typedef {"all"|"solo"|"coop"} PartyId */
+/** @typedef {{ mode: ModeId, asc: number|null, party: PartyId }} CharacterFilter */
+/** @typedef {{ character: string, ladder: LadderId, party: PartyId }} SpireFilter */
 /** @typedef {{ key: string, level: number, runs: number, wins: number, winrate: number }} AscBucket */
+/** @typedef {{ character: string, runs: number, wins: number, winrate: number, streak: number }} ClimberAtLevel */
 
 /** Every mode filter, in the order the control shows them. */
 export const MODE_IDS = Object.freeze(["all", "standard", "blitz", "dread"]);
@@ -32,13 +47,16 @@ export const MODE_IDS = Object.freeze(["all", "standard", "blitz", "dread"]);
 export const LADDER_IDS = Object.freeze(["standard", "blitz"]);
 /** Display names, shared by both looks. */
 export const MODE_LABELS = Object.freeze({ all: "All", standard: "Standard", blitz: "Blitz", dread: "Dread" });
+/** Every party filter, in the order the control shows them. */
+export const PARTY_IDS = Object.freeze(["all", "solo", "coop"]);
+export const PARTY_LABELS = Object.freeze({ all: "All", solo: "Solo", coop: "Co-op" });
 
 /** A character's card shows its win streak from this many wins in a row
  *  (a single win is not a streak yet). Both looks use it. */
 export const STREAK_SHOWN_FROM = 2;
 
-export const DEFAULT_CHARACTER_FILTER = Object.freeze({ mode: "all", asc: null });
-export const DEFAULT_SPIRE_FILTER = Object.freeze({ character: "all", ladder: "standard" });
+export const DEFAULT_CHARACTER_FILTER = Object.freeze({ mode: "all", asc: null, party: "all" });
+export const DEFAULT_SPIRE_FILTER = Object.freeze({ character: "all", ladder: "standard", party: "all" });
 
 /**
  * @param {{ gameMode?: string }|null|undefined} run
@@ -85,6 +103,54 @@ export function availableMode(mode, runs) {
 }
 
 /**
+ * @param {{ partySize?: unknown }|null|undefined} run
+ * @returns {"solo"|"coop"}  co-op when the save lists more than one player
+ */
+export function runParty(run) {
+  const size = run?.partySize;
+  return typeof size === "number" && Number.isFinite(size) && size > 1 ? "coop" : "solo";
+}
+
+/**
+ * @param {ReadonlyArray<object>} runs
+ * @returns {{ solo: number, coop: number }}
+ */
+export function partyCounts(runs) {
+  const counts = { solo: 0, coop: 0 };
+  for (const r of runs) counts[runParty(r)] += 1;
+  return counts;
+}
+
+/**
+ * The parties a Solo / Co-op control offers: null (no control) until the
+ * history has a co-op run; Solo only when there are solo runs.
+ * @param {ReadonlyArray<object>} runs
+ * @returns {PartyId[]|null}
+ */
+export function partyChoices(runs) {
+  const counts = partyCounts(runs);
+  if (counts.coop === 0) return null;
+  return PARTY_IDS.filter((id) => id !== "solo" || counts.solo > 0);
+}
+
+/**
+ * The party that actually applies: one the runs cannot show (or any, with
+ * no control on screen) falls back to All.
+ * @param {unknown} party
+ * @param {ReadonlyArray<object>} runs
+ * @returns {PartyId}
+ */
+export function availableParty(party, runs) {
+  const choices = partyChoices(runs);
+  return choices && choices.includes(/** @type {any} */ (party)) ? /** @type {PartyId} */ (party) : "all";
+}
+
+/** "Solo", "Co-op", or "" for All. @param {unknown} party @returns {string} */
+export function partyLabel(party) {
+  return party === "solo" || party === "coop" ? PARTY_LABELS[party] : "";
+}
+
+/**
  * The ladder a mode filter's ascension levels belong to; null for Dread.
  * @param {string} mode
  * @returns {LadderId|null}
@@ -101,18 +167,20 @@ function asLevel(value) {
 }
 
 /**
- * @template {{ character?: string|null, gameMode?: string, ascension?: number|null }} R
+ * @template {{ character?: string|null, gameMode?: string, ascension?: number|null, partySize?: number }} R
  * @param {ReadonlyArray<R>} runs
- * @param {{ mode?: string, asc?: number|null, character?: string }} [filter]
+ * @param {{ mode?: string, asc?: number|null, character?: string, party?: string }} [filter]
  * @returns {R[]}
  */
 export function filterRuns(runs, filter = {}) {
   const mode = MODE_IDS.includes(/** @type {any} */ (filter.mode)) ? filter.mode : "all";
   const character = filter.character || "all";
+  const party = filter.party === "solo" || filter.party === "coop" ? filter.party : "all";
   const ladder = ladderOf(mode);
   const level = ladder ? asLevel(filter.asc) : null;
   return runs.filter((r) => {
     if (character !== "all" && r.character !== character) return false;
+    if (party !== "all" && runParty(r) !== party) return false;
     const m = runMode(r);
     if (mode !== "all" && m !== mode) return false;
     if (level !== null && (m !== ladder || r.ascension !== level)) return false;
@@ -159,14 +227,53 @@ function runTime(r) {
   return at instanceof Date ? at.getTime() : 0;
 }
 
+/** The save's `game_mode`, wherever the record keeps it: the web reader's
+ *  `gameMode`, or the Mac app's `raw.game_mode`. @param {any} run */
+function savedMode(run) {
+  const mode = run?.gameMode ?? run?.game_mode ?? run?.raw?.game_mode;
+  return typeof mode === "string" ? mode.trim().toLowerCase() : "";
+}
+
 /**
- * Consecutive wins back from the newest run (0 when the newest is not a
- * win). Same ordering as script.js's currentStreak.
+ * A run from the game's Custom Run screen: the reader's `isCustom` (the
+ * save's `is_custom_game`, v0.113+), or `game_mode: "custom"` in older saves.
+ * @param {any} run
+ * @returns {boolean}
+ */
+export function isCustomRun(run) {
+  const rawFlag = run?.raw?.is_custom_game;
+  return run?.isCustom === true || rawFlag === true || rawFlag === 1 || savedMode(run) === "custom";
+}
+
+/**
+ * Whether a run counts toward a win streak: not a Custom Run, not a daily
+ * run (the game leaves both out of its own streaks). An abandoned run does
+ * count, as a loss, as it does in the game.
+ * @param {any} run
+ * @returns {boolean}
+ */
+export function countsTowardStreak(run) {
+  return !isCustomRun(run) && savedMode(run) !== "daily";
+}
+
+/**
+ * The runs a streak counts (a new array; the input is not touched).
+ * @template R
+ * @param {ReadonlyArray<R>} runs
+ * @returns {R[]}
+ */
+export function streakRuns(runs) {
+  return runs.filter(countsTowardStreak);
+}
+
+/**
+ * Consecutive wins back from the newest run that counts toward a streak
+ * (0 when that run is not a win). Same ordering as script.js's currentStreak.
  * @param {ReadonlyArray<{ won?: boolean, endedAt?: Date|null, startedAt?: Date|null }>} runs
  * @returns {number}
  */
 export function currentWinStreak(runs) {
-  const newestFirst = runs.slice().sort((a, b) => runTime(b) - runTime(a));
+  const newestFirst = streakRuns(runs).sort((a, b) => runTime(b) - runTime(a));
   let count = 0;
   for (const r of newestFirst) {
     if (r.won !== true) break;
@@ -177,14 +284,14 @@ export function currentWinStreak(runs) {
 
 /**
  * @param {ReadonlyArray<{ character?: string|null }>} runs
- * @returns {Map<string, number>}  current win streak per character with runs
+ * @returns {Map<string, number>}  current win streak per character with runs that count
  */
 export function winStreaksByCharacter(runs) {
   // Grouped into arrays made here (one pass, linear); the input is not touched.
   /** @type {Map<string, Array<any>>} */
   const byChar = new Map();
   for (const r of runs) {
-    if (!r.character) continue;
+    if (!r.character || !countsTowardStreak(r)) continue;
     const list = byChar.get(r.character);
     if (list) list.push(r);
     else byChar.set(r.character, [r]);
@@ -201,14 +308,49 @@ export function winStreaksByCharacter(runs) {
  * @returns {CharacterFilter}
  */
 export function withMode(filter, mode) {
-  return { mode, asc: ladderOf(mode) === ladderOf(filter.mode) ? filter.asc : null };
+  return { ...filter, mode, asc: ladderOf(mode) === ladderOf(filter.mode) ? filter.asc : null };
+}
+
+/**
+ * Each climber's record at every level of one ladder: runs, wins and win
+ * rate (every run, as the level's own row counts them) and current win
+ * streak there (climb runs only). Climbers come in `order`, then any not
+ * in it by key; a climber with no runs at a level is not listed there.
+ * @param {ReadonlyArray<{ character?: string|null, won?: boolean, gameMode?: string, ascension?: number|null }>} runs
+ * @param {LadderId} [ladder]
+ * @param {ReadonlyArray<string>} [order]
+ * @returns {Map<number, ClimberAtLevel[]>}
+ */
+export function climbersByLevel(runs, ladder = "standard", order = []) {
+  /** @type {Map<number, Map<string, Array<any>>>} */
+  const grouped = new Map();
+  for (const r of runs) {
+    const level = asLevel(r.ascension);
+    if (level === null || !r.character || runMode(r) !== ladder) continue;
+    const byChar = grouped.get(level) || new Map();
+    if (!grouped.has(level)) grouped.set(level, byChar);
+    const list = byChar.get(r.character);
+    if (list) list.push(r);
+    else byChar.set(r.character, [r]);
+  }
+  const rank = (key) => {
+    const i = order.indexOf(key);
+    return i < 0 ? order.length : i;
+  };
+  return new Map([...grouped].map(([level, byChar]) => [level, [...byChar]
+    .sort(([a], [b]) => rank(a) - rank(b) || a.localeCompare(b))
+    .map(([character, list]) => {
+      const wins = list.filter((r) => r.won === true).length;
+      return { character, runs: list.length, wins, winrate: wins / list.length, streak: currentWinStreak(list) };
+    })]));
 }
 
 /**
  * A saved By-character filter, cut down to what these runs can show: a
  * mode with no runs (or any mode, when the history has only standard runs
  * and the control is hidden) falls back to All; a level with no runs on
- * the mode's ladder falls back to every level.
+ * the mode's ladder in the chosen party (Solo / Co-op) falls back to every
+ * level, so Co-op + A10 never draws a grid of empty cards.
  * @param {unknown} raw
  * @param {ReadonlyArray<object>} runs
  * @returns {CharacterFilter}
@@ -219,12 +361,14 @@ export function sanitizeCharacterFilter(raw, runs) {
   const mode = availableMode(wanted, runs);
   // A level belongs to its mode's ladder: Blitz A2 never becomes standard A2.
   const level = ladderOf(mode) === ladderOf(wanted) ? asLevel(f.asc) : null;
-  const asc = level !== null && ascensionLevels(runs, mode).some((b) => b.level === level) ? level : null;
-  return { mode, asc };
+  const party = availableParty(f.party, runs);
+  const asc = level !== null && ascensionLevels(filterRuns(runs, { party }), mode).some((b) => b.level === level) ? level : null;
+  return { mode, asc, party };
 }
 
 /**
- * A saved spire filter, cut down to what these runs can show.
+ * A saved spire filter, cut down to what these runs can show: a climber
+ * with no runs on the ladder in the chosen party falls back to All.
  * @param {unknown} raw
  * @param {ReadonlyArray<{ character?: string|null }>} runs
  * @returns {SpireFilter}
@@ -233,17 +377,20 @@ export function sanitizeSpireFilter(raw, runs) {
   const f = raw && typeof raw === "object" ? /** @type {Record<string, unknown>} */ (raw) : {};
   const ladder = f.ladder === "blitz" && modeCounts(runs).blitz > 0 ? "blitz" : "standard";
   const wanted = typeof f.character === "string" ? f.character : "all";
-  const character = wanted !== "all" && filterRuns(runs, { character: wanted, mode: ladder }).length > 0 ? wanted : "all";
-  return { character, ladder };
+  const party = availableParty(f.party, runs);
+  const character = wanted !== "all" && filterRuns(runs, { character: wanted, mode: ladder, party }).length > 0 ? wanted : "all";
+  return { character, ladder, party };
 }
 
 /**
- * "", "A10", "Standard", "Standard A7", "Blitz A2", "Dread".
- * @param {CharacterFilter} f
+ * "", "A10", "Standard", "Standard A7", "Blitz A2", "Dread", "Co-op",
+ * "Solo · Standard A7".
+ * @param {{ mode: string, asc?: number|null, party?: string }} f
  * @returns {string}
  */
 export function characterFilterLabel(f) {
   const level = ladderOf(f.mode) ? asLevel(f.asc) : null;
-  const mode = f.mode === "all" ? "" : MODE_LABELS[f.mode] || "";
-  return [mode, level === null ? "" : `A${level}`].filter(Boolean).join(" ");
+  const mode = f.mode === "all" ? "" : MODE_LABELS[/** @type {ModeId} */ (f.mode)] || "";
+  const ladder = [mode, level === null ? "" : `A${level}`].filter(Boolean).join(" ");
+  return [partyLabel(f.party), ladder].filter(Boolean).join(" · ");
 }

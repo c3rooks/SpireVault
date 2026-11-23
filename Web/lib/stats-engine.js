@@ -317,7 +317,7 @@ export async function extractRuns(parsed, context = {}) {
     // `immutable` for a year, so an unversioned URL here would pin whatever
     // parser a user first downloaded. This is the file that has to change the
     // day STS2 ships a new save schema. Bump on every parser edit.
-    const { parseSTS2Run } = await import("./sts2-run-parser.js?v=4");
+    const { parseSTS2Run } = await import("./sts2-run-parser.js?v=5");
     const r = parseSTS2Run(parsed, "drop.run", context);
     if (!r) return { ok: false, error: "File has STS2 run shape but couldn't be parsed." };
     return { ok: true, runs: [r] };

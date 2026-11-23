@@ -5,7 +5,7 @@
 // blocked site data): the default is used and nothing breaks.
 
 import { sanitize, sameArrangement } from "./layout.js?v=1";
-import { CATALOG, defaultLayout } from "./registry.js?v=2";
+import { CATALOG, defaultLayout } from "./registry.js?v=3";
 
 export const STORAGE_KEY = "vault.web.overview.layout.v1";
 

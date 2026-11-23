@@ -187,6 +187,33 @@ await check("a daily run keeps its mode and modifiers", () => {
   assert.deepEqual(trip(parsed).modifiers, []);
 });
 
+// A Custom Run stays out of win streaks (lib/stat-filters.js), so a phone that
+// shows only the copy has to know which runs were custom.
+await check("the reader marks a Custom Run, from the flag or from the older game mode", () => {
+  // v0.113+: the custom-run screen has its own mode dropdown, so the flag sits beside "standard".
+  const flagged = parseSTS2Run(saveFile({ is_custom_game: true, was_abandoned: true }), "custom.run");
+  assert.equal(flagged.isCustom, true);
+  assert.equal(flagged.gameMode, "standard");
+  assert.equal(parseSTS2Run(saveFile({ game_mode: "custom" }), "old-custom.run").isCustom, true, "saves before v0.113 wrote the mode");
+  assert.equal(parseSTS2Run(saveFile({ game_mode: "CUSTOM" }), "old-custom.run").isCustom, true);
+});
+
+await check("an ordinary run carries no custom mark at all", () => {
+  assert.equal("isCustom" in parsed, false, "the record is what it always was");
+  assert.equal("isCustom" in parseSTS2Run(saveFile({ is_custom_game: false }), "v113.run"), false, "v0.113 writes false on every other run");
+  assert.equal("isCustom" in parseSTS2Run(saveFile({ is_custom_game: "true" }), "odd.run"), false, "only a real true");
+  assert.equal("isCustom" in parseSTS2Run(saveFile({ game_mode: "daily" }), "daily.run"), false);
+  assert.equal(Wire.toWire(parsed).isCustom, undefined, "nothing extra on the wire");
+  assert.equal("isCustom" in trip(parsed), false);
+});
+
+await check("a Custom Run stays marked on another device", () => {
+  const custom = parseSTS2Run(saveFile({ is_custom_game: true }), "custom.run");
+  assert.equal(Wire.toWire(custom).isCustom, true);
+  assert.equal(trip(custom).isCustom, true);
+  assert.equal("isCustom" in Wire.fromWire({ ...Wire.toWire(parsed), isCustom: "yes" }), false, "junk in the copy is not a mark");
+});
+
 await check("the act timeline survives, room for room", () => {
   assert.deepEqual(trip(parsed).pathByAct, parsed.pathByAct);
   assert.equal(parsed.pathByAct[1].nodes[2].type, "chest");
@@ -376,6 +403,25 @@ await check("a copy without card picks gets the runs that have them", () => {
   assert.equal(objectForm.get(parsed.id).hasPicks, true, "picks stored in the older object form count as held");
   const picksOnly = { ...thin, cardPicks: rich.cardPicks };
   assert.deepEqual(Wire.runsToSend([picksOnly], objectForm), [], "…so a device with nothing but those picks sends nothing");
+});
+
+await check("a Custom Run goes up again when the copy does not know it was custom", () => {
+  // Copies written before 2026-11-22 (or by a Worker that drops the mark) hold
+  // custom runs without it; the device that read the save fills that in.
+  const custom = { ...rich, isCustom: true };
+  const index = Wire.indexOfCopy(served([rich]));
+  assert.deepEqual(Wire.runsToSend([custom], index), [custom]);
+  assert.equal(Wire.hasDetailCopyLacks([custom], served([rich])), true);
+  assert.deepEqual(Wire.runsToSend([custom], Wire.indexAfterSend(index, [custom])), [], "once sent, not again");
+  assert.deepEqual(Wire.runsToSend([custom], Wire.indexOfCopy(served([custom]))), [], "a copy that knows stays quiet");
+  assert.deepEqual(Wire.runsToSend([rich], Wire.indexOfCopy(served([custom]))), [], "a device without the mark has nothing to add");
+});
+
+await check("the kept record never drops the custom mark", () => {
+  const custom = { ...rich, isCustom: true };
+  const laterThin = { ...thin, endedAt: new Date(rich.endedAt.getTime() + 1000) };
+  assert.equal(Wire.bestOf(custom, laterThin).isCustom, true, "a later copy record without it keeps the device's mark");
+  assert.equal(Wire.bestOf(laterThin, custom).isCustom, true, "and the other way round");
 });
 
 await check("a run that ended later than the copy's record goes up", () => {

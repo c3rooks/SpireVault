@@ -430,6 +430,27 @@
   font-weight: 800;
   line-height: 1.2;
 }
+/* What sets a run apart, beside its ascension: Co-op (info colour) and
+   Custom (dashed and quiet: it stays out of win streaks). */
+.v-run-tag {
+  flex: none;
+  padding: 2px 8px;
+  border: var(--v-outline);
+  border-radius: var(--v-radius-pill);
+  background: var(--v-bg-deep);
+  color: var(--v-text-2);
+  font-size: 0.8125rem;
+  font-weight: 800;
+  line-height: 1.2;
+}
+.v-run-tag[data-tag="coop"] {
+  border-color: color-mix(in srgb, var(--v-info) 70%, var(--v-ink));
+  background: color-mix(in srgb, var(--v-info) 16%, var(--v-bg-deep));
+  color: var(--v-info);
+}
+.v-run-tag[data-tag="custom"] {
+  border-style: dashed;
+}
 .v-run-killer b {
   color: var(--v-text);
   font-weight: 700;

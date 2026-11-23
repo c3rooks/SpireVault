@@ -636,6 +636,117 @@
   font-weight: 800;
   vertical-align: 1px;
 }
+/* With every climber shown, an open row lists each climber's record at
+   that level (views-ascensions.js climbersBlock). Columns line up line to
+   line: name, a meter in the climber's colour, win rate, record, streak. */
+.v-asc-climbers {
+  max-width: 72ch;
+  margin-top: var(--v-space-3);
+  padding-top: var(--v-space-3);
+  border-top: 2px dashed var(--v-line);
+}
+.v-asc-row-body .v-asc-climbers-title {
+  margin: 0 0 var(--v-space-2);
+  color: var(--v-text-2);
+  font-size: var(--v-text-xs);
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+.v-asc-climber-list {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.v-asc-climber {
+  display: grid;
+  grid-template-columns: minmax(112px, 140px) minmax(72px, 1fr) 64px 92px 56px;
+  align-items: center;
+  gap: var(--v-space-3);
+  min-height: 34px;
+  padding: 3px 10px;
+  border-radius: var(--v-radius-sm, 8px);
+  background: color-mix(in srgb, var(--v-char, var(--v-text-2)) 7%, transparent);
+}
+.v-asc-climber-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: var(--v-text);
+  font-size: var(--v-text-md);
+  font-weight: 800;
+  white-space: nowrap;
+}
+.v-asc-climber-dot {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border: 1.5px solid var(--v-ink);
+  border-radius: 50%;
+  background: var(--v-char);
+}
+.v-asc-climber-meter {
+  display: block;
+  height: 8px;
+  overflow: hidden;
+  border: var(--v-outline);
+  border-radius: var(--v-radius-pill);
+  background: var(--v-well);
+}
+.v-asc-climber-meter i {
+  display: block;
+  height: 100%;
+  background: var(--v-char);
+}
+.v-asc-climber-wr {
+  color: var(--v-text);
+  font-family: var(--v-font-display);
+  font-size: var(--v-text-lg);
+  font-weight: var(--v-display-weight);
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.v-asc-climber-rec {
+  color: var(--v-text-2);
+  font-size: var(--v-text-sm);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+.v-asc-climber-flame {
+  display: flex;
+  justify-content: flex-start;
+}
+.v-asc-climber-streak {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 1px 7px 1px 4px;
+  border-radius: var(--v-radius-pill);
+  background: color-mix(in srgb, var(--v-win) 16%, transparent);
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--v-win) 45%, transparent);
+  color: var(--v-win);
+  font: 800 12px / 1.4 var(--v-font-text);
+  white-space: nowrap;
+}
+.v-asc-climber-streak svg {
+  width: 13px;
+  height: 13px;
+  color: color-mix(in srgb, var(--v-gold) 55%, var(--v-loss));
+}
+.v-asc-row-body .v-asc-climbers-untried {
+  margin: var(--v-space-2) 0 0;
+  color: var(--v-text-2);
+  font-size: var(--v-text-sm);
+  font-weight: 600;
+}
+
 /* A storey tap lands here: the row flashes in its tier colour. */
 .v-asc-row.is-flash > summary {
   animation: v-asc-flash 1200ms var(--v-ease-out);
@@ -721,6 +832,23 @@
   .v-asc-row-body {
     padding: 0 14px 14px 12px;
   }
+  /* Two lines: name and streak, then meter, win rate and record. The
+     columns are fixed so every climber's numbers line up ("100.0%" is
+     52.5px in the display face). */
+  .v-asc-climber {
+    grid-template-columns: minmax(0, 1fr) 62px 92px;
+    grid-template-areas:
+      "name name flame"
+      "meter wr rec";
+    row-gap: 4px;
+    column-gap: var(--v-space-2);
+    padding: 7px 10px;
+  }
+  .v-asc-climber-name { grid-area: name; }
+  .v-asc-climber-flame { grid-area: flame; justify-content: flex-end; }
+  .v-asc-climber-meter { grid-area: meter; }
+  .v-asc-climber-wr { grid-area: wr; }
+  .v-asc-climber-rec { grid-area: rec; }
 }
 
 /* Phones: the spire tapers less so the top storeys still hold their

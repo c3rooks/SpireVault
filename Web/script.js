@@ -13,9 +13,9 @@
 //   Co-op (presence + canned-message invite system + Steam deep-links)
 // =========================================================================
 
-import * as Stats from "/lib/stats-engine.js?v=9";
+import * as Stats from "/lib/stats-engine.js?v=10";
 import * as RunOwner from "/lib/run-owner.js?v=1";
-import * as Filters from "/lib/stat-filters.js?v=3";
+import * as Filters from "/lib/stat-filters.js?v=4";
 import * as HistoryStore from "/lib/history-store.js?v=9";
 import * as InviteAPI from "/lib/invites.js?v=4";
 import * as HighlightsAPI from "/lib/highlights.js?v=1";
@@ -25,7 +25,7 @@ import * as CharInfo from "/lib/character-info.js?v=3";
 import * as RelicInfo from "/lib/relic-info.js?v=4";
 import * as OverlayEngine from "/lib/overlay-engine.js?v=1";
 import * as SyncBridge from "/lib/sync-bridge.js?v=2";
-import * as CloudWire from "/lib/cloud-run-wire.js?v=3";
+import * as CloudWire from "/lib/cloud-run-wire.js?v=4";
 // Co-op is one-tap Play (lib/coop-play.js). The Play module is loaded on demand, for signed-in players only: it draws
 // the inked climbers from /lib/ui/, and signed-out visitors (classic look by
 // default) must not download any of the new UI.
@@ -92,7 +92,7 @@ const STS2_APP_ID = "2868840";
  * on an old client — instruct hard refresh. If it DOES match, the
  * bug is real and we can stop chasing cache ghosts.
  */
-const VAULT_BUILD = "v264-2026-11-22-coop-runs-show-you";
+const VAULT_BUILD = "v265-2026-11-22-custom-runs-a10-climbers-solo-coop";
 
 /** True on wrangler pages dev / local loopback — not production hostnames. */
 function isLocalDevHost() {
@@ -1487,7 +1487,7 @@ let UI = null;
  *  below happens once per tab session, never in a loop. */
 const UI_RETRY_KEY = "vault.web.ui.retry";
 const uiReady = IS_UI_NEXT
-  ? import("/lib/ui/index.js?v=22")
+  ? import("/lib/ui/index.js?v=23")
       .then((mod) => {
         mod.bootUI({
           stageTabs: STAGE_TABS,
@@ -6071,6 +6071,36 @@ function runAscText(run) {
   return level === null ? "" : `A${level}`;
 }
 
+/**
+ * What sets a run apart on its row, beside the ascension: Co-op (with the
+ * party in the tooltip) and Custom (left out of win streaks). Empty for a
+ * solo climb run. Shared by both looks.
+ * @returns {Array<{ key: "coop"|"custom", label: string, title: string }>}
+ */
+function runTags(run) {
+  const tags = [];
+  if (Filters.runParty(run) === "coop") {
+    const party = Array.isArray(run.party) ? run.party.filter(Boolean).map(prettifyCharacterName) : [];
+    const size = Math.floor(run.partySize);
+    tags.push({
+      key: "coop",
+      label: "Co-op",
+      title: party.length ? `Co-op run: ${party.join(", ")}` : `Co-op run, ${size} players`,
+    });
+  }
+  if (Filters.isCustomRun(run)) {
+    tags.push({ key: "custom", label: "Custom", title: "Custom Run: not counted in win streaks" });
+  }
+  return tags;
+}
+
+/** Classic run row: runTags as pills. */
+function runTagPillsHtml(run) {
+  return runTags(run)
+    .map((t) => `<span class="pill pill-muted run-tag" data-tag="${t.key}" title="${esc(t.title)}">${esc(t.label)}</span>`)
+    .join("");
+}
+
 /** Ascension pill on a run row: the same gold "A7" as always for standard
  *  runs, a "Blitz A2" / "Dread" tag for the beta modes. */
 function runAscPillHtml(run) {
@@ -9570,8 +9600,7 @@ function renderHeadCrests(report) {
   if ($ov && UI) {
     $ov.innerHTML = "";
   } else if ($ov) {
-    const chrono = parsedRuns
-      .slice()
+    const chrono = Filters.streakRuns(parsedRuns)
       .sort((a, b) => (a.endedAt ? a.endedAt.getTime() : 0) - (b.endedAt ? b.endedAt.getTime() : 0));
     let bestStreak = 0;
     let cur = 0;
@@ -9856,7 +9885,7 @@ function renderDemoBanner() {
 let cachedKnownSchemas = null;
 async function loadKnownSchemas() {
   if (cachedKnownSchemas) return cachedKnownSchemas;
-  const mod = await import("./lib/sts2-run-parser.js?v=4");
+  const mod = await import("./lib/sts2-run-parser.js?v=5");
   cachedKnownSchemas = mod.KNOWN_SCHEMA_VERSIONS || new Set();
   return cachedKnownSchemas;
 }
@@ -10525,10 +10554,15 @@ function runsByDateDesc(runs) {
   });
 }
 
+/** Said wherever a streak is shown: what it counts. Plain text (a title). */
+const STREAK_RULE_NOTE = "Custom and daily runs are not counted, as in the game's own stats";
+
 /** Current streak = number of consecutive most-recent runs with the same
- *  outcome. Returns { kind: "win"|"loss"|"none", count: number }. */
+ *  outcome. Returns { kind: "win"|"loss"|"none", count: number }.
+ *  Custom Runs and daily runs are left out, as the game's own streaks
+ *  leave them out (Filters.countsTowardStreak); an abandoned run is a loss. */
 function currentStreak(runs) {
-  const sorted = runsByDateDesc(runs);
+  const sorted = runsByDateDesc(Filters.streakRuns(runs));
   if (!sorted.length) return { kind: "none", count: 0 };
   const kind = sorted[0].won ? "win" : "loss";
   let count = 0;
@@ -10544,7 +10578,7 @@ function currentStreak(runs) {
  *  user a date + character on the KPI card. Returns
  *  `{ count, endedAt, character, ascension }` (endedAt is a Date or null). */
 function longestWinStreakDetails(runs) {
-  const sorted = runs.slice().sort((a, b) => {
+  const sorted = Filters.streakRuns(runs).sort((a, b) => {
     const ta = a.endedAt ? a.endedAt.getTime() : 0;
     const tb = b.endedAt ? b.endedAt.getTime() : 0;
     return ta - tb;
@@ -10720,7 +10754,7 @@ function renderKPIStrip(runs) {
           : `${streak.count} in a row &mdash; reset and re&#8209;roll`)
       : `No active streak yet &mdash; play a run`;
   const streakCard = `
-      <div class="kpi-card" role="listitem" data-tone="${streakTone}">
+      <div class="kpi-card" role="listitem" data-tone="${streakTone}" title="${STREAK_RULE_NOTE}">
         <span class="kpi-card-label">${streakLabel}</span>
         <span class="kpi-card-value">${streakValue}</span>
         <span class="kpi-card-sub">${streakSub}</span>
@@ -10737,7 +10771,7 @@ function renderKPIStrip(runs) {
         : `Set across your run history`)
     : `Win two in a row to start one`;
   const longestCard = `
-      <div class="kpi-card" role="listitem" data-tone="gold">
+      <div class="kpi-card" role="listitem" data-tone="gold" title="${STREAK_RULE_NOTE}">
         <span class="kpi-card-label">${SEC_ICONS.bars} Longest win streak</span>
         <span class="kpi-card-value">${longest}<span class="kpi-unit">${longest === 1 ? "win" : "wins"}</span></span>
         <span class="kpi-card-sub">${longestSub}</span>
@@ -11439,6 +11473,7 @@ function nextStreakCards(runs) {
     icon: "flame",
     value: String(streak.kind === "none" ? 0 : streak.count),
     textHtml: activeText,
+    hint: STREAK_RULE_NOTE,
   };
   const best = {
     title: "Best streak",
@@ -11451,6 +11486,7 @@ function nextStreakCards(runs) {
           ? `Set on <strong>${esc(prettifyCharacterName(longest.character))}</strong>${ascAtPhrase(longest.ascension, longest.gameMode)}`
           : "Set across your run history")
       : "Win two in a row to start one",
+    hint: STREAK_RULE_NOTE,
   };
   return [active, best];
 }
@@ -12563,11 +12599,11 @@ function renderCharCards(buckets, opts = {}) {
           <div class="${cardClass}${played ? "" : " is-unplayed"}" style="--char-color:${theme.color}"
                role="button" tabindex="0"
                ${dataAttrs}
-               aria-label="${esc(name)}: ${played ? `${wr}% winrate over ${c.runs} runs.${spokenStreak}` : `${esc(emptyText.toLowerCase())}.`}${expandable ? " Tap to view details." : ""}">
+               aria-label="${esc(name)}: ${played ? `${wr}% winrate over ${pluralRuns(c.runs)}.${spokenStreak}` : `${esc(emptyText.toLowerCase())}.`}${expandable ? " Tap to view details." : ""}">
             <div class="char-card-head">
               <div class="char-card-icon">${charPortraitOrIcon(c.key, theme)}</div>
               ${streakPill}
-              <span class="char-card-runs">${c.runs} runs</span>
+              <span class="char-card-runs">${pluralRuns(c.runs)}</span>
             </div>
             <div class="char-card-name">${esc(name)}</div>
             <div class="char-card-record">${played ? `${c.wins} win${c.wins === 1 ? "" : "s"} &middot; ${lossCount} loss${lossCount === 1 ? "" : "es"}` : esc(emptyText)}</div>
@@ -12695,7 +12731,8 @@ function evaluateMilestones(priorRuns, { celebrate = false } = {}) {
  *  counter. Stable on out-of-order disk reads because we sort first. */
 function computeLongestWinStreak(runs) {
   if (!Array.isArray(runs)) return 0;
-  const sorted = runs.slice().sort((a, b) => {
+  // Custom Runs and daily runs neither make nor break a streak (Filters.countsTowardStreak).
+  const sorted = Filters.streakRuns(runs).sort((a, b) => {
     const ta = a.endedAt instanceof Date ? a.endedAt.getTime() : Number(a.endedAt) || 0;
     const tb = b.endedAt instanceof Date ? b.endedAt.getTime() : Number(b.endedAt) || 0;
     return ta - tb;
@@ -13225,6 +13262,63 @@ function winRateLowerBound(wins, runs) {
   return Math.max(0, (center - margin) / (1 + z2 / runs));
 }
 
+/**
+ * Each climber's record per level, for an open breakdown row ("when opening
+ * the A10 spoiler, it could show all your character stats", a player on
+ * Reddit, 2026-11-22). Only when the tab shows every climber: with one
+ * picked, the row already is that climber's record. Shared by both looks.
+ * @param {{ character: string, ladder: string }} filter
+ * @param {Array<object>} runs  the spire's runs (spireSection)
+ * @returns {(level: number) => { climbers: Array<{ key: string, label: string, runs: number, wins: number, winratePct: number, streak: number }>, untried: string[] }}
+ */
+function levelClimbersFor(filter, runs) {
+  if (filter.character !== "all") return () => ({ climbers: [], untried: [] });
+  const byLevel = Filters.climbersByLevel(runs, filter.ladder, CREST_ROSTER);
+  const onLadder = new Set([...byLevel.values()].flat().map((c) => c.character));
+  const played = [...CREST_ROSTER.filter((key) => onLadder.has(key)), ...[...onLadder].filter((key) => !CREST_ROSTER.includes(key))];
+  return (level) => {
+    const climbers = (byLevel.get(level) || []).map((c) => ({
+      key: c.character,
+      label: prettifyCharacterName(c.character),
+      runs: c.runs,
+      wins: c.wins,
+      winratePct: c.winrate * 100,
+      streak: c.streak >= Filters.STREAK_SHOWN_FROM ? c.streak : 0,
+    }));
+    const here = new Set(climbers.map((c) => c.key));
+    const untried = climbers.length > 0 ? played.filter((key) => !here.has(key)).map(prettifyCharacterName) : [];
+    return { climbers, untried };
+  };
+}
+
+/** Classic: an open "Detailed breakdown" row's climbers (levelClimbersFor). */
+function classicLevelClimbersHtml(level, rows) {
+  if (!rows.climbers.length) return "";
+  const lines = rows.climbers.map((c) => {
+    const streak = c.streak > 0
+      ? `<span class="asc-climber-streak" title="${esc(c.label)}: ${c.streak} wins in a row at A${level}"><span aria-hidden="true">&#128293;</span> ${c.streak}<span class="asc-climber-sr"> wins in a row</span></span>`
+      : "";
+    return `
+            <li class="asc-climber" style="--char-color:${charTheme(c.key).color}">
+              <span class="asc-climber-name"><span class="asc-climber-dot" aria-hidden="true"></span>${esc(c.label)}</span>
+              <span class="asc-climber-bar" aria-hidden="true"><span style="width:${Math.min(100, c.winratePct).toFixed(1)}%"></span></span>
+              <span class="asc-climber-pct">${c.winratePct.toFixed(1)}%</span>
+              <span class="asc-climber-record">${c.wins}w / ${c.runs}r</span>
+              <span class="asc-climber-flame">${streak}</span>
+            </li>`;
+  }).join("");
+  const untried = rows.untried.length
+    ? `<p class="asc-climbers-untried">No runs here yet: ${esc(rows.untried.join(", "))}</p>`
+    : "";
+  return `
+              <div class="asc-climbers">
+                <div class="asc-climbers-title">Your climbers at A${level}</div>
+                <ul class="asc-climber-list" aria-label="Your climbers at A${level}">${lines}
+                </ul>
+                ${untried}
+              </div>`;
+}
+
 /** Bar chart matching the desktop app's "Per ascension" panel.
  *  Each bar shows total runs (height proportional to max) with the wins
  *  portion painted in green from the bottom up. */
@@ -13246,7 +13340,8 @@ function renderAscensionsTab(report) {
   const buckets = isBlitz ? allBuckets : allBuckets.filter((b) => parseAsc(b.key) <= STS2_ASC_CAP);
   const hiddenAbove = allBuckets.length - buckets.length;
   if (!buckets.length) {
-    return `${filtersHtml}<p class="muted">No ascension data yet.</p>`;
+    const filtered = filter.character !== "all" || filter.party !== "all";
+    return `${filtersHtml}<p class="muted">${filtered ? "No ascension runs match this filter." : "No ascension data yet."}</p>`;
   }
   const maxRuns = Math.max(...buckets.map((b) => b.runs), 1);
   const barChart = `
@@ -13301,6 +13396,7 @@ function renderAscensionsTab(report) {
   // (with Early-Access caveat), their personal bar + stats, plus a chevron
   // that animates open to reveal the tier blurb. The expand-on-click keeps
   // the page dense by default for power users but learnable for newcomers.
+  const climbersAt = levelClimbersFor(filter, runs);
   const detailRows = `
     <div class="asc-detail-panel">
       ${buckets.map((b, i) => {
@@ -13334,6 +13430,7 @@ function renderAscensionsTab(report) {
               <p class="asc-detail-note">
                 Slay the Spire 2 is in Early Access — modifiers can shift between patches. Confirm live details on the in-game level-select screen.
               </p>
+              ${classicLevelClimbersHtml(ascLevel, climbersAt(ascLevel))}
             </div>
           </details>`;
       }).join("")}
@@ -13384,6 +13481,8 @@ function buildAscensionsModel() {
   const buckets = Filters.ascensionBuckets(runs, filter.ladder);
   const byLevel = new Map(buckets.map((b) => [b.level, b]));
   const top = isBlitz ? Math.max(NEXT_BLITZ_TOP, ...buckets.map((b) => b.level)) : NEXT_ASC_CAP;
+  // Blitz levels have no breakdown rows to open.
+  const climbersAt = isBlitz ? () => ({ climbers: [], untried: [] }) : levelClimbersFor(filter, runs);
   const levels = Array.from({ length: top + 1 }, (_, level) => {
     const stats = storeyStats(byLevel.get(level));
     if (isBlitz) {
@@ -13398,6 +13497,7 @@ function buildAscensionsModel() {
       title: info.title,
       modifier: info.modifier,
       detail: info.detail,
+      ...climbersAt(level),
     };
   });
   const tiers = isBlitz ? [] : AscInfo.ASCENSION_TIERS.filter((t) => t.band[0] <= NEXT_ASC_CAP).map((t) => {
@@ -13428,9 +13528,10 @@ function buildAscensionsModel() {
     filter: {
       climbers: options.climbers,
       ladders: options.ladders,
+      parties: options.parties,
       label: spireFilterLabel(filter),
       shownRuns: runs.length,
-      totalRuns: filter.character === "all" ? null : Filters.filterRuns(parsedRuns, { mode: filter.ladder }).length,
+      totalRuns: spireTotalRuns(filter),
     },
   };
 }
@@ -13908,7 +14009,7 @@ const STORAGE_RUN_FILTERS = "vault.web.runfilters.v1";
  *  the tier closest to what it asked for, so nobody's filter is dropped;
  *  "mid" keeps its id (now A4–A6, the Ascensions tab's mid climb). */
 const LEGACY_RUN_TIER_IDS = Object.freeze({ low: "early", high: "master" });
-const EMPTY_RUN_FILTERS = Object.freeze({ character: "all", outcome: "all", ascensionTier: "all", mode: "all", search: "" });
+const EMPTY_RUN_FILTERS = Object.freeze({ character: "all", outcome: "all", ascensionTier: "all", mode: "all", party: "all", search: "" });
 let runFilters = (() => {
   try {
     const raw = localStorage.getItem(STORAGE_RUN_FILTERS);
@@ -13921,6 +14022,8 @@ let runFilters = (() => {
         ascensionTier: LEGACY_RUN_TIER_IDS[j.ascensionTier] || j.ascensionTier || "all",
         // all | standard | blitz | dread (STS2 beta modes; Filters.MODE_IDS)
         mode: Filters.MODE_IDS.includes(j.mode) ? j.mode : "all",
+        // all | solo | coop (Filters.PARTY_IDS)
+        party: Filters.PARTY_IDS.includes(j.party) ? j.party : "all",
         search: j.search || "",
       };
     }
@@ -14029,6 +14132,11 @@ function runModeNow(runs) {
   return Filters.availableMode(runFilters.mode, runs);
 }
 
+/** The Runs tab's Solo / Co-op choice as it applies ("all" with no co-op runs). */
+function runPartyNow(runs) {
+  return Filters.availableParty(runFilters.party, runs);
+}
+
 /** Ascension tiers are standard-ladder bands: they apply under All and
  *  Standard, and are switched off under Blitz and Dread. */
 function runTiersApply(mode) {
@@ -14040,7 +14148,7 @@ function runFiltersActive(runs) {
   const mode = runModeNow(runs);
   return runFilters.character !== "all" || runFilters.outcome !== "all"
     || (runFilters.ascensionTier !== "all" && runTiersApply(mode))
-    || mode !== "all" || (runFilters.search || "").trim() !== "";
+    || mode !== "all" || runPartyNow(runs) !== "all" || (runFilters.search || "").trim() !== "";
 }
 
 /**
@@ -14051,6 +14159,10 @@ function runFiltersActive(runs) {
 function applyRunFilters(runs, { ignoreDate = false } = {}) {
   const q = (runFilters.search || "").toLowerCase().trim();
   const mode = runModeNow(runs);
+  const party = runPartyNow(runs);
+  // "solo" is a search word only once there are co-op runs to tell apart
+  // (otherwise typing "lo" would match every run).
+  const hasCoop = q !== "" && Filters.partyChoices(runs) !== null;
   const dateRange = ignoreDate ? null : activeRunsDate();
   const today = dateRange ? RunDates.dayKey(new Date()) : "";
   return runs.filter((r) => {
@@ -14059,6 +14171,7 @@ function applyRunFilters(runs, { ignoreDate = false } = {}) {
     if (runFilters.outcome === "wins" && !r.won) return false;
     if (runFilters.outcome === "losses" && r.won) return false;
     if (mode !== "all" && Filters.runMode(r) !== mode) return false;
+    if (party !== "all" && Filters.runParty(r) !== party) return false;
     if (runFilters.ascensionTier !== "all" && runTiersApply(mode)) {
       // Blitz/Dread ascensions are not standard-ladder levels (STS2 beta).
       if (!isLadderRun(r)) return false;
@@ -14071,7 +14184,8 @@ function applyRunFilters(runs, { ignoreDate = false } = {}) {
       if (tier?.band && !(a >= tier.band[0] && a <= tier.band[1])) return false;
     }
     if (q) {
-      const hay = [r.character, Stats.offLadderMode(r.gameMode), r.seed, r.sourceFile, r.won ? "victory win" : "defeat loss"]
+      const hay = [r.character, Stats.offLadderMode(r.gameMode), r.seed, r.sourceFile, r.won ? "victory win" : "defeat loss",
+        Filters.runParty(r) === "coop" ? "co-op coop multiplayer" : hasCoop ? "solo" : "", Filters.isCustomRun(r) ? "custom" : ""]
         .filter(Boolean).join(" ").toLowerCase();
       if (!hay.includes(q)) return false;
     }
@@ -14152,6 +14266,9 @@ function renderRunFilters(allRuns, filteredCount) {
   const modeChips = runModeOptions(allRuns).map((o) => `
     <button class="chart-chip" type="button" data-filter-kind="mode" data-filter-value="${esc(o.value)}" aria-pressed="${o.pressed}" title="${esc(o.title)}">${esc(o.label)}</button>
   `).join("");
+  const partyChips = (partyOptions(runPartyNow(allRuns), allRuns) || []).map((o) => `
+    <button class="chart-chip" type="button" data-filter-kind="party" data-filter-value="${esc(o.value)}" aria-pressed="${o.pressed}" title="${esc(o.title)}">${esc(o.label)}</button>
+  `).join("");
   const tierChips = runTierOptions(mode).map((t) => `
     <button class="chart-chip" type="button" data-filter-kind="ascensionTier" data-filter-value="${esc(t.id)}" aria-pressed="${t.pressed}"${t.title ? ` title="${esc(t.title)}"` : ""}${t.disabled ? " disabled" : ""}>${esc(t.label)}</button>
   `).join("");
@@ -14187,6 +14304,10 @@ function renderRunFilters(allRuns, filteredCount) {
       ${modeChips ? `<div class="run-filter-group">
         <span class="run-filter-label">Mode</span>
         <span class="run-filter-chips">${modeChips}</span>
+      </div>` : ""}
+      ${partyChips ? `<div class="run-filter-group">
+        <span class="run-filter-label">Party</span>
+        <span class="run-filter-chips">${partyChips}</span>
       </div>` : ""}
       <div class="run-filter-group">
         <span class="run-filter-label">Ascension</span>
@@ -14253,6 +14374,7 @@ function renderRecentRuns(runs) {
                 <div class="run-meta-top">
                   <span class="run-name">${esc(charName)}</span>
                   ${runAscPillHtml(r)}
+                  ${runTagPillsHtml(r)}
                   ${Number.isFinite(r.floorReached) ? `<span class="pill pill-muted">Floor ${r.floorReached}</span>` : ""}
                 </div>
                 ${dateStr ? `<span class="run-date">${esc(dateStr)}</span>` : ""}
@@ -14323,7 +14445,7 @@ function runGroupLabelNext(date, now) {
 function runsNextFilterKey() {
   const f = runFilters;
   const d = activeRunsDate();
-  return [f.character, f.outcome, f.ascensionTier, f.mode, (f.search || "").trim().toLowerCase(), d ? `${d.from}~${d.to}` : ""].join("|");
+  return [f.character, f.outcome, f.ascensionTier, f.mode, f.party, (f.search || "").trim().toLowerCase(), d ? `${d.from}~${d.to}` : ""].join("|");
 }
 
 // ---- Recent Runs: "go by date" (new look) ---------------------------------
@@ -14453,6 +14575,7 @@ function renderRecentRunsNext(runs) {
       dateRest: splits ? full.slice(day.length) : "",
       ascension: Number.isFinite(r.ascension) ? r.ascension : null,
       ascLabel: runAscText(r),
+      tags: runTags(r),
       floor: Number.isFinite(r.floorReached) ? r.floorReached : null,
       floorShare: Number.isFinite(r.floorReached) ? Math.min(1, Math.max(0, r.floorReached / maxFloor)) : 0,
       duration: formatPlayTimeStrict(r.playTimeSeconds),
@@ -14464,9 +14587,10 @@ function renderRecentRunsNext(runs) {
     };
   });
   return UI.RunsView.runsHtml({
-    filters: { ...runFilters, mode: runModeNow(runs), search: runFilters.search || "" },
+    filters: { ...runFilters, mode: runModeNow(runs), party: runPartyNow(runs), search: runFilters.search || "" },
     outcomes: RUN_FILTER_OUTCOMES,
     modes: runModeOptions(runs),
+    parties: partyOptions(runPartyNow(runs), runs) || [],
     tiers: runTierOptions(runModeNow(runs)),
     characters: RUN_FILTER_CHARACTERS.map((c) => ({ key: c, label: prettifyCharacterName(c), disabled: !played.has(c) })),
     date: {
@@ -16245,10 +16369,12 @@ function renderActTimeline(r) {
 // =========================================================================
 // Section filters
 // -------------------------------------------------------------------------
-// Overview → By character: game mode (All / Standard / Blitz / Dread) and
-// one ascension level. Ascensions: one climber, on the Standard or Blitz
-// ladder (the spire, tiers and breakdown all follow). The filter sits on
-// the section it changes and nothing else on the page moves with it.
+// Overview → By character: game mode (All / Standard / Blitz / Dread), one
+// ascension level, Solo or Co-op. Ascensions: one climber, on the Standard
+// or Blitz ladder, Solo or Co-op (the spire, tiers and breakdown all
+// follow). The filter sits on the section it changes and nothing else on
+// the page moves with it. Mode chips show only with Blitz or Dread runs,
+// Solo / Co-op chips only with co-op runs.
 //
 // The rules live in lib/stat-filters.js. The saved choice is kept as the
 // player made it and cut down to the loaded runs on every render
@@ -16308,12 +16434,27 @@ function characterModeOptions(filter) {
     }));
 }
 
-/** Ascension picker: every level of the mode's ladder that has runs, highest first. */
+/** Solo / Co-op chips; null until the history has a co-op run (no control).
+ *  The same names as the Overview calendar's Climbs setting. */
+function partyOptions(party, runs = parsedRuns) {
+  const choices = Filters.partyChoices(runs);
+  if (!choices) return null;
+  const counts = Filters.partyCounts(runs);
+  return choices.map((id) => ({
+    value: id,
+    label: Filters.PARTY_LABELS[id],
+    pressed: party === id,
+    title: id === "all" ? `Every run (${runs.length})` : pluralRuns(counts[id], id === "coop" ? "co-op run" : "solo run"),
+  }));
+}
+
+/** Ascension picker: every level of the mode's ladder that has runs in the
+ *  chosen party (Solo / Co-op), highest first, with those runs counted. */
 function characterLevelOptions(filter) {
   if (!Filters.ladderOf(filter.mode)) return [{ value: "", label: "No levels in Dread", selected: true }];
   return [
     { value: "", label: filter.mode === "blitz" ? "All Blitz levels" : "All ascensions", selected: filter.asc === null },
-    ...Filters.ascensionLevels(parsedRuns, filter.mode).map((b) => ({
+    ...Filters.ascensionLevels(Filters.filterRuns(parsedRuns, { party: filter.party }), filter.mode).map((b) => ({
       value: String(b.level),
       label: `A${b.level} · ${pluralRuns(b.runs)}`,
       selected: filter.asc === b.level,
@@ -16326,6 +16467,7 @@ function buildCharacterFilterModel(filter, shownRuns) {
   const label = Filters.characterFilterLabel(filter);
   return {
     modes: characterModeOptions(filter),
+    parties: partyOptions(filter.party),
     levels: characterLevelOptions(filter),
     levelsDisabled: !Filters.ladderOf(filter.mode),
     label,
@@ -16340,15 +16482,23 @@ function buildCharacterFilterModel(filter, shownRuns) {
 /** The Ascensions section's filter and the runs its spire is built from. */
 function spireSection() {
   const filter = Filters.sanitizeSpireFilter(statFilters.spire, parsedRuns);
-  return { filter, runs: Filters.filterRuns(parsedRuns, { character: filter.character, mode: filter.ladder }) };
+  return { filter, runs: Filters.filterRuns(parsedRuns, { character: filter.character, mode: filter.ladder, party: filter.party }) };
+}
+
+/** Runs on the spire's ladder, every climber and party: the "of N" in its
+ *  summary line. null when no climber or party is picked (nothing to compare). */
+function spireTotalRuns(filter) {
+  return filter.character === "all" && filter.party === "all" ? null : Filters.filterRuns(parsedRuns, { mode: filter.ladder }).length;
 }
 
 /** Climber chips (one per roster character, disabled without runs on the
- *  ladder) and Ladder chips (only when there are Blitz runs). */
+ *  ladder in the chosen party), Ladder chips (only when there are Blitz
+ *  runs) and Party chips (only when there are co-op runs). */
 function spireFilterOptions(filter) {
-  const onLadder = Filters.filterRuns(parsedRuns, { mode: filter.ladder });
+  const onLadder = Filters.filterRuns(parsedRuns, { mode: filter.ladder, party: filter.party });
   const played = new Set(onLadder.map((r) => r.character).filter(Boolean));
-  const ladderName = filter.ladder === "blitz" ? "Blitz " : "";
+  const partyName = filter.party === "coop" ? "co-op " : filter.party === "solo" ? "solo " : "";
+  const ladderName = `${partyName}${filter.ladder === "blitz" ? "Blitz " : ""}`;
   const climbers = [
     { value: "all", label: "All", pressed: filter.character === "all" },
     ...RUN_FILTER_CHARACTERS.map((key) => {
@@ -16371,20 +16521,24 @@ function spireFilterOptions(filter) {
         { value: "blitz", label: "Blitz", pressed: filter.ladder === "blitz", title: pluralRuns(blitzRuns, "Blitz run") },
       ]
     : null;
-  return { climbers, ladders };
+  return { climbers, ladders, parties: partyOptions(filter.party) };
 }
 
-/** "Ironclad", "Blitz", "Ironclad · Blitz", or "" for the default spire. */
+/** "Ironclad", "Blitz", "Ironclad · Co-op · Blitz", or "" for the default spire. */
 function spireFilterLabel(filter) {
-  return [filter.character === "all" ? "" : prettifyCharacterName(filter.character), filter.ladder === "blitz" ? "Blitz" : ""]
+  return [
+    filter.character === "all" ? "" : prettifyCharacterName(filter.character),
+    Filters.partyLabel(filter.party),
+    filter.ladder === "blitz" ? "Blitz" : "",
+  ]
     .filter(Boolean)
     .join(" · ");
 }
 
 /**
  * Applies a filter control. `data-stat-filter` is "<section>.<key>":
- * chars.mode / chars.asc / chars.clear, spire.character / spire.ladder /
- * spire.clear. Re-renders the open tab and puts focus back on the same
+ * chars.mode / chars.asc / chars.party / chars.clear, spire.character /
+ * spire.ladder / spire.party / spire.clear. Re-renders the open tab and puts focus back on the same
  * control, since the re-render replaced it.
  */
 function applyStatFilter(control, value) {
@@ -16395,12 +16549,14 @@ function applyStatFilter(control, value) {
     if (key === "clear") next = { ...Filters.DEFAULT_CHARACTER_FILTER };
     else if (key === "mode") next = Filters.withMode(current, value);
     else if (key === "asc") next = { ...current, asc: value === "" ? null : Number(value) };
+    else if (key === "party") next = { ...current, party: value };
     if (next) next = Filters.sanitizeCharacterFilter(next, parsedRuns);
   } else if (section === "spire") {
     const current = Filters.sanitizeSpireFilter(statFilters.spire, parsedRuns);
     if (key === "clear") next = { ...Filters.DEFAULT_SPIRE_FILTER };
     else if (key === "character") next = { ...current, character: value };
     else if (key === "ladder") next = { ...current, ladder: value };
+    else if (key === "party") next = { ...current, party: value };
     if (next) next = Filters.sanitizeSpireFilter(next, parsedRuns);
   }
   if (!next) return;
@@ -16451,30 +16607,35 @@ function classicFilterSummary(filter, label, shown, total) {
   return `<p class="run-filter-summary">Showing <strong>${esc(label)}</strong> &middot; ${count}. <button class="run-filter-clear" type="button" data-stat-filter="${esc(filter)}" data-value="">Clear</button></p>`;
 }
 
-/** Classic Overview: mode chips (only with Blitz/Dread runs) and the ascension picker. */
+/** Classic Overview: mode chips (only with Blitz/Dread runs), Solo / Co-op
+ *  chips (only with co-op runs) and the ascension picker. */
 function renderClassicCharacterFilters(filter, shownRuns) {
   const model = buildCharacterFilterModel(filter, shownRuns);
   const modes = model.modes ? classicFilterGroup("chars.mode", "Mode", model.modes) : "";
+  const parties = model.parties ? classicFilterGroup("chars.party", "Party", model.parties) : "";
   const summary = model.label ? classicFilterSummary("chars.clear", model.label, model.shownRuns, model.totalRuns) : "";
-  // A lone picker (standard runs only, nothing picked) goes without the panel.
-  const bare = !model.modes && !model.label ? " is-bare" : "";
+  // A lone picker (standard solo runs only, nothing picked) goes without the panel.
+  const bare = !model.modes && !model.parties && !model.label ? " is-bare" : "";
   return `
     <div class="run-filters stat-filters stat-filters--chars${bare}" role="region" aria-label="Filter the character cards">
       ${modes}
+      ${parties}
       ${classicFilterSelect("chars.asc", "Ascension", model.levels, model.levelsDisabled)}
       ${summary}
     </div>`;
 }
 
-/** Classic Ascensions: climber chips and, with Blitz runs, the ladder chips. */
+/** Classic Ascensions: climber chips and, with Blitz runs, the ladder chips;
+ *  with co-op runs, Solo / Co-op chips. */
 function renderClassicSpireFilters(filter, shownRuns) {
-  const { climbers, ladders } = spireFilterOptions(filter);
+  const { climbers, ladders, parties } = spireFilterOptions(filter);
   const label = spireFilterLabel(filter);
-  const total = filter.character === "all" ? null : Filters.filterRuns(parsedRuns, { mode: filter.ladder }).length;
+  const total = spireTotalRuns(filter);
   return `
     <div class="run-filters stat-filters stat-filters--spire" role="region" aria-label="Filter the ascension stats">
       ${classicFilterGroup("spire.character", "Climber", climbers)}
       ${ladders ? classicFilterGroup("spire.ladder", "Ladder", ladders) : ""}
+      ${parties ? classicFilterGroup("spire.party", "Party", parties) : ""}
       ${label ? classicFilterSummary("spire.clear", label, shownRuns, total) : ""}
     </div>`;
 }
@@ -16501,7 +16662,7 @@ function wireRunFilters() {
     if (chip && chip.tagName === "BUTTON") {
       const kind = chip.dataset.filterKind;
       const value = chip.dataset.filterValue;
-      if (kind && value && (kind === "character" || kind === "outcome" || kind === "ascensionTier" || kind === "mode")) {
+      if (kind && value && (kind === "character" || kind === "outcome" || kind === "ascensionTier" || kind === "mode" || kind === "party")) {
         runFilters[kind] = value;
         // Blitz and Dread levels are not standard-ladder tiers.
         if (kind === "mode" && !runTiersApply(value)) runFilters.ascensionTier = "all";

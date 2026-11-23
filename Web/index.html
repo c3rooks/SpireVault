@@ -157,7 +157,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link id="vault-legacy-fonts" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Playfair+Display:wght@700;900&family=Cinzel:wght@700;800;900&display=swap" rel="stylesheet" />
-  <link id="vault-legacy-css" rel="stylesheet" href="/styles.css?v=166" />
+  <link id="vault-legacy-css" rel="stylesheet" href="/styles.css?v=167" />
   <!-- Co-op Play card (structure + classic paint). The new look loads it again
        inside the legacy layer below and repaints it from styles.next.css. -->
   <link id="vault-coop-play-css" rel="stylesheet" href="/lib/coop-play.css?v=11" />
@@ -185,11 +185,11 @@
         '<link rel="preload" as="font" type="font/woff2" crossorigin href="/assets/fonts/grenze-gotisch-latin-var-v1.woff2">' +
         '<style id="vault-legacy-layer">' +
           '@layer v-override, legacy, v-reset, v-tokens, v-base, v-shell, v-components, v-surfaces, v-host, v-util;' +
-          '@import url("/styles.css?v=166") layer(legacy);' +
+          '@import url("/styles.css?v=167") layer(legacy);' +
           '@import url("/styles.mobile.css?v=4") layer(legacy) (max-width: 880px);' +
           '@import url("/lib/coop-play.css?v=11") layer(legacy);' +
         '</style>' +
-        '<link rel="stylesheet" href="/styles.next.css?v=29">' +
+        '<link rel="stylesheet" href="/styles.next.css?v=30">' +
         // The header is drawn by lib/ui, which script.js only imports once it
         // has itself loaded and run, and whose stage code sits four imports
         // deep: on a phone network each level was another round trip before
@@ -197,10 +197,10 @@
         // flattens that to one. The tokens must match the imports exactly
         // (check-asset-versions fails the build when one file is referenced
         // at two tokens).
-        '<link rel="modulepreload" href="/script.js?v=264">' +
-        '<link rel="modulepreload" href="/lib/stats-engine.js?v=9">' +
+        '<link rel="modulepreload" href="/script.js?v=265">' +
+        '<link rel="modulepreload" href="/lib/stats-engine.js?v=10">' +
         '<link rel="modulepreload" href="/lib/history-store.js?v=9">' +
-        '<link rel="modulepreload" href="/lib/ui/index.js?v=22">' +
+        '<link rel="modulepreload" href="/lib/ui/index.js?v=23">' +
         '<link rel="modulepreload" href="/lib/ui/stage.js?v=7">' +
         '<link rel="modulepreload" href="/lib/ui/stage-scenes.js?v=2">' +
         '<link rel="modulepreload" href="/lib/ui/stage-life.js?v=2">' +
@@ -2666,6 +2666,6 @@
   })();
   </script>
   <script src="/run-coach.js?v=5" defer></script>
-  <script src="/script.js?v=264" type="module"></script>
+  <script src="/script.js?v=265" type="module"></script>
 </body>
 </html>

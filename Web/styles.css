@@ -5902,6 +5902,143 @@ html:not([data-ui="next"]) .asc-detail-key::before {
   max-width: 620px;
 }
 
+/* An open breakdown row lists each climber's record at that level, with
+ * every climber shown ("when opening the A10 spoiler, it could show all
+ * your character stats", Reddit, 2026-11-22). One grid per line, columns
+ * matched line to line: name, bar in the climber's colour, %, record,
+ * streak. On phones the bar drops to its own line under the name. */
+.asc-climbers {
+  margin-top: 14px;
+  max-width: 620px;
+}
+.asc-climbers-title {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  margin-bottom: 6px;
+}
+.asc-climber-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 2px;
+}
+.asc-climber {
+  display: grid;
+  grid-template-columns: minmax(96px, 128px) minmax(60px, 1fr) 48px 64px 48px;
+  align-items: center;
+  gap: 10px;
+  min-height: 28px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.025);
+}
+.asc-climber-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+  white-space: nowrap;
+}
+.asc-climber-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--char-color, var(--text-3));
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.35);
+}
+.asc-climber-bar {
+  height: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.asc-climber-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: 4px;
+  background: var(--char-color, var(--gold));
+}
+.asc-climber-pct {
+  font-family: 'Inter', sans-serif;
+  font-size: 12px;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  color: var(--text);
+}
+.asc-climber-record {
+  font-size: 11px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-2);
+  text-align: right;
+  white-space: nowrap;
+}
+.asc-climber-streak {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--win);
+  white-space: nowrap;
+}
+.asc-climber-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.asc-climbers-untried {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--text-3);
+}
+/* Phones: two lines (name and streak, then bar, % and record), and the
+ * block steps out of the row body's 58px indent, which left the name
+ * 26px at 320px. */
+@media (max-width: 560px) {
+  .asc-climbers { margin-left: -44px; }
+  .asc-climber {
+    grid-template-columns: minmax(0, 1fr) 48px 64px;
+    grid-template-areas:
+      "name name flame"
+      "bar pct record";
+    row-gap: 4px;
+    column-gap: 8px;
+    padding: 6px 8px;
+  }
+  .asc-climber-name { grid-area: name; }
+  .asc-climber-flame { grid-area: flame; justify-self: end; }
+  .asc-climber-bar { grid-area: bar; }
+  .asc-climber-pct { grid-area: pct; }
+  .asc-climber-record { grid-area: record; }
+}
+
+/* Run rows: what sets a run apart, beside its ascension (runTags in
+ * script.js). Co-op in the accent colour; Custom dashed and quiet, since
+ * it stays out of win streaks. */
+.run-tag[data-tag="coop"] {
+  color: var(--accent-hi);
+  background: rgba(255, 107, 26, 0.12);
+  border-color: rgba(255, 107, 26, 0.32);
+}
+.run-tag[data-tag="custom"] {
+  border-style: dashed;
+  border-color: rgba(255, 255, 255, 0.22);
+}
+
 /* Tier legend — horizontal row of color-chipped pills that maps level
  * ranges to their band (Standard / Early / Mid / Expert / Master).
  * Scrolls horizontally on narrow viewports instead of stacking. */

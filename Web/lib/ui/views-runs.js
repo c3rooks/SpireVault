@@ -29,6 +29,7 @@ import { esc } from "./html.js?v=1";
  *   id: string,
  *   ascension: number|null,
  *   ascLabel?: string,   "A7", or "Blitz A2" / "Dread" for STS2 beta modes
+ *   tags?: ReadonlyArray<{ key: string, label: string, title: string }>,  "Co-op", "Custom"
  *   floor: number|null,
  *   floorShare: number,
  *   duration: string,
@@ -43,10 +44,12 @@ import { esc } from "./html.js?v=1";
 
 /**
  * @typedef {Object} RunsModel
- * @property {{ outcome: string, ascensionTier: string, mode: string, character: string, search: string }} filters
+ * @property {{ outcome: string, ascensionTier: string, mode: string, party?: string, character: string, search: string }} filters
  * @property {ReadonlyArray<{ id: string, label: string }>} outcomes
  * @property {ReadonlyArray<{ value: string, label: string, pressed: boolean, title: string }>} modes
  *           All / Standard / Blitz / Dread; empty when every run is a standard one
+ * @property {ReadonlyArray<{ value: string, label: string, pressed: boolean, title: string }>} [parties]
+ *           All / Solo / Co-op; empty until the history has a co-op run
  * @property {ReadonlyArray<{ id: string, label: string, pressed: boolean, disabled: boolean, title?: string }>} tiers
  *           title: the tier's name (Early climb …), or why it is off (Blitz and Dread are not on the ladder)
  * @property {ReadonlyArray<{ key: string, label: string, disabled?: boolean }>} characters   every climber; unplayed ones disabled
@@ -226,6 +229,7 @@ function filtersBar(model) {
   const { filters } = model;
   const outcome = model.outcomes.map((o) => chip("outcome", o.id, o.label, filters.outcome === o.id)).join("");
   const modes = model.modes.map((m) => chip("mode", m.value, m.label, m.pressed, undefined, false, m.title)).join("");
+  const parties = (model.parties || []).map((p) => chip("party", p.value, p.label, p.pressed, undefined, false, p.title)).join("");
   const tiers = model.tiers.map((t) => chip("ascensionTier", t.id, t.label, t.pressed, undefined, t.disabled, t.title)).join("");
   const chars = [
     chip("character", "all", "All", filters.character === "all"),
@@ -254,6 +258,7 @@ function filtersBar(model) {
       <div class="v-runs-groups">
         ${chipGroup("Outcome", outcome)}
         ${modes ? chipGroup("Mode", modes) : ""}
+        ${parties ? chipGroup("Party", parties) : ""}
         ${chipGroup("Ascension", tiers)}
         ${chipGroup("Character", chars)}
         ${dateGroup(model.date)}
@@ -272,8 +277,9 @@ function ascText(row) {
 function rowLabel(row, compareMode) {
   const prefix = compareMode ? `${row.isSelected ? "Deselect" : "Select"} run for compare: ` : "Open run details: ";
   const asc = ascText(row) ? ` ${ascText(row)}` : "";
+  const tags = (row.tags || []).map((t) => ` ${t.label.toLowerCase()}`).join("");
   const floor = row.floor !== null ? ` on floor ${row.floor}` : "";
-  return `${prefix}${row.charName}${asc} ${RESULT_LABEL[row.result].toLowerCase()}${floor}`;
+  return `${prefix}${row.charName}${asc}${tags} ${RESULT_LABEL[row.result].toLowerCase()}${floor}`;
 }
 
 /** @param {RunRowModel} row @param {boolean} compareMode */
@@ -282,6 +288,7 @@ function runRow(row, compareMode) {
   const checked = compareMode && row.isSelected ? "true" : "false";
   const check = compareMode ? `<span class="v-run-check" aria-hidden="true">${icon("check")}</span>` : "";
   const asc = ascText(row) ? `<span class="v-run-asc">${esc(ascText(row))}</span>` : "";
+  const tags = (row.tags || []).map((t) => `<span class="v-run-tag" data-tag="${esc(t.key)}" title="${esc(t.title)}">${esc(t.label)}</span>`).join("");
   const floor = row.floor !== null
     ? `<span class="v-run-floor"><span class="v-run-num">${row.floor}</span><span class="v-run-cap">Floor</span>
          <span class="v-run-meter" aria-hidden="true"><i style="--p:${row.floorShare.toFixed(3)}"></i></span></span>`
@@ -297,7 +304,7 @@ function runRow(row, compareMode) {
       ${check}
       ${plate(row, "v-run-sigil")}
       <span class="v-run-id">
-        <span class="v-run-name">${esc(row.charName)}${asc}</span>
+        <span class="v-run-name">${esc(row.charName)}${asc}${tags}</span>
         ${row.dateDay || row.killedBy
           ? `<span class="v-run-date">${esc(row.dateDay)}${row.dateRest ? `<span class="v-run-at">${esc(row.dateRest)}</span>` : ""}${row.killedBy ? `<span class="v-run-killer">${row.dateDay ? '<span aria-hidden="true"> · </span>' : ""}Slain by <b>${esc(row.killedBy)}</b></span>` : ""}</span>`
           : ""}

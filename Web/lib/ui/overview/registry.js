@@ -11,7 +11,7 @@
 // the same way.
 
 import { esc } from "../html.js?v=1";
-import { handHtml, winRateHtml, charactersHtml, relicsHtml, sectionTitleHtml, overviewHtml } from "../views.js?v=9";
+import { handHtml, winRateHtml, charactersHtml, relicsHtml, sectionTitleHtml, overviewHtml } from "../views.js?v=10";
 import { trendChartHtml, floorChartHtml } from "../charts.js?v=2";
 import { createLayout, columnPlan } from "./layout.js?v=1";
 import { MORE_WIDGETS, VISIT_WIDGET } from "./widgets-more.js?v=2";

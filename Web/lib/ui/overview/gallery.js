@@ -4,7 +4,7 @@
 // them, and either Add or "On your Overview" for a widget that cannot repeat.
 
 import { esc } from "../html.js?v=1";
-import { WIDGETS, cellHtml } from "./registry.js?v=2";
+import { WIDGETS, cellHtml } from "./registry.js?v=3";
 
 const CATEGORY_NAMES = Object.freeze({
   progress: "Progress",

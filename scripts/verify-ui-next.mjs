@@ -16,9 +16,11 @@
  * horizontal overflow across breakpoints, the header duel's staging, the
  * one-word brand, the opt-in beta switch (Settings, Beta tab, news post),
  * parity: the new Overview shows every number the classic one does, and the
- * section filters (By character mode + ascension, the Ascensions climber and
- * ladder, the Runs mode chips) with each climber's win streak, in both looks
- * (`--only filters`).
+ * section filters (By character mode + ascension + Solo / Co-op, the
+ * Ascensions climber, ladder and party, the Runs mode and party chips) with
+ * each climber's win streak (Custom and daily runs left out), the Co-op and
+ * Custom tags on run rows and each climber's record in an open Ascensions
+ * level, in both looks (`--only filters`).
  */
 
 import { chromium } from "playwright";
@@ -3085,11 +3087,13 @@ async function runArrange(browser) {
  * Demo runs plus some of the STS2 beta's Blitz and Dread runs and two fresh
  * win streaks (Ironclad 9, Silent 3), pushed in the way the desktop apps push
  * runs. Returns what was sent, so expectations never come from the app's code.
+ * `newer` adds runs after those, newest last: [character, fields] pairs.
  * @param {import("playwright").Page} page
- * @returns {Promise<Array<{ character: string, won: boolean, ascension: number|null, gameMode: string }>>}
+ * @param {Array<[string, Record<string, unknown>]>} [newer]
+ * @returns {Promise<Array<{ id: string, character: string, won: boolean, ascension: number|null, gameMode: string, partySize: number|null, isCustom: boolean }>>}
  */
-async function seedFilterRuns(page) {
-  const runs = await page.evaluate(async () => {
+async function seedFilterRuns(page, newer = []) {
+  const runs = await page.evaluate(async (newer) => {
     const { getDemoRuns } = await import("/lib/demo-runs.js?v=2");
     const demo = getDemoRuns();
     const newest = Math.max(...demo.map((r) => +r.endedAt));
@@ -3106,10 +3110,19 @@ async function seedFilterRuns(page) {
     for (const [c, won] of [["ironclad", false], ["silent", false], ["ironclad", false], ["defect", true]]) add(c, { won, ascension: 10, gameMode: "dread" });
     for (let k = 0; k < 3; k++) add("silent", { won: true, ascension: 6 });
     for (let k = 0; k < 9; k++) add("ironclad", { won: true, ascension: k % 3 === 0 ? 9 : 10 });
+    for (const [c, fields] of newer) add(c, fields);
     const all = [...demo, ...extras].map((r) => ({ ...r, startedAt: r.startedAt?.toISOString?.() ?? r.startedAt, endedAt: r.endedAt?.toISOString?.() ?? r.endedAt }));
     window.SpireVault.ingestDesktopRuns(all);
-    return all.map((r) => ({ character: r.character, won: r.won === true, ascension: Number.isFinite(r.ascension) ? r.ascension : null, gameMode: r.gameMode || "" }));
-  });
+    return all.map((r) => ({
+      id: String(r.id),
+      character: r.character,
+      won: r.won === true,
+      ascension: Number.isFinite(r.ascension) ? r.ascension : null,
+      gameMode: r.gameMode || "",
+      partySize: Number.isFinite(r.partySize) ? r.partySize : null,
+      isCustom: r.isCustom === true,
+    }));
+  }, newer);
   await page.waitForFunction(
     () => document.querySelector("#overview-body .v-char-streak:not(.is-empty), #overview-body .char-card-streak"),
     null,
@@ -3117,6 +3130,17 @@ async function seedFilterRuns(page) {
   );
   return runs;
 }
+
+/** Co-op runs for the Solo / Co-op checks: newer than every other seeded run.
+ *  Ironclad wins one with Silent (A10); Defect loses one with Regent (A10);
+ *  Regent wins a party of three (A5). @type {Array<[string, Record<string, unknown>]>} */
+const COOP_SEED = Object.freeze([
+  ["ironclad", { won: true, ascension: 10, partySize: 2, party: ["ironclad", "silent"] }],
+  ["defect", { won: false, ascension: 10, partySize: 2, party: ["defect", "regent"] }],
+  ["regent", { won: true, ascension: 5, partySize: 3, party: ["regent", "necrobinder", "silent"] }],
+]);
+/** @param {{ partySize: number|null }} run */
+const isCoopRun = (run) => (run.partySize ?? 1) > 1;
 
 /** @param {{ gameMode: string }} run */
 const modeOf = (run) => (/blitz/i.test(run.gameMode) ? "blitz" : /dread/i.test(run.gameMode) ? "dread" : "standard");
@@ -3252,7 +3276,7 @@ async function runStatFilters(browser) {
       await p.click('#overview-body [data-stat-filter="chars.mode"][data-value="dread"]');
       assert.equal(await p.locator('#overview-body select[data-stat-filter="chars.asc"]').isDisabled(), true, "Dread runs have no ascension level");
       const saved = await p.evaluate(() => JSON.parse(localStorage.getItem("vault.web.statfilters.v1") || "null"));
-      assert.deepEqual(saved?.chars, { mode: "dread", asc: null }, "the choice is kept for the next visit");
+      assert.deepEqual(saved?.chars, { mode: "dread", asc: null, party: "all" }, "the choice is kept for the next visit");
       assert.deepEqual(errors, []);
     } finally {
       await context.close();
@@ -3368,11 +3392,170 @@ async function runStatFilters(browser) {
     }
   });
 
+  await check("streaks: a Custom Run and a daily run neither break nor extend one; an abandoned run breaks it, in both looks", async () => {
+    // The newest runs: Ironclad abandons a Custom Run, Silent loses a daily,
+    // Regent wins a daily, Defect abandons a standard run.
+    const newer = [
+      ["ironclad", { won: false, wasAbandoned: true, isCustom: true, gameMode: "standard", ascension: 0 }],
+      ["silent", { won: false, gameMode: "daily", ascension: 0 }],
+      ["regent", { won: true, gameMode: "daily", ascension: 0 }],
+      ["defect", { won: true, ascension: 1 }],
+      ["defect", { won: true, ascension: 1 }],
+      ["defect", { won: false, wasAbandoned: true, ascension: 1 }],
+    ];
+    for (const [label, path] of [["new look", "/?ui=next"], ["classic", CLASSIC_PATH]]) {
+      const { context, page: p, errors } = await open(browser, path);
+      try {
+        await seedFilterRuns(p, newer);
+        const tags = await p.evaluate(() => {
+          const out = {};
+          for (const el of document.querySelectorAll("#overview-body .v-char[data-char]")) out[el.dataset.char] = el.querySelector(".v-char-streak:not(.is-empty) b")?.textContent || "";
+          for (const el of document.querySelectorAll("#overview-body .char-card")) {
+            out[(el.querySelector(".char-card-name")?.textContent || "").trim().toLowerCase()] = el.querySelector(".char-card-streak strong")?.textContent || "";
+          }
+          return out;
+        });
+        assert.equal(tags.ironclad, "9", `${label}: the abandoned Custom Run does not break Ironclad's 9`);
+        assert.equal(tags.silent, "3", `${label}: the lost daily does not break Silent's 3`);
+        assert.equal(tags.defect, "", `${label}: an abandoned standard run ends Defect's 2, as in the game`);
+        // The page-wide streak cards: the newest climb run is Defect's abandon.
+        const streakCard = await p.evaluate(() => {
+          const el = [...document.querySelectorAll("#overview-body .v-card, #overview-body .kpi-card")].find((c) => /streak/i.test(c.textContent) && !/best|longest/i.test(c.textContent));
+          return el ? { text: el.textContent.replace(/\s+/g, " ").trim(), title: el.getAttribute("title") || "" } : null;
+        });
+        if (streakCard) {
+          assert.match(streakCard.text, /Loss streak/, `${label}: "${streakCard.text}"`);
+          assert.match(streakCard.title, /Custom and daily runs are not counted/, `${label}: the card says what it counts`);
+        }
+        assert.deepEqual(errors, []);
+      } finally {
+        await context.close();
+      }
+    }
+  });
+
+  await check("Solo / Co-op: co-op runs bring Party chips to By character, Ascensions and Runs; each counts its party only, in both looks", async () => {
+    for (const [label, path] of [["new look", "/?ui=next"], ["classic", CLASSIC_PATH]]) {
+      const { context, page: p, errors } = await open(browser, path);
+      try {
+        assert.equal(await p.locator('[data-stat-filter$=".party"], [data-filter-kind="party"]').count(), 0, `${label}: no Party chips without co-op runs`);
+        const runs = await seedFilterRuns(p, COOP_SEED);
+        const coop = runs.filter(isCoopRun);
+        const solo = runs.filter((r) => !isCoopRun(r));
+        // By character
+        const parties = await p.$$eval('#overview-body [data-stat-filter="chars.party"]', (els) => els.map((el) => el.dataset.value));
+        assert.deepEqual(parties, ["all", "solo", "coop"], `${label}: By character`);
+        await p.click('#overview-body [data-stat-filter="chars.party"][data-value="coop"]');
+        const recOf = (key) => p.evaluate((k) => (document.querySelector(`#overview-body .v-char[data-char="${k}"] .v-char-rec`)
+          || [...document.querySelectorAll("#overview-body .char-card")].find((el) => el.querySelector(".char-card-name")?.textContent.trim().toLowerCase() === k))?.textContent.replace(/\s+/g, " ").trim() || "", key);
+        const summaryChars = (await p.textContent("#overview-body .v-chars .v-filter-summary, #overview-body .stat-filters--chars .run-filter-summary")).replace(/\s+/g, " ").trim();
+        assert.ok(summaryChars.startsWith(`Showing Co-op · ${coop.length} of ${runs.length} runs`), `${label}: "${summaryChars}"`);
+        if (label === "new look") {
+          assert.ok((await recOf("ironclad")).startsWith(recordOf(pickRuns(coop, { character: "ironclad" }))), `${label}: Ironclad in co-op`);
+          assert.equal(await recOf("silent"), "No runs", `${label}: Silent has no co-op runs of its own`);
+        }
+        await p.click('#overview-body [data-stat-filter="chars.party"][data-value="solo"]');
+        if (label === "new look") {
+          assert.ok((await recOf("regent")).startsWith(recordOf(pickRuns(solo, { character: "regent" }))), `${label}: Regent solo`);
+        }
+        const saved = await p.evaluate(() => JSON.parse(localStorage.getItem("vault.web.statfilters.v1") || "null"));
+        assert.equal(saved?.chars?.party, "solo", `${label}: the party is kept`);
+        // Ascensions
+        await p.evaluate(() => window.SpireVault.switchTab("ascensions"));
+        await p.waitForSelector('#ascensions-body [data-stat-filter="spire.party"]');
+        await p.click('#ascensions-body [data-stat-filter="spire.party"][data-value="coop"]');
+        assert.deepEqual(await ladderCounts(p), expectedLadder(pickRuns(coop, { mode: "standard" })), `${label}: co-op runs per level`);
+        const summaryAsc = (await p.textContent("#ascensions-body .v-filter-summary, #ascensions-body .stat-filters .run-filter-summary")).replace(/\s+/g, " ").trim();
+        assert.ok(summaryAsc.startsWith(`Showing Co-op · ${pickRuns(coop, { mode: "standard" }).length} of ${pickRuns(runs, { mode: "standard" }).length} runs`), `${label}: "${summaryAsc}"`);
+        // Runs
+        await p.evaluate(() => window.SpireVault.switchTab("runs"));
+        await p.waitForSelector('#runs-body button[data-filter-kind="party"]');
+        await p.click('#runs-body button[data-filter-kind="party"][data-filter-value="coop"]');
+        const runsSummary = (await p.textContent("#runs-body .v-runs-summary, #runs-body .run-filter-summary")).replace(/\s+/g, " ").trim();
+        assert.match(runsSummary, new RegExp(`^Showing ${coop.length} of ${runs.length} runs`), `${label}: Runs`);
+        const rowTags = await p.$$eval("#runs-body .run-row", (rows) => rows.map((row) => [...row.querySelectorAll('[data-tag="coop"]')].length));
+        assert.equal(rowTags.length, coop.length, `${label}: one row per co-op run`);
+        assert.ok(rowTags.every((n) => n === 1), `${label}: every co-op row says Co-op`);
+        const title = await p.getAttribute('#runs-body [data-tag="coop"]', "title");
+        assert.match(title, /^Co-op run: /, `${label}: the tag names the party`);
+        const savedRuns = await p.evaluate(() => JSON.parse(localStorage.getItem("vault.web.runfilters.v1") || "null"));
+        assert.equal(savedRuns?.party, "coop", `${label}: kept with the other Runs filters`);
+        await p.click('#runs-body [data-action="clear-filters"]');
+        assert.match((await p.textContent("#runs-body .v-runs-summary, #runs-body .run-filter-summary")).replace(/\s+/g, " "), new RegExp(`(All|Showing all) ${runs.length} runs`), `${label}: Clear resets the party`);
+        assert.deepEqual(errors, []);
+      } finally {
+        await context.close();
+      }
+    }
+  });
+
+  await check("Runs: a Custom Run says so on its row and is found by searching \"custom\", in both looks", async () => {
+    for (const [label, path] of [["new look", "/?ui=next"], ["classic", CLASSIC_PATH]]) {
+      const { context, page: p, errors } = await open(browser, path);
+      try {
+        await seedFilterRuns(p, [["ironclad", { won: false, wasAbandoned: true, isCustom: true, gameMode: "standard", ascension: 0 }]]);
+        await p.evaluate(() => window.SpireVault.switchTab("runs"));
+        await p.waitForSelector('#runs-body [data-tag="custom"]');
+        assert.equal(await p.locator('#runs-body [data-tag="custom"]').count(), 1, `${label}: one Custom tag`);
+        assert.match(await p.getAttribute('#runs-body [data-tag="custom"]', "title"), /not counted in win streaks/);
+        await p.fill('#runs-body input[data-filter-kind="search"]', "custom");
+        await p.waitForFunction(() => document.querySelectorAll("#runs-body .run-row").length === 1, null, { timeout: 5000 });
+        assert.deepEqual(errors, []);
+      } finally {
+        await context.close();
+      }
+    }
+  });
+
+  await check("Ascensions: an open level lists every climber's record there; with one climber picked it does not, in both looks", async () => {
+    for (const [label, path] of [["new look", "/?ui=next"], ["classic", CLASSIC_PATH]]) {
+      const { context, page: p, errors } = await open(browser, path);
+      try {
+        const runs = await seedFilterRuns(p, COOP_SEED);
+        await p.evaluate(() => window.SpireVault.switchTab("ascensions"));
+        await p.waitForSelector('#ascensions-body details[data-asc="10"]');
+        await p.click('#ascensions-body details[data-asc="10"] > summary');
+        const a10 = pickRuns(runs, { mode: "standard", asc: 10 });
+        const want = {};
+        for (const r of a10) {
+          const w = want[r.character] || { runs: 0, wins: 0 };
+          want[r.character] = { runs: w.runs + 1, wins: w.wins + (r.won ? 1 : 0) };
+        }
+        const shown = await p.evaluate(() => {
+          const row = document.querySelector('#ascensions-body details[data-asc="10"]');
+          return {
+            title: row.querySelector(".v-asc-climbers-title, .asc-climbers-title")?.textContent.trim() || "",
+            lines: [...row.querySelectorAll(".v-asc-climber, .asc-climber")].map((li) => ({
+              name: li.querySelector(".v-asc-climber-name, .asc-climber-name").textContent.trim(),
+              rec: li.querySelector(".v-asc-climber-rec, .asc-climber-record").textContent.trim(),
+              streak: li.querySelector(".v-asc-climber-streak b, .asc-climber-streak")?.textContent.replace(/\D+/g, "") || "",
+            })),
+            visible: row.querySelector(".v-asc-climbers, .asc-climbers")?.getBoundingClientRect().height > 0,
+          };
+        });
+        assert.equal(shown.title, "Your climbers at A10", label);
+        assert.ok(shown.visible, `${label}: the list shows once the row is open`);
+        const pretty = (k) => (k === "fool" ? "The Fool" : k.charAt(0).toUpperCase() + k.slice(1));
+        const expected = Object.entries(want).map(([k, w]) => ({ name: pretty(k), rec: label === "classic" ? `${w.wins}w / ${w.runs}r` : `${w.wins}W / ${w.runs} run${w.runs === 1 ? "" : "s"}` }));
+        assert.deepEqual(shown.lines.map(({ name, rec }) => ({ name, rec })).sort((a, b) => a.name.localeCompare(b.name)), expected.sort((a, b) => a.name.localeCompare(b.name)), `${label}: one line per climber with A10 runs`);
+        // Ironclad's newest A10 runs are wins (the seed's streak of 9 mostly at A10, then a co-op win).
+        const iron = shown.lines.find((l) => l.name === "Ironclad");
+        assert.ok(Number(iron?.streak) >= 2, `${label}: Ironclad's A10 streak shows (${iron?.streak})`);
+        await p.click('#ascensions-body [data-stat-filter="spire.character"][data-value="ironclad"]');
+        await p.waitForSelector('#ascensions-body details[data-asc="10"]');
+        assert.equal(await p.locator("#ascensions-body .v-asc-climbers, #ascensions-body .asc-climbers").count(), 0, `${label}: one climber picked, no list`);
+        assert.deepEqual(errors, []);
+      } finally {
+        await context.close();
+      }
+    }
+  });
+
   await check("the section filters fit a phone in both looks", async () => {
     for (const [label, path] of [["new look", "/?ui=next"], ["classic", CLASSIC_PATH]]) {
       const { context, page: p, errors } = await open(browser, path, { viewport: PHONE_VIEWPORT, isMobile: true, hasTouch: true });
       try {
-        await seedFilterRuns(p);
+        await seedFilterRuns(p, COOP_SEED);
         for (const tab of ["overview", "ascensions"]) {
           await p.evaluate((id) => window.SpireVault.switchTab(id), tab);
           await p.waitForSelector(`#${tab}-body [data-stat-filter]`);
@@ -3391,6 +3574,43 @@ async function runStatFilters(browser) {
           }, tab);
           assert.deepEqual(problems, [], `${label} ${tab}`);
         }
+        // An open level's climber lines and the Runs tab's tags fit too.
+        await p.evaluate(() => window.SpireVault.switchTab("ascensions"));
+        await p.click('#ascensions-body details[data-asc="10"] > summary');
+        const climberProblems = await p.evaluate(() => {
+          const out = [];
+          const doc = document.documentElement;
+          if (doc.scrollWidth > doc.clientWidth + 1) out.push(`page scrolls sideways (${doc.scrollWidth} > ${doc.clientWidth})`);
+          for (const li of document.querySelectorAll('#ascensions-body details[data-asc="10"] :is(.v-asc-climber, .asc-climber)')) {
+            const box = li.getBoundingClientRect();
+            for (const part of li.children) {
+              const r = part.getBoundingClientRect();
+              if (r.width === 0) continue;
+              if (r.right > box.right + 0.5 || r.left < box.left - 0.5) out.push(`${part.className} leaves its line`);
+              if (part.scrollWidth > part.clientWidth + 0.5) out.push(`${part.className} is cut ("${part.textContent.trim()}")`);
+            }
+          }
+          return out;
+        });
+        assert.deepEqual(climberProblems, [], `${label} A10 climbers`);
+        await p.evaluate(() => window.SpireVault.switchTab("runs"));
+        await p.waitForSelector('#runs-body [data-tag="coop"]');
+        const tagProblems = await p.evaluate(() => {
+          const out = [];
+          const doc = document.documentElement;
+          if (doc.scrollWidth > doc.clientWidth + 1) out.push(`page scrolls sideways (${doc.scrollWidth} > ${doc.clientWidth})`);
+          for (const tag of document.querySelectorAll("#runs-body [data-tag]")) {
+            const row = tag.closest(".run-row").getBoundingClientRect();
+            const r = tag.getBoundingClientRect();
+            if (r.right > row.right + 0.5) out.push(`a ${tag.dataset.tag} tag runs out of its row`);
+          }
+          for (const chip of document.querySelectorAll('#runs-body button[data-filter-kind="party"]')) {
+            const r = chip.getBoundingClientRect();
+            if (r.height < 43.5) out.push(`party chip ${chip.dataset.filterValue} is ${r.height.toFixed(1)}px tall`);
+          }
+          return out;
+        });
+        assert.deepEqual(tagProblems, [], `${label} Runs tags`);
         assert.deepEqual(errors, []);
       } finally {
         await context.close();

@@ -26,6 +26,8 @@ import { segmentedHtml, selectHtml, summaryHtml } from "./filter-controls.js?v=1
  * @typedef {Object} CharacterFilterModel
  * @property {ReadonlyArray<import("./filter-controls.js").SegOption>|null} modes
  *           null when the history holds only standard runs (no mode control)
+ * @property {ReadonlyArray<import("./filter-controls.js").SegOption>|null} [parties]
+ *           All / Solo / Co-op; null until the history has a co-op run
  * @property {ReadonlyArray<import("./filter-controls.js").SelectOption>} levels
  * @property {boolean} levelsDisabled   Dread: its runs sit on no ascension ladder
  * @property {string} label             "Blitz A2"; "" when nothing is filtered
@@ -44,6 +46,7 @@ import { segmentedHtml, selectHtml, summaryHtml } from "./filter-controls.js?v=1
  * @property {string} textHtml   trusted, pre-escaped rules text
  * @property {"up"|"down"|"flat"} [trend]    arrow drawn beside the value
  * @property {ReadonlyArray<number>} [spark] 0..1 series, oldest → newest, drawn under the value
+ * @property {string} [hint]     plain-text tooltip: what the number counts
  */
 
 /**
@@ -257,17 +260,18 @@ function characterBanner(row, filter, reserveStreak) {
 }
 
 /**
- * Mode chips (only when the history has Blitz or Dread runs) and the
- * ascension picker.
+ * Mode chips (only when the history has Blitz or Dread runs), Solo / Co-op
+ * chips (only when it has co-op runs) and the ascension picker.
  * @param {CharacterFilterModel} filter
  */
 function characterFilters(filter) {
   const modes = filter.modes ? segmentedHtml("chars.mode", "Mode", filter.modes) : "";
+  const parties = filter.parties ? segmentedHtml("chars.party", "Party", filter.parties) : "";
   const levels = selectHtml("chars.asc", "Ascension", filter.levels, {
     disabled: filter.levelsDisabled,
     title: filter.levelsDisabled ? "Dread runs have no ascension level" : "",
   });
-  return `<div class="v-chars-filters">${modes}${levels}</div>`;
+  return `<div class="v-chars-filters">${modes}${parties}${levels}</div>`;
 }
 
 /**
@@ -334,7 +338,7 @@ function handCard(card, index, count) {
   // --rot would beat the stylesheet, so hover could never straighten a card
   // and phones (cards.css, 880px) could never lay the hand flat.
   return `
-    <article class="v-card" role="listitem" tabindex="0" data-tilt data-tone="${esc(card.tone)}"
+    <article class="v-card" role="listitem" tabindex="0" data-tilt data-tone="${esc(card.tone)}"${card.hint ? ` title="${esc(card.hint)}"` : ""}
              data-reveal style="--r:${index};--fan-rot:${rot.toFixed(2)}deg;--fan-lift:${lift.toFixed(1)}px">
       <span class="v-card-orb">${icon(card.icon)}</span>
       <header class="v-card-band">${esc(card.title)}</header>

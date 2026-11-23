@@ -202,6 +202,7 @@ export function parseSTS2Run(obj, sourceName = "unknown.run", context = {}) {
   // means the field was missing (older schema).
   const gameMode = normalizeGameMode(obj.game_mode);
   const wasAbandoned = obj.was_abandoned === true || obj.was_abandoned === 1;
+  const isCustom = isCustomRun(obj);
   // Daily-run modifiers. STS2 has shipped two shapes for this field:
   //   1. A flat string array — `["MODIFIER.DOUBLE_TIME", ...]`
   //   2. An array of objects — `[{ id: "MODIFIER.FLIGHT" }, ...]`
@@ -385,6 +386,10 @@ export function parseSTS2Run(obj, sourceName = "unknown.run", context = {}) {
     buildId,
     gameMode,
     wasAbandoned,
+    // A run started from the game's Custom Run screen. Left out of win
+    // streaks (lib/stat-filters.js). Only present when true, so every
+    // other record is what it always was.
+    ...(isCustom ? { isCustom: true } : {}),
     modifiers,
     inProgress,
     currentHp,
@@ -397,6 +402,20 @@ export function parseSTS2Run(obj, sourceName = "unknown.run", context = {}) {
 function stripPrefix(prefix, raw) {
   if (typeof raw !== "string") return "";
   return raw.startsWith(prefix) ? raw.slice(prefix.length) : raw;
+}
+
+/**
+ * Whether a save is a Custom Run. Since v0.113 the game writes
+ * `is_custom_game` at the top level (the custom-run screen has its own mode
+ * dropdown, so such a run can say `game_mode: "standard"`); older builds
+ * had no flag and wrote `game_mode: "custom"` (the game's serializer knows
+ * "standard", "daily" and "custom"). Either one marks it.
+ * @param {Record<string, unknown>} obj the parsed `.run` JSON
+ * @returns {boolean}
+ */
+export function isCustomRun(obj) {
+  if (obj?.is_custom_game === true || obj?.is_custom_game === 1) return true;
+  return typeof obj?.game_mode === "string" && obj.game_mode.trim().toLowerCase() === "custom";
 }
 
 /**

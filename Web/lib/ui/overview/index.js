@@ -6,12 +6,12 @@
 // Arrange state lives on `.v-ov[data-arrange]`, never on <html>: a root class
 // or attribute change makes lib/ui/stage.js re-fit every header.
 
-import { CATALOG, cellHtml } from "./registry.js?v=2";
-import { loadLayout, saveLayout } from "./store.js?v=2";
+import { CATALOG, cellHtml } from "./registry.js?v=3";
+import { loadLayout, saveLayout } from "./store.js?v=3";
 import { configure } from "./layout.js?v=1";
 
-export { WIDGETS, CATALOG, DEFAULT_ENTRIES, defaultLayout, renderOverview, cellHtml } from "./registry.js?v=2";
-export { loadLayout, saveLayout, STORAGE_KEY } from "./store.js?v=2";
+export { WIDGETS, CATALOG, DEFAULT_ENTRIES, defaultLayout, renderOverview, cellHtml } from "./registry.js?v=3";
+export { loadLayout, saveLayout, STORAGE_KEY } from "./store.js?v=3";
 
 /**
  * @typedef {Object} OverviewDeps  what script.js lends the editor
@@ -115,7 +115,7 @@ export async function openArrange(options = {}) {
   const lent = deps;
   arranging = true;
   try {
-    const editor = await import("./edit.js?v=3");
+    const editor = await import("./edit.js?v=4");
     editor.enterArrange({
       ...lent,
       pickKey: options.pickKey,
