@@ -127,6 +127,24 @@ await check("an older build's upload does not erase card picks", async () => {
   assert.deepEqual(run.party, ["ironclad", "silent"]);
 });
 
+await check("a Custom Run stays marked, even after an older build's upload", async () => {
+  // Custom runs stay out of win streaks; a phone that reads only this copy
+  // needs the mark to leave them out too.
+  const env = fakeEnv();
+  await Runs.uploadRuns(env, STEAM_ID, { runs: [fullRun({ isCustom: true })] }, "web");
+  assert.equal((await stored(env))[0].isCustom, true);
+  await Runs.uploadRuns(env, STEAM_ID, { runs: [thinRun({ endedAt: "2026-11-18T17:00:00.000Z" })] }, "web");
+  assert.equal((await stored(env))[0].isCustom, true, "the later, thinner record keeps the mark");
+});
+
+await check("only a real true marks a run as custom", async () => {
+  const env = fakeEnv();
+  for (const isCustom of ["yes", 1, "true", false, null]) {
+    await Runs.uploadRuns(env, STEAM_ID, { runs: [fullRun({ id: `custom-${String(isCustom)}`, isCustom })] }, "web");
+  }
+  assert.ok((await stored(env)).every((run) => run.isCustom === undefined));
+});
+
 await check("the same upload still refreshes the basics", async () => {
   const env = fakeEnv();
   await Runs.uploadRuns(env, STEAM_ID, { runs: [fullRun()] }, "web");

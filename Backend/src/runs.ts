@@ -67,6 +67,10 @@ export interface RunSummary {
   picks?: string;
   /** The player quit the run: shown as Abandoned, not as a defeat. */
   wasAbandoned?: boolean;
+  /** A run from the game's Custom Run screen (the save's `is_custom_game`, or
+   *  `game_mode: "custom"` before v0.113). Web builds since 2026-11-22 send it
+   *  only when true; such runs stay out of win streaks. */
+  isCustom?: boolean;
   /** Daily-run modifier slugs. */
   modifiers?: string[];
   /** The rooms walked, one string per act and one letter per room
@@ -86,7 +90,7 @@ export interface RunSummary {
 /** The fields one record of a run may lack because the client that sent it
  *  predates them. When two records of a run meet, values for these survive
  *  from whichever has them (see withDetailFrom). */
-const DETAIL_FIELDS = ["picks", "gameMode", "wasAbandoned", "modifiers", "path", "partySize", "party"] as const;
+const DETAIL_FIELDS = ["picks", "gameMode", "wasAbandoned", "isCustom", "modifiers", "path", "partySize", "party"] as const;
 
 interface RunsBlob {
   runs: RunSummary[];
@@ -234,6 +238,7 @@ function sanitizeRun(raw: unknown): RunSummary | null {
       : undefined,
     picks: sanitizePicks(r.picks),
     wasAbandoned: r.wasAbandoned === true ? true : undefined,
+    isCustom: r.isCustom === true ? true : undefined,
     modifiers: optionalStringArr(r.modifiers, MAX_MODIFIERS),
     path: sanitizePath(r.path),
     partySize,
